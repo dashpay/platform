@@ -58,6 +58,7 @@ impl IdentityWallet {
         address_signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
+        self.sdk.ensure_platform_write_compatible()?;
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -76,12 +77,14 @@ impl IdentityWallet {
             .top_up_from_addresses_with_metadata(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
-                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to top up identity from addresses: {}",
-                        e
-                    ))
-                })
+                crate::error::promote_protocol_compatibility_error(&e)
+                    .or_else(|| crate::error::promote_address_nonce_error(&e))
+                    .unwrap_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to top up identity from addresses: {}",
+                            e
+                        ))
+                    })
             })?;
 
         let proof_height = metadata.height;

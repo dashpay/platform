@@ -107,7 +107,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let recipientBytes = recipient.toFFIByteArray()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -169,7 +169,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -232,7 +232,7 @@ extension ManagedPlatformWallet {
         let recipientBytes: [UInt8]? = recipient.map { $0.toFFIByteArray() }
         let groupTuple = groupAction.toFFITuple()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -285,7 +285,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let distRaw = distributionType.rawValue
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -329,7 +329,7 @@ extension ManagedPlatformWallet {
         let frozenBytes = frozenIdentityId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -378,7 +378,7 @@ extension ManagedPlatformWallet {
         let frozenBytes = frozenIdentityId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -428,7 +428,7 @@ extension ManagedPlatformWallet {
         let frozenBytes = frozenIdentityId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -478,7 +478,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -525,7 +525,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -578,7 +578,7 @@ extension ManagedPlatformWallet {
         let contractBytes = contractId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -632,7 +632,7 @@ extension ManagedPlatformWallet {
         let identityBytes = identityId.toFFIByteArray()
         let contractBytes = contractId.toFFIByteArray()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
@@ -679,7 +679,7 @@ extension ManagedPlatformWallet {
         let tag = change.ffiTag
         let payload = change.payloadJSON()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             _ = signer
             try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in

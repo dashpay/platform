@@ -112,8 +112,39 @@ fn attempt_has_quorum_source_failure(error: &Error) -> bool {
 pub(crate) async fn retry_with_additional_error<Fut, FutureFactoryFn, R, AdditionalError>(
     address_list: &AddressList,
     settings: RequestSettings,
+    future_factory_fn: FutureFactoryFn,
+    additional_error: AdditionalError,
+) -> ExecutionResult<R, Error>
+where
+    Fut: Future<Output = ExecutionResult<R, Error>>,
+    FutureFactoryFn: FnMut(RequestSettings) -> Fut,
+    R: Send,
+    AdditionalError: Fn(&Error) -> bool,
+{
+    retry_with_additional_error_and_transport(
+        address_list,
+        settings,
+        future_factory_fn,
+        additional_error,
+        false,
+    )
+    .await
+}
+
+/// A guarded broadcast dispatches one transport attempt per invocation so it
+/// can recheck its preparation permit. Keep the existing transport retry budget
+/// and node-health handling; only operation-specific errors require exclusion.
+pub(crate) async fn retry_with_additional_error_and_transport<
+    Fut,
+    FutureFactoryFn,
+    R,
+    AdditionalError,
+>(
+    address_list: &AddressList,
+    settings: RequestSettings,
     mut future_factory_fn: FutureFactoryFn,
     additional_error: AdditionalError,
+    retry_transport: bool,
 ) -> ExecutionResult<R, Error>
 where
     Fut: Future<Output = ExecutionResult<R, Error>>,
@@ -163,7 +194,9 @@ where
                 total_retries += requests_sent;
 
                 let retry_additional_error = additional_error(&error.inner);
-                if !error.can_retry() && !retry_additional_error {
+                let retry_transport_error = retry_transport
+                    && matches!(&error.inner, Error::DapiClientError(inner) if inner.can_retry());
+                if !error.can_retry() && !retry_additional_error && !retry_transport_error {
                     // Non-retryable error, return immediately
                     let mut final_error = error;
                     final_error.retries = total_retries;

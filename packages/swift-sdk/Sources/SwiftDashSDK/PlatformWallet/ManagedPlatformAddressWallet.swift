@@ -228,7 +228,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let signerHandle = signer.handle
         let outRows = ffiOutputs
 
-        return try await Task.detached(priority: .userInitiated) { () -> [UpdatedBalance] in
+        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [UpdatedBalance] in
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             // `withExtendedLifetime(signer)` pins the resolver-backed signer for
             // the entire FFI call. `KeychainSigner` registers its vtable ctx via
@@ -361,7 +361,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         // (`Handle` is a raw pointer/int); the caller guarantees this
         // `ManagedPlatformAddressWallet` outlives the awaited call.
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> WithdrawalPreflight in
             var out = WithdrawalPreflightFFI(
                 can_withdraw: false,
@@ -460,7 +460,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let address = trimmed
         let feePerByte = coreFeePerByte
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             // The AUTO path owns its own fee strategy (largest-balance
             // input as the fee source) and ignores the caller's, so we
@@ -579,7 +579,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let feePerByte = coreFeePerByte
         let inputRows = inputs
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             let ffiInputs = inputRows.map { input -> ExplicitInputFFI in
                 ExplicitInputFFI(
@@ -710,7 +710,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         // FFI-call, leading to a use-after-free in the vtable callback.
         let coreSigner = MnemonicResolver()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
@@ -778,7 +778,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let recipientRows = recipients
         let coreSigner = MnemonicResolver()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             var outPoint = OutPointFFI(
                 txid: Self.txidTuple(from: outPointTxid),
@@ -866,7 +866,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         // is not a substitute.
         let coreSigner = MnemonicResolver()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
@@ -936,7 +936,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let recipientRows = recipients
         let coreSigner = MnemonicResolver()
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
             var outPoint = OutPointFFI(
                 txid: Self.txidTuple(from: outPointTxid),

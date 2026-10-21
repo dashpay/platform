@@ -623,6 +623,9 @@ struct DiagnosticsView: View {
                 return "Internal Error: \(msg)"
             case .consensusRejection(let consensus, let msg):
                 return "Rejected by Platform (code \(consensus.code)): \(msg)"
+            case .protocolCompatibilityUnavailable, .protocolCompatibilityChecking,
+                 .unsupportedProtocolVersion, .platformPreparationExpired:
+                return sdkError.localizedDescription
             case .unknown(let msg):
                 return "Unknown Error: \(msg)"
             }

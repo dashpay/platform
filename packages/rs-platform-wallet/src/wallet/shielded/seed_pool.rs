@@ -152,6 +152,7 @@ impl PlatformWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         F: Fn(SeedPoolProgress) + Send + Sync,
     {
+        self.sdk.ensure_platform_write_compatible()?;
         // HARD GATE: this is a devnet/testnet seeding utility. The mainnet
         // pool is seeded at genesis (DRIVE_SHIELDED_SNAPSHOT); seeding it
         // from a client would burn real value to no purpose.

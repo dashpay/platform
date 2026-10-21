@@ -52,6 +52,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.sdk.ensure_platform_write_compatible()?;
         self.top_up_identity_with_funding(
             identity_id,
             AssetLockFunding::FromWalletBalance {

@@ -89,6 +89,7 @@ impl TransferToAddressesWithMetadata for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error> {
+        let sdk = &sdk.platform_write_context()?;
         if recipient_addresses.is_empty() {
             return Err(Error::Generic(
                 "recipient_addresses must contain at least one address".to_string(),
@@ -108,11 +109,14 @@ impl TransferToAddressesWithMetadata for Identity {
             signer,
             signing_transfer_key_to_use,
             new_identity_nonce,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            sdk.platform_version_for_write()?,
+        )?;
 
         let expected_addresses: BTreeSet<PlatformAddress> =
             recipient_addresses.keys().copied().collect();

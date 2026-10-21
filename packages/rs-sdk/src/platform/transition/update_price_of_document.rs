@@ -58,12 +58,14 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
+        let sdk = &sdk.platform_write_context()?;
         // A local failure after the nonce is reserved would leave the cached nonce ahead of
         // Platform's, so what can be refused without it is refused first.
         if let Some(creation_options) =
             settings.and_then(|settings| settings.state_transition_creation_options)
         {
-            creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
+            creation_options
+                .validate_base_carries_action_fee_agreement(sdk.platform_version_for_write()?)?;
         }
 
         let new_identity_contract_nonce = sdk
@@ -86,11 +88,11 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
             settings.user_fee_increase.unwrap_or_default(),
             token_payment_info,
             signer,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
             settings.state_transition_creation_options,
         )
         .await?;
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
+        ensure_valid_state_transition_structure(&transition, sdk.platform_version_for_write()?)?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition.broadcast(sdk, Some(settings)).await?;

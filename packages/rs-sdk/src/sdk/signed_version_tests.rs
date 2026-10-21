@@ -562,6 +562,14 @@ async fn should_reject_metadata_tampering_with_the_signed_version() {
         "{error:?}"
     );
     assert_eq!(sdk.protocol_version_number(), 13);
+    assert_eq!(
+        sdk.protocol_compatibility().verified_protocol_version,
+        Some(9)
+    );
+    assert!(matches!(
+        sdk.protocol_compatibility().state,
+        super::ProtocolCompatibilityState::Unavailable { .. }
+    ));
 }
 
 #[tokio::test]
@@ -603,4 +611,55 @@ async fn should_not_warn_about_unauthenticated_protocol_versions() {
         "{warning}"
     );
     assert_eq!(sdk.protocol_version_number(), 13);
+    assert_eq!(sdk.protocol_compatibility().verified_protocol_version, None);
+    assert!(matches!(
+        sdk.protocol_compatibility().state,
+        super::ProtocolCompatibilityState::Unavailable { .. }
+    ));
+}
+
+#[tokio::test]
+async fn should_leave_compatibility_unavailable_for_missing_quorum_key_and_malformed_proof() {
+    let sdk = SdkBuilder::new_mock()
+        .with_context_provider(NoKeys)
+        .with_height_tolerance(None)
+        .build()
+        .expect("SDK");
+    sdk.set_protocol_compatibility_policy(super::ProtocolCompatibilityPolicy::RequireVerified);
+    let generation = sdk.begin_protocol_compatibility_check();
+    let (request, response) = recorded_epoch_response();
+    let error = sdk
+        .verify_fetching_quorum_key::<GetEpochsInfoRequest, ExtendedEpochInfo>(
+            request,
+            response,
+            &NoKeys,
+            "get_epochs_info",
+        )
+        .await
+        .expect_err("no trusted quorum key");
+    assert!(matches!(
+        error,
+        Error::Proof(_) | Error::ContextProviderError(_)
+    ));
+    assert_eq!(sdk.protocol_compatibility().verified_protocol_version, None);
+    let (request, mut response) = recorded_epoch_response();
+    let Some(EpochResponseVersion::V0(v0)) = response.version.as_mut() else {
+        panic!("recorded version")
+    };
+    use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::Result as EpochResult;
+    let Some(EpochResult::Proof(proof)) = v0.result.as_mut() else {
+        panic!("recorded proof")
+    };
+    proof.grovedb_proof = vec![255];
+    sdk.verify_fetching_quorum_key::<GetEpochsInfoRequest, ExtendedEpochInfo>(
+        request,
+        response,
+        &NoKeys,
+        "get_epochs_info",
+    )
+    .await
+    .expect_err("unverifiable format");
+    assert_eq!(sdk.protocol_compatibility().generation, generation);
+    assert_eq!(sdk.protocol_compatibility().verified_protocol_version, None);
+    assert!(sdk.ensure_platform_write_compatible().is_err());
 }

@@ -112,6 +112,7 @@ impl ClaimContractFees for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ClaimedContractFees, Error> {
+        let sdk = &sdk.platform_write_context()?;
         let signing_key_id = match signing_key_to_use {
             Some(key) => key.id(),
             None => signing_key_for_moderation(self, &signer)?,
@@ -137,11 +138,14 @@ impl ClaimContractFees for Identity {
             identity_contract_nonce,
             user_fee_increase.unwrap_or_default(),
             &signer,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            sdk.platform_version_for_write()?,
+        )?;
 
         state_transition
             .broadcast_and_wait_for_affected_state(sdk, settings)

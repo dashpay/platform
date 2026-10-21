@@ -26,7 +26,7 @@
 //!    `PutSettings::user_fee_increase` (changes ST signable bytes →
 //!    different ST hash → bypasses Tenderdash's 24h invalid-tx cache)
 //!    and resubmit the same proof. See
-//!    [`submit_with_cl_height_retry`].
+//!    [`submit_with_cl_height_retry_guarded`].
 //!
 //! 2. **IS-lock rejection** (`InvalidInstantAssetLockProofSignatureError`)
 //!    — Drive rejected because the IS-lock signing quorum has rotated
@@ -66,7 +66,7 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
 use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
+    out_point_from_proof, submit_with_cl_height_retry_guarded, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
@@ -131,6 +131,7 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         // Step 1: pre-flight on the caller-supplied keys map.
         if keys_map.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
@@ -162,6 +163,7 @@ impl IdentityWallet {
         // resolver catches IS-lock timeouts and surfaces them as a
         // structured outcome carrying the tracked outpoint, so the
         // CL retry uses the SAME credit output (no new asset lock).
+        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let ResolvedFunding {
             proof,
             path,
@@ -215,7 +217,7 @@ impl IdentityWallet {
 
         // Step 3: submit, with two layers of Platform-side fallback:
         //   - **CL-height-too-low** (transient): bump `user_fee_increase`
-        //     and retry the same proof. See [`submit_with_cl_height_retry`].
+        //     and retry the same proof. See [`submit_with_cl_height_retry_guarded`].
         //   - **IS-lock rejection** (quorum rotated): upgrade IS→CL on
         //     the same credit-output outpoint — no new asset lock built,
         //     no new funding-tx broadcast.
@@ -224,45 +226,51 @@ impl IdentityWallet {
         // CL-height retry also iterates inside the IS→CL fallback branch
         // so a freshly-upgraded CL proof gets the same patience.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            placeholder.put_to_platform_and_wait_for_response_with_signer(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                asset_lock_signer,
-                identity_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(identity) => (Ok(identity), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof rejected by Platform for identity registration (tx {}), \
+        let (submit_result, effective_proof) =
+            match submit_with_cl_height_retry_guarded(&self.sdk, &protocol_permit, settings, |s| {
+                placeholder.put_to_platform_and_wait_for_response_with_signer(
+                    &self.sdk,
+                    proof.clone(),
+                    &path,
+                    asset_lock_signer,
+                    identity_signer,
+                    s,
+                )
+            })
+            .await
+            {
+                Ok(identity) => (Ok(identity), proof.clone()),
+                Err(e) if is_instant_lock_proof_invalid(&e) => {
+                    let out_point = proof_out_point;
+                    tracing::warn!(
+                        "IS-lock proof rejected by Platform for identity registration (tx {}), \
                      retrying with ChainLock proof",
-                    out_point.txid
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
-                    .await?;
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
-                    placeholder.put_to_platform_and_wait_for_response_with_signer(
+                        out_point.txid
+                    );
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, None)
+                        .await?;
+                    let submit_result = submit_with_cl_height_retry_guarded(
                         &self.sdk,
-                        chain_proof.clone(),
-                        &path,
-                        asset_lock_signer,
-                        identity_signer,
-                        s,
+                        &protocol_permit,
+                        settings,
+                        |s| {
+                            placeholder.put_to_platform_and_wait_for_response_with_signer(
+                                &self.sdk,
+                                chain_proof.clone(),
+                                &path,
+                                asset_lock_signer,
+                                identity_signer,
+                                s,
+                            )
+                        },
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
+                    .await;
+                    (submit_result, chain_proof)
+                }
+                Err(e) => (Err(e), proof.clone()),
+            };
         let identity = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
@@ -404,6 +412,7 @@ impl IdentityWallet {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         // Step 1: retrieve the identity + its HD index.
         let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
@@ -426,6 +435,7 @@ impl IdentityWallet {
         // Step 2: resolve funding. Same IS→CL fallback shape as
         // `register_identity_with_funding` — see that method for the
         // architectural rationale.
+        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let ResolvedFunding {
             proof,
             path,
@@ -466,43 +476,49 @@ impl IdentityWallet {
         // cache, and IS-lock rejection triggers an IS→CL upgrade on the
         // same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            identity.top_up_identity_with_signer_with_metadata(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                asset_lock_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(balance) => (Ok(balance), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof rejected by Platform for identity top-up (tx {}), \
+        let (submit_result, effective_proof) =
+            match submit_with_cl_height_retry_guarded(&self.sdk, &protocol_permit, settings, |s| {
+                identity.top_up_identity_with_signer_with_metadata(
+                    &self.sdk,
+                    proof.clone(),
+                    &path,
+                    asset_lock_signer,
+                    s,
+                )
+            })
+            .await
+            {
+                Ok(balance) => (Ok(balance), proof.clone()),
+                Err(e) if is_instant_lock_proof_invalid(&e) => {
+                    let out_point = proof_out_point;
+                    tracing::warn!(
+                        "IS-lock proof rejected by Platform for identity top-up (tx {}), \
                      retrying with ChainLock proof",
-                    out_point.txid
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
-                    .await?;
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
-                    identity.top_up_identity_with_signer_with_metadata(
+                        out_point.txid
+                    );
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, None)
+                        .await?;
+                    let submit_result = submit_with_cl_height_retry_guarded(
                         &self.sdk,
-                        chain_proof.clone(),
-                        &path,
-                        asset_lock_signer,
-                        s,
+                        &protocol_permit,
+                        settings,
+                        |s| {
+                            identity.top_up_identity_with_signer_with_metadata(
+                                &self.sdk,
+                                chain_proof.clone(),
+                                &path,
+                                asset_lock_signer,
+                                s,
+                            )
+                        },
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
+                    .await;
+                    (submit_result, chain_proof)
+                }
+                Err(e) => (Err(e), proof.clone()),
+            };
         let (mut new_balance, metadata) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

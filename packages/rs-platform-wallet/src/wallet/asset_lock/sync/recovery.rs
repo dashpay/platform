@@ -493,6 +493,22 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// A resumed Built/Broadcast row may have reached Core before a crash.
+    /// A local protocol refusal cannot authorize rebuilding that payment.
+    fn ensure_rebroadcast_compatible(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<(), PlatformWalletError> {
+        self.sdk
+            .ensure_platform_write_compatible()
+            .map_err(|error| {
+                PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
+                    "asset lock {out_point} remains tracked; protocol compatibility blocks \
+                 this rebroadcast, but an earlier send may have reached Core: {error}"
+                ))
+            })
+    }
+
     /// Wait for the broadcaster's transport to come up before a resume
     /// broadcasts, and return the finality budget left over.
     ///
@@ -1107,6 +1123,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?
             }
             (AssetLockStatus::Built, None) => {
+                self.ensure_rebroadcast_compatible(out_point)?;
                 // Nothing final locally, so this row still needs a send:
                 // re-broadcast and wait for proof — but not into a transport
                 // that cannot carry the send. See `await_broadcast_ready`.
@@ -1169,6 +1186,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // until the await completes. Make the claim sticky before
                 // entering it, so cancellation during or immediately after a
                 // possible send cannot license cleanup of the inputs.
+                self.ensure_rebroadcast_compatible(out_point)?;
                 dispatch_claim
                     .as_mut()
                     .expect("Built resumes hold a cleanup-exclusion claim")
@@ -1397,6 +1415,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?
             }
             (AssetLockStatus::Broadcast, None) => {
+                self.ensure_rebroadcast_compatible(out_point)?;
                 // Defensive re-broadcast, then wait for proof — and, as on
                 // the `Built` arm, not into a transport that cannot carry
                 // the send. See `await_broadcast_ready`.
@@ -1488,6 +1507,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the status advance), which is precisely why the `Built` arm
                 // above reaches the same verdict from the same position.
                 let mut local_proof = None;
+                self.ensure_rebroadcast_compatible(out_point)?;
                 if let Err(e) = self.broadcaster.broadcast(&tx).await {
                     if matches!(e, BroadcastError::Rejected { .. }) {
                         match self.wait_for_proof(out_point, Some(Duration::ZERO)).await {

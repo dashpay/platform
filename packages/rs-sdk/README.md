@@ -186,3 +186,54 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
     Running without arguments regenerates **all** vectors — avoid this unless intentional.
     The script executes matching tests with `--features generate-test-vectors` against the running devnet,
     saving responses as test vectors in `packages/rs-sdk/tests/vectors/`.
+
+## Verified protocol compatibility for writes
+
+`refresh_protocol_version()` retains its best-effort behavior. Applications that
+must refuse Platform spending until a network version is authenticated can opt
+into `ProtocolCompatibilityPolicy::RequireVerified` on their SDK before cloning
+it into a wallet manager. Reads and Core operations remain available.
+
+```rust,no_run
+# async fn example(sdk: &dash_sdk::Sdk) -> Result<(), dash_sdk::Error> {
+use dash_sdk::{ProtocolCompatibilityPolicy, ProtocolCompatibilityState};
+
+sdk.set_protocol_compatibility_policy(ProtocolCompatibilityPolicy::RequireVerified);
+let attempt = sdk.begin_protocol_compatibility_check(); // immediately closes writes
+let compatibility = sdk.refresh_protocol_compatibility(attempt).await;
+match compatibility.state {
+    ProtocolCompatibilityState::Supported => { /* enable Platform actions */ }
+    ProtocolCompatibilityState::Unsupported => { /* explain SDK/app update needed */ }
+    _ => { /* allow retry; do not claim an update is available */ }
+}
+# Ok(())
+# }
+```
+
+The total check budget is 20 seconds from `begin`, including worker-queue delay.
+One proved genesis-epoch query supplies the network version through the normal
+proof, quorum-signature and freshness verification path. Transport retries keep
+the configured budget. A superseded attempt cannot change readiness, and a
+verified unsupported version stays blocking for the lifetime of that SDK.
+Ordinary proved reads can discover a newer version but cannot reopen a failed
+or in-progress explicit check. SDK clones share the state.
+
+For operations prepared separately from submission, capture
+`platform_write_permit()` before fee estimation, signing or allocating funds,
+use `platform_version_for_write()` for protocol-dependent construction, and call
+`validate_platform_write_permit()` immediately before submission. A permit is
+bound to the SDK instance, check generation and construction version; a changed
+permit requires renewed preparation and user confirmation. Returning a raw
+`StateTransition` does not attach a permit to it, so callers must retain the
+permit alongside their prepared operation. SDK write helpers retain their
+preparation context internally, and broadcast checks it on every retry.
+Pass that original permit across every queue boundary and run the worker's actual
+future inside `with_platform_write_permit(permit, future)`. Its task-local scope
+prevents helpers from silently accepting a newer generation when queued work
+starts after another successful check. Spawned tasks need their own explicit
+scope; nested scopes preserve the original confirmation constraint.
+
+A failed proof, unavailable quorum key or timeout means compatibility is
+unavailable, not that the network necessarily runs a newer protocol. Applications
+should retain recovery records for any asset lock already broadcast; these
+checks cannot make a Core asset lock and a later Platform transition atomic.

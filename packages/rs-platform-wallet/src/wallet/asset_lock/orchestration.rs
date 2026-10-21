@@ -350,6 +350,27 @@ pub(crate) enum FundingResolution {
 /// Callers wrapping this in `tokio::select!` with a short timeout
 /// should be prepared to either retry (settings reset to original)
 /// or accept that Platform may still execute the dropped attempt.
+pub(crate) async fn submit_with_cl_height_retry_guarded<F, Fut, R>(
+    sdk: &dash_sdk::Sdk,
+    permit: &dash_sdk::PlatformWritePermit,
+    settings: Option<PutSettings>,
+    submit: F,
+) -> Result<R, dash_sdk::Error>
+where
+    F: Fn(Option<PutSettings>) -> Fut,
+    Fut: std::future::Future<Output = Result<R, dash_sdk::Error>>,
+{
+    submit_with_cl_height_retry(settings, |settings| {
+        let future = submit(settings);
+        async move {
+            sdk.validate_platform_write_permit(permit)?;
+            future.await
+        }
+    })
+    .await
+}
+
+/// Retry the same asset-lock consumption only for a ChainLock-height rejection.
 pub(crate) async fn submit_with_cl_height_retry<F, Fut, R>(
     mut settings: Option<PutSettings>,
     submit: F,

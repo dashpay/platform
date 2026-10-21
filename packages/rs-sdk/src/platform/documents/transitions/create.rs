@@ -194,6 +194,13 @@ impl DocumentCreateTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let sdk = &sdk.platform_write_context()?;
+        if sdk.requires_verified_protocol_compatibility()
+            && sdk.platform_version_for_write()?.protocol_version
+                != platform_version.protocol_version
+        {
+            return Err(crate::ProtocolCompatibilityError::PreparationExpired.into());
+        }
         // A local failure after the nonce is reserved would leave the cached nonce ahead of
         // Platform's, so what can be refused without it is refused first.
         if let Some(creation_options) = &self.state_transition_creation_options {
@@ -237,6 +244,7 @@ impl DocumentCreateTransitionBuilder {
         )
         .await?;
 
+        sdk.ensure_platform_write_compatible()?;
         Ok(state_transition)
     }
 }
@@ -280,7 +288,8 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentCreateResult, Error> {
-        let platform_version = self.version();
+        let write_sdk = self.platform_write_context()?;
+        let platform_version = write_sdk.platform_version_for_write()?;
 
         let put_settings = create_document_transition_builder.settings;
         let index_only = create_document_transition_builder
@@ -290,7 +299,7 @@ impl Sdk {
             .index_only();
 
         let state_transition = create_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
+            .sign(&write_sdk, signing_key, signer, platform_version)
             .await?;
 
         // Low-level debug logging via tracing
@@ -305,13 +314,13 @@ impl Sdk {
         let proof_result = if index_only {
             state_transition
                 .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                    self,
+                    &write_sdk,
                     put_settings,
                 )
                 .await?
         } else {
             state_transition
-                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .broadcast_and_wait::<StateTransitionProofResult>(&write_sdk, put_settings)
                 .await?
         };
 

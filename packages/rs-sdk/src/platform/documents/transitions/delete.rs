@@ -276,6 +276,13 @@ impl DocumentDeleteTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let sdk = &sdk.platform_write_context()?;
+        if sdk.requires_verified_protocol_compatibility()
+            && sdk.platform_version_for_write()?.protocol_version
+                != platform_version.protocol_version
+        {
+            return Err(crate::ProtocolCompatibilityError::PreparationExpired.into());
+        }
         // Validate the target FIRST: the nonce fetch below bumps the
         // SDK's cached contract nonce, and no transition is broadcast on
         // an error path, so a rejection after it would leak an increment
@@ -310,6 +317,7 @@ impl DocumentDeleteTransitionBuilder {
         )
         .await?;
 
+        sdk.ensure_platform_write_compatible()?;
         Ok(state_transition)
     }
 }
@@ -354,7 +362,8 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
-        let platform_version = self.version();
+        let write_sdk = self.platform_write_context()?;
+        let platform_version = write_sdk.platform_version_for_write()?;
 
         let put_settings = delete_document_transition_builder.settings;
         let index_only = delete_document_transition_builder
@@ -364,7 +373,7 @@ impl Sdk {
             .index_only();
 
         let state_transition = delete_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
+            .sign(&write_sdk, signing_key, signer, platform_version)
             .await?;
 
         // An indexOnly document keeps no row: its proof shows the entry is gone, which it would
@@ -374,13 +383,13 @@ impl Sdk {
         let proof_result = if index_only {
             state_transition
                 .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                    self,
+                    &write_sdk,
                     put_settings,
                 )
                 .await?
         } else {
             state_transition
-                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .broadcast_and_wait::<StateTransitionProofResult>(&write_sdk, put_settings)
                 .await?
         };
 

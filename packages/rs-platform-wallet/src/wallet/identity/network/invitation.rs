@@ -36,7 +36,7 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
-use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry;
+use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry_guarded;
 use crate::wallet::identity::crypto::{
     encode_invitation_uri, voucher_output_index, wif_network_matches,
 };
@@ -231,6 +231,7 @@ impl IdentityWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         CP: ContactCryptoProvider + Send + Sync,
     {
+        self.sdk.ensure_platform_write_compatible()?;
         if amount_duffs < MIN_INVITATION_DUFFS {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
                 "invitation amount {amount_duffs} is below the minimum {MIN_INVITATION_DUFFS} \
@@ -489,6 +490,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         preflight_keys_map(&keys_map)?;
 
         // Reject a wrong-network link before any network work: a testnet WIF is a
@@ -545,9 +547,10 @@ impl IdentityWallet {
         let sdk = &self.sdk;
         let placeholder = &placeholder;
         let voucher_priv = &voucher_priv;
+        let protocol_permit = &protocol_permit;
         let identity =
             submit_claim_with_stale_islock_fallback(primary, chain_fallback, move |proof| {
-                submit_with_cl_height_retry(settings, move |s| {
+                submit_with_cl_height_retry_guarded(sdk, protocol_permit, settings, move |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_private_key(
                         sdk,
                         proof.clone(),

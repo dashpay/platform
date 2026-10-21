@@ -94,6 +94,7 @@ impl UpdateIdentityKeyLimits for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<IdentityPublicKey, Error> {
+        let sdk = &sdk.platform_write_context()?;
         let signing_key_id = match signing_key_to_use {
             Some(key) => key.id(),
             None => signing_key_for_key_limits_update(self, &signer)?,
@@ -109,11 +110,14 @@ impl UpdateIdentityKeyLimits for Identity {
             new_identity_nonce,
             user_fee_increase.unwrap_or_default(),
             &signer,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            sdk.platform_version_for_write()?,
+        )?;
 
         // The proof shows the rewritten key, not this exact transition (the nonce is not
         // stored), so it is waited for as affected state.

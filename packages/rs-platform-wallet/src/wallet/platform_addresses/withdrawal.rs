@@ -96,6 +96,7 @@ impl PlatformAddressWallet {
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         // Validate that the output script is a supported type (P2PKH or P2SH).
         if !output_script.is_p2pkh() && !output_script.is_p2sh() {
             return Err(PlatformWalletError::AddressOperation(
@@ -114,7 +115,7 @@ impl PlatformAddressWallet {
         // max_withdrawal_amount, and `estimate_min_fee`) against the SAME
         // version. Defaulting to LATEST here would let the gate and the spend
         // path diverge on a non-latest-pinned SDK.
-        let version = platform_version.unwrap_or_else(|| self.sdk.version());
+        let version = platform_version.unwrap_or(self.sdk.platform_version_for_write()?);
 
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
@@ -125,6 +126,7 @@ impl PlatformAddressWallet {
                         "Withdrawal requires at least one input address".to_string(),
                     ));
                 }
+                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .withdraw_address_funds(
                         inputs,
@@ -145,6 +147,7 @@ impl PlatformAddressWallet {
                         "Withdrawal requires at least one input address".to_string(),
                     ));
                 }
+                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .withdraw_address_funds_with_nonce(
                         inputs,
@@ -179,6 +182,7 @@ impl PlatformAddressWallet {
                 let plan = self
                     .plan_withdrawal(account_index, core_fee_per_byte, version)
                     .await?;
+                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .withdraw_address_funds(
                         plan.inputs,
@@ -239,7 +243,8 @@ impl PlatformAddressWallet {
         account_index: u32,
         core_fee_per_byte: u32,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
-        let version = self.sdk.version();
+        self.sdk.ensure_platform_write_compatible()?;
+        let version = self.sdk.platform_version_for_write()?;
         self.plan_withdrawal(account_index, core_fee_per_byte, version)
             .await
     }

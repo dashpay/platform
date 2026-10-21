@@ -523,7 +523,7 @@ extension PlatformWalletManager {
         // the current generation and passes the guard, while a trailing
         // event from a prior stopped run still carries the older generation.
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             try platform_wallet_manager_shielded_sync_sync_now(handle).check()
         }.value
     }
@@ -581,7 +581,7 @@ extension PlatformWalletManager {
     /// calls return immediately. Independent of any wallet — the
     /// cache is process-global on the Rust side.
     public static func warmUpShieldedProver() async {
-        await Task.detached(priority: .background) {
+        await PlatformWalletTask.detached(priority: .background) {
             platform_wallet_shielded_warm_up_prover()
         }.value
     }
@@ -705,7 +705,7 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // MnemonicResolver is passed to Rust via `passUnretained`,
             // so the Rust ctx pointer dangles unless the Swift owner
             // stays alive across the whole FFI call. A bare
@@ -787,7 +787,7 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PlatformWalletTask.detached(priority: .userInitiated) {
             () -> ShieldedShieldPreflight in
             var out = ShieldedShieldPreflightFFI(
                 can_shield: false,
@@ -869,7 +869,7 @@ extension PlatformWalletManager {
         let handle = self.handle
         let signerHandle = addressSigner.handle
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // KeychainSigner is passed to Rust via `passUnretained`, so
             // the Rust ctx pointer dangles unless the Swift owner stays
             // alive across the whole FFI call — Rust re-materializes it
@@ -948,7 +948,7 @@ extension PlatformWalletManager {
         let handle = self.handle
         let signerHandle = identitySigner.handle
 
-        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt64 in
             // Rust writes the proven post-debit identity balance here on
             // success; it leaves the slot untouched on every error path, so
             // the initializer is the value a failed call keeps (and a call
@@ -1034,7 +1034,7 @@ extension PlatformWalletManager {
         let handle = self.handle
         let signerHandle = addressSigner.handle
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // Guaranteed signer keepalive across the whole FFI call :
             // same rationale as `shieldedShield`.
             try withExtendedLifetime(addressSigner) {
@@ -1114,7 +1114,7 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
@@ -1180,7 +1180,7 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
@@ -1244,7 +1244,7 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
@@ -1338,7 +1338,7 @@ extension PlatformWalletManager {
         let identitySignerHandle = identitySigner.handle
         let fallbackAddressBytes = sendToAddressOnCreationFailure
 
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
+        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> Data in
             var outIdentityId: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1441,7 +1441,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         let walletIdCopy = walletId
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             try walletIdCopy.withUnsafeBytes { raw in
                 guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                     throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")

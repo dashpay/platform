@@ -91,6 +91,7 @@ impl WithdrawFromIdentityWithMetadata for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, ResponseMetadata), Error> {
+        let sdk = &sdk.platform_write_context()?;
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
@@ -105,11 +106,14 @@ impl WithdrawFromIdentityWithMetadata for Identity {
             signing_withdrawal_key_to_use,
             PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
             new_identity_nonce,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            sdk.platform_version_for_write()?,
+        )?;
 
         let (result, metadata) = state_transition
             .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)

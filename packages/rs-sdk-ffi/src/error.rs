@@ -32,6 +32,14 @@ pub enum DashSDKErrorCode {
     NotImplemented = 9,
     /// Drive returned an internal error (e.g., storage-level constraint violation)
     DriveInternalError = 10,
+    /// A verified compatibility check is required before Platform writes.
+    ProtocolCompatibilityUnavailable = 11,
+    /// The lifecycle compatibility check has not completed.
+    ProtocolCompatibilityChecking = 12,
+    /// Authenticated network rules exceed this SDK's supported protocol.
+    UnsupportedProtocolVersion = 13,
+    /// A preparation belongs to an older SDK/check/protocol generation.
+    PlatformPreparationExpired = 14,
     /// Internal error
     InternalError = 99,
 }
@@ -167,6 +175,28 @@ impl DashSDKError {
         }
     }
 
+    fn with_protocol_compatibility_error_of(mut self, error: &dash_sdk::Error) -> Self {
+        // A compatibility refusal is local and typed, not a consensus verdict.
+        // Preserve it even when a caller adds context through SDKCallFailed.
+        if let Some(compatibility) = error.protocol_compatibility_error() {
+            self.code = match compatibility {
+                dash_sdk::ProtocolCompatibilityError::Unavailable => {
+                    DashSDKErrorCode::ProtocolCompatibilityUnavailable
+                }
+                dash_sdk::ProtocolCompatibilityError::Checking => {
+                    DashSDKErrorCode::ProtocolCompatibilityChecking
+                }
+                dash_sdk::ProtocolCompatibilityError::Unsupported { .. } => {
+                    DashSDKErrorCode::UnsupportedProtocolVersion
+                }
+                dash_sdk::ProtocolCompatibilityError::PreparationExpired => {
+                    DashSDKErrorCode::PlatformPreparationExpired
+                }
+            };
+        }
+        self
+    }
+
     /// Stamp the consensus rejection `error` carries, if any, onto this error.
     ///
     /// Leaves `code` and `message` alone: hosts already branch on them, so the
@@ -221,7 +251,9 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if source.is_quorum_source_unavailable() {
+                let code = if source.is_quorum_source_unavailable()
+                    || source.is_protocol_compatibility_after_broadcast()
+                {
                     DashSDKErrorCode::NetworkError
                 } else {
                     DashSDKErrorCode::InternalError
@@ -256,10 +288,13 @@ impl From<FFIError> for DashSDKError {
                     // InternalError and surface in the UI as a misleading
                     // "Internal Error" for what is really a network problem.
                     (DashSDKErrorCode::NetworkError, error_str)
-                } else if sdk_err.is_quorum_source_unavailable() {
-                    // The quorum service that vouches for quorum keys gave no
-                    // answer, so a proof could not be checked: transient and
-                    // network-side, whatever words its message happens to hold.
+                } else if sdk_err.is_quorum_source_unavailable()
+                    || sdk_err.is_protocol_compatibility_after_broadcast()
+                {
+                    // Neither a missing quorum source nor a compatibility
+                    // change after transport dispatch proves a safe refusal.
+                    // In particular, never classify a possibly submitted
+                    // transition as a pre-send compatibility error.
                     (DashSDKErrorCode::NetworkError, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
                     || error_str.contains("timeout")
@@ -319,9 +354,9 @@ impl From<FFIError> for DashSDKError {
 
         let error = DashSDKError::new(code, message);
         match &err {
-            FFIError::SDKError(source) | FFIError::SDKCallFailed { source, .. } => {
-                error.with_consensus_error_of(source)
-            }
+            FFIError::SDKError(source) | FFIError::SDKCallFailed { source, .. } => error
+                .with_protocol_compatibility_error_of(source)
+                .with_consensus_error_of(source),
             _ => error,
         }
     }
@@ -362,6 +397,60 @@ macro_rules! ffi_result {
 mod tests {
     use super::*;
     use std::ffi::CStr;
+
+    #[test]
+    fn should_preserve_typed_protocol_compatibility_refusals_with_context() {
+        use dash_sdk::ProtocolCompatibilityError;
+        for (source, expected) in [
+            (
+                ProtocolCompatibilityError::Unavailable,
+                DashSDKErrorCode::ProtocolCompatibilityUnavailable,
+            ),
+            (
+                ProtocolCompatibilityError::Checking,
+                DashSDKErrorCode::ProtocolCompatibilityChecking,
+            ),
+            (
+                ProtocolCompatibilityError::Unsupported {
+                    network_version: 99,
+                    maximum_supported_version: 14,
+                },
+                DashSDKErrorCode::UnsupportedProtocolVersion,
+            ),
+            (
+                ProtocolCompatibilityError::PreparationExpired,
+                DashSDKErrorCode::PlatformPreparationExpired,
+            ),
+        ] {
+            let source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::ProtocolCompatibility(source),
+            ));
+            let error: DashSDKError =
+                FFIError::sdk_call_failed("Platform operation refused", source).into();
+            assert_eq!(error.code, expected);
+            assert_eq!(error.consensus_code, 0);
+            unsafe { dash_sdk_error_free(Box::into_raw(Box::new(error))) };
+        }
+    }
+
+    #[test]
+    fn should_preserve_protocol_compatibility_after_broadcast_as_unknown_outcome() {
+        for contextual in [false, true] {
+            let source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(
+                    dash_sdk::ProtocolCompatibilityError::Checking,
+                ),
+            ));
+            let error: DashSDKError = if contextual {
+                FFIError::sdk_call_failed("write outcome is unknown", source).into()
+            } else {
+                FFIError::SDKError(source).into()
+            };
+            assert_eq!(error.code, DashSDKErrorCode::NetworkError);
+            assert_eq!(error.consensus_code, 0);
+            unsafe { dash_sdk_error_free(Box::into_raw(Box::new(error))) };
+        }
+    }
 
     fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
         let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();

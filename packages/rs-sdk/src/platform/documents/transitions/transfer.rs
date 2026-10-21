@@ -209,6 +209,13 @@ impl DocumentTransferTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let sdk = &sdk.platform_write_context()?;
+        if sdk.requires_verified_protocol_compatibility()
+            && sdk.platform_version_for_write()?.protocol_version
+                != platform_version.protocol_version
+        {
+            return Err(crate::ProtocolCompatibilityError::PreparationExpired.into());
+        }
         // A local failure after the nonce is reserved would leave the cached nonce ahead of
         // Platform's, so what can be refused without it is refused first.
         if let Some(creation_options) = &self.state_transition_creation_options {
@@ -243,6 +250,7 @@ impl DocumentTransferTransitionBuilder {
         )
         .await?;
 
+        sdk.ensure_platform_write_compatible()?;
         Ok(state_transition)
     }
 }
@@ -285,16 +293,17 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentTransferResult, Error> {
-        let platform_version = self.version();
+        let write_sdk = self.platform_write_context()?;
+        let platform_version = write_sdk.platform_version_for_write()?;
 
         let put_settings = transfer_document_transition_builder.settings;
 
         let state_transition = transfer_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
+            .sign(&write_sdk, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            .broadcast_and_wait::<StateTransitionProofResult>(&write_sdk, put_settings)
             .await?;
 
         match proof_result {

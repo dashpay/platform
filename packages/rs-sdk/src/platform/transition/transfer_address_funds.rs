@@ -71,6 +71,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, u64), Error> {
+        let write_sdk = self.platform_write_context()?;
         if outputs.is_empty() {
             return Err(Error::from(TransitionNoOutputsError::new()));
         }
@@ -86,10 +87,13 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
             fee_strategy,
             signer,
             user_fee_increase,
-            self.version(),
+            write_sdk.platform_version_for_write()?,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, self.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            write_sdk.platform_version_for_write()?,
+        )?;
 
         let expected_addresses: BTreeSet<PlatformAddress> =
             inputs.keys().chain(outputs.keys()).copied().collect();
@@ -98,7 +102,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
         // pin for these absolutes (`AddressFunds::as_of_height`).
         let (st_result, metadata) = state_transition
             .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
-                self, settings,
+                &write_sdk, settings,
             )
             .await?;
         match st_result {

@@ -44,6 +44,7 @@ impl ShieldFromIdentity for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(Credits, u64), Error> {
+        let sdk = &sdk.platform_write_context()?;
         if amount == 0 {
             return Err(Error::Generic(
                 "shield amount must be greater than zero".to_string(),
@@ -74,10 +75,13 @@ impl ShieldFromIdentity for Identity {
             signer,
             signing_transfer_key_to_use,
             new_identity_nonce,
-            sdk.version(),
+            sdk.platform_version_for_write()?,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        ensure_valid_state_transition_structure(
+            &state_transition,
+            sdk.platform_version_for_write()?,
+        )?;
 
         let (st_result, metadata) = state_transition
             .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(

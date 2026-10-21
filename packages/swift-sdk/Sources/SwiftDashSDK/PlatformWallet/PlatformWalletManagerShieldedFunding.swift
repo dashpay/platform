@@ -151,7 +151,7 @@ extension PlatformWalletManager {
         // the vtable callback.
         let coreSigner = MnemonicResolver()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { widRaw in
                 guard
                     let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -225,7 +225,7 @@ extension PlatformWalletManager {
         // `withExtendedLifetime` (not a bare discard) is required.
         let coreSigner = MnemonicResolver()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             try walletId.withUnsafeBytes { widRaw in
                 guard
                     let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -305,7 +305,7 @@ extension PlatformWalletManager {
         let recipientRaw43 = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             var txidTuple:
                 (
                     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -410,7 +410,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
 
-        try await Task.detached(priority: .userInitiated) {
+        try await PlatformWalletTask.detached(priority: .userInitiated) {
             // Constructed inside the detached task so nothing crosses back
             // to the main actor. The `MnemonicResolver` and the progress
             // box live only for this off-actor frame (same rationale as

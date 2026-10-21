@@ -515,6 +515,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
+        self.sdk.ensure_platform_write_compatible()?;
         use dashcore::secp256k1::rand::{thread_rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 

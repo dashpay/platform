@@ -403,6 +403,7 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
     destination: Option<DashAddress>,
     signer: &S,
 ) -> Result<u64, PlatformWalletError> {
+    let protocol_permit = sdk.platform_write_permit()?;
     if amount_credits == 0 {
         return Err(PlatformWalletError::InvalidParameter(
             "masternode withdrawal amount must be greater than zero".to_string(),
@@ -477,7 +478,7 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
         Some(&identity_key),
         PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
         nonce,
-        sdk.version(),
+        sdk.platform_version_for_write()?,
         None,
     )
     .await
@@ -489,6 +490,7 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
         amount_credits,
         reason,
     };
+    sdk.validate_platform_write_permit(&protocol_permit)?;
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => return Err(definitive(e)),

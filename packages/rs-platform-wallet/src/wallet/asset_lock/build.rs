@@ -158,6 +158,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         ),
         PlatformWalletError,
     > {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         let (transaction, path, token, accounts, pin) = self
             .build_asset_lock_transaction_fenced(
                 amount,
@@ -168,6 +169,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
             )
             .await?;
+        if let Err(error) = self.sdk.validate_platform_write_permit(&protocol_permit) {
+            let mut pin = pin;
+            pin.settle_released_on_drop();
+            crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &accounts,
+                &transaction,
+                token,
+            )
+            .await;
+            pin.settle_released();
+            return Err(error.into());
+        }
         pin.settle_released();
         Ok((transaction, path, token, accounts))
     }
@@ -229,7 +244,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             ));
         }
 
+        self.sdk.ensure_platform_write_compatible()?;
         let mut wm = self.wallet_manager.write().await;
+        self.sdk.ensure_platform_write_compatible()?;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
@@ -914,6 +931,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        let protocol_permit = self.sdk.platform_write_permit()?;
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected from live wallet
         // state at persist time; without this guard, build A's snapshot
@@ -942,6 +960,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             GateGauge(&self.build_serial_gate)
         };
         let build_persist_guard = self.build_persist_serial.lock().await;
+        self.sdk.validate_platform_write_permit(&protocol_permit)?;
 
         // 1. Build the asset lock transaction. `funding_accounts` are the
         //    accounts that actually contributed inputs — a pooled build
@@ -964,6 +983,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
             )
             .await?;
+
+        // Signing can yield. Reject an obsolete preparation before recording
+        // any new lock or its account-pool snapshot. No tracked row exists yet,
+        // so nobody can have resumed this transaction.
+        if let Err(error) = self.sdk.validate_platform_write_permit(&protocol_permit) {
+            drop(build_persist_guard);
+            let mut in_broadcast_pin = in_broadcast_pin;
+            in_broadcast_pin.settle_released_on_drop();
+            crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &funding_accounts,
+                &tx,
+                reservation_token,
+            )
+            .await;
+            in_broadcast_pin.settle_released();
+            return Err(error.into());
+        }
 
         let txid = tx.txid();
         let out_point = OutPoint::new(txid, 0);
@@ -1089,6 +1127,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
 
+        // Pool persistence awaited the wallet lock and may invoke a host
+        // callback. Recheck before making this new lock recoverable as Built.
+        if let Err(error) = self.sdk.validate_platform_write_permit(&protocol_permit) {
+            drop(build_persist_guard);
+            let mut in_broadcast_pin = in_broadcast_pin;
+            in_broadcast_pin.settle_released_on_drop();
+            crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &funding_accounts,
+                &tx,
+                reservation_token,
+            )
+            .await;
+            in_broadcast_pin.settle_released();
+            return Err(error.into());
+        }
+
         // The durable snapshot now includes this build's index; broadcast and
         // everything after it can safely run concurrently with the next build.
         drop(build_persist_guard);
@@ -1139,6 +1195,37 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    pending-spend fence everywhere else, until the wallet observes the
         //    spend. A cancellation or unwind inside `broadcast` reaches no arm
         //    at all and settles as pending through `InBroadcastPin::drop`.
+        // A foreground refresh can invalidate the preparation while signing or
+        // persisting. Nothing from this attempt has been sent. Remove only our
+        // still-Built row; a concurrent resume may already own dispatch, in
+        // which case its recovery row and reservations must survive.
+        if let Err(error) = self.sdk.validate_platform_write_permit(&protocol_permit) {
+            let cs_untrack = self.untrack_asset_lock(&out_point).await;
+            let removed_built_row = cs_untrack.removed.contains(&out_point);
+            self.queue_asset_lock_changeset(cs_untrack);
+            if removed_built_row {
+                let mut in_broadcast_pin = in_broadcast_pin;
+                in_broadcast_pin.settle_released_on_drop();
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    &funding_accounts,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
+                in_broadcast_pin.settle_released();
+            } else {
+                in_broadcast_pin.settle_pending_spend();
+                // A concurrent resume may already have sent this exact lock.
+                // Do not report a fresh, safely retryable admission failure:
+                // the host must recover this outpoint, never fund another.
+                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
+                    "asset lock {out_point} remains tracked and reserved after protocol compatibility changed; a concurrent resume may have dispatched it: {error}"
+                )));
+            }
+            return Err(error.into());
+        }
         let broadcast_outcome = self.broadcaster.broadcast(&tx).await;
         if let Err(e) = broadcast_outcome {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
@@ -1899,6 +1986,266 @@ mod tests {
         ));
 
         (manager, signer)
+    }
+
+    #[tokio::test]
+    async fn should_reject_unverified_protocol_compatibility_without_building_or_persisting() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        manager.sdk.set_protocol_compatibility_policy(
+            dash_sdk::ProtocolCompatibilityPolicy::RequireVerified,
+        );
+
+        let result = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::Sdk(
+                dash_sdk::Error::ProtocolCompatibility(
+                    dash_sdk::ProtocolCompatibilityError::Unavailable
+                )
+            ))
+        ));
+        assert_eq!(broadcaster.calls(), 0);
+        assert!(persistence
+            .stored
+            .lock()
+            .expect("stored changesets")
+            .is_empty());
+        // The guarded attempt neither reserved inputs nor allocated a funding
+        // key. The same spend succeeds when the legacy policy is restored.
+        manager
+            .sdk
+            .set_protocol_compatibility_policy(dash_sdk::ProtocolCompatibilityPolicy::Legacy);
+        assert!(manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .is_ok());
+        assert_eq!(broadcaster.calls(), 1);
+    }
+
+    /// Switch compatibility between the build/persist boundary and dispatch,
+    /// using the actual persistence seam rather than a timing-dependent sleep.
+    struct CompatibilityChangingPersistence {
+        sdk: Arc<dash_sdk::Sdk>,
+        changed: std::sync::atomic::AtomicBool,
+        captured: CapturingPersistence,
+        resume_claims: Option<Arc<Mutex<std::collections::BTreeMap<OutPoint, usize>>>>,
+    }
+
+    impl PlatformWalletPersistence for CompatibilityChangingPersistence {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            let should_change = if let Some(claims) = &self.resume_claims {
+                if let Some(asset_locks) = &changeset.asset_locks {
+                    let mut claims = claims.lock().expect("resume claims");
+                    for out_point in asset_locks.asset_locks.keys() {
+                        claims.insert(*out_point, 1);
+                    }
+                    !asset_locks.asset_locks.is_empty()
+                } else {
+                    false
+                }
+            } else {
+                !changeset.account_address_pools.is_empty()
+            };
+            if should_change && !self.changed.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                self.sdk.set_protocol_compatibility_policy(
+                    dash_sdk::ProtocolCompatibilityPolicy::RequireVerified,
+                );
+            }
+            self.captured.store(wallet_id, changeset)
+        }
+        fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.captured.flush(wallet_id)
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            self.captured.load()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_persist_a_new_lock_when_compatibility_changes_during_pool_persistence() {
+        let (wallet_manager, wallet_id, _, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock SDK"));
+        let persistence = Arc::new(CompatibilityChangingPersistence {
+            sdk: Arc::clone(&sdk),
+            changed: std::sync::atomic::AtomicBool::new(false),
+            captured: CapturingPersistence::default(),
+            resume_claims: None,
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let manager = AssetLockManager::new(
+            Arc::clone(&sdk),
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let result = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::Sdk(
+                dash_sdk::Error::ProtocolCompatibility(_)
+            ))
+        ));
+        assert_eq!(broadcaster.calls(), 0);
+        assert!(
+            persistence
+                .captured
+                .stored
+                .lock()
+                .expect("stored changesets")
+                .iter()
+                .all(|cs| cs
+                    .asset_locks
+                    .as_ref()
+                    .is_none_or(|locks| locks.asset_locks.is_empty())),
+            "a pool-persistence invalidation must not queue a new Built row"
+        );
+        assert!(persistence.captured.removed_outpoints().is_empty());
+        assert!(manager.list_tracked_locks().await.is_empty());
+        // Exactly the same sole UTXO is reusable: the reservation AND its
+        // in-broadcast pin were released, not just the tracked row.
+        sdk.set_protocol_compatibility_policy(dash_sdk::ProtocolCompatibilityPolicy::Legacy);
+        assert!(manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .is_ok());
+        assert_eq!(broadcaster.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_keep_concurrent_resume_recovery_when_compatibility_changes() {
+        let (wallet_manager, wallet_id, _, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock SDK"));
+        let claims = Arc::new(Mutex::new(std::collections::BTreeMap::new()));
+        let persistence = Arc::new(CompatibilityChangingPersistence {
+            sdk: Arc::clone(&sdk),
+            changed: std::sync::atomic::AtomicBool::new(false),
+            captured: CapturingPersistence::default(),
+            resume_claims: Some(Arc::clone(&claims)),
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let mut manager = AssetLockManager::new(
+            Arc::clone(&sdk),
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        manager.resume_dispatch_claims = Arc::clone(&claims);
+        let result = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+        ));
+        assert_eq!(broadcaster.calls(), 0);
+        assert!(persistence.captured.removed_outpoints().is_empty());
+        let out_point = *claims
+            .lock()
+            .expect("resume claims")
+            .keys()
+            .next()
+            .expect("tracked row");
+        assert!(manager.tracked_resume_metadata(&out_point).await.is_some());
+        sdk.set_protocol_compatibility_policy(dash_sdk::ProtocolCompatibilityPolicy::Legacy);
+        assert!(
+            manager
+                .build_asset_lock_transaction(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+                .is_err(),
+            "a possible concurrent send must keep its inputs unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_preserve_broadcast_lock_when_compatibility_blocks_resume() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let (_, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("initial Core broadcast");
+        manager.sdk.set_protocol_compatibility_policy(
+            dash_sdk::ProtocolCompatibilityPolicy::RequireVerified,
+        );
+        let result = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_secs(1)))
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+        ));
+        assert_eq!(
+            broadcaster.calls(),
+            1,
+            "no recovery rebroadcast while blocked"
+        );
+        assert!(manager.tracked_resume_metadata(&out_point).await.is_some());
+        assert!(persistence.removed_outpoints().is_empty());
     }
 
     /// Regression: a build must persist the funding account's address-pool

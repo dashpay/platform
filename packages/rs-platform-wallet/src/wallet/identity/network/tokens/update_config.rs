@@ -31,6 +31,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, dash_sdk::Error> {
+        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 
         let mut builder = TokenConfigUpdateTransitionBuilder::new(
@@ -71,6 +72,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, PlatformWalletError>
     {
+        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self.token_resolve_signing_key(&identity_id).await?;
 

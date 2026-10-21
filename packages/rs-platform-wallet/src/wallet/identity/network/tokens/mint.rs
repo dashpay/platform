@@ -39,6 +39,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
+        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
 
         // Contracts with `minting_allow_choosing_destination = false`
@@ -117,6 +118,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, PlatformWalletError> {
+        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self.token_resolve_signing_key(&identity_id).await?;
 

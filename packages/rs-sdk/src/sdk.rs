@@ -42,13 +42,21 @@ use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
+use std::sync::Mutex as StdMutex;
 use std::sync::{atomic, Arc};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+mod protocol_compatibility;
 mod quorum_key;
+use protocol_compatibility::Compatibility;
+pub use protocol_compatibility::{
+    with_platform_write_permit, with_platform_write_permits, PlatformWritePermit,
+    ProtocolCompatibility, ProtocolCompatibilityError, ProtocolCompatibilityPolicy,
+    ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
+};
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
 
@@ -285,6 +293,13 @@ pub struct Sdk {
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
 
+    /// Proof-authenticated write readiness, shared by every clone.
+    protocol_compatibility: Arc<StdMutex<Compatibility>>,
+    /// Tags the private clone running one explicit compatibility query.
+    compatibility_check_generation: Option<u64>,
+    /// A write helper keeps its preparation generation across awaits and retries.
+    platform_preparation: Option<PlatformWritePermit>,
+
     /// Whether the protocol version is pinned, i.e. auto-detection from network
     /// response metadata is disabled. Set to `true` when the user explicitly calls
     /// [`SdkBuilder::with_version()`].
@@ -328,6 +343,9 @@ impl Clone for Sdk {
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
+            protocol_compatibility: Arc::clone(&self.protocol_compatibility),
+            compatibility_check_generation: self.compatibility_check_generation,
+            platform_preparation: self.platform_preparation.clone(),
             version_pinned: self.version_pinned,
             protocol_version_observer: self.protocol_version_observer.clone(),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -491,7 +509,9 @@ impl Sdk {
         self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
-            })
+            })?;
+        self.observe_compatible_metadata(metadata.protocol_version);
+        Ok(())
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -1345,6 +1365,9 @@ impl SdkBuilder {
                     // Seed atomic with the initial version; whether the version is
                     // pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
+                    protocol_compatibility: Arc::new(Compatibility::new(initial_version.protocol_version)),
+                    compatibility_check_generation: None,
+                    platform_preparation: None,
                     version_pinned: self.version_pinned,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
@@ -1415,6 +1438,9 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
+                    protocol_compatibility: Arc::new(Compatibility::new(initial_version.protocol_version)),
+                    compatibility_check_generation: None,
+                    platform_preparation: None,
                     version_pinned: self.version_pinned,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),

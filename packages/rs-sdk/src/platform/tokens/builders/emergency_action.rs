@@ -183,6 +183,13 @@ impl TokenEmergencyActionTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let sdk = &sdk.platform_write_context()?;
+        if sdk.requires_verified_protocol_compatibility()
+            && sdk.platform_version_for_write()?.protocol_version
+                != platform_version.protocol_version
+        {
+            return Err(crate::ProtocolCompatibilityError::PreparationExpired.into());
+        }
         let token_id = Identifier::from(calculate_token_id(
             self.data_contract.id().as_bytes(),
             self.token_position,
@@ -214,6 +221,7 @@ impl TokenEmergencyActionTransitionBuilder {
         )
         .await?;
 
+        sdk.ensure_platform_write_compatible()?;
         Ok(state_transition)
     }
 }

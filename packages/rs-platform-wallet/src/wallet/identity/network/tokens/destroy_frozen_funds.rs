@@ -32,6 +32,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult, dash_sdk::Error>
     {
+        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
@@ -72,6 +73,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult,
         PlatformWalletError,
     > {
+        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self.token_resolve_signing_key(&identity_id).await?;
 

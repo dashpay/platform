@@ -602,6 +602,18 @@ pub enum PlatformWalletFFIResultCode {
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
 
+    /// A verified lifecycle check is required before Platform writes.
+    ErrorProtocolCompatibilityUnavailable = 59,
+    /// The lifecycle compatibility check is still pending.
+    ErrorProtocolCompatibilityChecking = 60,
+    /// Authenticated network rules exceed this SDK's supported protocol.
+    ErrorUnsupportedProtocolVersion = 61,
+    /// Prepared work belongs to an older SDK/check/protocol generation.
+    ErrorPlatformPreparationExpired = 62,
+    /// A compatibility change stopped retries after a transport dispatch.
+    /// The operation may have executed; hosts must reconcile instead of resubmitting.
+    ErrorPlatformWriteUnconfirmed = 63,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -852,8 +864,53 @@ fn trade_error_json_detail(
     }
 }
 
+pub(crate) fn protocol_compatibility_error_of(
+    error: &PlatformWalletError,
+) -> Option<&dash_sdk::ProtocolCompatibilityError> {
+    match error {
+        PlatformWalletError::Sdk(source)
+        | PlatformWalletError::TokenOperationFailed { source, .. } => {
+            source.protocol_compatibility_error()
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn protocol_write_outcome_unconfirmed(error: &PlatformWalletError) -> bool {
+    match error {
+        PlatformWalletError::Sdk(source)
+        | PlatformWalletError::TokenOperationFailed { source, .. } => {
+            source.is_protocol_compatibility_after_broadcast()
+        }
+        _ => false,
+    }
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        if protocol_write_outcome_unconfirmed(&error) {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorPlatformWriteUnconfirmed,
+                error.to_string(),
+            );
+        }
+        if let Some(compatibility) = protocol_compatibility_error_of(&error) {
+            let code = match compatibility {
+                dash_sdk::ProtocolCompatibilityError::Unavailable => {
+                    PlatformWalletFFIResultCode::ErrorProtocolCompatibilityUnavailable
+                }
+                dash_sdk::ProtocolCompatibilityError::Checking => {
+                    PlatformWalletFFIResultCode::ErrorProtocolCompatibilityChecking
+                }
+                dash_sdk::ProtocolCompatibilityError::Unsupported { .. } => {
+                    PlatformWalletFFIResultCode::ErrorUnsupportedProtocolVersion
+                }
+                dash_sdk::ProtocolCompatibilityError::PreparationExpired => {
+                    PlatformWalletFFIResultCode::ErrorPlatformPreparationExpired
+                }
+            };
+            return PlatformWalletFFIResult::err(code, error.to_string());
+        }
         // The three value-carrying marketplace rejections replace the
         // Display rendering with a stable JSON detail object; everything
         // else keeps Display as the message.
@@ -1334,6 +1391,69 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn should_preserve_protocol_compatibility_after_dispatch_as_unconfirmed() {
+        for nested in [false, true] {
+            let source = dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(
+                dash_sdk::ProtocolCompatibilityError::Checking,
+            );
+            let source = if nested {
+                dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(source))
+            } else {
+                source
+            };
+            let result = PlatformWalletFFIResult::from(PlatformWalletError::Sdk(source));
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPlatformWriteUnconfirmed
+            );
+            assert_eq!(result.consensus_code, 0);
+        }
+        let generic = PlatformWalletFFIResult::from(PlatformWalletError::Sdk(
+            dash_sdk::Error::Generic("Protocol compatibility changed after broadcast".to_owned()),
+        ));
+        assert_ne!(
+            generic.code,
+            PlatformWalletFFIResultCode::ErrorPlatformWriteUnconfirmed
+        );
+    }
+
+    #[test]
+    fn should_preserve_protocol_compatibility_refusals() {
+        use super::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+        use dash_sdk::{Error, ProtocolCompatibilityError};
+        use platform_wallet::PlatformWalletError;
+        for (source, expected) in [
+            (
+                ProtocolCompatibilityError::Unavailable,
+                PlatformWalletFFIResultCode::ErrorProtocolCompatibilityUnavailable,
+            ),
+            (
+                ProtocolCompatibilityError::Checking,
+                PlatformWalletFFIResultCode::ErrorProtocolCompatibilityChecking,
+            ),
+            (
+                ProtocolCompatibilityError::Unsupported {
+                    network_version: 99,
+                    maximum_supported_version: 14,
+                },
+                PlatformWalletFFIResultCode::ErrorUnsupportedProtocolVersion,
+            ),
+            (
+                ProtocolCompatibilityError::PreparationExpired,
+                PlatformWalletFFIResultCode::ErrorPlatformPreparationExpired,
+            ),
+        ] {
+            let error = PlatformWalletError::Sdk(Error::NoAvailableAddressesToRetry(Box::new(
+                Error::ProtocolCompatibility(source),
+            )));
+            let result = PlatformWalletFFIResult::from(error);
+            assert_eq!(result.code, expected);
+            assert_eq!(result.consensus_code, 0);
+            // The result's Drop frees the diagnostic string.
+        }
+    }
+
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};

@@ -258,6 +258,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryKeysRequired = 57
     /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
     case errorIdentityBalanceUnavailable = 58
+    case errorProtocolCompatibilityUnavailable = 59
+    case errorProtocolCompatibilityChecking = 60
+    case errorUnsupportedProtocolVersion = 61
+    case errorPlatformPreparationExpired = 62
+    case errorPlatformWriteUnconfirmed = 63
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -385,6 +390,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedRecoveryKeysRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_BALANCE_UNAVAILABLE:
             self = .errorIdentityBalanceUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_COMPATIBILITY_UNAVAILABLE:
+            self = .errorProtocolCompatibilityUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_COMPATIBILITY_CHECKING:
+            self = .errorProtocolCompatibilityChecking
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNSUPPORTED_PROTOCOL_VERSION:
+            self = .errorUnsupportedProtocolVersion
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PLATFORM_PREPARATION_EXPIRED:
+            self = .errorPlatformPreparationExpired
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PLATFORM_WRITE_UNCONFIRMED:
+            self = .errorPlatformWriteUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -546,6 +561,12 @@ public enum PlatformWalletError: LocalizedError {
     case identityNotFound(String)
     /// A managed identity has no balance in the Platform response; the read may be retried.
     case identityBalanceUnavailable(String)
+    case protocolCompatibilityUnavailable(String)
+    case protocolCompatibilityChecking(String)
+    case unsupportedProtocolVersion(String)
+    case platformPreparationExpired(String)
+    /// A transport dispatch occurred; reconcile before attempting another payment.
+    case platformWriteUnconfirmed(String)
     case contactNotFound(String)
     case utf8Conversion(String)
     case serialization(String)
@@ -808,6 +829,16 @@ public enum PlatformWalletError: LocalizedError {
              .consensusRejection(_, let m),
              .notFound(let m), .unknown(let m):
             return m
+        case .protocolCompatibilityUnavailable:
+            return "Platform compatibility could not be verified. Check your connection and try again."
+        case .protocolCompatibilityChecking:
+            return "Platform compatibility is being checked. Please wait."
+        case .unsupportedProtocolVersion:
+            return "This network requires a newer version of the app. Update the app to continue."
+        case .platformPreparationExpired:
+            return "Platform rules changed while this operation was prepared. Review and confirm it again."
+        case .platformWriteUnconfirmed:
+            return "The result of this Platform operation could not be confirmed. Wait for sync before starting another operation."
         // The persister messages are a nested Rust error chain naming the
         // operation, the backend classification and the store's own phrasing
         // ("… changeset: persistence backend error (Transient): database is
@@ -848,7 +879,10 @@ public enum PlatformWalletError: LocalizedError {
         switch self {
         case .persisterLoadTransient(let m), .persisterLoadFatal(let m),
              .persisterStoreTransient(let m), .persisterStoreFatal(let m),
-             .persisterStoreConstraint(let m), .persisterRestore(let m):
+             .persisterStoreConstraint(let m), .persisterRestore(let m),
+             .protocolCompatibilityUnavailable(let m), .protocolCompatibilityChecking(let m),
+             .unsupportedProtocolVersion(let m), .platformPreparationExpired(let m),
+             .platformWriteUnconfirmed(let m):
             return m
         default:
             return nil
@@ -890,6 +924,11 @@ public enum PlatformWalletError: LocalizedError {
         case .errorWalletOperation:   self = .walletOperation(detail)
         case .errorIdentityNotFound:  self = .identityNotFound(detail)
         case .errorIdentityBalanceUnavailable: self = .identityBalanceUnavailable(detail)
+        case .errorProtocolCompatibilityUnavailable: self = .protocolCompatibilityUnavailable(detail)
+        case .errorProtocolCompatibilityChecking: self = .protocolCompatibilityChecking(detail)
+        case .errorUnsupportedProtocolVersion: self = .unsupportedProtocolVersion(detail)
+        case .errorPlatformPreparationExpired: self = .platformPreparationExpired(detail)
+        case .errorPlatformWriteUnconfirmed: self = .platformWriteUnconfirmed(detail)
         case .errorContactNotFound:   self = .contactNotFound(detail)
         case .errorInvalidNetwork:    self = .invalidNetwork(detail)
         case .errorInvalidIdentifier: self = .invalidIdentifier(detail)
