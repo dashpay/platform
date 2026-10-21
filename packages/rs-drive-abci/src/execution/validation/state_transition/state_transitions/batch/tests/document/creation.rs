@@ -3981,7 +3981,7 @@ mod creation_tests {
                 13,
                 platform_version,
             )
-            .expect("expected the first block of protocol version 14");
+            .expect("expected the first block of the latest protocol version");
         platform
             .drive
             .grove
@@ -3989,8 +3989,10 @@ mod creation_tests {
             .unwrap()
             .expect("expected to commit the transaction");
         let mut upgraded_state = platform_state.as_ref().clone();
-        upgraded_state.set_current_protocol_version_in_consensus(14);
-        upgraded_state.set_next_epoch_protocol_version(14);
+        // The state runs the version the upgrade went to: from protocol version 15 the
+        // upgrade re-stores DPNS v3, which the version 14 create trigger does not read
+        upgraded_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+        upgraded_state.set_next_epoch_protocol_version(platform_version.protocol_version);
         platform.state.store(Arc::new(upgraded_state));
         let platform_state = platform.state.load();
 
