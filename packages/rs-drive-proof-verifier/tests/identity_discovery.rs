@@ -124,14 +124,21 @@ impl Fixture {
                 }),
             })
         } else {
+            // Reproduce the single-proof format already deployed by some PV13 nodes.
+            let mut producer = self.producer.clone();
+            producer
+                .drive
+                .methods
+                .identity
+                .prove
+                .prove_full_identity_by_non_unique_public_key_hash = 1;
             let bytes = self
                 .drive
                 .prove_full_identity_by_non_unique_public_key_hash(
-                    self.hash,
-                    after,
-                    None,
-                    self.producer,
+                    self.hash, after, None, &producer,
                 )
+                .unwrap()
+                .into_current()
                 .unwrap();
             LookupResult::Proof(signed(bytes, &metadata, self.root()))
         };

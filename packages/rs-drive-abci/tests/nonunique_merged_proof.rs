@@ -34,7 +34,7 @@ use tempfile::TempDir;
 use tokio_stream::StreamExt;
 
 // Independent wire capture accepts either allocation, so the same test can execute
-// against a server with the retired nested result or the standard complete Proof.
+// against a server with the historical nested result or the standard complete Proof.
 #[derive(Clone, PartialEq, Message)]
 struct CapturedResponse {
     #[prost(message, optional, tag = "1")]
@@ -194,6 +194,17 @@ impl Fixture {
     }
 }
 
+fn current_producer_version(version: &PlatformVersion) -> PlatformVersion {
+    let mut producer = version.clone();
+    producer
+        .drive
+        .methods
+        .identity
+        .prove
+        .prove_full_identity_by_non_unique_public_key_hash = 1;
+    producer
+}
+
 fn versions() -> [&'static PlatformVersion; 3] {
     [
         PlatformVersion::get(12).expect("PV12"),
@@ -318,7 +329,7 @@ fn verify_absence(fixture: &Fixture, proof: &[u8], hash: [u8; 20], after: Option
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_return_one_complete_nonunique_proof_over_real_transport() {
+async fn should_return_versioned_nonunique_proofs_over_real_transport() {
     let mut wrong_format = Vec::new();
     for version in versions() {
         let fixture = Fixture::new(version);
@@ -337,17 +348,35 @@ async fn should_return_one_complete_nonunique_proof_over_real_transport() {
         ] {
             let capture = capture(&fixture, after).await;
             let response = capture.v0.expect("V0 response");
-            if response.proof.is_none() || response.legacy.is_some() {
-                wrong_format.push(format!(
-                    "PV{} {name}: standard Proof at tag4 required, retired tag2 forbidden",
-                    version.protocol_version
-                ));
-                continue;
-            }
-            let proof = response.proof.expect("standard complete proof");
-            match expected {
-                Some(expected) => verify_complete(&fixture, &proof.grovedb_proof, expected, after),
-                None => verify_absence(&fixture, &proof.grovedb_proof, fixture.hash, after),
+            if version.protocol_version < 14 {
+                assert!(response.proof.is_none());
+                let legacy = response.legacy.expect("historical response field 2");
+                let index = legacy.index.expect("signed index proof");
+                let (_, identity) = Drive::verify_legacy_identity_by_non_unique_public_key_hash(
+                    &index.grovedb_proof,
+                    legacy.identity.as_deref(),
+                    fixture.hash,
+                    after,
+                    version,
+                    PlatformVersion::latest(),
+                )
+                .expect("strict historical adapter");
+                assert_eq!(identity.as_ref(), expected);
+            } else {
+                if response.proof.is_none() || response.legacy.is_some() {
+                    wrong_format.push(format!(
+                        "PV{} {name}: current response requires field 4",
+                        version.protocol_version
+                    ));
+                    continue;
+                }
+                let proof = response.proof.expect("standard complete proof");
+                match expected {
+                    Some(expected) => {
+                        verify_complete(&fixture, &proof.grovedb_proof, expected, after)
+                    }
+                    None => verify_absence(&fixture, &proof.grovedb_proof, fixture.hash, after),
+                }
             }
             assert_eq!(
                 response.metadata.expect("metadata").protocol_version,
@@ -668,26 +697,38 @@ mod signed {
             ] {
                 let wire = capture(&fixture, after).await;
                 let v0 = wire.v0.expect("V0");
-                let proof = v0.proof.expect("standard complete proof");
                 let metadata = v0.metadata.expect("transport metadata");
-                let signed = response(proof.clone(), metadata.clone(), fixture.root());
+                let signed = if let Some(proof) = v0.proof {
+                    response(proof, metadata.clone(), fixture.root())
+                } else {
+                    let legacy = v0.legacy.expect("historical wire format");
+                    let mut proof = legacy.index.expect("index proof");
+                    sign(&mut proof, &metadata, fixture.root());
+                    GetIdentityByNonUniquePublicKeyHashResponse { version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                        metadata: Some(metadata.clone()),
+                        result: Some(LookupResult::LegacyProof(dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
+                            grovedb_identity_public_key_hash_proof: Some(proof), identity_proof_bytes: legacy.identity,
+                        })),
+                    })) }
+                };
                 let encoded = signed.encode_to_vec();
                 let decoded =
                     GetIdentityByNonUniquePublicKeyHashResponse::decode(encoded.as_slice())
-                        .expect("new client round trip");
-                // A retired decoder cannot treat the new tag 4 as its nested tag 2.
-                assert!(CapturedResponse::decode(encoded.as_slice())
-                    .expect("retired tag capture")
-                    .v0
-                    .expect("V0")
-                    .legacy
-                    .is_none());
+                        .expect("client wire round trip");
+                assert_eq!(
+                    CapturedResponse::decode(encoded.as_slice())
+                        .unwrap()
+                        .v0
+                        .unwrap()
+                        .legacy
+                        .is_some(),
+                    version.protocol_version < 14
+                );
                 let (identity, returned_metadata, complete) =
                     verify(decoded, fixture.hash, after, PlatformVersion::latest())
                         .expect("valid signed merged lookup");
                 assert_eq!(identity, expected);
                 assert_eq!(returned_metadata, metadata);
-                assert_eq!(complete.grovedb_proof, proof.grovedb_proof);
                 assert_eq!(complete.signature.len(), 96);
                 let (channel, server) = fixture.client();
                 let unproved = PlatformClient::new(channel)
@@ -718,8 +759,15 @@ mod signed {
             let proof = fixture
                 .platform
                 .drive
-                .prove_full_identity_by_non_unique_public_key_hash([0xff; 20], None, None, version)
-                .expect("absent hash proof");
+                .prove_full_identity_by_non_unique_public_key_hash(
+                    [0xff; 20],
+                    None,
+                    None,
+                    &current_producer_version(version),
+                )
+                .expect("absent hash proof")
+                .into_current()
+                .expect("explicit current proof generation");
             let metadata = ResponseMetadata {
                 height: 100,
                 core_chain_locked_height: 1,
@@ -751,7 +799,24 @@ mod signed {
     async fn should_reject_unbound_roots_and_mutated_signed_metadata() {
         let fixture = Fixture::new(PlatformVersion::get(13).expect("signed PV13"));
         let v0 = capture(&fixture, None).await.v0.expect("V0");
-        let proof = v0.proof.expect("proof");
+        let proof = Proof {
+            grovedb_proof: fixture
+                .platform
+                .drive
+                .prove_full_identity_by_non_unique_public_key_hash(
+                    fixture.hash,
+                    None,
+                    None,
+                    &current_producer_version(fixture.version),
+                )
+                .unwrap()
+                .into_current()
+                .unwrap(),
+            ..v0.legacy
+                .expect("historical server")
+                .index
+                .expect("index signature fields")
+        };
         let metadata = v0.metadata.expect("metadata");
         let valid = response(proof.clone(), metadata.clone(), fixture.root());
         verify(valid.clone(), fixture.hash, None, PlatformVersion::latest())
@@ -1012,9 +1077,11 @@ mod signed {
                     fixture.hash,
                     None,
                     None,
-                    version,
+                    &current_producer_version(version),
                 )
-                .expect("actual producer proves the indexed identity absence");
+                .expect("actual producer proves the indexed identity absence")
+                .into_current()
+                .expect("explicit current proof generation");
             let (root, identity) =
                 Drive::verify_full_identity_by_identity_id(&blob, true, missing_id, version)
                     .expect("full identity absence is complete at the stored root");
@@ -1046,9 +1113,11 @@ mod signed {
                     fixture.hash,
                     None,
                     None,
-                    version,
+                    &current_producer_version(version),
                 )
-                .expect("complete proof");
+                .expect("complete proof")
+                .into_current()
+                .expect("explicit current proof generation");
             for bytes in [vec![], wire[..wire.len() / 2].to_vec(), vec![0], vec![1]] {
                 assert!(
                     Drive::verify_full_identity_by_non_unique_public_key_hash(

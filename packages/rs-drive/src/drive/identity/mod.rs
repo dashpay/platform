@@ -44,7 +44,13 @@ pub mod key;
 #[cfg(feature = "server")]
 pub mod update;
 
-/// A module for a struct encapsulating an identity and a non-unique public key hash to identity id proof
+/// Separate index and identity proofs used by the historical lookup generation.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_and_non_unique_public_key_hash_double_proof;
+/// Explicit proof encodings shared by the producer and verifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod non_unique_public_key_hash_proof;
+
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::error::drive::DriveError;

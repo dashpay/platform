@@ -6,7 +6,7 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 
 /// Version 2 of the Drive ABCI query versions, selected by protocol version 14.
 ///
-/// Differs from v1 in two slots.
+/// Differs from v1 in three slots.
 ///
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
 /// rather than 0. That opens two routes on the v1 document-query handler:
@@ -37,7 +37,11 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 /// / `having`, and the ranked and range responses reuse the additive
 /// `ResultData.ranked` entries shape (with `skipped` unset for a range page,
 /// which has no rank base), which older clients never receive.
+/// `identity_by_non_unique_public_key_hash_handler` selects generation 1,
+/// returning one complete proof at response field 4. Earlier tables select
+/// generation 0 and retain separate index and identity proofs at field 2.
 pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryVersions {
+    identity_by_non_unique_public_key_hash_handler: 1,
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },

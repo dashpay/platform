@@ -234,10 +234,25 @@ impl Drive {
         .map_err(Error::from)
     }
 
-    /// Proves the full identity and every eligible index entry up to its ID.
-    /// Exactly one index result establishes that this is the first ID after the cursor.
-    /// This read-only proof builder does not change persisted state or block execution.
+    /// This query gets the full identity and the public key hash.
     pub fn full_identity_with_non_unique_public_key_hash_query(
+        public_key_hash: [u8; 20],
+        identity_id: [u8; 32],
+        after: Option<[u8; 32]>,
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
+        let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
+        let identity_id_by_public_key_hash_query =
+            Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
+        PathQuery::merge(
+            vec![&full_identity_query, &identity_id_by_public_key_hash_query],
+            grove_version,
+        )
+        .map_err(Error::from)
+    }
+
+    /// Proves the first eligible identity using a complete bounded index prefix.
+    pub fn full_identity_with_non_unique_public_key_hash_query_v1(
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
         after: Option<[u8; 32]>,
@@ -680,11 +695,22 @@ mod tests {
         }
 
         #[test]
+        fn should_preserve_historical_nonunique_query_range() {
+            Drive::full_identity_with_non_unique_public_key_hash_query(
+                [23; 20],
+                [24; 32],
+                Some([25; 32]),
+                GroveVersion::latest(),
+            )
+            .expect("historical query construction leaves the cursor range unchanged");
+        }
+
+        #[test]
         fn should_reject_nonunique_endpoint_not_after_the_cursor() {
             let version = GroveVersion::latest();
             for after in [[24; 32], [25; 32]] {
                 assert!(matches!(
-                    Drive::full_identity_with_non_unique_public_key_hash_query(
+                    Drive::full_identity_with_non_unique_public_key_hash_query_v1(
                         [23; 20],
                         [24; 32],
                         Some(after),

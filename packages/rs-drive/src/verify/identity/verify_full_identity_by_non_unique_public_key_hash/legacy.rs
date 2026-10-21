@@ -1,3 +1,4 @@
+use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use crate::drive::{non_unique_key_hashes_sub_tree_path_vec, Drive};
 use crate::error::{proof::ProofError, Error};
 use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
@@ -11,7 +12,7 @@ impl Drive {
     ///
     /// Query construction follows the producer; verification retains the caller's
     /// security floor. The returned root still requires quorum authentication.
-    pub(super) fn verify_legacy_identity_by_non_unique_public_key_hash_v0(
+    pub(super) fn verify_legacy_identity_by_non_unique_public_key_hash_checked(
         index_proof: &[u8],
         identity_proof: Option<&[u8]>,
         public_key_hash: [u8; 20],
@@ -56,8 +57,15 @@ impl Drive {
             )));
         }
         // Strict producer-query completeness above precedes the shared identity decoder.
-        let (decoded_root, identity) =
-            Self::verify_full_identity_by_identity_id(proof, true, id, platform_version)?;
+        let (decoded_root, identity) = Self::verify_full_identity_by_non_unique_public_key_hash_v0(
+            &IdentityAndNonUniquePublicKeyHashDoubleProof {
+                identity_id_public_key_hash_proof: index_proof.to_vec(),
+                identity_proof: Some(proof.to_vec()),
+            },
+            public_key_hash,
+            after,
+            platform_version,
+        )?;
         if decoded_root != root {
             return Err(Error::Proof(ProofError::CorruptedProof(
                 "legacy identity decoder root differs from index root".to_owned(),

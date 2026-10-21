@@ -1,13 +1,16 @@
 use crate::version::drive_versions::drive_verify_method_versions::v2::DRIVE_VERIFY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyCompositeDocumentMethodVersions, DriveVerifyDocumentCountMethodVersions,
-    DriveVerifyDocumentSumMethodVersions, DriveVerifyMethodVersions,
-    DriveVerifyStateTransitionMethodVersions,
+    DriveVerifyDocumentSumMethodVersions, DriveVerifyIdentityMethodVersions,
+    DriveVerifyMethodVersions, DriveVerifyStateTransitionMethodVersions,
 };
 
 /// Version 3 of the Drive verify method versions.
 ///
 /// Changed from v2:
+/// - `verify_full_identity_by_non_unique_public_key_hash` 0 → 1: one complete
+///   first-after index/identity proof. The client may still explicitly verify
+///   the historical wire encoding using v0 and the retained security rules.
 /// - `verify_state_transition_was_executed_with_proof` 0 → 1. Feature version 1
 ///   verifies a document batch proof that carries the owner's credit balance
 ///   next to the document (one strict verification of the merged query);
@@ -27,6 +30,10 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 ///   `documentsSummable` type (and a `summable` indexOnly index) are read as
 ///   documents, where v0 reads them as counts and refuses the proof.
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V3: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
+    identity: DriveVerifyIdentityMethodVersions {
+        verify_full_identity_by_non_unique_public_key_hash: 1,
+        ..DRIVE_VERIFY_METHOD_VERSIONS_V2.identity
+    },
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 1,
     },

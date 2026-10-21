@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -11,6 +12,7 @@ use dapi_grpc::platform::v0::{
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
@@ -52,11 +54,29 @@ impl<C> Platform<C> {
 
         match version {
             RequestVersion::V0(request_v0) => {
-                let request = self.query_identity_by_non_unique_public_key_hash_v0(
-                    request_v0,
-                    platform_state,
-                    platform_version,
-                )?;
+                let request = match platform_version
+                    .drive_abci
+                    .query
+                    .identity_by_non_unique_public_key_hash_handler
+                {
+                    0 => self.query_identity_by_non_unique_public_key_hash_v0(
+                        request_v0,
+                        platform_state,
+                        platform_version,
+                    )?,
+                    1 => self.query_identity_by_non_unique_public_key_hash_v1(
+                        request_v0,
+                        platform_state,
+                        platform_version,
+                    )?,
+                    version => {
+                        return Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "query_identity_by_non_unique_public_key_hash".into(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        }))
+                    }
+                };
 
                 Ok(
                     request.map(|response_v0| GetIdentityByNonUniquePublicKeyHashResponse {
@@ -117,7 +137,7 @@ mod tests {
         assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
     }
     #[test]
-    fn should_preserve_current_server_response_wire_at_supported_protocols() {
+    fn should_route_nonunique_response_generations_without_changing_request_version() {
         for protocol in [13, PlatformVersion::latest().protocol_version] {
             let (platform, state, version) = setup_platform(None, Network::Testnet, Some(protocol));
             for prove in [false, true] {
@@ -144,7 +164,8 @@ mod tests {
                 };
                 assert_eq!(v0.metadata.unwrap().protocol_version, protocol);
                 match (prove, v0.result) {
-                    (true, Some(LookupResult::Proof(_))) => {}
+                    (true, Some(LookupResult::LegacyProof(_))) if protocol == 13 => {}
+                    (true, Some(LookupResult::Proof(_))) if protocol >= 14 => {}
                     (false, Some(LookupResult::Identity(identity))) => {
                         assert!(identity.identity.is_none())
                     }
@@ -152,5 +173,31 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn should_reject_unknown_nonunique_handler_generation() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let mut unknown = version.clone();
+        unknown
+            .drive_abci
+            .query
+            .identity_by_non_unique_public_key_hash_handler = 255;
+        let response = platform.query_identity_by_non_unique_public_key_hash(
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0; 20],
+                start_after: None,
+                prove: true,
+            }
+            .into(),
+            &state,
+            &unknown,
+        );
+        assert!(matches!(
+            response,
+            Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                received: 255,
+                ..
+            }))
+        ));
     }
 }

@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request:
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
     get_identity_by_non_unique_public_key_hash_response_v0, GetIdentityByNonUniquePublicKeyHashResponseV0,
 };
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityResponse;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::{IdentityProvedResponse, IdentityResponse};
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::{Bytes20, Bytes32};
 use dpp::serialization::PlatformSerializable;
@@ -54,13 +54,23 @@ impl<C> Platform<C> {
                     start_after,
                     None,
                     platform_version,
-                )?;
+                )?
+                .into_legacy()?;
 
             GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
-                            .map(|(_, proof)| proof)?,
+                    get_identity_by_non_unique_public_key_hash_response_v0::Result::LegacyProof(
+                        IdentityProvedResponse {
+                            grovedb_identity_public_key_hash_proof: Some(
+                                self.response_proof_v0(
+                                    platform_state,
+                                    proof.identity_id_public_key_hash_proof,
+                                    GroveDBToUse::Current,
+                                )
+                                .map(|(_, proof)| proof)?,
+                            ),
+                            identity_proof_bytes: proof.identity_proof,
+                        },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -108,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_invalid_public_key_hash() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
 
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
             public_key_hash: vec![0; 8],
@@ -128,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_after() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
 
         let negative_tests: Vec<&[u8]> = vec![&[0u8; 4], &[0u8; 20], &[0u8; 64]];
 
@@ -155,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -190,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -207,7 +217,7 @@ mod tests {
             result.data,
             Some(GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(_)
+                    get_identity_by_non_unique_public_key_hash_response_v0::Result::LegacyProof(_)
                 ),
                 metadata: Some(_),
             })
