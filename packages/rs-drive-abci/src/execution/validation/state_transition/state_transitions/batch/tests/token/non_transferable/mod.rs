@@ -601,9 +601,12 @@ mod tradeable {
         }
     }
 
-    /// Sends the contract owner's update of the token's trade mode to `Tradeable` in one block,
-    /// and returns its result with the trade mode the token has afterwards.
-    async fn make_tradeable(non_transferable: bool) -> (StateTransitionExecutionResult, bool) {
+    /// Sends the contract owner's update of the token's trade mode to `Tradeable` to the mempool
+    /// and then in one block, and returns what check_tx refused it with, the block's result and
+    /// the trade mode the token has afterwards.
+    async fn make_tradeable(
+        non_transferable: bool,
+    ) -> (Vec<ConsensusError>, StateTransitionExecutionResult, bool) {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -648,6 +651,22 @@ mod tradeable {
         let config_update_serialized_transition = config_update_transition
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let check_tx_errors = platform
+            .check_tx(
+                &config_update_serialized_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to be able to check tx")
+            .errors;
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -696,12 +715,20 @@ mod tradeable {
             .into_execution_results()
             .pop()
             .expect("expected one execution result");
-        (result, is_tradeable)
+        (check_tx_errors, result, is_tradeable)
     }
 
+    /// The rule reads only the contract the action carries, so it runs with the batch's advanced
+    /// structure and the mempool refuses the update too.
     #[tokio::test]
     async fn should_refuse_making_a_non_transferable_token_tradeable_with_a_paid_error_10281() {
-        let (result, is_tradeable) = make_tradeable(true).await;
+        let (check_tx_errors, result, is_tradeable) = make_tradeable(true).await;
+        assert_matches!(
+            check_tx_errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::NonTransferableTokenTradeableError(_)
+            )]
+        );
         assert_matches!(
             result,
             PaidConsensusError {
@@ -716,7 +743,8 @@ mod tradeable {
 
     #[tokio::test]
     async fn should_make_a_transferable_token_tradeable_from_protocol_version_15() {
-        let (result, is_tradeable) = make_tradeable(false).await;
+        let (check_tx_errors, result, is_tradeable) = make_tradeable(false).await;
+        assert!(check_tx_errors.is_empty(), "{check_tx_errors:?}");
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
