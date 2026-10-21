@@ -54,7 +54,8 @@ impl ProofNetwork {
 /// never chooses it. The JSON form matches Core's `ProofState::ToJson`, so the
 /// `target` that `getquorumproofchain` returns is a valid checkpoint file:
 /// `network` is 0 for mainnet and 1 for testnet, and hashes are hex in RPC
-/// display order.
+/// display order. Unlike Core's `FromJson`, deserialization rejects unknown
+/// fields and other networks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct State {
     /// Network the block belongs to.

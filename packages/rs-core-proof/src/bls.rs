@@ -16,14 +16,21 @@ pub(crate) fn public_key(key: &[u8; 48]) -> Result<PublicKey> {
     Ok(pk)
 }
 
-/// Accept exactly the signature encodings Core deserializes: all zeros (a
-/// null signature), or a canonical compressed point in the subgroup.
+/// Accept the signature encodings Core deserializes: all zeros (a null
+/// signature), or a canonical compressed point in the subgroup other than the
+/// point at infinity, which Core resets and then rejects as malleable.
+///
+/// Core also accepts, as null, bytes that are invalid in the Basic scheme but
+/// valid in the legacy one. No block can carry those where this is used (Core
+/// checks mined commitments' signatures, and a coinbase may not drop a
+/// ChainLock its predecessor carried), so they are rejected here.
 pub(crate) fn check_signature_encoding(signature: &[u8; 96]) -> Result<()> {
     if signature.iter().all(|byte| *byte == 0) {
         return Ok(());
     }
-    let sig = Signature::uncompress(signature).map_err(|_| Error("BLS signature encoding"))?;
-    if !sig.subgroup_check() || sig.compress() != *signature {
+    let sig =
+        Signature::sig_validate(signature, true).map_err(|_| Error("BLS signature encoding"))?;
+    if sig.compress() != *signature {
         return Err(Error("BLS signature encoding"));
     }
     Ok(())
@@ -88,9 +95,10 @@ mod tests {
         let signature = secret.sign(&[0u8; 32], BLS_DST, &[]).compress();
         assert_eq!(check_signature_encoding(&signature), Ok(()));
         assert_eq!(check_signature_encoding(&[0; 96]), Ok(()));
+        // Core resets the identity element and then rejects it as malleable.
         let mut infinity = [0u8; 96];
         infinity[0] = 0xc0;
-        assert_eq!(check_signature_encoding(&infinity), Ok(()));
+        assert!(check_signature_encoding(&infinity).is_err());
         // Uncompressed flag, garbage, and a nonzero infinity payload.
         let mut uncompressed = signature;
         uncompressed[0] &= 0x7f;

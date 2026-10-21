@@ -1,7 +1,7 @@
 # dash-core-proof
 
 Verifies Dash Core quorum proof chains (`DASHNC02`, [DIP 175](https://github.com/dashpay/dips/pull/175)),
-the format Core's `getquorumproofchain` RPC returns (Dash Core v24 and later).
+the format Dash Core's `getquorumproofchain` RPC returns.
 
 A client that trusts a checkpoint (a block's height and hash and the masternode and quorum
 Merkle roots its coinbase commits to) can check a later block's roots, and any quorum
@@ -30,15 +30,22 @@ A `State` deserializes from the same JSON Core's RPC uses for `target`, so a blo
   linked to it header by header.
 - The target block's coinbase (payload version 3, or 4 from Core v24) commits to the returned
   roots, and every record opens under them.
-- Encodings are the ones Core accepts: canonical CompactSizes, commitments and BLS points,
-  Merkle paths without duplicate-leaf ambiguity, no 64-byte leaves or transactions, no
-  trailing bytes. Every length is bounded before allocation.
+- Nothing Core's verifier rejects is accepted: CompactSizes, commitments and BLS points must be
+  canonical, Merkle paths free of duplicate-leaf ambiguity, leaves and transactions other than
+  64 bytes, with no trailing bytes. The one place it is stricter than Core, BLS signature bytes
+  Core would read as null, cannot occur in a valid block. Every length is bounded before
+  allocation.
 
 ## Trust model
 
-The checkpoint, plus the honesty of the historical ChainLock quorums the chain passes through.
-The verifier does not replay DKG or re-derive which members signed. A valid proof does not show
-that its target is the newest ChainLock; how fresh a target must be is the caller's policy.
+The checkpoint, and that no ChainLock quorum active at the checkpoint or mined after it ever
+signs dishonestly, including quorums long since retired: the relay picks the path, and like
+Core's verifier this one does not check that a signer was the quorum selected for that height.
+It does not replay DKG or re-derive which members signed. An older checkpoint therefore trusts
+more quorums for longer; refresh checkpoints with releases.
+
+A valid proof does not show that its target is the newest ChainLock; how fresh a target must
+be is the caller's policy.
 
 ## Tests
 

@@ -3,9 +3,10 @@
 //! `tests/data/<network>.json` holds the checkpoint (from `getblock`), the RPC's
 //! `proof_hex`, `bootstrap_hex` and `target`. Each request opened one Platform
 //! quorum (LLMQ_100_67 on mainnet, LLMQ_25_67 on testnet) and two EvoNodes.
-//! The mainnet chain passes through 2 ChainLock quorums; the testnet one
-//! through 4, two of them mined in blocks below the certified ones (3 and 2
-//! ancestor headers).
+//! The mainnet chain has 2 links and the testnet one 4, two of which were
+//! mined in blocks below the certified ones (2 and 3 ancestor headers).
+//! `testnet-no-links.json` is a proof from a recent checkpoint, signed by the
+//! checkpoint's own ChainLock quorum.
 use dash_core_proof::bootstrap::RecordKind;
 use dash_core_proof::{bootstrap, parse_commitment, QuorumProofChain, State};
 
@@ -179,7 +180,7 @@ fn should_reject_tampered_links() {
         rejects(&|c| c.links[0].mining.path.index = 0),
         "mining inclusion"
     );
-    // A link that repeats its signer would let a stale quorum certify again.
+    // Replaying a link is caught by the certificate heights.
     assert_eq!(
         rejects(&|c| {
             let first = c.links[0].clone();
@@ -200,4 +201,14 @@ fn should_reject_chains_over_the_header_budget() {
         chain.verify(&f.checkpoint).unwrap_err().0,
         "ancestor budget/height"
     );
+}
+
+#[test]
+fn should_verify_a_proof_signed_by_the_checkpoint_quorum_itself() {
+    let f = fixture(include_str!("data/testnet-no-links.json"));
+    let chain = QuorumProofChain::decode(&f.proof).unwrap();
+    assert!(chain.links.is_empty());
+    assert_eq!(chain.verify(&f.checkpoint).unwrap(), f.target);
+    let verified = bootstrap::verify(&f.bootstrap, &f.checkpoint, f.target.height).unwrap();
+    assert_eq!(verified.state(), &f.target);
 }

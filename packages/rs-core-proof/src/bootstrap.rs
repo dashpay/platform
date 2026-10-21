@@ -65,10 +65,11 @@ pub fn verify<'a>(
     }
     let mut r = Reader::new(bytes);
     let chain = QuorumProofChain::decode(r.blob(MAX_PROOF_BYTES)?)?;
-    let state = chain.verify(trusted)?;
-    if state.height < minimum_height {
+    // Decided before any signature work: the height alone makes it useless.
+    if chain.target.height < minimum_height {
         return Err(Error("stale target"));
     }
+    let state = chain.verify(trusted)?;
     let count = r.u8()?;
     if !(1..=MAX_RECORDS).contains(&count) {
         return Err(Error("projection count"));

@@ -1,6 +1,9 @@
 //! The transactions and payloads a proof carries: quorum commitments, the
-//! special transactions that mine them, and coinbases. Each parser accepts the
-//! encodings Core's proof verifier accepts and rejects trailing data.
+//! special transactions that mine them, and coinbases. Each parser rejects
+//! everything Core's proof verifier rejects, and trailing data. It is stricter
+//! than Core only for BLS signature bytes Core would read as null, which no
+//! block can carry where they are checked here (see
+//! `check_signature_encoding`).
 use crate::bls::{check_signature_encoding, public_key};
 use crate::wire::{Hash, Reader, Result};
 use crate::Error;
@@ -8,7 +11,7 @@ use crate::Error;
 /// Largest transaction a proof may carry, as in Core.
 pub const MAX_TRANSACTION_BYTES: usize = 100_000;
 /// Largest serialized quorum commitment, as in Core.
-const MAX_COMMITMENT_BYTES: usize = 1024;
+pub(crate) const MAX_COMMITMENT_BYTES: usize = 1024;
 /// Core's `MAX_SIZE`, the bound its CompactSize reader enforces.
 const MAX_COMPACT_SIZE: u64 = 0x0200_0000;
 
@@ -169,6 +172,10 @@ pub(crate) fn mined_commitment(bytes: &[u8], height: u32) -> Result<Commitment> 
 pub fn coinbase_roots(bytes: &[u8], height: u32) -> Result<(Hash, Hash)> {
     if bytes.len() > MAX_TRANSACTION_BYTES {
         return Err(Error("coinbase size"));
+    }
+    // Core compares the payload's int32 height.
+    if height > i32::MAX as u32 {
+        return Err(Error("coinbase payload version/height"));
     }
     let mut r = Reader::new(bytes);
     if special_type(&mut r)? != Some(TRANSACTION_COINBASE) {

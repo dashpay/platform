@@ -9,7 +9,8 @@ use crate::bls;
 use crate::merkle::MerklePath;
 use crate::state::State;
 use crate::transaction::{
-    coinbase_roots, mined_commitment, parse_commitment, Commitment, MAX_TRANSACTION_BYTES,
+    coinbase_roots, mined_commitment, parse_commitment, Commitment, MAX_COMMITMENT_BYTES,
+    MAX_TRANSACTION_BYTES,
 };
 use crate::wire::{sha256d, write_blob, Hash, Reader, Result};
 use crate::Error;
@@ -101,6 +102,9 @@ impl ProofTransaction {
     }
 
     fn encode(&self, out: &mut Vec<u8>) -> Result<()> {
+        if self.transaction.len() > MAX_TRANSACTION_BYTES {
+            return Err(Error("proof transaction limit"));
+        }
         write_blob(out, &self.transaction)?;
         self.path.encode(out)
     }
@@ -234,7 +238,7 @@ impl QuorumProofChain {
             return Err(Error("proof version"));
         }
         let anchor = State::decode(&mut r)?;
-        let seed = r.blob(MAX_PROOF_BYTES)?.to_vec();
+        let seed = r.blob(MAX_COMMITMENT_BYTES)?.to_vec();
         let seed_path = MerklePath::decode(&mut r)?;
         let count = r.u16()? as usize;
         if count >= MAX_PROOF_CERTIFICATES {
