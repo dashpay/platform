@@ -176,7 +176,7 @@ impl SpvRuntime {
         publish: F,
     ) -> Result<bool, PlatformWalletError>
     where
-        F: FnOnce() -> bool,
+        F: FnOnce() -> bool + Send,
     {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
@@ -1493,24 +1493,36 @@ mod tests {
     }
 
     /// `start_and_spawn` keeps construction and run-loop publication under
-    /// the shutdown lock: a stop issued between them (here from another
-    /// worker while `publish` runs) waits for the published run loop, tears
-    /// it down with the client, and leaves nothing unjoined for the next
-    /// start — the failure mode this guards against is that next start
-    /// reporting `ShutdownIncomplete` for a run loop the stop never saw.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    /// the shutdown lock: a stop issued between them waits for the published
+    /// run loop, tears it down with the client, and leaves nothing unjoined
+    /// for the next start — the failure mode this guards against is that
+    /// next start reporting `ShutdownIncomplete` for a run loop the stop
+    /// never saw.
+    ///
+    /// The racing stop is established, not timed: `publish` polls the stop
+    /// future once while it holds the lock and asserts it is pending there
+    /// (the stop's first poll is its `shutdown` acquisition), then the same
+    /// future is driven to completion after publication.
+    #[tokio::test]
     async fn should_publish_the_run_loop_before_a_concurrent_stop_can_run() {
+        type StopFuture = std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), PlatformWalletError>> + Send>,
+        >;
+
         let storage = tempfile::tempdir().unwrap();
         let runtime = Arc::new(unstarted_runtime());
-        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<StopFuture>();
         let stopper = Arc::clone(&runtime);
 
         let published = runtime
             .start_and_spawn(offline_config(&storage), move || {
                 // The racing stop: the client exists, the run loop does not yet.
-                let racing = tokio::spawn(async move { stopper.stop().await });
-                // Give it time to reach the shutdown lock before publication.
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                let mut racing: StopFuture = Box::pin(async move { stopper.stop().await });
+                let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+                assert!(
+                    racing.as_mut().poll(&mut cx).is_pending(),
+                    "the stop must wait for the shutdown lock the start holds"
+                );
                 stop_tx.send(racing).expect("test receives the stop");
                 true
             })
@@ -1518,10 +1530,9 @@ mod tests {
             .expect("start");
         assert!(published, "the owner was still there");
 
-        let racing = stop_rx.await.expect("the publish callback ran");
+        let racing = stop_rx.try_recv().expect("the publish callback ran");
         racing
             .await
-            .expect("stop task")
             .expect("the racing stop completes once the published run loop is torn down");
         assert!(!runtime.is_started());
 
