@@ -1098,11 +1098,16 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
 /// A permanently-broken channel is left alone (the sweep never rebuilds
 /// broken contacts; they heal on a superseding request). The staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
-/// a mismatch (or a `None` marker from a cold restart that did not carry it)
-/// means the persisted, tombstone-less account row rebuilt the rotated-away
-/// xpub while the contact already tracks the new reference — so `send_payment`
-/// would derive addresses the contact no longer watches until it is rebuilt.
-fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bool) -> bool {
+/// a mismatch (or a `None` marker from a cold restart on a host that did not
+/// carry it — the in-tree hosts persist it on the established rows, so a
+/// healthy account survives a restart without a rebuild) means the persisted,
+/// tombstone-less account row rebuilt the rotated-away xpub while the contact
+/// already tracks the new reference — so `send_payment` would derive addresses
+/// the contact no longer watches until it is rebuilt.
+pub(super) fn external_account_needs_rebuild(
+    contact: &EstablishedContact,
+    has_external: bool,
+) -> bool {
     has_external
         && !contact.payment_channel_broken
         && contact.external_account_reference != Some(contact.incoming_request.account_reference)
@@ -1865,7 +1870,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// permanently broken — the account-building candidates for this
     /// sweep. Runs under the caller's write guard; performs no
     /// awaits and no lock re-acquisition.
-    fn collect_account_build_candidates(
+    pub(super) fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
         identity_id: &Identifier,
     ) -> Vec<AccountBuildCandidate> {
@@ -3209,7 +3214,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// - Stamping `external_account_reference` lets the sweep's rotation
     ///   self-heal skip a healthy account (marker matches the tracked
-    ///   reference) and detect a stale one after a restart (F2).
+    ///   reference) and detect a stale one after a restart (F2). On a
+    ///   backend that keeps markers on disk the registration round already
+    ///   bound it, and this only clears the broken flag while that marker is
+    ///   still current; it never stamps one there.
     /// - Clearing `payment_channel_broken` heals a channel that a prior
     ///   permanent-fault marked broken but that a successful re-register (via
     ///   the drain or a user re-accept) proves is usable again — otherwise the
@@ -3257,6 +3265,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         let current_reference = contact.incoming_request.account_reference;
         let already_current = contact.external_account_reference == Some(current_reference);
+        // Where markers are kept on disk, registration is their only writer:
+        // it binds the marker in the account's own round, to the request the
+        // account was built from. A completion arriving late — after the
+        // account was torn down and rebuilt, or from a request that reused
+        // the same ciphertext under another reference — could otherwise
+        // stamp the live reference beside an obsolete durable account, and a
+        // restart would trust the pairing. So it only heals the broken flag,
+        // and only while the marker registration bound is still the live one
+        // (dashpay/platform#4302 review).
+        if self.persister.persists_outbound_account_markers() && !already_current {
+            return;
+        }
         if already_current && !contact.payment_channel_broken {
             return;
         }
@@ -3376,7 +3396,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 /// One established contact that needs its DashPay accounts (re)built
 /// during a sync sweep. Collected under the write guard, consumed
 /// after it is dropped.
-struct AccountBuildCandidate {
+pub(super) struct AccountBuildCandidate {
     /// The counterparty identity.
     contact_id: Identifier,
     /// The counterparty's 96-byte encrypted xpub (from their incoming
@@ -4200,6 +4220,8 @@ mod sweep_tests {
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 

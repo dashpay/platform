@@ -312,6 +312,19 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
+    /// The manager's persistence-fault latch (see
+    /// [`PlatformWalletManager::sync_fault_detected`](crate::PlatformWalletManager::sync_fault_detected)).
+    /// While it is set the wallet-event adapter holds the durable
+    /// `synced_height` back at the last fully persisted height, and a
+    /// direct cursor write from this side would advance it past rows that
+    /// never landed. The DashPay rescan reconcile consults it before it
+    /// stores a backfill record with a lowered cursor.
+    pub(crate) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The manager's shared record of each wallet's durable sync cursor,
+    /// also the lock that orders cursor writes between the wallet-event
+    /// adapter and the DashPay rescan reconcile. See
+    /// [`DurableCursors`](crate::changeset::DurableCursors).
+    pub(crate) durable_cursors: crate::changeset::DurableCursors,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -353,6 +366,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             wallet_id: self.wallet_id,
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
+            sync_fault: Arc::clone(&self.sync_fault),
+            durable_cursors: Arc::clone(&self.durable_cursors),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),

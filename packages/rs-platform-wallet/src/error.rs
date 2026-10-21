@@ -38,6 +38,16 @@ pub enum PlatformWalletError {
     #[error("failed to persist wallet changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
+    /// A persister `flush` failed: the commit of rounds a backend whose
+    /// `store` only buffers was still holding. It keeps the flush's own
+    /// classification, which means something different from a store's:
+    /// `Transient` says the buffer survived and another `flush` may commit
+    /// it, `Constraint` that the buffered data was rejected, and `Fatal` that
+    /// the buffered rounds were discarded. See [`Self::PersisterLoad`] for why
+    /// the typed cause is carried.
+    #[error("failed to commit buffered wallet changesets: {0}")]
+    PersisterFlush(#[source] crate::changeset::PersistenceError),
+
     /// Restoring persisted platform-address state into a freshly registered
     /// wallet failed. Boxed to break the recursion; the inner variant and its
     /// `#[source]` chain survive intact.
@@ -1010,6 +1020,16 @@ impl PlatformWalletError {
             _ => source,
         };
         Self::PersisterStore(source)
+    }
+
+    /// A persister `flush` failed. Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it: a transient flush failure is retried
+    /// with another `flush`, which the store-side reissue attestation says
+    /// nothing about. See [`Self::from_load_failure`] for why no blanket
+    /// conversion exists.
+    pub fn from_flush_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterFlush(source)
     }
 
     /// Restoring persisted platform-address state failed. Boxes `source`, so

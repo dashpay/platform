@@ -7,8 +7,10 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
+use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
@@ -610,6 +612,45 @@ impl SpvRuntime {
         let engine_guard = engine.read().await;
         let list = engine_guard.latest_masternode_list()?;
         Some(MasternodeListSummary::all_from_list(list))
+    }
+
+    /// The current-tip deterministic masternode list's raw entries, for the
+    /// paths that need what [`MasternodeListSummary`] leaves out: a
+    /// version-3 entry's whole extended address map and the entry version.
+    /// `None` when the list isn't available; same lock order as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        let engine = {
+            let client_guard = self.client.read().await;
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.read().await;
+        let list = engine_guard.latest_masternode_list()?;
+        Some(
+            list.masternodes
+                .values()
+                .map(|qualified| qualified.masternode_list_entry.clone())
+                .collect(),
+        )
+    }
+
+    /// The coinbase payload of the highest block whose masternode list diff
+    /// was applied with one this session, as dash-spv's masternode list
+    /// engine keeps it. Unauthenticated: the pinned dash-spv checks neither the
+    /// diff's merkle proof of the coinbase nor the payload's merkle roots, so
+    /// the peer that served the diff chooses it. `None` when the SPV client
+    /// isn't running, masternode sync is off, or no diff with a coinbase
+    /// payload has been applied since the client started; same lock order as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn latest_coinbase(&self) -> Option<CoinbasePayload> {
+        let engine = {
+            let client_guard = self.client.read().await;
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.read().await;
+        engine_guard.latest_coinbase().cloned()
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads

@@ -125,9 +125,17 @@ where
             Some(state_core_height)
         };
 
-        let masternode_diff = self
+        let mut masternode_diff = self
             .core_rpc
             .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+
+        if !start_from_scratch {
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,

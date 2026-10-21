@@ -230,7 +230,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })?
             .to_owned_document_type();
 
-        let _result_doc = self
+        let (_result_doc, owner_balance, metadata) = self
             .sdk_writer
             .put_document(super::sdk_writer::PutDocumentParams {
                 document: stub_document,
@@ -239,6 +239,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
             .await?;
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
 
         let profile = crate::wallet::identity::DashPayProfile {
             display_name: input.display_name,
@@ -381,7 +383,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })?
             .to_owned_document_type();
 
-        let _result_doc = self
+        let (_result_doc, owner_balance, metadata) = self
             .sdk_writer
             .put_document(super::sdk_writer::PutDocumentParams {
                 document: updated_document,
@@ -390,6 +392,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
             .await?;
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
 
         let profile = returned_profile;
 

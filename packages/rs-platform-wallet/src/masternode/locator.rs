@@ -363,6 +363,42 @@ pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
     Some(hash160::Hash::hash(&bytes).to_byte_array())
 }
 
+/// The ids Platform may give the operator identity of a masternode whose list
+/// entry carries `operator_public_key`, in the order to try them: the id
+/// derived from those bytes, then, when they read as a basic-scheme key, the
+/// id derived from the same key's legacy-scheme bytes.
+///
+/// Platform derives the operator identity id from the operator key bytes it
+/// stored, and keeps them when the listed bytes are the basic-scheme encoding
+/// of the key the stored bytes encode in the legacy scheme. So a masternode
+/// whose operator key was set in the legacy scheme keeps its legacy-derived
+/// operator identity after Dash Core re-encodes the key in the basic scheme,
+/// while the list then carries the basic bytes. When both identities exist,
+/// the first is the current one.
+///
+/// Legacy-scheme bytes with the top bit set also read as a basic-scheme key
+/// (of the negated point), so they get a second id too, which no identity of
+/// a legacy-scheme key holds.
+pub fn operator_identity_ids(
+    pro_tx_hash_display: &[u8; 32],
+    operator_public_key: &[u8; 48],
+) -> Vec<Identifier> {
+    let mut ids = vec![Identifier::create_operator_identifier(
+        pro_tx_hash_display,
+        operator_public_key,
+    )];
+    if let Ok(key) = BlsPublicKey::<Bls12381G2Impl>::from_bytes_with_mode(
+        operator_public_key,
+        SerializationFormat::Modern,
+    ) {
+        ids.push(Identifier::create_operator_identifier(
+            pro_tx_hash_display,
+            &key.to_bytes_with_mode(SerializationFormat::Legacy),
+        ));
+    }
+    ids
+}
+
 /// `(basic, legacy)` 48-byte serializations of the BLS public key for
 /// `secret`, or `None` when the scalar is not below the group order.
 pub fn bls_public_keys(secret: &[u8; 32]) -> Option<([u8; 48], [u8; 48])> {
@@ -594,11 +630,10 @@ pub struct PlatformKeyRole {
 /// Interpret one identity returned by the non-unique-key-hash query for
 /// `key_id`: an owner identity (id == display proTxHash of a listed node)
 /// yields `Owner` / `OwnerPayout` by the matching key's purpose; an operator
-/// identity (id == `create_operator_identifier(proTxHash, operator key)` of a
-/// listed node) yields `OperatorPayout`. Anything else — a voter identity
-/// (voting keys are matched from the list), a non-masternode identity that
-/// happens to hold the key — yields nothing. Pure; the network step is the
-/// caller's.
+/// identity (an id from [`operator_identity_ids`] of a listed node) yields
+/// `OperatorPayout`. Anything else — a voter identity (voting keys are
+/// matched from the list), a non-masternode identity that happens to hold the
+/// key — yields nothing. Pure; the network step is the caller's.
 pub fn platform_roles_from_identity(
     identity: &Identity,
     key_id: &[u8; 20],
@@ -634,19 +669,19 @@ pub fn platform_roles_from_identity(
             .collect();
     }
 
-    // Operator identity of some listed node?
+    // Operator identity of some listed node? Only its payout key is ours.
+    if !identity
+        .public_keys()
+        .values()
+        .any(|k| k.data().as_slice() == key_id && k.purpose() == Purpose::TRANSFER)
+    {
+        return Vec::new();
+    }
     let id = identity.id();
     summaries
         .iter()
         .filter(|s| {
-            Identifier::create_operator_identifier(&s.pro_tx_hash_display(), &s.operator_public_key)
-                == id
-        })
-        .filter(|_| {
-            identity
-                .public_keys()
-                .values()
-                .any(|k| k.data().as_slice() == key_id && k.purpose() == Purpose::TRANSFER)
+            operator_identity_ids(&s.pro_tx_hash_display(), &s.operator_public_key).contains(&id)
         })
         .map(|s| PlatformKeyRole {
             pro_tx_hash: s.pro_tx_hash,
@@ -1351,6 +1386,73 @@ mod tests {
                 role: MasternodeKeyRole::OperatorPayout
             }]
         );
+    }
+
+    /// Platform keeps the operator key bytes it stored when the key was set, so a masternode
+    /// registered with a legacy-scheme operator key keeps the operator identity derived from the
+    /// legacy bytes after Dash Core re-encodes the key in the basic scheme, while the list then
+    /// shows the basic bytes.
+    #[test]
+    fn operator_identity_of_a_re_encoded_legacy_key_yields_operator_payout_role() {
+        let (legacy, basic) = CORE_RE_ENCODINGS[1];
+        let (legacy, basic) = (key_bytes(legacy), key_bytes(basic));
+        let mut summaries = list();
+        summaries[1].operator_public_key = basic;
+        let node = &summaries[1];
+        let payout_hash = [0x66u8; 20];
+        let id = Identifier::create_operator_identifier(&node.pro_tx_hash_display(), &legacy);
+        let identity = identity_with(id.to_buffer(), vec![(Purpose::TRANSFER, payout_hash)]);
+        assert_eq!(
+            platform_roles_from_identity(&identity, &payout_hash, &summaries),
+            vec![PlatformKeyRole {
+                pro_tx_hash: node.pro_tx_hash,
+                role: MasternodeKeyRole::OperatorPayout
+            }]
+        );
+    }
+
+    /// Operator keys as Dash Core v24.0.0-rc.3 printed them before and after
+    /// re-encoding them: (legacy, basic), legacy sign bit clear and set.
+    const CORE_RE_ENCODINGS: [(&str, &str); 2] = [
+        (
+            "06ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+            "86ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+        ),
+        (
+            "910633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+            "b10633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+        ),
+    ];
+
+    fn key_bytes(hex: &str) -> [u8; 48] {
+        hex::decode(hex).unwrap().try_into().unwrap()
+    }
+
+    /// A basic-scheme key Core re-encoded yields the id from its bytes first,
+    /// then the id from the legacy bytes Core printed before. Legacy bytes with
+    /// the sign bit clear read as no basic-scheme key and yield only their own
+    /// id; with the sign bit set they also read as one (of the negated point)
+    /// and yield a second id.
+    #[test]
+    fn operator_identity_ids_add_the_legacy_encoding_of_a_basic_key() {
+        let pro_tx_hash = [0x5Au8; 32];
+        let id = |key: &[u8; 48]| Identifier::create_operator_identifier(&pro_tx_hash, key);
+        for (legacy, basic) in CORE_RE_ENCODINGS {
+            let (legacy, basic) = (key_bytes(legacy), key_bytes(basic));
+            assert_eq!(
+                operator_identity_ids(&pro_tx_hash, &basic),
+                vec![id(&basic), id(&legacy)]
+            );
+        }
+        let sign_clear = key_bytes(CORE_RE_ENCODINGS[0].0);
+        assert_eq!(
+            operator_identity_ids(&pro_tx_hash, &sign_clear),
+            vec![id(&sign_clear)]
+        );
+        let sign_set = key_bytes(CORE_RE_ENCODINGS[1].0);
+        let ids = operator_identity_ids(&pro_tx_hash, &sign_set);
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], id(&sign_set));
     }
 
     #[test]

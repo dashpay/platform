@@ -21,9 +21,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
     SendContactRequestResult,
@@ -131,7 +133,8 @@ pub(crate) struct SendContactRequestParams<'a> {
 ///
 /// `IdentityWallet` builds the [`Document`] (profile create/update) and
 /// resolves the signing key + document type; the helper performs the
-/// `put_to_platform_and_wait_for_response` broadcast.
+/// `put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
+/// broadcast.
 pub(crate) struct PutDocumentParams<'a> {
     /// Fully-built document to broadcast.
     pub document: Document,
@@ -252,11 +255,13 @@ impl SdkWriter {
     }
 
     /// Broadcast a pre-built DashPay document and wait for the
-    /// confirmation proof.
+    /// confirmation proof. Returns the confirmed document, the owner's
+    /// credit balance after the write when the proof carries it (from
+    /// protocol version 14) and the proof's verified response metadata.
     pub(crate) async fn put_document(
         &self,
         params: PutDocumentParams<'_>,
-    ) -> Result<Document, PlatformWalletError> {
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), PlatformWalletError> {
         use dash_sdk::platform::transition::put_document::PutDocument;
 
         let PutDocumentParams {
@@ -267,7 +272,7 @@ impl SdkWriter {
         } = params;
 
         document
-            .put_to_platform_and_wait_for_response(
+            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
                 &self.sdk,
                 document_type,
                 None,
