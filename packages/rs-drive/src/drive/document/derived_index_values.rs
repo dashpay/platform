@@ -458,14 +458,25 @@ impl Drive {
                 referenced_type.name(),
             );
             if referenced_type.documents_keep_history() {
+                let pointer_size = if referenced_type.documents_summable().is_some() {
+                    Element::required_reference_with_sum_item_space(
+                        DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                        0,
+                        &platform_version.drive.grove_version,
+                    )?
+                } else {
+                    Element::required_item_space(
+                        DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                        0,
+                        &platform_version.drive.grove_version,
+                    )?
+                };
                 self.grove_get(
                     (&path).into(),
                     &[0; 32],
                     QueryType::StatelessQuery {
                         in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
-                        query_target: QueryTargetValue(
-                            DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
-                        ),
+                        query_target: QueryTargetValue(pointer_size),
                         estimated_reference_sizes: vec![document_size],
                     },
                     None,
@@ -594,6 +605,7 @@ pub(crate) fn set_derived_index_values(document: &mut Document, values: BTreeMap
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::DriveConfig;
     use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use crate::drive::Drive;
@@ -610,6 +622,76 @@ mod tests {
     use dpp::prelude::DataContract;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn should_price_current_history_pointer_reads_with_the_writers_element_size() {
+        use grovedb::batch::key_info::KeyInfo;
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::GroveDb;
+
+        let version = PlatformVersion::latest();
+        for summable in [true, false] {
+            let mut extra = platform_value!({
+                "documentsKeepHistory":true,
+                "documentsSummable":"amount",
+                "properties":{
+                    "topic":{"type":"string", "maxLength":20, "position":0},
+                    "amount":{"type":"integer", "minimum":0, "maximum":100, "position":1}
+                },
+                "required":["topic","amount"]
+            });
+            if !summable {
+                extra.remove("documentsSummable").unwrap();
+            }
+            let contract = contract_with(
+                extra,
+                platform_value!([{ "postId.topic": "asc" }]),
+                Value::Null,
+            );
+            let drive = setup(&contract);
+            let post = contract.document_type_for_name("post").unwrap();
+            let mut operations = vec![];
+            drive
+                .add_referenced_document_read_estimation(
+                    &contract,
+                    post,
+                    DocumentReferenceKind::Permanent,
+                    &mut operations,
+                    version,
+                )
+                .unwrap();
+            let pointer_size = if summable {
+                Element::required_reference_with_sum_item_space(
+                    DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                    0,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+            } else {
+                Element::required_item_space(
+                    DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                    0,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+            };
+            let path = contract_documents_primary_key_path(contract.id_ref().as_bytes(), "post");
+            let expected = GroveDb::average_case_for_get(
+                &KeyInfoPath::from_known_owned_path(path.map(|part| part.to_vec()).to_vec()),
+                &KeyInfo::KnownKey(vec![0; 32]),
+                post.primary_key_tree_type(version).unwrap(),
+                pointer_size,
+                vec![post.estimated_size(version).unwrap() as u32],
+                &version.drive.grove_version,
+            )
+            .unwrap();
+            let [LowLevelDriveOperation::CalculatedCostOperation(actual)] = operations.as_slice()
+            else {
+                panic!("one current-pointer read is priced");
+            };
+            assert_eq!(actual, &expected, "summable={summable}");
+        }
+    }
 
     const OWNER: [u8; 32] = [7; 32];
     const CREATOR: [u8; 32] = [8; 32];
