@@ -1,3 +1,36 @@
+## [5.0.0-rc.6](https://github.com/dashpay/platform/compare/v5.0.0-rc.5...v5.0.0-rc.6) (2026-10-21)
+
+
+### Features
+
+* **sdk:** persist the owner balance a document write's proof carries ([#5409](https://github.com/dashpay/platform/issues/5409))
+
+
+### Bug Fixes
+
+* **dpp:** compile without default features ([#5498](https://github.com/dashpay/platform/issues/5498))
+* **drive-abci:** a transition whose version is not active is not a decode failure ([#4993](https://github.com/dashpay/platform/issues/4993))
+* **platform-wallet:** build version-3 evonode ProUpServTx once the SPV coinbase shows V24 ([#5497](https://github.com/dashpay/platform/issues/5497))
+* **rs-dapi:** keep the Core RPC permit until the call returns ([#5507](https://github.com/dashpay/platform/issues/5507))
+
+
+### Continuous Integration
+
+* **swift-sdk:** refresh open schema freeze PRs after Swift SDK changes ([#5413](https://github.com/dashpay/platform/issues/5413))
+
+
+### Miscellaneous Chores
+
+* bump GroveDB to 6.1.1, h2, rustls, quinn-proto, crossbeam-epoch and rust_decimal for RUSTSEC advisories ([#5499](https://github.com/dashpay/platform/issues/5499))
+* **deps:** fix critical and high npm audit advisories ([#5500](https://github.com/dashpay/platform/issues/5500))
+* **skills:** show each reviewer their part in /prs ([#5242](https://github.com/dashpay/platform/issues/5242))
+
+
+### Tests
+
+* **drive-abci:** expect the not-active consensus error for a batch with a version 2 base at protocol version 13 ([#5502](https://github.com/dashpay/platform/issues/5502))
+* **drive-abci:** expect the not-active consensus error in the remaining pre-activation tests ([#5508](https://github.com/dashpay/platform/issues/5508))
+
 ## [5.0.0-rc.5](https://github.com/dashpay/platform/compare/v5.0.0-rc.4...v5.0.0-rc.5) (2026-10-19)
 
 
