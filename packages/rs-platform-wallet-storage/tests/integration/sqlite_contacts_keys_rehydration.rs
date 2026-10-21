@@ -6,6 +6,7 @@
 //! `ManagedIdentity` fields directly.
 
 use crate::common;
+use std::collections::BTreeSet;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -86,6 +87,7 @@ fn key_entry(id: Identifier, key_id: u32, byte: u8, security: SecurityLevel) -> 
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
+        derivation_rejected: BTreeSet::new(),
     }
 }
 

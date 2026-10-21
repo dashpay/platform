@@ -303,6 +303,12 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 /// existing key IDs, signing the resulting `IdentityUpdateTransition`
 /// with the supplied `signer_handle`.
 ///
+/// `external_key_ids` names the added keys that do not come from the
+/// wallet's derivation (a key the caller generated or received): they are
+/// stored without derivation coordinates. Every other added key is stored
+/// as derived at the identity's index and the key's id. An id that names no
+/// added key is refused before anything is signed.
+///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
 /// - `identity_id` must be null (refused) or point at a 32-byte buffer.
@@ -310,6 +316,8 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 ///   point at a valid, aligned `[IdentityPubkeyFFI; add_public_keys_count]`
 ///   array whose rows satisfy the contract documented on
 ///   [`IdentityPubkeyFFI`].
+/// - When `external_key_ids_count` is non-zero, `external_key_ids` must
+///   point at a valid, aligned `[u32; external_key_ids_count]` array.
 /// - When `disable_public_key_ids_count` is non-zero,
 ///   `disable_public_key_ids` must point at a valid, aligned
 ///   `[u32; disable_public_key_ids_count]` array.
@@ -329,6 +337,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
     add_public_keys_count: usize,
+    external_key_ids: *const u32,
+    external_key_ids_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     signer_handle: *mut SignerHandle,
@@ -338,6 +348,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
         identity_id,
         add_public_keys,
         add_public_keys_count,
+        external_key_ids,
+        external_key_ids_count,
         disable_public_key_ids,
         disable_public_key_ids_count,
         None,
@@ -361,6 +373,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
     add_public_keys_count: usize,
+    external_key_ids: *const u32,
+    external_key_ids_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     revision: u64,
@@ -371,6 +385,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
         identity_id,
         add_public_keys,
         add_public_keys_count,
+        external_key_ids,
+        external_key_ids_count,
         disable_public_key_ids,
         disable_public_key_ids_count,
         Some(revision),
@@ -400,6 +416,8 @@ unsafe fn update_identity_with_signer(
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
     add_public_keys_count: usize,
+    external_key_ids: *const u32,
+    external_key_ids_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     revision: Option<u64>,
@@ -411,6 +429,8 @@ unsafe fn update_identity_with_signer(
             identity_id,
             add_public_keys,
             add_public_keys_count,
+            external_key_ids,
+            external_key_ids_count,
             disable_public_key_ids,
             disable_public_key_ids_count,
             revision,
@@ -444,6 +464,8 @@ unsafe fn update_identity_with_signer_unguarded(
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
     add_public_keys_count: usize,
+    external_key_ids: *const u32,
+    external_key_ids_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     revision: Option<u64>,
@@ -498,6 +520,19 @@ unsafe fn update_identity_with_signer_unguarded(
             keys
         };
 
+    // A null array with a count would silently store the caller's
+    // external keys as derived, so it is refused.
+    let external_ids: Vec<u32> = if external_key_ids_count == 0 {
+        Vec::new()
+    } else if external_key_ids.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "external_key_ids is null with a non-zero count",
+        );
+    } else {
+        slice::from_raw_parts(external_key_ids, external_key_ids_count).to_vec()
+    };
+
     let disable_ids: Vec<u32> =
         if disable_public_key_ids.is_null() || disable_public_key_ids_count == 0 {
             Vec::new()
@@ -515,6 +550,7 @@ unsafe fn update_identity_with_signer_unguarded(
                 .update_identity_with_external_signer_at_revision(
                     &id,
                     add_keys,
+                    &external_ids,
                     disable_ids,
                     revision,
                     signer,

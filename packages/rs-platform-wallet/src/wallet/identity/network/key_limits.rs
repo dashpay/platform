@@ -33,7 +33,10 @@ impl IdentityWallet {
     ///
     /// Resolves to the key as stored after the update, which is also laid over the cached
     /// identity and upserted through the persister, as
-    /// [`Self::update_identity_with_external_signer`] does for an added key.
+    /// [`Self::update_identity_with_external_signer`] does for an added key. The key returned is
+    /// Platform's; the cache and the store hold it folded over the cache's copy (see
+    /// `ManagedIdentity::replace_key`), which can carry a disable or a higher limit a refresh
+    /// brought while the update was in flight.
     pub async fn update_identity_key_limits_with_external_signer<S>(
         &self,
         identity_id: &Identifier,

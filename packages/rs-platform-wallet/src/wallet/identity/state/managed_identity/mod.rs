@@ -20,7 +20,10 @@ pub use crate::wallet::identity::types::key_storage::{
     self, DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
-use dpp::identity::Identity;
+use crate::changeset::IdentityKeyEntry;
+use dpp::identity::{Identity, KeyID};
+use dpp::prelude::Identifier;
+use std::collections::BTreeMap;
 
 /// A managed identity that combines an Identity with wallet-specific metadata.
 ///
@@ -57,6 +60,13 @@ pub struct ManagedIdentity {
     /// store or flush fails; scalar snapshots must carry it until a successful
     /// retry. Query results are published only after that retry commits.
     pending_balance_snapshot: Option<(u64, BlockTime)>,
+
+    /// Key rows a fetch's fold or a landed update stored and the store
+    /// refused, owed to persistence. Every later such store carries them
+    /// (see `store_with_queued_key_rows`), each with the key as memory then
+    /// holds it, until they land; one the store refuses as invalid on its
+    /// own is dropped.
+    pending_key_rows: BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
 
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,

@@ -4,19 +4,24 @@ use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
-    IdentityKeysChangeSet, KeyWithBreadcrumb, PersistenceError, PlatformWalletChangeSet,
+    IdentityKeysChangeSet, KeyWithBreadcrumb, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet,
 };
+use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use crate::BlockTime;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Compute the 20-byte RIPEMD160(SHA256) hash of the DPP public-key
 /// bytes. Shared between `keys_snapshot_changeset` so the FFI surface
@@ -68,6 +73,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(pub_key),
                     wallet_id: None,
                     derivation_indices: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             );
         }
@@ -87,6 +93,7 @@ impl ManagedIdentity {
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
+            pending_key_rows: BTreeMap::new(),
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -108,6 +115,7 @@ impl ManagedIdentity {
             identity_index: None,
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
+            pending_key_rows: BTreeMap::new(),
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -387,43 +395,288 @@ impl ManagedIdentity {
         }
     }
 
-    /// Fold an identity fetched from Platform into the cached one.
+    /// Fold an identity fetched from Platform, at `block_time` (its proof's
+    /// block), into the cached one.
     ///
-    /// A fetch at the cache's revision or above is taken whole, as before.
-    /// Revisions only grow on Platform, so a fetch at a lower revision was
-    /// answered before an update the cache already holds (one applied
-    /// locally after it landed, or a newer refresh). The revision orders
-    /// only the keys an identity update adds and disables, so such a fetch
-    /// is folded per field: the cache keeps its revision and key set, each
-    /// shared key is disabled when either copy is (Platform's timestamp
-    /// first), and the cache takes the fetch's balance and each shared
-    /// key's limits, which change without a revision bump (as a whole
-    /// fetch set them before). Returns whether it was taken whole.
+    /// The balance is ordered by proof height, not by revision (it changes
+    /// without a revision bump), as every verified balance is: the fetch's
+    /// balance replaces the cache's only when its block is above the cache's
+    /// balance watermark, and is then queued for the next store (see
+    /// `store_keys_and_balance`).
+    ///
+    /// A key's limits are not ordered by revision either (a limits update
+    /// claims none), but they only ever rise, so each shared key keeps the
+    /// higher of the two (see `with_raised_limits`) at any revision.
+    ///
+    /// A fetch at the cache's revision or above is otherwise taken whole,
+    /// except that a key the cache holds disabled stays disabled (a disable
+    /// is permanent on Platform). Revisions only grow on Platform, so a fetch
+    /// at a lower revision was answered before an update the cache already
+    /// holds (one applied locally after it landed, or a newer refresh):
+    /// the cache keeps its revision and key set; it takes only a disable the
+    /// fetch shows (the fetch's timestamp is Platform's own) and a raised
+    /// limit. Returns whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
-    pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
-        if fetched.revision() >= self.identity.revision() {
+    pub fn take_fetched_identity(&mut self, fetched: &Identity, block_time: BlockTime) -> bool {
+        let balance = self.identity.balance();
+        let cached = self.identity.public_keys().clone();
+        let taken = fetched.revision() >= self.identity.revision();
+        let mut keys = if taken {
             self.identity = fetched.clone();
-            return true;
-        }
-        self.identity.set_balance(fetched.balance());
-        let mut keys = self.identity.public_keys().clone();
-        for (key_id, cached) in keys.iter_mut() {
+            self.identity.set_balance(balance);
+            fetched.public_keys().clone()
+        } else {
+            cached.clone()
+        };
+        for (key_id, key) in keys.iter_mut() {
             if let Some(fetched_key) = fetched.public_keys().get(key_id) {
-                *cached = with_disabled_state_of(fetched_key, cached);
+                if let Some(folded) = fold_fetched_key(cached.get(key_id), fetched_key, taken) {
+                    *key = folded;
+                }
             }
         }
         self.identity.set_public_keys(keys);
-        false
+        self.take_fetched_balance(fetched.balance(), block_time);
+        taken
     }
 
-    /// The key decisions to store for `decisions` built from `fetched`.
-    /// Any fetch at the cache's revision or above has its decisions stored
-    /// as they are. For an older fetch each key is folded as
-    /// [`Self::take_fetched_identity`] folds it (disabled when either copy
-    /// is, the fetch's limits), so storing its breadcrumb (a key's derivation
-    /// never changes) does not take back a disable the cache holds; a key
-    /// the cache lacks is left out, since an older answer cannot show
+    /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the row
+    /// of every key the fold adds or changes (a disable, a raised limit, a
+    /// key added at a newer revision) with the identity's scalar snapshot as
+    /// one changeset (see `store_keys_and_balance`), so any refresh, the
+    /// first after a restart included, brings the store up to the fetch.
+    ///
+    /// Used where a fetch comes without derived breadcrumbs (refresh), so the
+    /// rows carry none. A row without a breadcrumb says the key's origin is
+    /// not known here, not that the key is watch-only: every persister keeps
+    /// the breadcrumb a row already holds, and a load or discovery, which
+    /// verify a key against the seed, give a new key its breadcrumb. Until
+    /// one runs, a key a refresh adds is stored without one, rather than with
+    /// derivation coordinates inferred from the identity's wallet slot, or not
+    /// at all.
+    ///
+    /// A failed store is returned; memory holds the fold (the revision above
+    /// all, which the next update is built from), and the refused key rows
+    /// and a balance it took stay queued for the identity's next key store,
+    /// a fetch's or a landed update's (see `store_keys_and_balance`).
+    pub fn store_fetched_identity(
+        &mut self,
+        fetched: &Identity,
+        block_time: BlockTime,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let before = self.identity.public_keys().clone();
+        self.take_fetched_identity(fetched, block_time);
+        let identity_id = self.id();
+        let mut keys_cs = IdentityKeysChangeSet::default();
+        for (key_id, key) in self.identity.public_keys() {
+            if before.get(key_id) == Some(key) {
+                continue;
+            }
+            keys_cs.upserts.insert(
+                (identity_id, *key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id: *key_id,
+                    public_key: key.clone(),
+                    public_key_hash: pubkey_hash_of(key),
+                    wallet_id: None,
+                    derivation_indices: None,
+                    derivation_rejected: BTreeSet::new(),
+                },
+            );
+        }
+        self.store_keys_and_balance(keys_cs, persister)
+    }
+
+    /// Fold `fetched` (see [`Self::take_fetched_identity`]) with the key
+    /// `decisions` derived for it, and store the folded keys with their
+    /// breadcrumbs and the identity's scalar snapshot as one changeset (see
+    /// `store_keys_and_balance`). Used where a fetch comes with derived
+    /// breadcrumbs (loading and discovery); an identity added from this
+    /// fetch just before takes its balance watermark from it. A failed store
+    /// is returned; memory holds the fold, and the refused key rows (with
+    /// their breadcrumbs) stay queued for the identity's next key store, a
+    /// refresh included (see `store_keys_and_balance`).
+    pub fn store_fetched_identity_keys(
+        &mut self,
+        fetched: &Identity,
+        decisions: Vec<KeyWithBreadcrumb>,
+        block_time: BlockTime,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let decisions = self.key_decisions_for_fetch(fetched, decisions);
+        self.take_fetched_identity(fetched, block_time);
+        let keys_cs = self.layer_keys(decisions);
+        self.store_keys_and_balance(keys_cs, persister)
+    }
+
+    /// Store `keys_cs` with the key rows a refused store queued (see
+    /// `pending_key_rows`) and the identity's scalar snapshot as one
+    /// changeset. A queued row `keys_cs` carries itself gives way to it (its
+    /// own row is newer) but lends it what it settled about the same public
+    /// key's origin (a breadcrumb or a rejection) when that row leaves it
+    /// unknown (see [`IdentityKeyEntry::inherit_origin`]). Every other one is stored with
+    /// the key as memory holds it now, so a row queued before a later change
+    /// to the key (a landed disable, a raised limit) does not take that
+    /// change back; a queued key memory no longer holds is dropped. When the
+    /// store fails, its key rows are queued for the next one and the failure
+    /// is returned, unless the store refused the data itself (a constraint
+    /// failure, which a retry would only repeat). A constraint failure names
+    /// no row, so with rows queued the batch is stored again on its own: when
+    /// that is refused too, its failure is returned and the queue stays as it
+    /// was; when it lands, each queued row is stored on its own and only one
+    /// refused as invalid is dropped (one failing otherwise stays queued, with
+    /// the rest, for the next store to report), and the batch's store
+    /// succeeds. Two queued rows refused only together are told apart by
+    /// order: the later one is dropped.
+    pub(super) fn store_with_queued_key_rows(
+        &mut self,
+        keys_cs: IdentityKeysChangeSet,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let queued = std::mem::take(&mut self.pending_key_rows);
+        let combined = self.with_queued_key_rows(keys_cs.clone(), &queued);
+        let error = match self.store_with_snapshot(combined.clone(), persister) {
+            Ok(()) => return Ok(()),
+            Err(e) => e,
+        };
+        if error.kind() != Some(PersistenceErrorKind::Constraint) {
+            self.pending_key_rows = combined.upserts;
+            return Err(error);
+        }
+        if queued.is_empty() {
+            tracing::warn!(
+                identity = %self.id(),
+                error = %error,
+                "identity key rows refused as invalid; not queued for a retry",
+            );
+            return Err(error);
+        }
+        // The refusal names no row, so the batch and each queued row are
+        // stored on their own to tell which one the store refuses.
+        tracing::warn!(
+            identity = %self.id(),
+            error = %error,
+            queued = queued.len(),
+            "identity key rows refused as invalid; storing the batch and each queued row on its own",
+        );
+        match self.store_with_snapshot(keys_cs.clone(), persister) {
+            Ok(()) => {}
+            Err(e) if e.kind() == Some(PersistenceErrorKind::Constraint) => {
+                // Refused without any queued row: the queue is not shown
+                // invalid by it and stays as it was.
+                tracing::warn!(
+                    identity = %self.id(),
+                    error = %e,
+                    "identity key rows refused as invalid; not queued for a retry",
+                );
+                self.pending_key_rows = queued;
+                return Err(e);
+            }
+            Err(e) => {
+                self.pending_key_rows = combined.upserts;
+                return Err(e);
+            }
+        }
+        // The batch landed with the snapshot, so a queued row the store now
+        // refuses on its own is what it refused. A queued row the batch
+        // carries itself is retried as the batch's row lending its origin,
+        // so the batch's newer decision is not taken back; when it lends
+        // nothing, that row already landed. Each retried row is the merged
+        // one, and so is what stays queued.
+        let rows: Vec<_> = queued
+            .iter()
+            .filter_map(|(&id, entry)| {
+                let own = keys_cs.upserts.get(&id);
+                let mut base = IdentityKeysChangeSet::default();
+                if let Some(row) = own {
+                    base.upserts.insert(id, row.clone());
+                }
+                let merged = self
+                    .with_queued_key_rows(base, &BTreeMap::from([(id, entry.clone())]))
+                    .upserts
+                    .remove(&id)?;
+                (own != Some(&merged)).then_some((id, merged))
+            })
+            .collect();
+        let mut rows = rows.into_iter();
+        while let Some((id, row)) = rows.next() {
+            let mut row_cs = IdentityKeysChangeSet::default();
+            row_cs.upserts.insert(id, row.clone());
+            match self.store_with_snapshot(row_cs, persister) {
+                Ok(()) => {}
+                Err(e) if e.kind() == Some(PersistenceErrorKind::Constraint) => {
+                    tracing::warn!(
+                        identity = %self.id(),
+                        key_id = id.1,
+                        error = %e,
+                        "queued identity key row refused as invalid; dropped",
+                    );
+                }
+                Err(e) => {
+                    // The batch landed, so its store succeeds; the rows not
+                    // yet stored wait for the next one, which reports a
+                    // failure that persists.
+                    tracing::warn!(
+                        identity = %self.id(),
+                        error = %e,
+                        "queued identity key rows not stored; kept for the next store",
+                    );
+                    self.pending_key_rows.insert(id, row);
+                    self.pending_key_rows.extend(rows);
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `keys_cs` with the `queued` key rows: a queued row `keys_cs` carries
+    /// itself gives way to it but lends it what it settled about the same
+    /// public key's origin (see [`IdentityKeyEntry::inherit_origin`]); every
+    /// other one takes the key as memory holds it now, its origin dropped
+    /// when that is a different public key; one memory no longer holds is
+    /// left out.
+    fn with_queued_key_rows(
+        &self,
+        mut keys_cs: IdentityKeysChangeSet,
+        queued: &BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
+    ) -> IdentityKeysChangeSet {
+        for (&id, entry) in queued {
+            if let Some(own) = keys_cs.upserts.get_mut(&id) {
+                own.inherit_origin(entry);
+                continue;
+            }
+            let Some(key) = self.identity.public_keys().get(&entry.key_id) else {
+                continue;
+            };
+            let mut entry = entry.clone();
+            // A breadcrumb belongs to the key it was derived for: a queued
+            // row whose key memory now holds differently leaves its origin
+            // unknown.
+            let public_key_hash = pubkey_hash_of(key);
+            if public_key_hash != entry.public_key_hash || key.data() != entry.public_key.data() {
+                entry.wallet_id = None;
+                entry.derivation_indices = None;
+                entry.derivation_rejected = BTreeSet::new();
+            }
+            entry.public_key_hash = public_key_hash;
+            entry.public_key = key.clone();
+            keys_cs.upserts.insert(id, entry);
+        }
+        keys_cs
+    }
+
+    /// The key decisions to store for `decisions` built from `fetched`, each
+    /// key folded as [`Self::take_fetched_identity`] folds it, so storing its
+    /// breadcrumb (a key's derivation never changes) never takes back a
+    /// disable or a raised limit the cache holds. For a fetch at the cache's
+    /// revision or above that is the fetched key, disabled when the cache's
+    /// copy is. For an older fetch it is the cache's copy, disabled when the
+    /// fetch shows a disable; either way each limit is the higher of the two.
+    /// A key the cache lacks is left out, since an older answer cannot show
     /// whether a later update disabled it, and a fetch at least as new will
     /// bring it.
     pub fn key_decisions_for_fetch(
@@ -431,14 +684,12 @@ impl ManagedIdentity {
         fetched: &Identity,
         decisions: Vec<KeyWithBreadcrumb>,
     ) -> Vec<KeyWithBreadcrumb> {
-        if fetched.revision() >= self.identity.revision() {
-            return decisions;
-        }
+        let taken = fetched.revision() >= self.identity.revision();
         decisions
             .into_iter()
             .filter_map(|mut decision| {
-                let cached = self.identity.public_keys().get(&decision.key.id())?;
-                decision.key = with_disabled_state_of(&decision.key, cached);
+                let cached = self.identity.public_keys().get(&decision.key.id());
+                decision.key = fold_fetched_key(cached, &decision.key, taken)?;
                 Some(decision)
             })
             .collect()
@@ -458,7 +709,9 @@ impl ManagedIdentity {
     /// `wallet_id` and `(identity_index, key_index)` together let the
     /// client (iOS Keychain) re-derive the matching private key from
     /// the wallet seed at the DIP-9 identity authentication path.
-    /// Pass `None` for a watch-only key the wallet didn't derive.
+    /// Pass `None` for a key the wallet didn't derive (the row then keeps
+    /// a breadcrumb the persister holds; see
+    /// [`KeyWithBreadcrumb::derivation_rejected`]).
     pub fn add_key(
         &mut self,
         public_key: dpp::identity::IdentityPublicKey,
@@ -471,6 +724,7 @@ impl ManagedIdentity {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: public_key,
                 breadcrumb: derivation_breadcrumb,
+                derivation_rejected: BTreeSet::new(),
             }],
             persister,
         )
@@ -479,7 +733,9 @@ impl ManagedIdentity {
     /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
     /// batched [`IdentityKeysChangeSet`] carrying each key's derivation
     /// breadcrumb (`Some((wallet_id, identity_index, key_index))`) or
-    /// `None` for a watch-only key the wallet can't re-derive.
+    /// `None` for a key the wallet can't re-derive (set
+    /// `derivation_rejected` to the coordinates checked when that is settled,
+    /// so a stored breadcrumb naming them is cleared).
     ///
     /// The single-write batch form of [`Self::add_key`], used by discovery
     /// to materialize every re-derivable key of a freshly found identity in
@@ -495,17 +751,15 @@ impl ManagedIdentity {
             return Ok(());
         }
         let keys_cs = self.layer_keys(keys);
-        let cs = PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
         // Surface the persist failure — these rows carry the per-key
         // derivation breadcrumb + verified scalar that make an imported /
         // restored identity signable. Swallowing a failed store here would
         // leave the keys in memory but absent from the client store, so the
-        // identity comes back watch-only after restart with no signal.
-        persister.store(cs)
+        // identity comes back watch-only after restart with no signal. The
+        // refused rows, breadcrumbs included, also ride the identity's next
+        // key store (see `store_with_queued_key_rows`): a refresh that finds
+        // the same keys has no row of its own to give them.
+        self.store_with_queued_key_rows(keys_cs, persister)
     }
 
     /// Layer `keys` onto this identity in memory, returning their key rows.
@@ -516,6 +770,7 @@ impl ManagedIdentity {
         for KeyWithBreadcrumb {
             key: public_key,
             breadcrumb,
+            derivation_rejected,
         } in keys
         {
             let key_id = public_key.id();
@@ -540,6 +795,11 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id,
                     derivation_indices,
+                    derivation_rejected: if derivation_indices.is_none() {
+                        derivation_rejected
+                    } else {
+                        BTreeSet::new()
+                    },
                 },
             );
         }
@@ -551,12 +811,17 @@ impl ManagedIdentity {
     /// after a key limits update, and emit a single-key [`IdentityKeysChangeSet`] upsert for
     /// it: the limits-side counterpart to [`Self::add_key`] and [`Self::disable_keys`].
     ///
-    /// The key is layered by id, so a key the identity did not hold is added. The entry carries
+    /// The key is layered by id, so a key the identity did not hold is added. It is folded over
+    /// the cache's copy as a fetched key is (see `fold_fetched_key`), so a disable or a higher
+    /// limit a refresh brought while the update was in flight is not taken back. The entry carries
     /// no derivation breadcrumb: a limits update changes nothing about where the key came from,
     /// and the managed identity does not know per key whether it was derived from the wallet
     /// seed or supplied from outside. Every persister keeps the breadcrumb it already holds for
     /// the key when an upsert arrives without one, so the private-key linkage survives the
     /// upsert; inventing coordinates here would overwrite it for an external key.
+    ///
+    /// A failed store is returned, and the row stays queued for the identity's next key store
+    /// (see [`Self::store_with_queued_key_rows`]).
     ///
     /// Does **not** touch the identity revision: a key limits update claims none.
     pub fn replace_key(
@@ -568,6 +833,9 @@ impl ManagedIdentity {
 
         let identity_id = self.id();
         let key_id = public_key.id();
+        let public_key =
+            fold_fetched_key(self.identity.public_keys().get(&key_id), &public_key, true)
+                .unwrap_or(public_key);
         let public_key_hash = pubkey_hash_of(&public_key);
 
         let mut keys = self.identity.public_keys().clone();
@@ -584,15 +852,10 @@ impl ManagedIdentity {
                 public_key_hash,
                 wallet_id: None,
                 derivation_indices: None,
+                derivation_rejected: BTreeSet::new(),
             },
         );
-        let cs = crate::changeset::PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        persister.store(cs)?;
-        Ok(())
+        self.store_with_queued_key_rows(keys_cs, persister)
     }
 
     /// Stamp `disabled_at` on the public keys named by `key_ids` and
@@ -604,13 +867,11 @@ impl ManagedIdentity {
     /// `Identity` (so every signing / introspection path sees the
     /// disabled flag immediately) and a combined changeset is persisted
     /// so the client's `PersistentPublicKey.disabledAt` rows flip
-    /// without a network re-fetch. Each emitted entry reuses the same
-    /// `(wallet_id, identity_index, key_index)` derivation breadcrumb
-    /// `add_key` carries, so the client re-derives idempotently and
-    /// keeps the key's existing private-key linkage rather than
-    /// dropping it on the upsert. Out-of-wallet identities (no
-    /// derivation context) emit a breadcrumb-less entry, matching
-    /// their watch-only state.
+    /// without a network re-fetch. Each emitted entry carries no
+    /// derivation breadcrumb: a disable changes nothing about where the
+    /// key came from, every persister keeps the breadcrumb it already
+    /// holds for the key, and the identity's wallet slot does not say
+    /// whether this key was derived there or supplied from outside.
     ///
     /// `key_ids` not present on the identity are skipped (logged) and
     /// no changeset is emitted when nothing matched. `disabled_at` is
@@ -619,7 +880,8 @@ impl ManagedIdentity {
     /// the authoritative on-chain block time.
     ///
     /// Does **not** touch the identity revision — the caller bumps it
-    /// alongside the update transition. A store failure is logged, not
+    /// alongside the update transition. A store failure is logged (its rows
+    /// queued for the next key store, see `store_with_queued_key_rows`), not
     /// returned; a landed update goes through [`Self::apply_landed_keys`],
     /// which returns it and stores the revision too.
     pub fn disable_keys(
@@ -634,12 +896,7 @@ impl ManagedIdentity {
         if keys_cs.upserts.is_empty() {
             return;
         }
-        let cs = PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(cs) {
+        if let Err(e) = self.store_with_queued_key_rows(keys_cs, persister) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
     }
@@ -648,7 +905,8 @@ impl ManagedIdentity {
     /// `disabled` stamped, and store them with the identity's scalar
     /// snapshot (the landed revision included) as one changeset, even when
     /// no key row matched. The store's failure is returned; memory holds the
-    /// whole update either way.
+    /// whole update either way, and the key rows stay queued for the next
+    /// identity store (see [`Self::store_with_queued_key_rows`]).
     pub fn apply_landed_keys(
         &mut self,
         added: Vec<KeyWithBreadcrumb>,
@@ -660,22 +918,23 @@ impl ManagedIdentity {
         keys_cs
             .upserts
             .extend(self.stamp_disabled(disabled, disabled_at).upserts);
-        self.store_with_snapshot(keys_cs, persister)
+        self.store_with_queued_key_rows(keys_cs, persister)
     }
 
     /// Layer `keys` in memory and store them with the identity's scalar
     /// snapshot as one changeset, even when `keys` is empty. The store's
-    /// failure is returned.
+    /// failure is returned, and the key rows stay queued for the next
+    /// identity store (see [`Self::store_with_queued_key_rows`]).
     pub fn store_keys_with_snapshot(
         &mut self,
         keys: Vec<KeyWithBreadcrumb>,
         persister: &WalletPersister,
     ) -> Result<(), PersistenceError> {
         let keys_cs = self.layer_keys(keys);
-        self.store_with_snapshot(keys_cs, persister)
+        self.store_with_queued_key_rows(keys_cs, persister)
     }
 
-    fn store_with_snapshot(
+    pub(super) fn store_with_snapshot(
         &self,
         keys_cs: IdentityKeysChangeSet,
         persister: &WalletPersister,
@@ -696,12 +955,6 @@ impl ManagedIdentity {
     ) -> IdentityKeysChangeSet {
         let identity_id = self.id();
 
-        // Reconstruct the derivation breadcrumb from the cached
-        // wallet/identity slot. Wallet-owned identities carry both
-        // halves; out-of-wallet ones have neither (and no private key
-        // to preserve), so they fall through to a watch-only entry.
-        let breadcrumb = self.wallet_slot();
-
         // Operate on a clone of the key map, mirroring `add_key`, then
         // write it back once all matching keys have been stamped.
         let mut keys = self.identity.public_keys().clone();
@@ -720,17 +973,6 @@ impl ManagedIdentity {
             public_key.set_disabled_at(disabled_at);
             let public_key_hash = pubkey_hash_of(public_key);
 
-            let (wallet_id, derivation_indices) = match breadcrumb {
-                Some((wallet_id, identity_index)) => (
-                    Some(wallet_id),
-                    Some(IdentityKeyDerivationIndices {
-                        identity_index,
-                        key_index: key_id,
-                    }),
-                ),
-                None => (None, None),
-            };
-
             keys_cs.upserts.insert(
                 (identity_id, key_id),
                 IdentityKeyEntry {
@@ -738,8 +980,9 @@ impl ManagedIdentity {
                     key_id,
                     public_key: public_key.clone(),
                     public_key_hash,
-                    wallet_id,
-                    derivation_indices,
+                    wallet_id: None,
+                    derivation_indices: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             );
         }
@@ -751,18 +994,63 @@ impl ManagedIdentity {
     }
 }
 
-/// `fetched`'s copy of a key, disabled when either copy is: the key's limits
-/// change without a revision bump, while a disable is permanent on Platform.
-/// The fetch's timestamp is Platform's own, so it wins over the cache's,
-/// which may be a local placeholder.
-fn with_disabled_state_of(
+/// How a fetched key lands in the cache, the one rule the identity fold and
+/// its key decisions share. From a fetch taken whole (`taken`) it is the
+/// fetched key, disabled when the cache's copy is (a disable is permanent
+/// on Platform; Platform's timestamp first). From an older fetch it is the
+/// cache's copy with the fetch's disable, or nothing for a key the cache
+/// lacks. Either way each limit is the higher of the two copies'.
+fn fold_fetched_key(
+    cached: Option<&IdentityPublicKey>,
     fetched: &IdentityPublicKey,
-    cached: &IdentityPublicKey,
-) -> IdentityPublicKey {
+    taken: bool,
+) -> Option<IdentityPublicKey> {
+    if !taken {
+        return cached
+            .map(|cached| with_raised_limits(with_disable_from(cached, fetched), fetched));
+    }
     let mut key = fetched.clone();
-    match fetched.disabled_at().or(cached.disabled_at()) {
-        Some(disabled_at) => key.set_disabled_at(disabled_at),
-        None => key.remove_disabled_at(),
+    let Some(cached) = cached else {
+        return Some(key);
+    };
+    if key.disabled_at().is_none() {
+        if let Some(disabled_at) = cached.disabled_at() {
+            key.set_disabled_at(disabled_at);
+        }
+    }
+    Some(with_raised_limits(key, cached))
+}
+
+/// `key` with each of its limits raised to `other`'s where that is higher.
+/// Consensus only ever raises a key's limits (a budget top-up, a later
+/// expiry; anything else is refused as not raising it) and never adds or
+/// removes one, so the higher value is the newer one whichever answer
+/// carries it, and a delayed answer cannot take a raise back. A limit only
+/// one copy has is therefore one the other copy lost (a row stored without
+/// it, say), not one Platform removed or has yet to add, so it is taken
+/// from whichever copy has it.
+fn with_raised_limits(key: IdentityPublicKey, other: &IdentityPublicKey) -> IdentityPublicKey {
+    fn higher(own: Option<u64>, other: Option<u64>) -> Option<u64> {
+        match (own, other) {
+            (Some(own), Some(other)) => Some(own.max(other)),
+            (own, other) => own.or(other),
+        }
+    }
+    let total_budget = higher(key.total_budget(), other.total_budget());
+    let expires_at = higher(key.expires_at(), other.expires_at());
+    if (total_budget, expires_at) == (key.total_budget(), key.expires_at()) {
+        return key;
+    }
+    key.with_limits(total_budget, expires_at)
+}
+
+/// The cache's copy of a key, disabled when an older fetch's copy is: a
+/// disable is permanent on Platform. The fetch's timestamp is Platform's
+/// own, so it wins over the cache's, which may be a local placeholder.
+fn with_disable_from(cached: &IdentityPublicKey, fetched: &IdentityPublicKey) -> IdentityPublicKey {
+    let mut key = cached.clone();
+    if let Some(disabled_at) = fetched.disabled_at().or(cached.disabled_at()) {
+        key.set_disabled_at(disabled_at);
     }
     key
 }
@@ -776,7 +1064,6 @@ mod tests {
     use crate::wallet::identity::PaymentEntry;
     use crate::wallet::platform_wallet::WalletId;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
-    use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::v0::IdentityV0;
@@ -841,11 +1128,11 @@ mod tests {
     }
 
     /// A fetch at a lower revision than the cache's was answered before an
-    /// update the cache holds: the cache keeps its revision and key set, a
-    /// key is disabled when either copy is (Platform's timestamp first), and
-    /// the cache takes the fetch's balance and key limits, which change
-    /// without a revision. A fetch at the same revision or higher replaces
-    /// the cache.
+    /// update the cache holds: the cache keeps its revision and key set, and
+    /// takes only a disable the fetch shows (Platform's timestamp first) and
+    /// a raised limit. A fetch at the same revision or higher replaces the
+    /// cache but never takes back a disable or a raise. Either way the
+    /// balance follows the proof's block, not the revision.
     #[test]
     fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
@@ -862,6 +1149,9 @@ mod tests {
                 expires_at: None,
             })
         }
+        fn block(height: u64) -> BlockTime {
+            BlockTime::new(height, 1, height)
+        }
         fn at(revision: u64, balance: u64, keys: Vec<IdentityPublicKey>) -> Identity {
             Identity::V0(IdentityV0 {
                 id: Identifier::from([1u8; 32]),
@@ -870,37 +1160,84 @@ mod tests {
                 revision,
             })
         }
-        // The cache took an update at 6 that disabled key 3; the fetch at 5
-        // still shows key 3 live, a raised budget, a newer balance and key
-        // 4, which the cache never saw.
+        // The cache took an update at 6 that disabled key 3, and holds a
+        // balance proved at block 9; the fetch at 5 still shows key 3 live,
+        // a lower budget and key 4, which the cache never saw. Budgets only
+        // rise, so the lower one is older, and the fetch's balance is no
+        // newer than the cache's proof.
         let cache = at(6, 10, vec![limited(3, 100, Some(9))]);
-        let older = at(5, 20, vec![limited(3, 500, None), limited(4, 1, None)]);
-        let mut managed = ManagedIdentity::new(cache, 0);
-        assert!(!managed.take_fetched_identity(&older));
-        assert_eq!(managed.identity, at(6, 20, vec![limited(3, 500, Some(9))]));
-        assert_eq!(managed.identity.public_keys()[&3].total_budget(), Some(500));
+        let older = at(5, 20, vec![limited(3, 50, None), limited(4, 1, None)]);
+        let mut managed = ManagedIdentity::new(cache.clone(), 0);
+        managed.last_updated_balance_block_time = Some(block(9));
+        for height in [8, 9] {
+            assert!(!managed.take_fetched_identity(&older, block(height)));
+            assert_eq!(managed.identity, cache);
+        }
+        // A balance proved at a later block is taken whatever the revision.
+        assert!(!managed.take_fetched_identity(&older, block(10)));
+        assert_eq!(managed.identity, at(6, 20, vec![limited(3, 100, Some(9))]));
+        assert_eq!(managed.last_updated_balance_block_time, Some(block(10)));
 
         // A disable is permanent: one the older fetch shows sticks even
-        // when the cache's copy is live.
+        // when the cache's copy is live. A higher budget it shows is a raise
+        // the cache missed (a limits update claims no revision).
         let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
-        assert!(!live.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
-        assert_eq!(live.identity.public_keys()[&3].disabled_at(), Some(4));
+        live.last_updated_balance_block_time = Some(block(9));
+        let disabling = at(5, 20, vec![limited(3, 500, Some(4))]);
+        assert!(!live.take_fetched_identity(&disabling, block(9)));
+        assert_eq!(live.identity, at(6, 10, vec![limited(3, 500, Some(4))]));
         // Both disabled: the fetch's timestamp is Platform's, the cache's
         // may be a local placeholder.
         let mut stamped = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, Some(99))]), 0);
-        assert!(!stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert!(
+            !stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))]), block(9))
+        );
         assert_eq!(stamped.identity.public_keys()[&3].disabled_at(), Some(4));
 
-        let same = at(6, 30, vec![limited(3, 600, Some(9)), limited(4, 1, None)]);
-        assert!(managed.take_fetched_identity(&same));
+        // An answer at the cache's revision or above is taken whole...
+        let same = at(6, 30, vec![limited(3, 600, Some(7)), limited(4, 1, None)]);
+        assert!(managed.take_fetched_identity(&same, block(11)));
         assert_eq!(managed.identity, same);
-        let newer = at(7, 40, vec![limited(3, 600, Some(9))]);
-        assert!(managed.take_fetched_identity(&newer));
+        assert_eq!(managed.last_updated_balance_block_time, Some(block(11)));
+        let newer = at(7, 40, vec![limited(3, 600, Some(7))]);
+        assert!(managed.take_fetched_identity(&newer, block(12)));
         assert_eq!(managed.identity, newer);
+
+        // ...except for a balance its proof does not order after the cache's,
+        // a disable the cache holds and the answer lacks, and a budget the
+        // cache holds higher: a delayed answer cannot take a raise back.
+        let delayed = at(7, 35, vec![limited(3, 550, None)]);
+        for height in [11, 12] {
+            assert!(managed.take_fetched_identity(&delayed, block(height)));
+            assert_eq!(managed.identity, at(7, 40, vec![limited(3, 600, Some(7))]));
+            assert_eq!(managed.last_updated_balance_block_time, Some(block(12)));
+        }
     }
 
-    /// An older fetch's key decisions carry the cache's disabled state and
-    /// the fetch's limits, and a key only the fetch has is left out.
+    /// Each limit is the higher of the two copies', since consensus only
+    /// raises a key's limits; a limit only one copy has is taken from it,
+    /// since none is ever added or removed, so the other copy lost it.
+    #[test]
+    fn should_keep_the_higher_of_each_key_limit() {
+        let limited = |total_budget, expires_at| key(3).with_limits(total_budget, expires_at);
+        assert_eq!(
+            with_raised_limits(limited(Some(100), Some(10)), &limited(Some(50), Some(20))),
+            limited(Some(100), Some(20))
+        );
+        assert_eq!(
+            with_raised_limits(limited(Some(100), None), &limited(Some(50), Some(20))),
+            limited(Some(100), Some(20))
+        );
+        assert_eq!(
+            with_raised_limits(key(3), &limited(Some(50), Some(20))),
+            limited(Some(50), Some(20))
+        );
+        assert_eq!(with_raised_limits(key(3), &key(3)), key(3));
+    }
+
+    /// An older fetch's key decisions carry the cache's copy of each key
+    /// (its disabled state, each limit the higher of the two), and a key
+    /// only the fetch has is left out.
     #[test]
     fn should_fold_an_older_fetch_s_key_decisions_into_the_cache_s_keys() {
         let mut disabled = key(3);
@@ -927,10 +1264,12 @@ mod tests {
                 KeyWithBreadcrumb {
                     key: key(3),
                     breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
                 KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             ]
         };
@@ -943,6 +1282,682 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    /// A key decision keeps the higher of each limit at any revision, so a
+    /// load answered before a limits update the cache holds does not store
+    /// the lower one.
+    #[test]
+    fn should_keep_a_raised_limit_in_a_fetch_s_key_decisions() {
+        let identity = |revision, budget| {
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::from([(3, key(3).with_limits(Some(budget), None))]),
+                balance: 0,
+                revision,
+            })
+        };
+        let managed = ManagedIdentity::new(identity(6, 500), 0);
+        for revision in [5, 6, 7] {
+            let decisions = vec![KeyWithBreadcrumb {
+                key: key(3).with_limits(Some(100), None),
+                breadcrumb: None,
+                derivation_rejected: BTreeSet::new(),
+            }];
+            let folded = managed.key_decisions_for_fetch(&identity(revision, 100), decisions);
+            assert_eq!(folded[0].key.total_budget(), Some(500), "at {revision}");
+        }
+    }
+
+    /// A landed limits update is folded over the cache's copy: a disable or
+    /// a higher limit a refresh brought while it was in flight is not taken
+    /// back.
+    #[test]
+    fn replace_key_keeps_a_disable_and_a_higher_limit_the_cache_holds() {
+        let mut cached = key(1).with_limits(Some(2_000), Some(50));
+        cached.set_disabled_at(9);
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::from([(1, cached)]),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = WalletPersister::new(
+            [0xAB; 32],
+            std::sync::Arc::new(CapturingPersister::default()) as _,
+        );
+        managed
+            .replace_key(key(1).with_limits(Some(1_500), Some(60)), &p)
+            .expect("replace_key persists in test");
+        let mut expected = key(1).with_limits(Some(2_000), Some(60));
+        expected.set_disabled_at(9);
+        assert_eq!(managed.identity.public_keys()[&1], expected);
+    }
+
+    /// Persister that refuses every store while armed and records the rest.
+    #[derive(Default)]
+    struct ArmedPersister {
+        armed: std::sync::atomic::AtomicBool,
+        constraint: std::sync::atomic::AtomicBool,
+        /// Key ids whose rows the store refuses as invalid.
+        poison: Mutex<BTreeSet<KeyID>>,
+        /// Store calls so far, and the one (1-based, 0 for none) that fails
+        /// as a transient error.
+        attempts: std::sync::atomic::AtomicUsize,
+        transient_at: std::sync::atomic::AtomicUsize,
+        stores: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+    impl PlatformWalletPersistence for ArmedPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            let attempt = self
+                .attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if attempt == self.transient_at.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("transient"));
+            }
+            let poisoned = changeset.identity_keys.as_ref().is_some_and(|keys| {
+                let poison = self.poison.lock().unwrap();
+                keys.upserts
+                    .keys()
+                    .any(|(_, key_id)| poison.contains(key_id))
+            });
+            if poisoned || self.constraint.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Constraint,
+                    "invalid row",
+                ));
+            }
+            if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("armed"));
+            }
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// The rows of a refused store are queued and the next store carries
+    /// them, each with the key as memory holds it then (a later raise is
+    /// not taken back) and its breadcrumb; a row the next store carries
+    /// itself replaces the queued one but keeps its breadcrumb when it has
+    /// none.
+    #[test]
+    fn should_carry_a_refused_store_s_key_rows_into_the_next_one() {
+        let wallet_id: WalletId = [0xAB; 32];
+        let mut managed = ManagedIdentity::new(
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::new(),
+                balance: 0,
+                revision: 0,
+            }),
+            0,
+        );
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+        let with_breadcrumb = |key: IdentityPublicKey| KeyWithBreadcrumb {
+            breadcrumb: Some((wallet_id, 0, key.id())),
+            key,
+            derivation_rejected: BTreeSet::new(),
+        };
+        let row = |key_id: KeyID| {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .last()
+                .and_then(|cs| cs.identity_keys.as_ref())
+                .and_then(|keys| keys.upserts.get(&(managed_id(), key_id)).cloned())
+        };
+        fn managed_id() -> Identifier {
+            Identifier::from([1u8; 32])
+        }
+
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let limited = key(1).with_limits(Some(100), None);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(limited.clone())], &p)
+            .is_err());
+        // A raise lands in memory before the retry.
+        managed
+            .identity
+            .add_public_key(key(1).with_limits(Some(200), None));
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(2))], &p)
+            .unwrap();
+        let retried = row(1).expect("the refused row rides the next store");
+        assert_eq!(retried.public_key, key(1).with_limits(Some(200), None));
+        assert!(retried.derivation_indices.is_some());
+        assert!(row(2).is_some());
+
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(2))], &p)
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let raised = key(2).with_limits(Some(5), None);
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: raised.clone(),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
+                }],
+                &p,
+            )
+            .unwrap();
+        // The new row's key, the queued row's breadcrumb.
+        let replaced = row(2).expect("the new row is stored");
+        assert_eq!(replaced.public_key, raised);
+        assert!(replaced.derivation_indices.is_some());
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert_eq!(row(2), None, "the queue is empty after a store succeeds");
+
+        // Rows refused as invalid data are not queued: a retry would only
+        // repeat the refusal. Rows an earlier refused store queued stay.
+        persister
+            .constraint
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(3))], &p)
+            .is_err());
+        persister
+            .constraint
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert_eq!(row(3), None);
+
+        // A row queued by an earlier refused store survives a later batch the
+        // store refuses as invalid, and rides the next store that succeeds.
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(5))], &p)
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        persister
+            .constraint
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(6))], &p)
+            .is_err());
+        persister
+            .constraint
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        let kept = row(5).expect("the earlier queued row survives the constraint failure");
+        assert!(kept.derivation_indices.is_some());
+        assert_eq!(row(6), None, "the refused batch's own row is not queued");
+
+        // However often the batches are refused, the queue stays: a refusal
+        // the batch earns on its own is no evidence against a queued row.
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(7))], &p)
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        persister
+            .constraint
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        for _ in 0..3 {
+            assert!(managed.store_keys_with_snapshot(Vec::new(), &p).is_err());
+        }
+        persister
+            .constraint
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert!(
+            row(7).is_some(),
+            "the queue outlives refusals the batch earns"
+        );
+    }
+
+    /// A constraint failure names no row, so the batch and each queued row
+    /// are stored on their own: only the queued row the store refuses by
+    /// itself is dropped, the valid ones land, and a queued row the batch
+    /// carries itself keeps the batch's newer origin decision.
+    #[test]
+    fn should_drop_only_the_queued_row_a_constraint_failure_is_traced_to() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let mut managed = ManagedIdentity::new(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: BTreeMap::new(),
+                balance: 0,
+                revision: 0,
+            }),
+            0,
+        );
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+        let with_breadcrumb = |key: IdentityPublicKey| KeyWithBreadcrumb {
+            breadcrumb: Some((wallet_id, 0, key.id())),
+            key,
+            derivation_rejected: BTreeSet::new(),
+        };
+        // The latest stored row of `key_id`, in any store.
+        let stored = |key_id: KeyID| {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .find_map(|cs| {
+                    cs.identity_keys
+                        .as_ref()
+                        .and_then(|keys| keys.upserts.get(&(id, key_id)).cloned())
+                })
+        };
+        let arm = |on: bool| {
+            persister
+                .armed
+                .store(on, std::sync::atomic::Ordering::SeqCst)
+        };
+
+        arm(true);
+        assert!(managed
+            .store_keys_with_snapshot(
+                vec![
+                    with_breadcrumb(key(1)),
+                    with_breadcrumb(key(2)),
+                    with_breadcrumb(key(3)),
+                ],
+                &p,
+            )
+            .is_err());
+        arm(false);
+        persister.poison.lock().unwrap().insert(2);
+        // Key 1's newer row rejects the slot its queued breadcrumb names.
+        managed
+            .store_keys_with_snapshot(
+                vec![
+                    KeyWithBreadcrumb {
+                        key: key(1),
+                        breadcrumb: None,
+                        derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                            identity_index: 0,
+                            key_index: 1,
+                        }]),
+                    },
+                    with_breadcrumb(key(4)),
+                ],
+                &p,
+            )
+            .expect("the batch lands once the refused queued row is traced");
+        assert!(stored(4).is_some());
+        let valid = stored(3).expect("a valid queued row lands");
+        assert!(valid.derivation_indices.is_some());
+        assert_eq!(stored(2), None, "the refused queued row never lands");
+        let newer = stored(1).expect("the batch's row lands");
+        assert_eq!(
+            newer.derivation_indices, None,
+            "the queued breadcrumb is not put back"
+        );
+        assert!(!newer.derivation_rejected.is_empty());
+
+        // The refused row was dropped, so it no longer refuses later stores.
+        let stores = persister.stores.lock().unwrap().len();
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert_eq!(persister.stores.lock().unwrap().len(), stores + 1);
+        assert_eq!(stored(2), None);
+
+        // A transient failure while the queued rows are retried keeps the
+        // rest queued as merged, so the batch's decision for a key it
+        // carries is not taken back by the next store.
+        arm(true);
+        assert!(managed
+            .store_keys_with_snapshot(
+                vec![
+                    with_breadcrumb(key(5)),
+                    with_breadcrumb(key(6)),
+                    with_breadcrumb(key(7)),
+                ],
+                &p,
+            )
+            .is_err());
+        arm(false);
+        *persister.poison.lock().unwrap() = BTreeSet::from([7]);
+        // Combined (refused), batch alone (lands), key 5 alone (transient).
+        let attempts = persister.attempts.load(std::sync::atomic::Ordering::SeqCst);
+        persister
+            .transient_at
+            .store(attempts + 3, std::sync::atomic::Ordering::SeqCst);
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: key(6),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                        identity_index: 0,
+                        key_index: 6,
+                    }]),
+                }],
+                &p,
+            )
+            .expect("the batch landed");
+        assert_eq!(stored(5), None, "the transient failure kept key 5 queued");
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert!(stored(5)
+            .expect("key 5 lands next")
+            .derivation_indices
+            .is_some());
+        assert_eq!(
+            stored(6)
+                .expect("the batch's row landed")
+                .derivation_indices,
+            None,
+            "the queued breadcrumb is not put back",
+        );
+        assert_eq!(stored(7), None);
+    }
+
+    /// A key a refresh adds is stored without a breadcrumb, which a load's
+    /// row then gives it, and a later breadcrumb-less change keeps.
+    #[test]
+    fn should_store_a_key_a_refresh_adds_and_keep_a_breadcrumb_a_load_gives_it() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let identity = |revision, keys: Vec<IdentityPublicKey>| {
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance: 0,
+                revision,
+            })
+        };
+        let block = |height| BlockTime::new(height, 1, height);
+        let rows = |persister: &CapturingPersister, key_id: KeyID| -> Vec<IdentityKeyEntry> {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|cs| {
+                    cs.identity_keys
+                        .as_ref()?
+                        .upserts
+                        .get(&(id, key_id))
+                        .cloned()
+                })
+                .collect()
+        };
+
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+        let mut managed = ManagedIdentity::new(identity(6, vec![key(1)]), 0);
+        managed.wallet_id = Some(wallet_id);
+        managed
+            .store_fetched_identity(&identity(7, vec![key(1), key(4)]), block(1), &p)
+            .unwrap();
+        let added = rows(&persister, 4);
+        assert_eq!(
+            added.len(),
+            1,
+            "the added key is stored, its origin unknown"
+        );
+        assert_eq!(added[0].derivation_indices, None);
+
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: Some((wallet_id, 0, 4)),
+                    derivation_rejected: BTreeSet::new(),
+                }],
+                &p,
+            )
+            .unwrap();
+        let mut disabled = key(4);
+        disabled.set_disabled_at(5);
+        managed
+            .store_fetched_identity(&identity(8, vec![key(1), disabled.clone()]), block(2), &p)
+            .unwrap();
+        // The refresh's row carries no breadcrumb; the persisters keep the
+        // load's (SQLite: `should_keep_a_stored_breadcrumb_when_an_upsert_carries_none`).
+        let last = rows(&persister, 4).pop().unwrap();
+        assert_eq!(last.public_key, disabled);
+        assert_eq!(last.derivation_indices, None);
+    }
+
+    /// A refused row lends its breadcrumb only to the same public key: a later
+    /// row of another key under the same id, or a queued row whose key memory
+    /// now holds differently, leaves the origin unknown. A row that settles a
+    /// key as not derived takes nothing.
+    #[test]
+    fn should_lend_a_queued_breadcrumb_only_to_the_same_public_key() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let other_key = |key_id: KeyID| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                data: dpp::platform_value::BinaryData::new(vec![0x03; 33]),
+                ..match key(key_id) {
+                    IdentityPublicKey::V0(v0) => v0,
+                    _ => unreachable!(),
+                }
+            })
+        };
+        let mut managed = ManagedIdentity::new(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: BTreeMap::from([(1, key(1))]),
+                balance: 0,
+                revision: 0,
+            }),
+            0,
+        );
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+        let row = |key_id: KeyID| {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .last()
+                .and_then(|cs| cs.identity_keys.as_ref())
+                .and_then(|keys| keys.upserts.get(&(id, key_id)).cloned())
+        };
+        let refuse = |managed: &mut ManagedIdentity, key: IdentityPublicKey| {
+            persister
+                .armed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            assert!(managed
+                .add_keys(
+                    vec![KeyWithBreadcrumb {
+                        breadcrumb: Some((wallet_id, 0, key.id())),
+                        key,
+                        derivation_rejected: BTreeSet::new(),
+                    }],
+                    &p,
+                )
+                .is_err());
+            persister
+                .armed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        };
+
+        // Its own row for another public key.
+        refuse(&mut managed, key(2));
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: other_key(2),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
+                }],
+                &p,
+            )
+            .unwrap();
+        assert_eq!(row(2).unwrap().derivation_indices, None);
+
+        // A queued row whose key memory now holds differently.
+        refuse(&mut managed, key(3));
+        managed.identity.add_public_key(other_key(3));
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        let queued = row(3).unwrap();
+        assert_eq!(queued.public_key, other_key(3));
+        assert_eq!(queued.derivation_indices, None);
+
+        // A row that settles the same key as not derived.
+        refuse(&mut managed, key(4));
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                        identity_index: 0,
+                        key_index: 4,
+                    }]),
+                }],
+                &p,
+            )
+            .unwrap();
+        let settled = row(4).unwrap();
+        assert_eq!(settled.derivation_indices, None);
+        assert!(!settled.derivation_rejected.is_empty());
+
+        // A refused rejection is kept by the next store's own row for the
+        // same key that leaves its origin unknown (a disable).
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .add_keys(
+                vec![KeyWithBreadcrumb {
+                    key: key(5),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                        identity_index: 0,
+                        key_index: 5,
+                    }]),
+                }],
+                &p,
+            )
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.disable_keys(&[5], 9, &p);
+        let disabled = row(5).unwrap();
+        assert_eq!(disabled.public_key.disabled_at(), Some(9));
+        assert_eq!(disabled.derivation_rejected.len(), 1);
+
+        // A refused rejection retried with a second, distinct one for the
+        // same key keeps both.
+        let rejecting = |identity_index| KeyWithBreadcrumb {
+            key: key(6),
+            breadcrumb: None,
+            derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                identity_index,
+                key_index: 6,
+            }]),
+        };
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed.add_keys(vec![rejecting(0)], &p).is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.add_keys(vec![rejecting(1)], &p).unwrap();
+        assert_eq!(
+            row(6).unwrap().derivation_rejected,
+            BTreeSet::from([
+                IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: 6,
+                },
+                IdentityKeyDerivationIndices {
+                    identity_index: 1,
+                    key_index: 6,
+                },
+            ])
+        );
+        assert!(
+            !disabled.derivation_rejected.is_empty(),
+            "the queued rejection survives"
+        );
+    }
+
+    /// A key row `add_keys` could not store, breadcrumb included, rides the
+    /// next key store, here a refresh that finds the same keys and so has no
+    /// row of its own to give them.
+    #[test]
+    fn should_store_a_refused_add_key_row_with_the_next_refresh() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let identity = |keys: Vec<IdentityPublicKey>| {
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance: 0,
+                revision: 6,
+            })
+        };
+        let mut managed = ManagedIdentity::new(identity(vec![key(1)]), 0);
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .add_keys(
+                vec![KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: Some((wallet_id, 0, 4)),
+                    derivation_rejected: BTreeSet::new(),
+                }],
+                &p,
+            )
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed
+            .store_fetched_identity(&identity(vec![key(1), key(4)]), BlockTime::new(1, 1, 1), &p)
+            .unwrap();
+        let stores = persister.stores.lock().unwrap();
+        let row = stores
+            .last()
+            .and_then(|cs| cs.identity_keys.as_ref())
+            .and_then(|keys| keys.upserts.get(&(id, 4)))
+            .expect("the refused row rides the refresh's store");
+        assert_eq!(row.public_key, key(4));
+        assert!(row.derivation_indices.is_some());
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,
@@ -1163,10 +2178,12 @@ mod tests {
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(0),
                         breadcrumb: Some((wallet_id, 7, 0)),
+                        derivation_rejected: BTreeSet::new(),
                     },
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(1),
                         breadcrumb: None,
+                        derivation_rejected: BTreeSet::new(),
                     },
                 ],
                 &p,
@@ -1209,8 +2226,6 @@ mod tests {
     /// breadcrumb when an upsert carries none.
     #[test]
     fn replace_key_carries_no_breadcrumb() {
-        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
-
         let identity = Identity::V0(IdentityV0 {
             id: Identifier::from([1u8; 32]),
             public_keys: BTreeMap::new(),
@@ -1229,6 +2244,7 @@ mod tests {
                 vec![crate::changeset::KeyWithBreadcrumb {
                     key: key(1),
                     breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1300,6 +2316,7 @@ mod tests {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: key(0),
                 breadcrumb: Some((wallet_id, 7, 0)),
+                derivation_rejected: BTreeSet::new(),
             }],
             &p,
         );

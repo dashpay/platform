@@ -260,8 +260,10 @@ pub struct IdentityKeyEntryFFI {
     // re-derive the 32-byte ECDSA scalar from the named wallet's
     // mnemonic at the DIP-9 identity authentication path
     // `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
-    // persist it locally. When either flag is false the key is
-    // watch-only.
+    // persist it locally. When either flag is false the entry gives no
+    // breadcrumb: `rejected_derivations_ptr` / `_len` then say whether the
+    // client clears the one it holds (it names one of the rejected
+    // coordinates) or keeps it (empty: unknown origin).
     pub wallet_id_is_some: bool,
     pub wallet_id: [u8; 32],
     pub derivation_indices_is_some: bool,
@@ -313,6 +315,18 @@ pub struct IdentityKeyEntryFFI {
     pub total_budget: u64,
     pub expires_at_is_some: bool,
     pub expires_at: u64,
+
+    /// With `derivation_indices_is_some` false: the coordinates the key was
+    /// checked at under the persisting wallet's seed and found not to come
+    /// from (a candidate there did not reproduce it, or the caller declared
+    /// the key external), as `rejected_derivations_len` flat
+    /// `[identity_index, key_index]` pairs. The client clears a derivation
+    /// path that wallet holds for the key only when it names one of them.
+    /// Empty (null, 0) when the key's origin is unknown here: the client
+    /// keeps the path it holds. Owned by Rust, released by
+    /// [`free_identity_key_entry_ffi`].
+    pub rejected_derivations_ptr: *mut u32,
+    pub rejected_derivations_len: usize,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -365,9 +379,11 @@ pub struct IdentityKeyRemovalFFI {
 //   200       expires_at_is_some      bool
 //   201..=207 (padding to 8)
 //   208..=215 expires_at              u64
+//   216..=223 rejected_derivations_ptr *mut u32
+//   224..=231 rejected_derivations_len usize
 //
-// Total size = 216, alignment = 8 (from u64 / pointer).
-const _: [u8; 216] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 232, alignment = 8 (from u64 / pointer).
+const _: [u8; 232] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -707,6 +723,18 @@ impl IdentityKeyEntryFFI {
             Some(idx) => (true, idx.identity_index, idx.key_index),
             None => (false, 0, 0),
         };
+        let (rejected_derivations_ptr, rejected_derivations_len) =
+            if entry.derivation_indices.is_some() || entry.derivation_rejected.is_empty() {
+                (ptr::null_mut(), 0)
+            } else {
+                let pairs: Box<[u32]> = entry
+                    .derivation_rejected
+                    .iter()
+                    .flat_map(|idx| [idx.identity_index, idx.key_index])
+                    .collect();
+                let len = entry.derivation_rejected.len();
+                (Box::into_raw(pairs) as *mut u32, len)
+            };
 
         // Project the DPP `ContractBounds` enum into the kind /
         // id / doc-type-cstring trio so the Swift side can switch
@@ -757,6 +785,8 @@ impl IdentityKeyEntryFFI {
             total_budget,
             expires_at_is_some,
             expires_at,
+            rejected_derivations_ptr,
+            rejected_derivations_len,
         }
     }
 }
@@ -922,6 +952,18 @@ pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
         let _ = unsafe { CString::from_raw(entry.contract_bounds_document_type as *mut c_char) };
         entry.contract_bounds_document_type = ptr::null();
     }
+    // The rejected-derivation pairs, a boxed `[u32]` of twice the length.
+    if !entry.rejected_derivations_ptr.is_null() && entry.rejected_derivations_len > 0 {
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                entry.rejected_derivations_ptr,
+                entry.rejected_derivations_len * 2,
+            )
+        };
+        let _ = unsafe { Box::from_raw(slice as *mut [u32]) };
+        entry.rejected_derivations_ptr = ptr::null_mut();
+        entry.rejected_derivations_len = 0;
+    }
 }
 
 #[cfg(test)]
@@ -934,6 +976,7 @@ mod tests {
     use platform_wallet::changeset::{
         IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
     };
+    use std::collections::BTreeSet;
 
     #[test]
     fn test_identity_entry_ffi_round_trip() {
@@ -1221,6 +1264,7 @@ mod tests {
                 identity_index: 3,
                 key_index: 5,
             }),
+            derivation_rejected: BTreeSet::new(),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
@@ -1263,10 +1307,33 @@ mod tests {
             public_key_hash: [0x00; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
         assert!(!ffi.derivation_indices_is_some);
+        assert!(
+            ffi.rejected_derivations_ptr.is_null() && ffi.rejected_derivations_len == 0,
+            "an unknown origin keeps a stored path"
+        );
+        let settled = IdentityKeyEntry {
+            derivation_rejected: BTreeSet::from([
+                IdentityKeyDerivationIndices {
+                    identity_index: 2,
+                    key_index: 5,
+                },
+                IdentityKeyDerivationIndices {
+                    identity_index: 3,
+                    key_index: 5,
+                },
+            ]),
+            ..entry.clone()
+        };
+        let mut settled_ffi = IdentityKeyEntryFFI::from_entry(&settled);
+        assert_eq!(settled_ffi.rejected_derivations_len, 2);
+        let pairs = unsafe { std::slice::from_raw_parts(settled_ffi.rejected_derivations_ptr, 4) };
+        assert_eq!(pairs, &[2, 5, 3, 5], "every refuted path is carried");
+        unsafe { free_identity_key_entry_ffi(&mut settled_ffi) };
         assert!(ffi.read_only);
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);
@@ -1298,6 +1365,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 3);
@@ -1327,6 +1395,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 1);
@@ -1359,6 +1428,7 @@ mod tests {
             public_key_hash: [0x22; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 2);

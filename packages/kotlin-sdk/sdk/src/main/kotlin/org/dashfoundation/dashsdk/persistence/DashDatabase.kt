@@ -179,9 +179,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * treated the account as rotated, tore it down and rebuilt it — and that
  * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
  * native rebuilds once, stamps it, and never again.
+ *
+ * Version 16 (key-origin provenance, dashpay/platform#5487): adds the
+ * nullable `public_keys.derivationWalletId` column, the wallet whose seed a
+ * row's derivation breadcrumb belongs to, so a rejection by another wallet's
+ * seed at the same coordinates does not clear it. Every existing row reads
+ * NULL: its parent identity may already have been re-associated with another
+ * wallet, so the owner of a legacy breadcrumb is unknown, and a NULL owner
+ * never lets a rejection clear it. A load or discovery that verifies the key
+ * again records the owner.
  */
 @Database(
-    version = 15,
+    version = 16,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -716,6 +725,16 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No backfill: a legacy row's parent may already have been
+                // re-associated with another wallet, so its breadcrumb's
+                // owner is unknown and stays NULL until a load or discovery
+                // verifies the key again and records it.
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `derivationWalletId` BLOB")
+            }
+        }
+
         /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
@@ -746,6 +765,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                 .build()
 

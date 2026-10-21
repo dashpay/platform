@@ -690,13 +690,59 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v15 → v16 adds `public_keys.derivationWalletId` without a backfill: a
+     * legacy breadcrumb's parent may already have been re-associated with
+     * another wallet, so its owner stays NULL, which never lets a rejection
+     * clear it.
+     */
+    @Test
+    fun migrate15To16LeavesLegacyBreadcrumbOwnersUnknown() {
+        helper.createDatabase(dbName, 15).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, derivationIdentityIndex, derivationKeyIndex, identityId, " +
+                    "createdAt, identityIdData) " +
+                    "VALUES (0, '0', '2', '0', 0, x'AA', 0, 0, 'a', 0, x'0A')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, identityId, createdAt, identityIdData) " +
+                    "VALUES (1, '0', '2', '0', 0, x'BB', 'a', 0, x'0A')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 16, true, DashDatabase.MIGRATION_15_16)
+
+        db.query("SELECT keyId, derivationWalletId FROM public_keys ORDER BY keyId").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+            assertTrue("a legacy breadcrumb's owner is unknown", c.isNull(1))
+            assertTrue(c.moveToNext())
+            assertEquals(1, c.getInt(0))
+            assertTrue("a row without a breadcrumb stays NULL", c.isNull(1))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -709,16 +755,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v15 schema. */
+    /** The full chain from v1 must also land on a valid v16 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -734,6 +781,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 }

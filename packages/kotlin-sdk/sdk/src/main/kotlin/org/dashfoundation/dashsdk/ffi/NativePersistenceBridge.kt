@@ -538,13 +538,19 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `IdentityKeyEntryFFI` upsert. Descriptor
-     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`.
+     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ[I)I`.
      * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
      * 3 ContractGroup (`contractBoundsId` is then the contract group id and
-     * `contractBoundsDocumentType` is null). The last four arguments are the
-     * key's usage limits (protocol version 14): the credits it may spend over
+     * `contractBoundsDocumentType` is null). The four arguments before
+     * [rejectedDerivations] are the key's usage limits (protocol version 14): the credits it may spend over
      * its lifetime when [totalBudgetIsSome], and the block time in milliseconds
      * from which it can no longer sign when [expiresAtIsSome].
+     *
+     * With no derivation indices, [rejectedDerivations] holds the
+     * coordinates Rust checked the key at under this wallet's seed and found
+     * it does not come from, as flat `[identityIndex, keyIndex]` pairs: a
+     * stored derivation breadcrumb of this wallet naming one of them is
+     * cleared. Empty leaves the key's origin unknown, which keeps it.
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityKeyUpsert(
@@ -571,6 +577,7 @@ abstract class NativePersistenceBridge {
         totalBudget: Long = 0L,
         expiresAtIsSome: Boolean = false,
         expiresAt: Long = 0L,
+        rejectedDerivations: IntArray = IntArray(0),
     ): Int = 0
 
     /** One `(identityId, keyId)` removal. Descriptor `([B[BI)I`. */

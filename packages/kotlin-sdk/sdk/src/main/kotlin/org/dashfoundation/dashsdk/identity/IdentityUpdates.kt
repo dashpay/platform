@@ -210,6 +210,22 @@ class IdentityUpdates internal constructor(
      * Add [addPublicKeys] and/or disable [disablePublicKeyIds] on
      * [identityId] in a single `IdentityUpdateTransition`, signed via
      * [signerHandle]. At least one of add / disable must be non-empty.
+     *
+     * [externalKeyIds] names the added keys that do not come from the
+     * wallet's derivation (a key generated or received outside it, whose
+     * private key the wallet cannot derive): they are stored without
+     * derivation coordinates. Every other added key is stored as derived at
+     * the identity's index and the key's id. An id that names no added key
+     * is refused before anything is signed.
+     *
+     * The transition carries the cached identity's revision plus one, read
+     * when the update starts. With [revision] set, an update that would carry
+     * another one throws [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityRevisionMismatch]
+     * before anything is signed or broadcast, so a caller that recorded
+     * [revision] beforehand knows the only revision this update can land at
+     * (Drive takes an identity update only at one above the identity's
+     * revision). `null` takes whatever the cache gives. Port of the
+     * `revision:` argument of Swift `ManagedPlatformWallet.updateIdentity`.
      */
     suspend fun update(
         walletHandle: Long,
@@ -217,6 +233,8 @@ class IdentityUpdates internal constructor(
         addPublicKeys: List<IdentityPubkey> = emptyList(),
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
+        externalKeyIds: List<Int> = emptyList(),
+        revision: Long? = null,
     ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -224,9 +242,8 @@ class IdentityUpdates internal constructor(
         require(addPublicKeys.isNotEmpty() || disablePublicKeyIds.isNotEmpty()) {
             "updateIdentity needs at least one key to add or disable"
         }
-        require(disablePublicKeyIds.all { it >= 0 }) {
-            "every disabled key id must be non-negative, got $disablePublicKeyIds"
-        }
+        // Key ids and the revision are range-checked where they become
+        // the native u32 / u64 (the JNI binding), and refused there.
         mapNativeErrors {
             TransactionsNative.updateIdentity(
                 walletHandle,
@@ -234,6 +251,9 @@ class IdentityUpdates internal constructor(
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
+                externalKeyIds.toIntArray(),
+                revision != null,
+                revision ?: 0L,
             )
         }
     }

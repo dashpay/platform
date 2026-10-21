@@ -3,9 +3,11 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
+use std::collections::BTreeSet;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
+use crate::BlockTime;
 
 use super::*;
 
@@ -73,14 +75,34 @@ fn breadcrumb_decisions(
         .public_keys()
         .iter()
         .map(|(key_id, on_chain_key)| {
-            let reproduces = candidate_scalars
-                .get(key_id)
-                .map(|scalar| {
-                    on_chain_key
-                        .validate_private_key_bytes(scalar, network)
-                        .unwrap_or(false)
+            // `None` when there is no candidate (its derivation failed) or
+            // the check failed on an ECDSA key: the origin stays unknown. A
+            // check that cannot run on another key type (BLS, EdDSA, a script
+            // hash) settles it as not this wallet's: the wallet only derives
+            // ECDSA identity keys.
+            let ecdsa = matches!(
+                on_chain_key.key_type(),
+                KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
+            );
+            let checked = candidate_scalars.get(key_id).and_then(|scalar| {
+                match on_chain_key.validate_private_key_bytes(scalar, network) {
+                    Ok(reproduces) => Some(reproduces),
+                    Err(_) if !ecdsa => Some(false),
+                    Err(_) => None,
+                }
+            });
+            let reproduces = checked == Some(true);
+            // A candidate that does not reproduce the key refutes exactly the
+            // coordinates it was derived at, `(identity_index, key_id)`, which
+            // clears a stale breadcrumb a client holds there; a breadcrumb
+            // stored at other coordinates is kept.
+            let derivation_rejected: BTreeSet<_> = (checked == Some(false))
+                .then_some(crate::changeset::IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index: *key_id,
                 })
-                .unwrap_or(false);
+                .into_iter()
+                .collect();
             let breadcrumb = if reproduces {
                 // The candidate scalar reproduced the on-chain key, so this
                 // wallet owns it: emit the DIP-9 coordinates. The scalar is
@@ -105,6 +127,7 @@ fn breadcrumb_decisions(
             crate::changeset::KeyWithBreadcrumb {
                 key: on_chain_key.clone(),
                 breadcrumb,
+                derivation_rejected,
             }
         })
         .collect()
@@ -412,10 +435,13 @@ impl IdentityWallet {
 
                 // Query Platform for an identity registered with this key
                 // hash. No locks are held during this network call.
-                let fetch_result = Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await;
+                let fetch_result =
+                    Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash_array), None)
+                        .await;
 
                 match fetch_result {
-                    Ok(Some(identity)) => {
+                    Ok((Some(identity), metadata)) => {
+                        let block_time = BlockTime::from(metadata);
                         let identity_id = identity.id();
 
                         // Derive + verify a candidate for every on-chain key
@@ -447,11 +473,10 @@ impl IdentityWallet {
                                 })?;
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
-                            info_guard.identity_manager.add_identity(
+                            info_guard.identity_manager.add_identity_unstored(
                                 identity.clone(),
                                 identity_index,
                                 wallet_id,
-                                &self.persister,
                             )?;
                         }
 
@@ -459,7 +484,7 @@ impl IdentityWallet {
                             .identity_manager
                             .managed_identity_mut(&identity_id)
                         {
-                            managed.set_status(IdentityStatus::Active, &self.persister);
+                            managed.status = IdentityStatus::Active;
                             managed.wallet_id = Some(wallet_id);
                             // Breadcrumbs for every re-derivable key (not just the
                             // MASTER key) so the client (iOS Keychain) can
@@ -468,18 +493,19 @@ impl IdentityWallet {
                             // imported identity cannot sign with its HIGH /
                             // CRITICAL authentication keys. A failed persist here
                             // would silently leave the identity watch-only after
-                            // restart, so surface it (matching `add_identity` above).
+                            // restart, so surface it.
                             // A fetch older than a known identity's cache stores
                             // only the keys the cache has, with their disables.
-                            let key_decisions =
-                                managed.key_decisions_for_fetch(&identity, key_decisions);
-                            managed
-                                .add_keys(key_decisions, &self.persister)
-                                .map_err(|e| {
-                                    PlatformWalletError::Persistence(format!(
-                                        "identity keys not persisted during discovery: {e}"
-                                    ))
-                                })?;
+                            // A known identity is folded as loading and refresh
+                            // fold it (a newer fetch's revision and keys, the
+                            // balance by proof block), stored with its keys, so
+                            // an update is not built from a stale revision.
+                            managed.store_fetched_identity_keys(
+                                &identity,
+                                key_decisions,
+                                block_time,
+                                &self.persister,
+                            )?;
                         }
                         drop(wm_guard);
 
@@ -488,7 +514,7 @@ impl IdentityWallet {
                         }
                         tally.record_sighting();
                     }
-                    Ok(None) => {
+                    Ok((None, _)) => {
                         tally.record_miss();
                     }
                     Err(e) => {
@@ -838,6 +864,7 @@ mod tests {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
 
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
@@ -953,6 +980,23 @@ mod tests {
             "reproducible key breadcrumbed"
         );
         assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
+        assert!(by_id[&0].derivation_rejected.is_empty());
+        assert_eq!(
+            by_id[&1].derivation_rejected,
+            BTreeSet::from([crate::changeset::IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index: 1,
+            }]),
+            "a checked candidate that does not reproduce the key refutes its coordinates"
+        );
+
+        // With no candidate for a key (its derivation failed), its origin
+        // stays unknown.
+        scalars.remove(&1);
+        let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
+        let unchecked = decisions.iter().find(|d| d.key.id() == 1).unwrap();
+        assert_eq!(unchecked.breadcrumb, None);
+        assert!(unchecked.derivation_rejected.is_empty());
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of

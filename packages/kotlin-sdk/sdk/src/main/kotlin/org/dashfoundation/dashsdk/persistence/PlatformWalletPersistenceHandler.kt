@@ -1900,6 +1900,7 @@ class PlatformWalletPersistenceHandler(
         totalBudget: Long,
         expiresAtIsSome: Boolean,
         expiresAt: Long,
+        rejectedDerivations: IntArray,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -1926,6 +1927,34 @@ class PlatformWalletPersistenceHandler(
         // alias whose row can never commit (the identity rows are gone),
         // stranding identity-key ciphertext behind a "successful" wipe.
         val roundKey = walletId.toHex()
+        // The slots a rejection refutes under this wallet's seed, as
+        // `(identityIndex, keyIndex)`; empty when the key's origin is unknown.
+        val refutedSlots: Set<Pair<Int, Int>> =
+            if (derivationIndicesIsSome) {
+                emptySet()
+            } else {
+                (0 until rejectedDerivations.size / 2)
+                    .map { rejectedDerivations[2 * it] to rejectedDerivations[2 * it + 1] }
+                    .toSet()
+            }
+        // A pending repair entry for the key needs no re-derive once this
+        // wallet refutes it: either the stored row's breadcrumb (decided
+        // against the row below), or the entry's own slot under this wallet
+        // (an entry rebuilt from a row with no recorded owner is filed under
+        // the identity's wallet, which may be wrong; that wallet's rejection
+        // still clears it). The deletion is published with the row: through
+        // the round's staged deltas when a round is open, or after the
+        // standalone write commits.
+        val pendingHex = publicKeyData.toHex()
+        fun dropPending(rowRefuted: Boolean): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+            { map ->
+                val pending = map[pendingHex]
+                val entryRefuted = pending != null && pending.walletIdHex == roundKey &&
+                    (pending.identityIndex to pending.keyIndex) in refutedSlots
+                if (pending != null && (rowRefuted || entryRefuted)) map - pendingHex else map
+            }
+        val round = buffers[roundKey]
+        var dropAfterCommit: ((Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>)? = null
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
@@ -2012,7 +2041,26 @@ class PlatformWalletPersistenceHandler(
 
         stage(walletId) { db ->
             val identityBase58 = identityId.toBase58String()
-            val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
+            val stored = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
+            // A row for another public key under this key id carries that
+            // key's derivation and private-key linkage, which must not pass to
+            // this one: only a row for the same public key lends them.
+            val existing = stored?.takeIf { it.publicKeyData.contentEquals(publicKeyData) }
+            // A rejection refutes only the coordinates it was checked at, under
+            // the seed of the wallet persisting it: the row's breadcrumb is
+            // cleared only when it is that wallet's derivation
+            // ([PublicKeyEntity.derivationWalletId]) at a refuted slot. The
+            // identity's wallet does not say whose the breadcrumb is: the same
+            // round may just have re-associated it.
+            val heldSlot = existing?.derivationIdentityIndex?.let { identity ->
+                existing.derivationKeyIndex?.let { key -> identity to key }
+            }
+            val refuted = heldSlot != null && heldSlot in refutedSlots &&
+                existing.derivationWalletId?.contentEquals(walletId) == true
+            if (refutedSlots.isNotEmpty()) {
+                val drop = dropPending(refuted)
+                if (round != null) round.pendingKeyDeltas.add(drop) else dropAfterCommit = drop
+            }
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
@@ -2023,7 +2071,7 @@ class PlatformWalletPersistenceHandler(
             val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
-                id = existing?.id ?: 0,
+                id = stored?.id ?: 0,
                 keyId = keyId,
                 purpose = (purpose.toInt() and 0xFF).toString(),
                 securityLevel = (securityLevel.toInt() and 0xFF).toString(),
@@ -2049,17 +2097,32 @@ class PlatformWalletPersistenceHandler(
                 // failure marker; the null identifier is). They make the
                 // pending-repair state reconstructible after restart
                 // (dashpay/platform#4060 finding 5).
-                derivationIdentityIndex =
-                    if (derivationIndicesIsSome) identityIndex else existing?.derivationIdentityIndex,
-                derivationKeyIndex =
-                    if (derivationIndicesIsSome) keyIndex else existing?.derivationKeyIndex,
+                // Without indices, an upsert keeps the stored breadcrumb of
+                // the same public key unless it refutes it ([refuted]).
+                derivationIdentityIndex = when {
+                    derivationIndicesIsSome -> identityIndex
+                    refuted -> null
+                    else -> existing?.derivationIdentityIndex
+                },
+                derivationKeyIndex = when {
+                    derivationIndicesIsSome -> keyIndex
+                    refuted -> null
+                    else -> existing?.derivationKeyIndex
+                },
+                derivationWalletId = when {
+                    derivationIndicesIsSome -> if (walletIdIsSome) keyWalletId else walletId
+                    refuted -> null
+                    else -> existing?.derivationWalletId
+                },
                 identityId = identityBase58,
                 identityIdData = identityId,
-                createdAt = existing?.createdAt ?: java.util.Date(),
+                createdAt = stored?.createdAt ?: java.util.Date(),
                 lastAccessed = now(),
             )
-            if (existing == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
+            if (stored == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
         }
+        // Standalone path: the write above committed (a failed one threw).
+        dropAfterCommit?.let { _pendingIdentityKeys.update(it) }
         0
     }
 
@@ -3999,7 +4062,12 @@ class PlatformWalletPersistenceHandler(
             val identity = database.identityDao().getByIdentityId(identityIdData) ?: continue
             val networkRaw = network?.ffiValue
             if (networkRaw != null && identity.networkRaw != networkRaw) continue
-            val walletId = identity.walletId ?: continue
+            // The breadcrumb's own wallet: the identity may since have been
+            // re-associated with another wallet, whose seed is another
+            // derivation. A row with no recorded owner (written before schema
+            // 16) falls back to the identity's wallet, which may be the wrong
+            // one; that wallet's rejection of the slot drops the entry.
+            val walletId = row.derivationWalletId ?: identity.walletId ?: continue
             val pubkeyHex = row.publicKeyData.toHex()
             val usable = row.privateKeyKeychainIdentifier != null &&
                 try {

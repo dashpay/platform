@@ -3,11 +3,13 @@
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
+use std::collections::BTreeSet;
 
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyID;
 use dpp::identity::KeyType;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
@@ -20,7 +22,7 @@ use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::changeset::{KeyWithBreadcrumb, PersistenceError};
+use crate::changeset::{IdentityKeyDerivationIndices, KeyWithBreadcrumb, PersistenceError};
 use crate::error::PlatformWalletError;
 
 use super::signing_key::AvailableSigningKey;
@@ -79,6 +81,12 @@ impl IdentityWallet {
     /// in the typical case). The signer here only signs the update
     /// transition itself; it does not derive the new keys.
     ///
+    /// Every added key is stored as derived from the wallet seed at the
+    /// identity's index and the key's id. A caller adding a key from
+    /// outside the wallet (a browser session key, say) declares it through
+    /// [`Self::update_identity_with_external_signer_at_revision`]'s
+    /// `external_key_ids`, so it is stored without derivation coordinates.
+    ///
     /// CACHE: after a successful broadcast the in-process
     /// `IdentityManager` takes the update locally (see
     /// `apply_landed_update`): the cached revision moves to the
@@ -108,6 +116,7 @@ impl IdentityWallet {
         self.update_identity_with_external_signer_at_revision(
             identity_id,
             add_public_keys,
+            &[],
             disable_public_keys,
             None,
             signer,
@@ -129,10 +138,20 @@ impl IdentityWallet {
     /// signed or broadcast, so the revision the caller recorded is the only
     /// one this update can land at. `None` takes whatever the cache gives,
     /// as [`Self::update_identity_with_external_signer`] does.
+    ///
+    /// `external_key_ids` names the added keys that do not come from the
+    /// wallet's derivation (a key the caller generated or received, whose
+    /// private key the wallet cannot derive from its seed). They are stored
+    /// without derivation coordinates, so no client takes them for keys it
+    /// can sign with by deriving; every other added key is stored as derived
+    /// at the identity's index and the key's id. An id that names no added
+    /// key is refused before anything is signed.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_identity_with_external_signer_at_revision<S>(
         &self,
         identity_id: &Identifier,
         add_public_keys: Vec<IdentityPublicKey>,
+        external_key_ids: &[KeyID],
         disable_public_keys: Vec<u32>,
         revision: Option<u64>,
         signer: &S,
@@ -172,6 +191,15 @@ impl IdentityWallet {
             let index = manager.identity_index(identity_id);
             (identity, index)
         };
+
+        if let Some(id) = external_key_ids
+            .iter()
+            .find(|id| !add_public_keys.iter().any(|key| key.id() == **id))
+        {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "external key id {id} names no key this update adds"
+            )));
+        }
 
         // Increment revision for the update transition.
         let transition_revision = update_revision(identity_id, identity.revision(), revision)?;
@@ -243,6 +271,7 @@ impl IdentityWallet {
             identity_index,
             transition_revision,
             added_keys_for_local_apply,
+            external_key_ids,
             disabled_ids_for_local_apply,
         )
         .await
@@ -275,14 +304,39 @@ impl IdentityWallet {
     /// key the cache lacks from the payload, taken into the cache too).
     /// Either way a store failure is returned as an update that landed
     /// but was not stored.
+    ///
+    /// An added key named in `external_key_ids` is stored without a
+    /// breadcrumb and refutes its slot's coordinates on both paths, which
+    /// clears a breadcrumb a persister holds there (one an older update
+    /// inferred); every other one with the breadcrumb of its slot,
+    /// `(wallet_id, identity_index, key_id)`.
     async fn apply_landed_update(
         &self,
         identity_id: &Identifier,
         identity_index: Option<u32>,
         transition_revision: u64,
         added_keys: Vec<IdentityPublicKey>,
+        external_key_ids: &[KeyID],
         disabled_ids: Vec<u32>,
     ) -> Result<(), PlatformWalletError> {
+        let added_breadcrumb = |id: KeyID| {
+            identity_index
+                .filter(|_| !external_key_ids.contains(&id))
+                .map(|idx| (self.wallet_id, idx, id))
+        };
+        // A declared external key refutes the coordinates an update would
+        // have inferred for it (older code stored them), so a persister clears
+        // exactly that breadcrumb.
+        let external_slot = |id: KeyID| -> BTreeSet<IdentityKeyDerivationIndices> {
+            identity_index
+                .filter(|_| external_key_ids.contains(&id))
+                .map(|identity_index| IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index: id,
+                })
+                .into_iter()
+                .collect()
+        };
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(
@@ -296,11 +350,12 @@ impl IdentityWallet {
         // A cache refreshed to the transition or past it already holds
         // this update's keys as Platform has them (on-chain `disabled_at`
         // included) and whatever later updates did to them: applying the
-        // payload would take those back. A refresh persists no keys,
-        // though, so the touched keys are stored here from the cache's own
-        // copies, with the breadcrumbs the path below would give them: an
-        // added key the caller's, a disabled key the wallet slot's, as
-        // `disable_keys` builds it.
+        // payload would take those back. A refresh stores the keys it adds
+        // or changes without breadcrumbs, though, so the touched keys are
+        // stored here from the cache's own copies, with the breadcrumbs the
+        // path below would give them: an added key its slot's unless the
+        // caller declared it external, a disabled key none (the persisters
+        // keep the one they hold).
         // A key the update both adds and disables is taken as added, on
         // both paths.
         let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
@@ -310,7 +365,6 @@ impl IdentityWallet {
             .collect();
 
         if managed.identity.revision() >= transition_revision {
-            let slot = managed.wallet_slot();
             let mut keys = Vec::new();
             // An added key the cache lacks is stored, and taken into the
             // cache, as the update registered it.
@@ -323,7 +377,8 @@ impl IdentityWallet {
                         .get(&id)
                         .unwrap_or(key)
                         .clone(),
-                    breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
+                    breadcrumb: added_breadcrumb(id),
+                    derivation_rejected: external_slot(id),
                 });
             }
             for &id in &disabled {
@@ -337,7 +392,8 @@ impl IdentityWallet {
                 };
                 keys.push(KeyWithBreadcrumb {
                     key: key.clone(),
-                    breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
+                    breadcrumb: None,
+                    derivation_rejected: BTreeSet::new(),
                 });
             }
             // Stored with the identity's snapshot even when no touched key
@@ -353,16 +409,21 @@ impl IdentityWallet {
 
         // The added and disabled keys and the landed revision go to the
         // store as one changeset, which holds the revision even when no key
-        // row matched. Disabled keys get the wallet slot's breadcrumb and a
-        // local wall-clock `disabled_at` placeholder: a later fetch brings
-        // the on-chain block time into memory, and a load or discovery of
-        // the identity into the store. Memory holds the whole update even
-        // when the store fails.
+        // row matched. Disabled keys get no breadcrumb (the persisters keep
+        // the one they hold) and a local wall-clock `disabled_at` placeholder: a later fetch brings
+        // the on-chain block time into memory and the store. Memory holds
+        // the whole update even when the store fails, and the rows stay
+        // queued for the identity's next key store.
         let added = added_keys
             .into_iter()
             .map(|key| {
-                let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-                KeyWithBreadcrumb { key, breadcrumb }
+                let breadcrumb = added_breadcrumb(key.id());
+                let derivation_rejected = external_slot(key.id());
+                KeyWithBreadcrumb {
+                    key,
+                    breadcrumb,
+                    derivation_rejected,
+                }
             })
             .collect();
         let disabled_at = SystemTime::now()
@@ -465,8 +526,8 @@ fn update_revision(
 
 /// The error for a landed update the wallet could not store. The update is
 /// on Platform and in the cache either way, so the caller must not resubmit
-/// it. A load or discovery of the identity stores its key rows again; a
-/// refresh stores only its scalar snapshot.
+/// it. Its key rows stay queued, and the identity's next key store (a
+/// refresh, load, discovery or another landed update) carries them.
 fn landed_but_not_stored(e: PersistenceError) -> PlatformWalletError {
     PlatformWalletError::Persistence(format!(
         "identity update landed on Platform and is in the wallet's cache, but the wallet could not \
@@ -618,6 +679,7 @@ mod update_identity_at_revision_tests {
                 .update_identity_with_external_signer_at_revision(
                     &identity_id,
                     vec![],
+                    &[],
                     vec![1],
                     Some(expected),
                     &signer,
@@ -647,6 +709,7 @@ mod update_identity_at_revision_tests {
             .update_identity_with_external_signer_at_revision(
                 &identity_id,
                 vec![],
+                &[],
                 vec![1],
                 Some(5),
                 &signer,
@@ -673,7 +736,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet_at_revision(4).await;
         let wallet = wallet.identity();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], &[], vec![])
             .await
             .unwrap();
         let identity = cached_identity(wallet, &identity_id).await;
@@ -683,7 +746,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet_at_revision(4).await;
         let wallet = wallet.identity();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], &[], vec![1])
             .await
             .unwrap();
         let identity = cached_identity(wallet, &identity_id).await;
@@ -707,7 +770,7 @@ mod update_identity_at_revision_tests {
             }
             let before = cached_identity(wallet, &identity_id).await;
             wallet
-                .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![1])
+                .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], &[], vec![1])
                 .await
                 .unwrap();
             assert_eq!(
@@ -721,9 +784,9 @@ mod update_identity_at_revision_tests {
     /// An update at 5 added key 3, a later one at 6 disabled it, and the
     /// cache was refreshed to 6 before the confirmation of 5 came back:
     /// key 3 stays disabled, and is stored that way with its breadcrumb (a
-    /// refresh stores no keys). A key the update disabled is stored as the
-    /// refresh has it, with the on-chain `disabled_at` and the wallet
-    /// slot's breadcrumb.
+    /// refresh stores its rows without one). A key the update disabled is
+    /// stored as the refresh has it, with the on-chain `disabled_at` and no
+    /// breadcrumb, which the persisters keep from the row they hold.
     #[tokio::test]
     async fn should_store_the_newer_cache_keys_instead_of_an_older_landed_payload() {
         let identity_id = Identifier::default();
@@ -747,7 +810,7 @@ mod update_identity_at_revision_tests {
             managed.identity.add_public_key(key_1);
         }
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![added], vec![1])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added], &[], vec![1])
             .await
             .unwrap();
         let identity = cached_identity(wallet, &identity_id).await;
@@ -767,11 +830,8 @@ mod update_identity_at_revision_tests {
         let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
         assert_eq!(stored.public_key.disabled_at(), Some(2));
         assert_eq!(
-            stored
-                .derivation_indices
-                .map(|indices| (indices.identity_index, indices.key_index)),
-            Some((0, 1)),
-            "the wallet slot's breadcrumb, as disable_keys gives it"
+            stored.derivation_indices, None,
+            "a disable says nothing about where the key came from"
         );
     }
 
@@ -787,7 +847,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet.identity();
         store.arm();
         let error = wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], &[], vec![1])
             .await
             .unwrap_err();
         assert!(
@@ -806,7 +866,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet.identity();
         store.arm();
         let error = wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], &[], vec![1])
             .await
             .unwrap_err();
         assert!(
@@ -825,7 +885,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet.identity();
         store.clear();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![7])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], &[], vec![7])
             .await
             .unwrap();
         assert!(store.key_rows().is_empty());
@@ -837,7 +897,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet.identity();
         store.clear();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], &[], vec![1])
             .await
             .unwrap();
         assert_eq!(store.changeset_count(), 1);
@@ -851,7 +911,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet.identity();
         store.clear();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![7])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], &[], vec![7])
             .await
             .unwrap();
         assert_eq!(store.changeset_count(), 1);
@@ -868,7 +928,7 @@ mod update_identity_at_revision_tests {
         let wallet = wallet_at_revision_on(5, store.clone()).await;
         let wallet = wallet.identity();
         wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![])
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], &[], vec![])
             .await
             .unwrap();
         let identity = cached_identity(wallet, &identity_id).await;
@@ -882,6 +942,62 @@ mod update_identity_at_revision_tests {
                 .map(|indices| (indices.identity_index, indices.key_index)),
             Some((0, 3))
         );
+    }
+
+    /// An added key the caller declares external is stored without a
+    /// derivation breadcrumb whether the cache is behind the update or
+    /// already at it, so no client takes it for a key it can derive.
+    #[tokio::test]
+    async fn should_store_an_external_added_key_without_a_breadcrumb() {
+        let identity_id = Identifier::default();
+        for cached in [4, 5] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(cached, store.clone()).await;
+            let wallet = wallet.identity();
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], &[3], vec![])
+                .await
+                .unwrap();
+            let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+            assert_eq!(stored.public_key, key_3(), "cached at {cached}");
+            assert_eq!(stored.derivation_indices, None, "cached at {cached}");
+            assert_eq!(stored.wallet_id, None, "cached at {cached}");
+            assert_eq!(
+                stored.derivation_rejected,
+                BTreeSet::from([IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: 3,
+                }]),
+                "a declared external key refutes its slot's breadcrumb, cached at {cached}"
+            );
+        }
+    }
+
+    /// An external key id that names no key the update adds is refused
+    /// before anything is signed.
+    #[tokio::test]
+    async fn should_refuse_an_external_id_the_update_does_not_add() {
+        let identity_id = Identifier::default();
+        let wallet = wallet_at_revision(4).await;
+        let signer = RecordingSigner::default();
+        let error = wallet
+            .identity()
+            .update_identity_with_external_signer_at_revision(
+                &identity_id,
+                vec![key_3()],
+                &[9],
+                vec![],
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(_)),
+            "{error:?}"
+        );
+        assert_eq!(signer.0.load(Ordering::SeqCst), 0);
     }
 
     /// The key the landed-update tests add.
