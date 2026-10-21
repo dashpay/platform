@@ -136,13 +136,74 @@ impl SpvRuntime {
         // Fail fast instead of queueing behind a stop that is still joining.
         self.ensure_no_live_run_loop()?;
         let shutdown = self.shutdown.lock().await;
+        self.start_locked(config, &shutdown).await
+    }
+
+    /// Start SPV sync and publish its run loop as one operation under the
+    /// shutdown lock.
+    ///
+    /// [`start`](Self::start) followed by [`spawn_run_loop`](Self::spawn_run_loop)
+    /// releases that lock between the two, so a concurrent [`stop`](Self::stop)
+    /// can take the freshly built client out in between; the run loop spawned
+    /// afterwards then fails at once and sits unjoined in the task slot, and
+    /// every later start reports `ShutdownIncomplete` until another stop joins
+    /// it. Here a stop issued during the start waits for the published run
+    /// loop and tears it down with the client.
+    ///
+    /// `publish` runs between construction and publication, still under the
+    /// lock, and says whether the caller still owns the client (an FFI host
+    /// checks its handle registry there). `false` means the owner went away
+    /// during the start: the client just built is stopped under the same lock
+    /// and `Ok(false)` is returned, so no run loop ever runs for an unowned
+    /// client. A stop that does not complete is logged, not returned: the
+    /// caller has no owner left to retry it through.
+    pub async fn start_and_spawn<F>(
+        self: &Arc<Self>,
+        config: ClientConfig,
+        publish: F,
+    ) -> Result<bool, PlatformWalletError>
+    where
+        F: FnOnce() -> bool,
+    {
+        if self.client.read().await.is_some() {
+            return Err(PlatformWalletError::SpvAlreadyRunning);
+        }
+        self.ensure_no_live_run_loop()?;
+        let mut shutdown = self.shutdown.lock().await;
+        self.start_locked(config, &shutdown).await?;
+
+        if !publish() {
+            if let Err(error) = self
+                .stop_locked(&mut shutdown, |client| async move { client.stop().await })
+                .await
+            {
+                tracing::warn!(
+                    %error,
+                    "orphaned SPV client stop failed: its owner was destroyed during the start"
+                );
+            }
+            return Ok(false);
+        }
+
+        self.spawn_run_loop_locked();
+        Ok(true)
+    }
+
+    /// The construction half of [`start`](Self::start): the caller holds the
+    /// `shutdown` lock, which is what keeps a concurrent stop out until the
+    /// client is in place.
+    async fn start_locked(
+        &self,
+        config: ClientConfig,
+        shutdown: &Shutdown,
+    ) -> Result<(), PlatformWalletError> {
         {
             let running = self.client.read().await;
             if running.is_some() {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-        self.ensure_joined(&shutdown)?;
+        self.ensure_joined(shutdown)?;
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -524,6 +585,12 @@ impl SpvRuntime {
             tracing::warn!(%error, "SPV background sync not spawned: earlier SPV work is unjoined");
             return;
         }
+        self.spawn_run_loop_locked();
+    }
+
+    /// The spawn itself; the caller holds the `shutdown` lock and has checked
+    /// that nothing is left unjoined.
+    fn spawn_run_loop_locked(self: &Arc<Self>) {
         let this = Arc::clone(self);
         let mut task = self.task_slot();
         *task = Some(tokio::spawn(async move {
@@ -1397,6 +1464,67 @@ mod tests {
         ClientConfig::testnet()
             .with_storage_path(storage.path())
             .with_restrict_to_configured_peers(true)
+    }
+
+    /// `start_and_spawn` keeps construction and run-loop publication under
+    /// the shutdown lock: a stop issued between them (here from another
+    /// worker while `publish` runs) waits for the published run loop, tears
+    /// it down with the client, and leaves nothing unjoined for the next
+    /// start — the failure mode this guards against is that next start
+    /// reporting `ShutdownIncomplete` for a run loop the stop never saw.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_publish_the_run_loop_before_a_concurrent_stop_can_run() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        let stopper = Arc::clone(&runtime);
+
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), move || {
+                // The racing stop: the client exists, the run loop does not yet.
+                let racing = tokio::spawn(async move { stopper.stop().await });
+                // Give it time to reach the shutdown lock before publication.
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                stop_tx.send(racing).ok().expect("test receives the stop");
+                true
+            })
+            .await
+            .expect("start");
+        assert!(published, "the owner was still there");
+
+        let racing = stop_rx.await.expect("the publish callback ran");
+        racing
+            .await
+            .expect("stop task")
+            .expect("the racing stop completes once the published run loop is torn down");
+        assert!(!runtime.is_started());
+
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("the stop joined the published run loop, so nothing is left unjoined");
+        runtime.stop().await.unwrap();
+    }
+
+    /// `start_and_spawn` with an owner that went away during the start stops
+    /// the client it just built instead of publishing it.
+    #[tokio::test]
+    async fn should_stop_the_built_client_when_its_owner_is_gone_at_publication() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), || false)
+            .await
+            .expect("the start itself succeeds");
+
+        assert!(!published);
+        assert!(!runtime.is_started(), "the unowned client must be stopped");
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("the orphan stop left nothing unjoined");
+        runtime.stop().await.unwrap();
     }
 
     /// The production startup path: `spawn_run_loop` drives upstream `run`,

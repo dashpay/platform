@@ -262,8 +262,8 @@ final class PlatformWalletStartSpvTests: XCTestCase {
     }
 
     /// With the main actor free during an async start, a second start, the
-    /// blocking stop and the storage clear are refused: they would park the
-    /// calling thread behind the in-flight start on the FFI's registry guard,
+    /// blocking stop and the storage clear are refused: they would otherwise
+    /// overlap the native lifecycle operation still constructing the client,
     /// or clear the directory the starting client is opening.
     func testSecondStartAndBlockingSpvCallsAreRefusedWhileAnAsyncStartIsInFlight() async throws {
         let gate = DispatchSemaphore(value: 0)

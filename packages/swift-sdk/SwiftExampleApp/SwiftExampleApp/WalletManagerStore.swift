@@ -113,13 +113,39 @@ final class WalletManagerStore: ObservableObject {
     /// returns; the stop runs on a task that starts in order after it.
     func stopSpvCancellingPendingStarts(stop: @escaping @MainActor () async throws -> Void) {
         invalidatePendingSpvStarts()
-        Task { @MainActor in
+        isStoppingSpv = true
+        let task = Task { @MainActor in
             do {
                 try await stop()
             } catch {
                 print("stopSpvCancellingPendingStarts: stop failed: \(error)")
             }
         }
+        pendingSpvStop = task
+        Task { @MainActor in
+            await task.value
+            // A later Pause replaced the tracked stop; it clears the flag.
+            guard pendingSpvStop == task else { return }
+            pendingSpvStop = nil
+            isStoppingSpv = false
+        }
+    }
+
+    /// Whether a stop issued by `stopSpvCancellingPendingStarts` is still
+    /// running. The native stop removes the client before its teardown
+    /// finishes, so `spvIsRunning` turns false while the SDK still counts
+    /// the stop in flight and refuses a start; the Start button is disabled
+    /// on this instead, and start actions await `awaitPendingSpvStop()`.
+    @Published private(set) var isStoppingSpv = false
+
+    /// The stop `isStoppingSpv` reports; `nil` once it completed.
+    private var pendingSpvStop: Task<Void, Never>?
+
+    /// Suspend until the tracked stop, if any, has completed, so a start
+    /// issued right after a Pause runs after it instead of being refused
+    /// by the SDK while the stop is in flight.
+    func awaitPendingSpvStop() async {
+        await pendingSpvStop?.value
     }
 
     /// Per-network managers. Lazily populated on first activation

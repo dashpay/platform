@@ -29,6 +29,14 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
         var events: [String] { lock.withLock { entries } }
     }
 
+    /// A call counter the `@Sendable` native-call fakes can bump.
+    private final class CallCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        /// Increments and returns whether this was the first call.
+        func nextIsFirst() -> Bool { lock.withLock { count += 1; return count == 1 } }
+    }
+
     private struct TimedOut: Error {}
 
     private func waitUntil(
@@ -128,6 +136,71 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
         XCTAssertEqual(
             log.events, ["spv_start:begin", "spv_start:end", "spv_stop"],
             "the native stop must run after the native start it overlapped")
+        await manager.shutdown()
+    }
+
+    /// Pause → Start: the native stop removes the client before its teardown
+    /// finishes, so a Start tapped right after a Pause would be refused by
+    /// the SDK while the stop is in flight. The store reports the pending
+    /// stop (the button is disabled on it) and a start that awaits it runs
+    /// after the stop instead.
+    func testStartAfterPauseWaitsForTheStopStillTearingDown() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let store = WalletManagerStore(modelContainer: container)
+
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let log = EventLog()
+        let stopCalls = CallCounter()
+        func step(_ name: String) -> PlatformWalletNativeTeardownCalls.Call {
+            { _ in
+                log.append("teardown:\(name)")
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            }
+        }
+        let calls = PlatformWalletNativeTeardownCalls(
+            spvStop: { _ in
+                // Only the Pause's stop is held; the teardown's own stop step
+                // during `shutdown()` returns at once.
+                let isFirst = stopCalls.nextIsFirst()
+                log.append("spv_stop:begin")
+                if isFirst { _ = gate.wait(timeout: .now() + 10) }
+                log.append("spv_stop:end")
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            },
+            platformAddressSyncStop: step("platform_address_sync_stop"),
+            shieldedSyncStop: step("shielded_sync_stop"),
+            dashPaySyncStop: step("dashpay_sync_stop"),
+            dpnsSyncStop: step("dpns_sync_stop"),
+            destroy: step("destroy"),
+            spvStart: { _, _ in
+                log.append("spv_start")
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            }
+        )
+        let manager = PlatformWalletManager.makeForTesting(handle: 42, calls: calls)
+
+        XCTAssertFalse(store.isStoppingSpv)
+        store.stopSpvCancellingPendingStarts(manager)
+        XCTAssertTrue(store.isStoppingSpv, "the pending stop is reported synchronously")
+        try await waitUntil { log.events.contains("spv_stop:begin") }
+
+        // The Start tapped during the teardown.
+        let startTask = Task {
+            await store.awaitPendingSpvStop()
+            try await manager.startSpv(config: PlatformSpvStartConfig(dataDir: "/tmp/unused", network: .testnet))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(log.events.contains("spv_start"), "the start must wait for the stop still tearing down")
+        XCTAssertTrue(store.isStoppingSpv)
+
+        gate.signal()
+        try await startTask.value
+        try await waitUntil { !store.isStoppingSpv }
+
+        XCTAssertEqual(
+            log.events, ["spv_stop:begin", "spv_stop:end", "spv_start"],
+            "the start must run after the stop, not be refused during it")
         await manager.shutdown()
     }
 }
