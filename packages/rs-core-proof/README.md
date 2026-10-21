@@ -54,11 +54,16 @@ A `State` deserializes from the same JSON Core's RPC uses for `target`, so a blo
 
 ## Trust model
 
-The checkpoint, and that no ChainLock quorum mined less than 4,096 blocks before the checkpoint,
-or at any time after it, ever signs dishonestly, including quorums long since retired. The relay
-picks the path: a link's ancestor headers (at most 4,096 per proof) can reach a quorum mined
-before the checkpoint, even one retired by then, and like Core's verifier this one does not
-check that a signer was the quorum selected for that height.
+The checkpoint, and that none of these ChainLock quorums ever signs dishonestly, including
+quorums long since retired:
+
+- every ChainLock quorum committed under the checkpoint's quorum root, however long ago it was
+  mined, because any of them can seed a proof;
+- every ChainLock quorum mined less than 4,096 blocks before the checkpoint, or at any time after
+  it, because a link's ancestor headers (at most 4,096 per proof) can reach back that far.
+
+The relay picks the path, and like Core's verifier this one does not check that a signer was the
+quorum selected for that height.
 It does not replay DKG or re-derive which members signed. An older checkpoint therefore trusts
 more quorums for longer; refresh checkpoints with releases.
 

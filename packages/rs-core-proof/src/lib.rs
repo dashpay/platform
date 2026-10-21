@@ -8,12 +8,14 @@
 //! quorum commitments and masternode entries under those roots, which
 //! [`bootstrap::verify`] checks as a whole.
 //!
-//! The trust model is the checkpoint, and that no ChainLock quorum mined less
-//! than [`MAX_PROOF_HEADERS`] blocks before the checkpoint, or at any time
-//! after it, ever signs dishonestly, retired ones included. The relay chooses
-//! the path: a link's ancestor headers can reach back to a quorum mined before
-//! the checkpoint, even one retired by then, and, as in Core, nothing checks
-//! that a signer was the quorum selected for its height. The verifier checks every
+//! The trust model is the checkpoint, and that none of these ChainLock quorums
+//! ever signs dishonestly, retired ones included: every ChainLock quorum
+//! committed under the checkpoint's quorum root, however long ago it was
+//! mined (any of them can seed a proof), and every ChainLock quorum mined less
+//! than [`MAX_PROOF_HEADERS`] blocks before the checkpoint or at any time after
+//! it (a link's ancestor headers can reach back that far). The relay chooses
+//! the path, and, as in Core, nothing checks that a signer was the quorum
+//! selected for its height. The verifier checks every
 //! byte, signature and Merkle path the way Core's verifier does, but it does
 //! not replay DKG or re-derive which members signed, and a valid proof does
 //! not show that its target is the newest ChainLock: freshness is the
