@@ -7,6 +7,14 @@ const MAX_LEAVES: u32 = 100_000;
 /// Most siblings a path may carry, enough for [`MAX_LEAVES`].
 const MAX_DEPTH: usize = 17;
 
+/// The parent of two sibling nodes.
+fn node(left: &Hash, right: &Hash) -> Hash {
+    let mut pair = [0; 64];
+    pair[..32].copy_from_slice(left);
+    pair[32..].copy_from_slice(right);
+    sha256d(&pair)
+}
+
 /// The siblings from a leaf up to a Merkle root, one per level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MerklePath {
@@ -38,15 +46,11 @@ impl MerklePath {
             if duplicated != (*sibling == leaf) {
                 return Err(Error("mutated Merkle path"));
             }
-            let mut pair = [0; 64];
-            let (left, right) = if index & 1 == 0 {
-                (&leaf, sibling)
+            leaf = if index & 1 == 0 {
+                node(&leaf, sibling)
             } else {
-                (sibling, &leaf)
+                node(sibling, &leaf)
             };
-            pair[..32].copy_from_slice(left);
-            pair[32..].copy_from_slice(right);
-            leaf = sha256d(&pair);
             index /= 2;
             width = width.div_ceil(2);
         }
@@ -88,13 +92,6 @@ impl MerklePath {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn node(left: &Hash, right: &Hash) -> Hash {
-        let mut pair = [0; 64];
-        pair[..32].copy_from_slice(left);
-        pair[32..].copy_from_slice(right);
-        sha256d(&pair)
-    }
 
     #[test]
     fn should_accept_duplicated_last_leaf_only_at_its_own_position() {

@@ -7,8 +7,8 @@
 //! mined in blocks below the certified ones (2 and 3 ancestor headers).
 //! `testnet-no-links.json` is a proof from a recent checkpoint, signed by the
 //! checkpoint's own ChainLock quorum.
-use dash_core_proof::bootstrap::RecordKind;
-use dash_core_proof::{bootstrap, parse_commitment, QuorumProofChain, State};
+use dash_core_proof::bootstrap::{self, RecordKind};
+use dash_core_proof::{parse_commitment, rpc_hex, QuorumProofChain, State, MAX_PROOF_HEADERS};
 
 struct Fixture {
     checkpoint: State,
@@ -66,7 +66,7 @@ fn should_open_the_requested_mainnet_quorum() {
     let verified = bootstrap::verify(&f.bootstrap, &f.checkpoint, 0).unwrap();
     let quorum = parse_commitment(verified.records()[0].leaf).unwrap();
     assert_eq!(
-        dash_core_proof::rpc_hex(&quorum.quorum_hash),
+        rpc_hex(&quorum.quorum_hash),
         "000000000000001e3234155b7645fdd5af10c59bd1507ee6d75ded0ae4eab979"
     );
 }
@@ -195,7 +195,7 @@ fn should_reject_chains_over_the_header_budget() {
     let f = testnet();
     let mut chain = QuorumProofChain::decode(&f.proof).unwrap();
     let header = chain.links[0].certificate.header;
-    chain.links[0].ancestors = vec![header; dash_core_proof::MAX_PROOF_HEADERS + 1];
+    chain.links[0].ancestors = vec![header; MAX_PROOF_HEADERS + 1];
     assert!(chain.encode().is_err());
     assert_eq!(
         chain.verify(&f.checkpoint).unwrap_err().0,

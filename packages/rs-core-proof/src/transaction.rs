@@ -114,6 +114,12 @@ struct Body<'a> {
     first_input: Option<(&'a [u8], &'a [u8])>,
 }
 
+/// Read a CompactSize-prefixed byte string, at most a transaction long.
+fn var_bytes<'a>(r: &mut Reader<'a>) -> Result<&'a [u8]> {
+    let len = r.compact(MAX_TRANSACTION_BYTES as u64)?;
+    r.take(len)
+}
+
 /// Read past a transaction's inputs, outputs and lock time.
 fn read_body<'a>(r: &mut Reader<'a>) -> Result<Body<'a>> {
     let max = MAX_TRANSACTION_BYTES as u64;
@@ -121,16 +127,14 @@ fn read_body<'a>(r: &mut Reader<'a>) -> Result<Body<'a>> {
     let mut first_input = None;
     for _ in 0..inputs {
         let prevout = r.take(36)?;
-        let n = r.compact(max)?;
-        let script = r.take(n)?;
+        let script = var_bytes(r)?;
         r.u32()?; // sequence
         first_input.get_or_insert((prevout, script));
     }
     let outputs = r.compact(max)?;
     for _ in 0..outputs {
         r.u64()?; // value
-        let n = r.compact(max)?;
-        r.take(n)?; // scriptPubKey
+        var_bytes(r)?; // scriptPubKey
     }
     r.u32()?; // lock time
     Ok(Body {
@@ -151,8 +155,7 @@ pub(crate) fn mined_commitment(bytes: &[u8], height: u32) -> Result<Commitment> 
         return Err(Error("quorum transaction envelope"));
     }
     read_body(&mut r)?;
-    let n = r.compact(MAX_TRANSACTION_BYTES as u64)?;
-    let payload = r.take(n)?;
+    let payload = var_bytes(&mut r)?;
     r.finish()?;
     let mut header = Reader::new(payload);
     if header.u16()? != 1 || header.u32()? != height {
@@ -191,8 +194,7 @@ pub fn coinbase_roots(bytes: &[u8], height: u32) -> Result<(Hash, Hash)> {
     if body.outputs == 0 {
         return Err(Error("coinbase outputs"));
     }
-    let n = r.compact(MAX_TRANSACTION_BYTES as u64)?;
-    let mut payload = Reader::new(r.take(n)?);
+    let mut payload = Reader::new(var_bytes(&mut r)?);
     r.finish()?;
 
     let version = payload.u16()?;
