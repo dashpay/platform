@@ -1937,22 +1937,24 @@ class PlatformWalletPersistenceHandler(
                     .map { rejectedDerivations[2 * it] to rejectedDerivations[2 * it + 1] }
                     .toSet()
             }
-        // A pending repair entry for a refuted slot of this wallet needs no
-        // re-derive and is dropped, staged with the round; one for another
-        // slot, or another wallet, stays.
-        if (refutedSlots.isNotEmpty()) {
-            val hex = publicKeyData.toHex()
-            stagePendingKeyDelta(roundKey) { map ->
-                val pending = map[hex]
-                if (pending != null && pending.walletIdHex == roundKey &&
+        // A pending repair entry for the key needs no re-derive once this
+        // wallet refutes it: either the stored row's breadcrumb (decided
+        // against the row below), or the entry's own slot under this wallet
+        // (an entry rebuilt from a row with no recorded owner is filed under
+        // the identity's wallet, which may be wrong; that wallet's rejection
+        // still clears it). The deletion is published with the row: through
+        // the round's staged deltas when a round is open, or after the
+        // standalone write commits.
+        val pendingHex = publicKeyData.toHex()
+        fun dropPending(rowRefuted: Boolean): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+            { map ->
+                val pending = map[pendingHex]
+                val entryRefuted = pending != null && pending.walletIdHex == roundKey &&
                     (pending.identityIndex to pending.keyIndex) in refutedSlots
-                ) {
-                    map - hex
-                } else {
-                    map
-                }
+                if (pending != null && (rowRefuted || entryRefuted)) map - pendingHex else map
             }
-        }
+        val round = buffers[roundKey]
+        var dropAfterCommit: ((Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>)? = null
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
@@ -2055,6 +2057,10 @@ class PlatformWalletPersistenceHandler(
             }
             val refuted = heldSlot != null && heldSlot in refutedSlots &&
                 existing.derivationWalletId?.contentEquals(walletId) == true
+            if (refutedSlots.isNotEmpty()) {
+                val drop = dropPending(refuted)
+                if (round != null) round.pendingKeyDeltas.add(drop) else dropAfterCommit = drop
+            }
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
@@ -2115,6 +2121,8 @@ class PlatformWalletPersistenceHandler(
             )
             if (stored == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
         }
+        // Standalone path: the write above committed (a failed one threw).
+        dropAfterCommit?.let { _pendingIdentityKeys.update(it) }
         0
     }
 
@@ -4056,7 +4064,9 @@ class PlatformWalletPersistenceHandler(
             if (networkRaw != null && identity.networkRaw != networkRaw) continue
             // The breadcrumb's own wallet: the identity may since have been
             // re-associated with another wallet, whose seed is another
-            // derivation (legacy rows without one fall back to the identity's).
+            // derivation. A row with no recorded owner (written before schema
+            // 16) falls back to the identity's wallet, which may be the wrong
+            // one; that wallet's rejection of the slot drops the entry.
             val walletId = row.derivationWalletId ?: identity.walletId ?: continue
             val pubkeyHex = row.publicKeyData.toHex()
             val usable = row.privateKeyKeychainIdentifier != null &&

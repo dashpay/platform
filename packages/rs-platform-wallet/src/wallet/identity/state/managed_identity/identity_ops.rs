@@ -94,6 +94,7 @@ impl ManagedIdentity {
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             pending_key_rows: BTreeMap::new(),
+            pending_key_rows_refused: false,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -116,6 +117,7 @@ impl ManagedIdentity {
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             pending_key_rows: BTreeMap::new(),
+            pending_key_rows_refused: false,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -523,13 +525,16 @@ impl ManagedIdentity {
     /// change back; a queued key memory no longer holds is dropped. When the
     /// store fails, its key rows are queued for the next one, unless the
     /// store refused the data itself (a constraint failure, which a retry
-    /// would only repeat), and the failure is returned.
+    /// would only repeat): then only the rows queued before it stay queued,
+    /// for one more store, since a queued row can itself be the invalid one.
+    /// The failure is returned.
     pub(super) fn store_with_queued_key_rows(
         &mut self,
         mut keys_cs: IdentityKeysChangeSet,
         persister: &WalletPersister,
     ) -> Result<(), PersistenceError> {
-        for (id, mut entry) in std::mem::take(&mut self.pending_key_rows) {
+        let queued = std::mem::take(&mut self.pending_key_rows);
+        for (id, mut entry) in queued.clone() {
             if let Some(own) = keys_cs.upserts.get_mut(&id) {
                 own.inherit_origin(&entry);
                 continue;
@@ -553,14 +558,29 @@ impl ManagedIdentity {
         let result = self.store_with_snapshot(keys_cs.clone(), persister);
         match &result {
             Err(e) if e.kind() == Some(PersistenceErrorKind::Constraint) => {
+                // The batch's own rows may be what the store refuses, but a
+                // row an earlier refused store queued is not shown invalid by
+                // one refusal: the queue is kept as it was, without this
+                // batch's rows, once. A second refusal in a row drops it, so
+                // a queued row that is itself invalid cannot refuse every
+                // later key store.
+                let keep = !queued.is_empty() && !self.pending_key_rows_refused;
                 tracing::warn!(
                     identity = %self.id(),
                     error = %e,
-                    "identity key rows refused as invalid; not queued for a retry",
+                    kept_queued = keep,
+                    "identity key rows refused as invalid; this batch's rows not queued",
                 );
+                if keep {
+                    self.pending_key_rows = queued;
+                }
+                self.pending_key_rows_refused = keep;
             }
-            Err(_) => self.pending_key_rows = keys_cs.upserts,
-            Ok(()) => {}
+            Err(_) => {
+                self.pending_key_rows = keys_cs.upserts;
+                self.pending_key_rows_refused = false;
+            }
+            Ok(()) => self.pending_key_rows_refused = false,
         }
         result
     }
@@ -1352,7 +1372,7 @@ mod tests {
         assert_eq!(row(2), None, "the queue is empty after a store succeeds");
 
         // Rows refused as invalid data are not queued: a retry would only
-        // repeat the refusal.
+        // repeat the refusal. Rows an earlier refused store queued stay.
         persister
             .constraint
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1364,6 +1384,54 @@ mod tests {
             .store(false, std::sync::atomic::Ordering::SeqCst);
         managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
         assert_eq!(row(3), None);
+
+        // A row queued by an earlier refused store survives a later batch the
+        // store refuses as invalid, and rides the next store that succeeds.
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(5))], &p)
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        persister
+            .constraint
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(6))], &p)
+            .is_err());
+        persister
+            .constraint
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        let kept = row(5).expect("the earlier queued row survives the constraint failure");
+        assert!(kept.derivation_indices.is_some());
+        assert_eq!(row(6), None, "the refused batch's own row is not queued");
+
+        // A queue refused twice in a row is dropped: a queued row that is
+        // itself invalid cannot refuse every later key store.
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .store_keys_with_snapshot(vec![with_breadcrumb(key(7))], &p)
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        persister
+            .constraint
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        for _ in 0..2 {
+            assert!(managed.store_keys_with_snapshot(Vec::new(), &p).is_err());
+        }
+        persister
+            .constraint
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        assert_eq!(row(7), None, "the twice-refused queue is dropped");
     }
 
     /// A key a refresh adds is stored without a breadcrumb, which a load's

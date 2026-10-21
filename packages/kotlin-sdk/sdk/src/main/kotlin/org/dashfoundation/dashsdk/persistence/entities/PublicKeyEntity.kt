@@ -100,9 +100,10 @@ data class PublicKeyEntity(
      * emitted it (the key's wallet, else the persisting one). A rejection
      * clears the breadcrumb only when the rejecting wallet is this one: the
      * same coordinates under another wallet's seed are another derivation.
-     * Null when the row carries no breadcrumb. Added in schema 16, backfilled
-     * from the identity's wallet (the best attribution available) for rows
-     * that already carried one.
+     * Null when the row carries no breadcrumb, or when its owner is unknown
+     * (a breadcrumb written before schema 16: its identity may have been
+     * re-associated since); a null owner never lets a rejection clear the
+     * breadcrumb. A load or discovery that verifies the key records it.
      */
     val derivationWalletId: ByteArray? = null,
 )

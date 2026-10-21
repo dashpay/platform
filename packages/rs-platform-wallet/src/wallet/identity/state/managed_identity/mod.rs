@@ -67,6 +67,13 @@ pub struct ManagedIdentity {
     /// holds it, until one succeeds.
     pending_key_rows: BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
 
+    /// Whether `pending_key_rows` was already carried through one store the
+    /// store refused as invalid data. A constraint failure keeps the queue
+    /// once (the batch's own rows may be the cause), but a second one in a
+    /// row drops it, so a queued row that is itself invalid cannot refuse
+    /// every later key store of the identity.
+    pending_key_rows_refused: bool,
+
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,
 

@@ -691,12 +691,13 @@ class DashDatabaseMigrationTest {
     }
 
     /**
-     * v15 → v16 adds `public_keys.derivationWalletId` and backfills it with
-     * the identity's wallet for rows that already carried a breadcrumb (whose
-     * derivation every pre-v16 breadcrumb was); a row without one stays NULL.
+     * v15 → v16 adds `public_keys.derivationWalletId` without a backfill: a
+     * legacy breadcrumb's parent may already have been re-associated with
+     * another wallet, so its owner stays NULL, which never lets a rejection
+     * clear it.
      */
     @Test
-    fun migrate15To16BackfillsTheBreadcrumbWallet() {
+    fun migrate15To16LeavesLegacyBreadcrumbOwnersUnknown() {
         helper.createDatabase(dbName, 15).apply {
             execSQL(
                 "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
@@ -727,7 +728,7 @@ class DashDatabaseMigrationTest {
         db.query("SELECT keyId, derivationWalletId FROM public_keys ORDER BY keyId").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals(0, c.getInt(0))
-            assertTrue("a breadcrumb row takes its identity's wallet", byteArrayOf(1).contentEquals(c.getBlob(1)))
+            assertTrue("a legacy breadcrumb's owner is unknown", c.isNull(1))
             assertTrue(c.moveToNext())
             assertEquals(1, c.getInt(0))
             assertTrue("a row without a breadcrumb stays NULL", c.isNull(1))

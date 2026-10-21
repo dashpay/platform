@@ -183,9 +183,11 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 16 (key-origin provenance, dashpay/platform#5487): adds the
  * nullable `public_keys.derivationWalletId` column, the wallet whose seed a
  * row's derivation breadcrumb belongs to, so a rejection by another wallet's
- * seed at the same coordinates does not clear it. Rows that already carried
- * a breadcrumb are backfilled with their identity's wallet, the best
- * attribution available for a breadcrumb written before this version.
+ * seed at the same coordinates does not clear it. Every existing row reads
+ * NULL: its parent identity may already have been re-associated with another
+ * wallet, so the owner of a legacy breadcrumb is unknown, and a NULL owner
+ * never lets a rejection clear it. A load or discovery that verifies the key
+ * again records the owner.
  */
 @Database(
     version = 16,
@@ -725,13 +727,11 @@ abstract class DashDatabase : RoomDatabase() {
 
         val MIGRATION_15_16: Migration = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                // No backfill: a legacy row's parent may already have been
+                // re-associated with another wallet, so its breadcrumb's
+                // owner is unknown and stays NULL until a load or discovery
+                // verifies the key again and records it.
                 db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `derivationWalletId` BLOB")
-                db.execSQL(
-                    "UPDATE `public_keys` SET `derivationWalletId` = (" +
-                        "SELECT `walletId` FROM `identities` " +
-                        "WHERE `identities`.`identityId` = `public_keys`.`identityIdData`) " +
-                        "WHERE `derivationKeyIndex` IS NOT NULL",
-                )
             }
         }
 
