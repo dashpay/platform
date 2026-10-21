@@ -1293,6 +1293,59 @@ mod tests {
         );
     }
 
+    /// The pending preorder is judged at the block time its response reports, against the
+    /// fetched preorder type's time to live and the minute's margin: one created an hour and a
+    /// minute and a millisecond before a reveal broadcast then could reach is revealable, one
+    /// created a millisecond earlier is expiring, and either way the found document is the one
+    /// returned.
+    #[tokio::test]
+    async fn should_judge_a_pending_preorder_at_the_time_its_response_reports() {
+        let owner = Identifier::new([1u8; 32]);
+        let now = 1_700_000_000_000u64;
+        let ttl_ms = 3_600_000u64;
+        for (created_at, expiring) in [
+            (now + DPNS_PREORDER_REVEAL_MARGIN_MS - ttl_ms + 1, false),
+            (now + DPNS_PREORDER_REVEAL_MARGIN_MS - ttl_ms, true),
+        ] {
+            let mut pending = bob_v3_preorder(owner);
+            let Document::V0(ref mut v0) = pending;
+            v0.created_at = Some(created_at);
+            let mut sdk = mock_sdk();
+            let query = pending_preorder_query(
+                Arc::new(dpns_v3()),
+                owner,
+                pending.properties()["nameHash"].clone(),
+            );
+            sdk.mock()
+                .set_response_time_ms(now)
+                .expect_fetch_many::<Identifier, Document, _, Documents>(
+                    query,
+                    Some(
+                        [(pending.id(), Some(pending.clone()))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                )
+                .await
+                .expect("the expectation is set");
+
+            let found = sdk
+                .pending_dpns_preorder(&dpns_v3(), owner, &bob_v3_preorder(owner))
+                .await
+                .expect("the query answers")
+                .expect("the pending preorder is found");
+            let document = match (found, expiring) {
+                (PendingDpnsPreorder::Revealable(document), false)
+                | (PendingDpnsPreorder::Expiring(document), true) => document,
+                (found, _) => panic!(
+                    "created at {created_at}, judged at {now}: expected expiring {expiring}, \
+                     got {found:?}"
+                ),
+            };
+            assert_eq!(document.id(), pending.id());
+        }
+    }
+
     /// A query that fails is an error, never taken for no pending preorder
     #[tokio::test]
     async fn should_propagate_a_failed_pending_preorder_query() {
