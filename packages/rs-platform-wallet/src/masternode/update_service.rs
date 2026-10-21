@@ -202,37 +202,37 @@ fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
 ///
 /// `build` makes the placeholder for a given V24 state. It runs first with
 /// the list's view (`list_shows_v24`), which refuses a request missing its
-/// P2P port or with nothing to re-assert before the coinbase is read. Only
-/// when the result is a payload Core refuses after V24 is `latest_coinbase`
-/// awaited: the coinbase payload of the highest block whose masternode list
-/// diff the SPV client applied with one.
+/// P2P port or with nothing to re-assert. A regular masternode's or a
+/// version-3 entry's payload is the same on both sides of V24, so for those
+/// the list's view is final.
 ///
-/// With no coinbase source (`latest_coinbase` is `None`) the list's view is
-/// kept. The list shows V24 only once some entry is version 3, so right
-/// after activation, until a version-3 provider transaction is mined, a
-/// legacy evonode still gets the version-2 payload, which Core refuses.
-/// Refusing every such build instead would block every evonode update
-/// before V24 too.
-/// Core requires coinbase payload version 4 or later exactly while V24 is
-/// active, so such a version rebuilds the placeholder for V24 and a lower one
-/// keeps it. A regular masternode's or a version-3 entry's payload is the
-/// same on both sides, so for those the coinbase is never read.
+/// Without a coinbase source (`latest_coinbase` is `None`) the list's view
+/// is final for every entry. The list shows V24 only once some entry is
+/// version 3, so right after activation, until a version-3 provider
+/// transaction is mined, a legacy evonode still gets the version-2 payload:
+/// Core refuses it and discourages the peers that relay it, and the inputs
+/// stay reserved until the reservation expires. Refusing every such build
+/// instead would block every evonode update before V24 as well.
 ///
-/// No coinbase leaves V24 unknown and fails the build with a retryable
-/// [`PlatformWalletError::TransactionBuild`]. The SPV client keeps the
-/// coinbase in memory only, so after a restart an evonode update can be
-/// built only once the session's first masternode list diff has arrived.
-/// Right after V24 activates, until a diff for a block past activation
-/// arrives, the coinbase still reads as pre-V24 and the version-2 payload
-/// built then is refused; a retry builds version 3.
+/// With a coinbase source, `latest_coinbase` is awaited only when the list's
+/// view gives a payload Core refuses after V24. It yields the coinbase
+/// payload of the highest block whose masternode list diff the SPV client
+/// applied with one. Core requires coinbase payload version 4 or later
+/// exactly while V24 is active, so such a version rebuilds the placeholder
+/// for V24 and a lower one keeps it.
 ///
-/// The pinned dash-spv does not authenticate the coinbase: it checks neither
-/// the diff's merkle proof of the coinbase transaction nor the payload's
-/// merkle roots, so the peer that served the diff chooses the version. A
+/// A source that has no coinbase yet leaves V24 unknown and fails the build
+/// with a retryable [`PlatformWalletError::TransactionBuild`]. An SPV client
+/// that keeps the coinbase in memory only has none after a restart until the
+/// session's first masternode list diff arrives. Right after V24 activates,
+/// until a diff for a block past activation arrives, the coinbase still
+/// reads as pre-V24 and the version-2 payload built then is refused; a retry
+/// builds version 3.
+///
+/// A coinbase taken from a diff without checking its merkle proof and the
+/// payload's merkle roots is chosen by the peer that served the diff. A
 /// lying peer can only get this transaction refused and the wallet
-/// disconnected by the peers that relay it; no funds are at risk. A dash-spv
-/// that keeps only coinbases verified against their block removes this
-/// caveat.
+/// disconnected by the peers that relay it; no funds are at risk.
 async fn update_service_placeholder(
     list_shows_v24: bool,
     build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,

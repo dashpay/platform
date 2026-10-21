@@ -866,10 +866,10 @@ mod tests {
         let wm = iw.wallet_manager.read().await;
         let cached = &wm
             .get_wallet_info(&iw.wallet_id)
-            .unwrap()
+            .expect("the fixture wallet")
             .identity_manager
             .identity(&id)
-            .unwrap()
+            .expect("the fixture identity")
             .dashpay()
             .profile;
         assert_eq!(cached.as_ref(), Some(&profile));

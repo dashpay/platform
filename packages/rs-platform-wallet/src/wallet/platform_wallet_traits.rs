@@ -548,6 +548,10 @@ mod tests {
         }
     }
 
+    // The delegations dash-spv reaches only through `WalletManager`, driven
+    // through that manager so a missing or wrong forward shows up as the
+    // behaviour it breaks.
+
     /// A manager holding `ctx`'s wallet as a `PlatformWalletInfo`.
     fn manager_holding(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
         let mut info = PlatformWalletInfo::from_wallet(&ctx.wallet, 0);

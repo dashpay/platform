@@ -14,7 +14,6 @@ use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
@@ -162,8 +161,7 @@ impl Sdk {
         let state_transition = builder
             .sign(self, signing_key, signer, self.version())
             .await?;
-        self.put_profile_write(dashpay_contract, state_transition)
-            .await
+        self.put_profile_write(state_transition).await
     }
 
     /// Update the existing profile document of `owner_id`: read it, overlay the
@@ -225,31 +223,19 @@ impl Sdk {
         let state_transition = builder
             .sign(self, signing_key, signer, self.version())
             .await?;
-        self.put_profile_write(dashpay_contract, state_transition)
-            .await
+        self.put_profile_write(state_transition).await
     }
 
     /// Broadcast a signed profile write and wait for its proof: the profile
     /// document it wrote, the owner's balance the proof carries and the
-    /// proof's verified metadata. As for any document type that keeps a row,
-    /// the proof must show that this write executed.
+    /// proof's verified metadata. The DashPay `profile` type keeps a row (it
+    /// is not indexOnly), so the proof must show that this write executed.
     async fn put_profile_write(
         &self,
-        dashpay_contract: &DataContract,
         state_transition: StateTransition,
     ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
-        let execution_proof_required = !dashpay_contract
-            .document_type_for_name(PROFILE_DOCUMENT_TYPE)
-            .map_err(|e| Error::Protocol(e.into()))?
-            .index_only();
         state_transition.broadcast(self, None).await?;
-        wait_for_document_and_owner_balance_with_metadata(
-            self,
-            state_transition,
-            None,
-            execution_proof_required,
-        )
-        .await
+        wait_for_document_and_owner_balance_with_metadata(self, state_transition, None, true).await
     }
 
     async fn fetch_profile_documents(
