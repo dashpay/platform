@@ -1,0 +1,3 @@
+mod insert_stored_info_for_yes_no_vote_poll;
+mod open_yes_no_vote_poll;
+mod register_yes_no_identity_vote;

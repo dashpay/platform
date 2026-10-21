@@ -2,6 +2,8 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use derive_more::From;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::ProtocolError;
 use std::collections::BTreeMap;
@@ -35,12 +37,19 @@ impl From<&ResolvedVotePoll> for VotePoll {
 }
 
 /// Represents a resolved vote poll in the system that also contains votes.
+// The contested variant carries the resolved contract; a yes/no poll is a few bytes.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum ResolvedVotePollWithVotes {
     /// A resolved vote poll with contract information for a contested document resource.
     ContestedDocumentResourceVotePollWithContractInfoAndVotes(
         ContestedDocumentResourceVotePollWithContractInfo,
         BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
+    ),
+    /// A yes/no vote poll and the masternodes that voted for each choice.
+    YesNoVotePollWithVotes(
+        YesNoVotePoll,
+        BTreeMap<YesNoAbstainVoteChoice, Vec<Identifier>>,
     ),
 }
 

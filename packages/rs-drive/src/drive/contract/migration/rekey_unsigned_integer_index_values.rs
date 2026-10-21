@@ -1637,7 +1637,9 @@ mod tests {
         let [(_, vote)] = votes.as_slice() else {
             panic!("expected the one vote, got {votes:?}");
         };
-        let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll();
+        let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll() else {
+            panic!("expected a contested document resource vote poll");
+        };
         assert_eq!(poll.index_values, vec![Value::U8(200)]);
         assert_eq!(vote.resource_vote_choice(), towards_first);
     }
@@ -1709,7 +1711,10 @@ mod tests {
             .try_into()
             .expect("expected one end date");
         let [VotePoll::ContestedDocumentResourceVotePoll(poll)]: [VotePoll; 1] =
-            polls.try_into().expect("expected one poll");
+            polls.try_into().expect("expected one poll")
+        else {
+            panic!("expected a contested document resource vote poll");
+        };
         assert_eq!(poll.index_values, vec![Value::U8(200)]);
 
         let tally: FinalizedContestedDocumentVotePollDriveQueryExecutionResult =

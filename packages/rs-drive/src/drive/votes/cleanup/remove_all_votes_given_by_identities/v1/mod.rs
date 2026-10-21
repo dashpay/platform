@@ -1,0 +1,145 @@
+use crate::drive::Drive;
+use std::ops::RangeFull;
+
+use crate::error::drive::DriveError;
+use crate::error::Error;
+
+use crate::drive::votes::paths::{
+    vote_decisions_active_polls_poll_tree_path_vec, vote_decisions_identity_votes_tree_path_vec,
+    vote_decisions_tree_path, IDENTITY_VOTES_TREE_KEY,
+};
+use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
+use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
+use crate::query::QueryItem;
+use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
+use dpp::dashcore::Network;
+use dpp::prelude::{BlockHeight, Identifier};
+use dpp::version::PlatformVersion;
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use std::collections::BTreeMap;
+
+impl Drive {
+    /// Version 1 (protocol version 15) removes the contested resource votes of the removed
+    /// masternodes through version 0, unchanged, then their yes/no votes in a batch of its own:
+    /// the vote under the poll's choice sum tree and the entry in the decisions identity votes
+    /// index. The two batches touch different subtrees, so applying them one after the other
+    /// leaves the same state as one batch would.
+    pub(super) fn remove_all_votes_given_by_identities_v1(
+        &self,
+        identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        block_height: BlockHeight,
+        network: Network,
+        chain_id: &str,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.remove_all_votes_given_by_identities_v0(
+            identity_ids_as_byte_arrays.clone(),
+            block_height,
+            network,
+            chain_id,
+            transaction,
+            platform_version,
+        )?;
+
+        // Yes/no votes: the index item names the poll and the answer, so the vote sits under
+        // the poll's tree at the answer's sum tree. A chain that activated protocol version 15
+        // before the decisions trees existed has no identity votes index, and no yes/no votes.
+        let has_decisions_index = self.grove_has_raw(
+            (&vote_decisions_tree_path()).into(),
+            &[IDENTITY_VOTES_TREE_KEY as u8],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        if !has_decisions_index {
+            return Ok(());
+        }
+
+        let mut deletion_batch = vec![];
+        for (identifier_bytes, votes_to_remove) in self.yes_no_votes_of_identities(
+            identity_ids_as_byte_arrays,
+            transaction,
+            platform_version,
+        )? {
+            let identity_id = Identifier::from_vec(identifier_bytes.clone())?;
+            let mut vote_poll_ids = Vec::with_capacity(votes_to_remove.len());
+            for (vote_poll_id, vote_to_remove) in votes_to_remove {
+                let serialized_form = vote_to_remove.into_item_bytes()?;
+                let storage_form = YesNoVoteReferenceStorageForm::deserialize(&serialized_form)
+                    .map_err(|e| {
+                        Error::Drive(DriveError::CorruptedSerialization(format!(
+                            "serialization of yes/no vote reference {} is corrupted: {}",
+                            hex::encode(serialized_form),
+                            e
+                        )))
+                    })?;
+                let vote_poll_id = Identifier::from_vec(vote_poll_id)?;
+                let mut votes_path =
+                    vote_decisions_active_polls_poll_tree_path_vec(vote_poll_id.as_bytes());
+                votes_path.push(vec![storage_form.vote_choice.to_tree_key()]);
+                self.batch_delete(
+                    votes_path.as_slice().into(),
+                    identifier_bytes.as_slice(),
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                    },
+                    transaction,
+                    &mut deletion_batch,
+                    &platform_version.drive,
+                )?;
+                vote_poll_ids.push(vote_poll_id);
+            }
+            let vote_poll_ids: Vec<&Identifier> = vote_poll_ids.iter().collect();
+            self.remove_yes_no_vote_references_given_by_identity_operations(
+                &identity_id,
+                vote_poll_ids.as_slice(),
+                &mut deletion_batch,
+                transaction,
+                platform_version,
+            )?;
+        }
+
+        if !deletion_batch.is_empty() {
+            self.apply_batch_low_level_drive_operations(
+                None,
+                transaction,
+                deletion_batch,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .inspect_err(|err| tracing::error!(?err, "yes/no vote deletion batch failed"))?;
+        }
+
+        Ok(())
+    }
+
+    /// The yes/no vote index entries of these masternodes, by masternode then poll id.
+    #[allow(clippy::type_complexity)]
+    fn yes_no_votes_of_identities(
+        &self,
+        identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Element>>, Error> {
+        let decisions_vote_path = vote_decisions_identity_votes_tree_path_vec();
+        let mut query = Query::new_with_direction(true);
+        query.insert_keys(identity_ids_as_byte_arrays);
+        query.set_subquery(Query::new_single_query_item(QueryItem::RangeFull(
+            RangeFull,
+        )));
+        let path_query = PathQuery::new(decisions_vote_path, SizedQuery::new(query, None, None));
+        Ok(self
+            .grove_get_raw_path_query(
+                &path_query,
+                transaction,
+                QueryPathKeyElementTrioResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )?
+            .0
+            .to_last_path_to_key_elements_btree_map())
+    }
+}

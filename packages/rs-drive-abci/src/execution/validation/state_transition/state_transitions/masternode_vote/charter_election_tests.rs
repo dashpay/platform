@@ -1148,7 +1148,10 @@ async fn should_keep_the_generic_windows_and_fund_for_a_dpns_contest() {
     let [(end_date, VotePoll::ContestedDocumentResourceVotePoll(poll))]: [_; 1] =
         end_dates(&platform, platform_version)
             .try_into()
-            .expect("expected one contest");
+            .expect("expected one contest")
+    else {
+        panic!("expected a contested document resource vote poll");
+    };
     assert_eq!(poll.contract_id, dpns_contract.id());
 
     let ContestedDocumentVotePollStatus::Started(start_block) =

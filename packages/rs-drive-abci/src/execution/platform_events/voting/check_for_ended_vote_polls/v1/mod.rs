@@ -1,6 +1,8 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::ContestedIndexResolution;
@@ -10,6 +12,10 @@ use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPower, YesNoMinimumVotingPower, YesNoVotePoll,
+};
+use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
@@ -24,7 +30,9 @@ where
     C: CoreRPCLike,
 {
     /// Checks for ended vote polls, awarding a tie to the earliest contender, after removing
-    /// the end dates left with no vote poll among the first due
+    /// the end dates left with no vote poll among the first due. From protocol version 15 it
+    /// also closes yes/no polls: it records their result, hands it to the feature that opened
+    /// them and cleans their votes up.
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
@@ -75,6 +83,20 @@ where
         // Check if awarding is disabled
         let vote_polls_with_info = vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
                 let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
+                    // Reached from protocol version 15 only. At 14, which also selects this
+                    // generation, no yes/no poll is in the end date index: it enters only
+                    // through `Drive::open_yes_no_vote_poll`, which writes under the `Votes/d/p`
+                    // tree that exists from 15 (genesis structure v4 behind `>= 15`,
+                    // `transition_to_version_15`). A yes/no poll needs no resolution.
+                    if let VotePoll::YesNoVotePoll(yes_no_vote_poll) = vote_poll {
+                        return self.finish_yes_no_vote_poll(
+                            block_platform_state,
+                            block_info,
+                            yes_no_vote_poll,
+                            transaction,
+                            platform_version,
+                        );
+                    }
                     let resolved_vote_poll =
                         vote_poll.resolve(&self.drive, transaction, platform_version)?;
                     match resolved_vote_poll {
@@ -225,5 +247,58 @@ where
         }
 
         Ok(())
+    }
+
+    /// Closes one yes/no poll whose time has come: tallies it, records the result in its
+    /// stored info, hands the result to the feature that opened the poll, and returns the
+    /// voters so the clean-up can remove their votes.
+    fn finish_yes_no_vote_poll(
+        &self,
+        block_platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        vote_poll: YesNoVotePoll,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ResolvedVotePollWithVotes, Error> {
+        let tally =
+            self.tally_votes_for_yes_no_vote_poll(&vote_poll, transaction, platform_version)?;
+        // A minimum given as a share of the total is measured against the masternode list of
+        // the closing block, each masternode weighed as its vote is. A fixed minimum reads no
+        // total.
+        let total_voting_power = match vote_poll.minimum_voting_power {
+            YesNoMinimumVotingPower::Absolute(_) => 0,
+            YesNoMinimumVotingPower::FractionOfTotal { .. } => block_platform_state
+                .full_masternode_list()
+                .values()
+                .try_fold(0 as VotingPower, |total, masternode| {
+                    total.checked_add(masternode_vote_strength(&masternode.node_type).into())
+                })
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "the masternode list's total voting power overflows",
+                )))?,
+        };
+        let result = self.keep_record_of_finished_yes_no_vote_poll(
+            block_info,
+            &vote_poll,
+            &tally,
+            total_voting_power,
+            transaction,
+            platform_version,
+        )?;
+        self.on_yes_no_vote_poll_finished(
+            block_info,
+            &vote_poll,
+            &result,
+            transaction,
+            platform_version,
+        )?;
+        let voters = self.drive.fetch_identities_voting_in_yes_no_vote_poll(
+            &vote_poll,
+            transaction,
+            platform_version,
+        )?;
+        Ok(ResolvedVotePollWithVotes::YesNoVotePollWithVotes(
+            vote_poll, voters,
+        ))
     }
 }

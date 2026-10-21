@@ -1,11 +1,14 @@
 use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::votes::paths::{
     RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY, YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY,
+    YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -50,6 +53,11 @@ impl TreePath for Vote {
     fn tree_path<'a>(&'a self, contract: &'a DataContract) -> Result<Vec<&'a [u8]>, ProtocolError> {
         match self {
             Vote::ResourceVote(resource_vote) => resource_vote.tree_path(contract),
+            // A yes/no poll lives under the decisions branch by its unique id, not under a
+            // contract's index.
+            Vote::YesNoVote(_) => Err(ProtocolError::VoteError(
+                "a yes/no vote has no tree path under a contract".to_string(),
+            )),
         }
     }
 }
@@ -94,6 +102,9 @@ impl TreePath for ResourceVote {
                 }
                 Ok(path)
             }
+            VotePoll::YesNoVotePoll(_) => Err(ProtocolError::VoteError(
+                "a resource vote cannot answer a yes/no vote poll".to_string(),
+            )),
         }
     }
 }
@@ -110,6 +121,34 @@ impl ResourceVoteChoiceToKeyTrait for ResourceVoteChoice {
             ResourceVoteChoice::TowardsIdentity(identity_id) => identity_id.to_vec(),
             ResourceVoteChoice::Abstain => RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec(),
             ResourceVoteChoice::Lock => RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec(),
+        }
+    }
+}
+
+/// The key of the sum tree holding the votes for a yes/no choice, and back.
+pub trait YesNoAbstainVoteChoiceToKeyTrait: Sized {
+    /// The key of the choice's sum tree inside the poll's tree
+    fn to_tree_key(&self) -> u8;
+
+    /// The choice a sum tree key stands for, if it is one of the three
+    fn from_tree_key(key: u8) -> Option<Self>;
+}
+
+impl YesNoAbstainVoteChoiceToKeyTrait for YesNoAbstainVoteChoice {
+    fn to_tree_key(&self) -> u8 {
+        match self {
+            YesNoAbstainVoteChoice::Yes => YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY,
+            YesNoAbstainVoteChoice::No => YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY,
+            YesNoAbstainVoteChoice::Abstain => YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY,
+        }
+    }
+
+    fn from_tree_key(key: u8) -> Option<Self> {
+        match key {
+            YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY => Some(YesNoAbstainVoteChoice::Yes),
+            YES_NO_VOTE_POLL_NO_VOTES_TREE_KEY => Some(YesNoAbstainVoteChoice::No),
+            YES_NO_VOTE_POLL_ABSTAIN_VOTES_TREE_KEY => Some(YesNoAbstainVoteChoice::Abstain),
+            _ => None,
         }
     }
 }

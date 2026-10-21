@@ -1,6 +1,7 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -87,7 +88,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ];
 
 /// Drive ABCI method versions 11, introduced in protocol v15. Differs from v10 in the chain lock
-/// verification, which only works as a whole:
+/// verification and in the closing of yes/no vote polls.
+///
+/// The chain lock verification only works as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -98,12 +101,21 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   `submitchainlock`, which skips that check for a height Core already has a chain lock at or
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
+///
+/// The yes/no vote polls of protocol v15 share the end date index with contested polls:
+/// `voting.clean_up_after_vote_poll_end` is 1 rather than 0, so the yes/no polls a block ends are
+/// cleaned up too. The contested ones still go to `clean_up_after_contested_resources_vote_poll_end`
+/// 1, and each clean-up removes its own polls from the end date index.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
         verify_chain_lock_through_core: 1,
         dkg_mining_schedules: Some(DKG_MINING_SCHEDULES_V1),
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_chain_lock
+    },
+    voting: DriveAbciVotingMethodVersions {
+        clean_up_after_vote_poll_end: 1,
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };

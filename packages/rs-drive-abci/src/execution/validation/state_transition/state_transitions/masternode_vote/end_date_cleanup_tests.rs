@@ -80,9 +80,24 @@ fn end_due_vote_polls(
 
 #[tokio::test]
 async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left() {
-    let platform_version = PlatformVersion::latest();
+    end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(PlatformVersion::latest()).await;
+}
+
+/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+#[tokio::test]
+async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left_at_protocol_version_14(
+) {
+    end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    )
+    .await;
+}
+
+async fn end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(
+    platform_version: &'static PlatformVersion,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
 
@@ -180,9 +195,24 @@ async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one
 
 #[tokio::test]
 async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block() {
-    let platform_version = PlatformVersion::latest();
+    end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(PlatformVersion::latest()).await;
+}
+
+/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+#[tokio::test]
+async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block_at_protocol_version_14(
+) {
+    end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    )
+    .await;
+}
+
+async fn end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(
+    platform_version: &'static PlatformVersion,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
 

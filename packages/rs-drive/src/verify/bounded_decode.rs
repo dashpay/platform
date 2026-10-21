@@ -1,4 +1,5 @@
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
+use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::bincode;
@@ -69,6 +70,20 @@ pub(super) fn decode_proof_data_contract(
 pub(super) fn decode_vote_reference(
     serialized_reference: &[u8],
 ) -> Result<ContestedDocumentResourceVoteReferenceStorageForm, Error> {
+    decode_bounded_vote_reference(serialized_reference)
+}
+
+/// A masternode's proved yes/no vote, decoded under the same budget and exact-length rule as a
+/// contested vote reference.
+pub(super) fn decode_yes_no_vote_reference(
+    serialized_reference: &[u8],
+) -> Result<YesNoVoteReferenceStorageForm, Error> {
+    decode_bounded_vote_reference(serialized_reference)
+}
+
+fn decode_bounded_vote_reference<T: bincode::de::DecodeUntrusted<()>>(
+    serialized_reference: &[u8],
+) -> Result<T, Error> {
     if serialized_reference.len() > MAX_VOTE_REFERENCE_DECODE_BYTES {
         return Err(Error::Drive(DriveError::CorruptedSerialization(
             "serialized vote reference exceeds the proof decoding limit".to_string(),

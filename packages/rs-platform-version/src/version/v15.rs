@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
@@ -71,13 +71,26 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    earlier keep `advanced_structure` 0, so the blocks committed under them
 ///    replay with the same results. check_tx verifies these proofs at every
 ///    protocol version, which decides mempool admission only.
+///
+/// 3. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
+///    "should this happen?" and passes on a supermajority of yes over yes plus
+///    no with a minimum of voting power cast. A masternode vote naming a yes/no
+///    poll is active from this version (`StateTransition::active_version_range`);
+///    the polls live under the votes tree's decisions branch, which genesis
+///    (`create_initial_state_structure` 4 behind `>= 15`) and
+///    `transition_to_version_15` create. Masternode vote `transform_into_action`
+///    1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer,
+///    `clean_up_after_vote_poll_end` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V11`) cleans
+///    finished yes/no polls up beside contested ones, and `DRIVE_VERSION_V10`
+///    registers and sweeps the votes. Nothing opens a yes/no poll yet, so at this version
+///    every yes/no vote is refused for want of a poll.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: vote method versions v4: register_identity_vote 1 registers a yes/no vote and remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; clean_up_after_vote_poll_end 1 cleans up the yes/no polls a block ends beside the contested ones
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify; masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

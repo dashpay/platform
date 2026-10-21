@@ -1,4 +1,7 @@
-use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
+use crate::drive::votes::paths::{
+    vote_contested_resource_identity_votes_tree_path_for_identity_vec,
+    vote_decisions_identity_votes_tree_path_for_identity_vec,
+};
 use crate::error::Error;
 use crate::query::Query;
 use bincode::{Decode, Encode};
@@ -18,10 +21,17 @@ pub struct IdentityBasedVoteDriveQuery {
 impl IdentityBasedVoteDriveQuery {
     /// Operations to construct a path query.
     pub fn construct_path_query(&self) -> Result<PathQuery, Error> {
-        // First we should get the overall document_type_path
-        let path = vote_contested_resource_identity_votes_tree_path_for_identity_vec(
-            self.identity_id.as_bytes(),
-        );
+        // Each poll kind indexes the votes of a masternode under its own branch
+        let path = match &self.vote_poll {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                vote_contested_resource_identity_votes_tree_path_for_identity_vec(
+                    self.identity_id.as_bytes(),
+                )
+            }
+            VotePoll::YesNoVotePoll(_) => vote_decisions_identity_votes_tree_path_for_identity_vec(
+                self.identity_id.as_bytes(),
+            ),
+        };
 
         let vote_id = self.vote_poll.unique_id()?;
 
