@@ -5029,6 +5029,101 @@ mod tests {
         }
     }
 
+    /// On the wallet-drain path the observer runs once, while the operation
+    /// is `Pending` with the reported outpoint and before the lock's row is
+    /// stored or the lock tracked. When that store then fails, the reported
+    /// lock is recovered through the same operation UUID, not by outpoint.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_report_a_wallet_drain_lock_before_its_row_is_stored() {
+        let (wallet_manager, wallet_id, _, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let persistence = Arc::new(CapturingPersistence {
+            commits_inline: true,
+            fail_lock_store: std::sync::atomic::AtomicBool::new(true),
+            restore_stored_locks: std::sync::atomic::AtomicBool::new(true),
+            ..CapturingPersistence::for_wallet(&wallet_manager, wallet_id)
+        });
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let manager = AssetLockManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster.clone(),
+            WalletPersister::new(wallet_id, persistence.clone()),
+        );
+        let operation = Arc::new(super::AssetLockOperationContext::new([58; 16]));
+        let registration = manager.register_wallet_drain_operation(operation.clone());
+        manager.begin_wallet_drain(&operation).await.unwrap();
+
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| {
+            let tracked = manager
+                .wallet_manager
+                .try_read()
+                .expect("the build holds no wallet-manager lock while observing")
+                .get_wallet_and_info(&manager.wallet_id)
+                .is_some_and(|(_, info)| info.tracked_asset_locks.contains_key(&out_point));
+            let stored = persistence.stored_outpoints().contains(&out_point)
+                || !persistence.failed_lock_stores.lock().unwrap().is_empty();
+            let snapshot = operation.snapshot();
+            seen.lock().unwrap().push((
+                out_point,
+                tracked,
+                stored,
+                snapshot.state,
+                snapshot.out_point,
+                broadcaster.calls(),
+            ));
+        };
+        let result = manager
+            .broadcast_funded_asset_lock_with_operation(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                &crate::ASSET_LOCK_FUNDING_SOURCES,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&operation),
+                Some(&observer),
+            )
+            .await;
+        assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
+        let point = operation.snapshot().out_point.unwrap();
+        drop(observer);
+        assert_eq!(
+            seen.into_inner().unwrap(),
+            vec![(
+                point,
+                false,
+                false,
+                super::AssetLockOperationState::Pending,
+                Some(point),
+                0
+            )]
+        );
+        assert!(manager.list_tracked_locks().await.is_empty());
+        drop(registration);
+        drop(operation);
+
+        let retry = Arc::new(super::AssetLockOperationContext::new([58; 16]));
+        let _registration = manager.register_wallet_drain_operation(retry.clone());
+        persistence
+            .fail_lock_store
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            manager.begin_wallet_drain(&retry).await.unwrap(),
+            Some(point)
+        );
+        let locks = manager.list_tracked_locks().await;
+        assert_eq!(locks.len(), 1);
+        assert_eq!(locks[0].out_point, point);
+        assert_eq!(broadcaster.calls(), 0);
+    }
+
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_retry_rolled_back_drain_checkpoint_without_rebuilding() {
