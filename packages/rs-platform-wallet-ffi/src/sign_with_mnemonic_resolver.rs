@@ -277,7 +277,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
-    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.to_secret_bytes());
+    let secret_bytes: Zeroizing<[u8; 32]> = derived.private_key.to_bytes();
 
     // ---- Bind the derived key to the expected on-chain key -------------------
     // Reject before signing if the key derived here doesn't reproduce the
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
         let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&derived)
             .public_key
-            .serialize();
+            .to_compressed();
         // Build the expected slice only for the two lengths the binding
         // policy accepts (33 or 20), never from the caller-supplied
         // `expected_key_data_len` directly: a malformed huge length must not
@@ -496,7 +496,9 @@ mod tests {
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");
-        let expected_pubkey = ExtendedPubKey::from_priv(&derived).public_key.serialize();
+        let expected_pubkey = ExtendedPubKey::from_priv(&derived)
+            .public_key
+            .to_compressed();
 
         let mut sig_buf = [0u8; 128];
         let mut sig_len: usize = 0;
@@ -589,7 +591,9 @@ mod tests {
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");
-        let pubkey = ExtendedPubKey::from_priv(&derived).public_key.serialize();
+        let pubkey = ExtendedPubKey::from_priv(&derived)
+            .public_key
+            .to_compressed();
         let expected_hash = dash_sdk::dpp::util::hash::ripemd160_sha256(&pubkey);
 
         let mut sig_buf = [0u8; 128];
