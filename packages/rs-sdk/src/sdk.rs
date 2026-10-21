@@ -109,8 +109,8 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// initial version.
 ///
 /// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
-/// any of those networks still runs. Devnets seed at 15: they are cut from the
-/// current development line. Proved reads can use a newer version named in
+/// any of those networks still runs. Devnets seed at 14, the lowest version
+/// a development network may still run. Proved reads can use a newer version named in
 /// their signed response metadata even when the SDK starts with a lower seed;
 /// the stored version ratchets only after proof and signature verification.
 ///
@@ -122,7 +122,7 @@ pub const fn min_protocol_version(network: Network) -> u32 {
     match network {
         Network::Mainnet => dpp::version::v13::PROTOCOL_VERSION_13,
         Network::Testnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Devnet => dpp::version::v15::PROTOCOL_VERSION_15,
+        Network::Devnet => dpp::version::v14::PROTOCOL_VERSION_14,
         Network::Regtest => dpp::version::v13::PROTOCOL_VERSION_13,
     }
 }
@@ -2430,15 +2430,13 @@ mod test {
         assert!(!sdk.version_pinned);
     }
 
-    /// Devnets are cut from the current development line and their contracts use
-    /// index grammar older versions cannot deserialize, so the devnet floor is the
-    /// current version while the public networks keep the lowest version they run.
+    /// Each network seeds at the lowest protocol version it may still run.
     #[test]
     fn test_per_network_floors() {
         assert_eq!(
             min_protocol_version(Network::Devnet),
-            dpp::version::v15::PROTOCOL_VERSION_15,
-            "devnet floor must be the current development version"
+            dpp::version::v14::PROTOCOL_VERSION_14,
+            "devnet floor must support networks still running protocol 14"
         );
         for network in [Network::Mainnet, Network::Testnet, Network::Regtest] {
             assert_eq!(

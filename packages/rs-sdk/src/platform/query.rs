@@ -1694,6 +1694,7 @@ impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
 mod history_query_tests {
     use super::*;
     use crate::platform::QuerySettings;
+    use dpp::dashcore::Network;
     use dpp::version::PlatformVersion;
     use drive::query::document_history_drive_query::DocumentHistoryFilter;
 
@@ -1705,7 +1706,8 @@ mod history_query_tests {
             DocumentHistory, DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
         };
         let mut sdk = crate::SdkBuilder::default()
-            .with_version(PlatformVersion::get(15).unwrap())
+            .with_network(Network::Devnet)
+            .with_initial_version(PlatformVersion::get(15).unwrap())
             .build()
             .unwrap();
         let query = DocumentHistoryQuery {
