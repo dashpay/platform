@@ -110,10 +110,9 @@ pub fn rpc_hex(hash: &Hash) -> String {
 
 /// Parse a hash in Core's RPC display order into wire order.
 pub fn from_rpc_hex(text: &str) -> Result<Hash> {
-    let mut hash: Hash = hex::decode(text)
-        .ok()
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or(Error("hash must be 64 hex characters"))?;
+    // Decoding into the array rejects any other length before allocating.
+    let mut hash: Hash = [0; 32];
+    hex::decode_to_slice(text, &mut hash).map_err(|_| Error("hash must be 64 hex characters"))?;
     hash.reverse();
     Ok(hash)
 }
@@ -197,5 +196,8 @@ mod tests {
             "quorum_root": "00".repeat(32),
         });
         assert!(serde_json::from_value::<State>(unknown).is_err());
+        assert!(from_rpc_hex(&"00".repeat(31)).is_err());
+        assert!(from_rpc_hex(&"00".repeat(33)).is_err());
+        assert!(from_rpc_hex(&"zz".repeat(32)).is_err());
     }
 }
