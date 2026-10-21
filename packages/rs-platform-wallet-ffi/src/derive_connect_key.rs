@@ -30,6 +30,7 @@ use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::types::{read_identifier, FFINetwork, Network};
 use crate::{check_ptr, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
+use zeroize::Zeroize;
 
 /// `sub_feature` for the DashPay Connect session authentication key. The
 /// leaf is the connect request id (`hash256` of the app's ephemeral public
@@ -175,7 +176,7 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
     let derived = derive_connect_keypair_from_master(&master, kw_network, key);
     // Dropping `master` zeroizes it too; erase now so the scalar does not
     // outlive the derive.
-    master.private_key.non_secure_erase();
+    master.private_key.zeroize();
     let derived = unwrap_result_or_return!(derived);
 
     (*out_key).private_key_bytes = *derived.private_key;
