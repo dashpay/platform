@@ -310,7 +310,7 @@ enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
          .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
-            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)]
+         .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)]
     }
 }
 
