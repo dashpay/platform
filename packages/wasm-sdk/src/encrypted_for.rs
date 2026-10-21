@@ -5,7 +5,7 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
+use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;

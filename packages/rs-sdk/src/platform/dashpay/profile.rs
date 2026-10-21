@@ -11,8 +11,6 @@ use crate::platform::documents::transitions::{
 };
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
@@ -21,6 +19,8 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

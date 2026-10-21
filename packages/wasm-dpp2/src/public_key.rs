@@ -1,7 +1,8 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use dpp::dashcore::key::constants;
-use dpp::dashcore::{PublicKey, secp256k1};
+use dpp::dashcore::PublicKey;
+use dpp::secp256k1;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -57,7 +58,10 @@ impl PublicKeyWasm {
         }
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        Ok(PublicKeyWasm(PublicKey { compressed, inner }))
+        Ok(PublicKeyWasm(PublicKey {
+            compressed,
+            inner: inner.into(),
+        }))
     }
 
     #[wasm_bindgen(getter = "compressed")]
@@ -68,9 +72,9 @@ impl PublicKeyWasm {
     #[wasm_bindgen(getter = "inner")]
     pub fn inner(&self) -> Vec<u8> {
         if self.0.compressed {
-            self.0.inner.serialize().into()
+            self.0.inner.to_compressed().into()
         } else {
-            self.0.inner.serialize_uncompressed().into()
+            self.0.inner.to_uncompressed().into()
         }
     }
 
@@ -88,7 +92,8 @@ impl PublicKeyWasm {
 
             self.0.compressed = true;
             self.0.inner = secp256k1::PublicKey::from_byte_array_compressed(bytes)
-                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?
+                .into();
         } else {
             if inner.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
                 return Err(WasmDppError::invalid_argument(format!(
@@ -104,7 +109,8 @@ impl PublicKeyWasm {
 
             self.0.compressed = false;
             self.0.inner = secp256k1::PublicKey::from_byte_array_uncompressed(bytes)
-                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?
+                .into();
         }
 
         Ok(())

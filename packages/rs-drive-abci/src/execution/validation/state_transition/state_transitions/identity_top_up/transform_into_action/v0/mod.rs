@@ -7,9 +7,10 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnou
 
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::{signer, ScriptBuf, Txid};
+use dpp::dashcore::{ScriptBuf, Txid};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
+use dpp::util::ecdsa as signer;
 
 use dpp::prelude::ConsensusValidationResult;
 

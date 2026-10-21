@@ -69,7 +69,6 @@
 use std::collections::BTreeMap;
 
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -82,6 +81,7 @@ use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
+use dpp::secp256k1::{PublicKey, SecretKey};
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
@@ -423,11 +423,11 @@ pub fn encode_invitation_uri(
     };
 
     // WIF, compressed (the default for `PrivateKey::new`), network-correct.
-    // `PrivateKey` is `Copy` and not zeroized on drop, so wipe this copy.
-    let mut private_key = PrivateKey::new(*voucher_key, network);
+    let private_key = PrivateKey::from_byte_array(&voucher_key.to_secret_bytes(), network)
+        .map_err(|e| invalid(format!("invalid invitation voucher key: {e}")))?;
     let mut wif = String::with_capacity(52);
     let wif_result = private_key.fmt_wif(&mut wif);
-    private_key.inner.non_secure_erase();
+    drop(private_key);
     wif_result.map_err(|_| invalid("failed to encode invitation voucher key"))?;
 
     let mut query = String::new();
@@ -555,19 +555,16 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, InvitationErr
     // hash160 and a dead claim). `from_wif` rejects a non-Dash network byte but
     // cannot tell mainnet from testnet against *this* wallet; the claim path does
     // that (see `voucher_key_network`).
-    // `PrivateKey`/`SecretKey` are `Copy`, so the decoded binding is a second
-    // bearer-scalar copy alongside `voucher_key` — erase it on every exit
-    // (rejection included; `ParsedInvitation`'s wipe-on-drop guard doesn't
-    // exist yet on that path) to keep the parser's wiping policy airtight.
-    let mut private_key = PrivateKey::from_wif(pk)
+    // The decoded native key zeroizes on every exit, including rejection.
+    let private_key = PrivateKey::from_wif(pk)
         .map_err(|e| invalid(format!("invitation pk is not a valid WIF key: {e}")))?;
     if !private_key.compressed {
-        private_key.inner.non_secure_erase();
         return Err(invalid("invitation pk must be a compressed WIF key"));
     }
-    let voucher_key = private_key.inner;
+    let voucher_key = SecretKey::from_secret_bytes(*private_key.inner.to_bytes())
+        .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
     let voucher_key_network = private_key.network;
-    private_key.inner.non_secure_erase();
+    drop(private_key);
 
     let funding_txid = assetlocktx.to_lowercase();
 
@@ -726,18 +723,6 @@ fn reverse_txid_hex(txid_hex: &str) -> Result<String, InvitationError> {
     Ok(hex::encode(bytes))
 }
 
-/// RAII scrub for the voucher `PrivateKey` copy used on the claim path.
-/// `dashcore::PrivateKey` wraps a `secp256k1::SecretKey` that has no
-/// Drop-zeroize, so the imported bearer scalar would otherwise linger in memory
-/// after `claim_invitation` returns on every exit path (success or error).
-struct WipingPrivateKey(PrivateKey);
-
-impl Drop for WipingPrivateKey {
-    fn drop(&mut self) {
-        self.0.inner.non_secure_erase();
-    }
-}
-
 impl Sdk {
     /// The identity id this invitation WOULD create, without claiming it.
     ///
@@ -892,8 +877,10 @@ impl Sdk {
 
         // The voucher key signs the asset lock's outer ST signature (ECDSA over
         // the credit-output pubkey hash), scrubbed on every exit path by the
-        // `WipingPrivateKey` guard.
-        let voucher_priv = WipingPrivateKey(PrivateKey::new(invitation.voucher_key, self.network));
+        // native secret-key owner.
+        let voucher_priv =
+            PrivateKey::from_byte_array(&invitation.voucher_key.to_secret_bytes(), self.network)
+                .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
 
         // Build the placeholder identity ONCE so both the primary attempt and the
         // IS→CL fallback submit the same key set without a `keys_map` clone.
@@ -917,7 +904,7 @@ impl Sdk {
                     placeholder.put_to_platform_and_wait_for_response_with_private_key(
                         self,
                         proof.clone(),
-                        &voucher_priv.0,
+                        &voucher_priv,
                         identity_signer,
                         s,
                     )
@@ -1377,11 +1364,13 @@ mod tests {
     #[test]
     fn should_round_trip_a_wif_keeping_compression_and_network() {
         for (network, first_byte) in [(Network::Mainnet, 204u8), (Network::Testnet, 239u8)] {
-            let wif = PrivateKey::new(voucher(), network).to_wif();
+            let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), network)
+                .expect("valid voucher")
+                .to_wif();
             let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
             assert!(decoded.compressed, "voucher WIF must be compressed");
             assert_eq!(decoded.network, network, "network preserved");
-            assert_eq!(decoded.inner.to_secret_bytes(), voucher().to_secret_bytes());
+            assert_eq!(*decoded.inner.to_bytes(), voucher().to_secret_bytes());
             // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
             let raw = dpp::dashcore::base58::decode(&wif).unwrap();
             assert_eq!(raw[0], first_byte);
@@ -1425,7 +1414,9 @@ mod tests {
     /// byte-level, interop — the two legacy wallets differ in order).
     #[test]
     fn should_parse_a_link_regardless_of_field_order() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri = format!("dashpay://invite?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert_eq!(parsed.funding_txid, "aabbcc");
@@ -1440,7 +1431,9 @@ mod tests {
     /// first-class alternative to the custom scheme (iOS emits it).
     #[test]
     fn should_parse_a_link_on_the_applink_host() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri = format!(
             "https://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}&islock=cc"
         );
@@ -1456,7 +1449,9 @@ mod tests {
     /// accepted over cleartext `http`. Neither mobile wallet emits an `http` link.
     #[test]
     fn should_reject_an_applink_over_plain_http() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri =
             format!("http://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}");
         assert!(matches!(
@@ -1470,7 +1465,9 @@ mod tests {
     /// (a ChainLock-confirmed invite Android's own validator accepts).
     #[test]
     fn should_parse_an_islock_that_is_present_absent_or_null() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let present = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=00aa11");
         assert_eq!(
             parse_invitation_uri(&present)
@@ -1493,7 +1490,9 @@ mod tests {
     /// A `du`-less link still parses (iOS accepts du-less links).
     #[test]
     fn should_parse_a_link_without_a_du_field() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=bb");
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert!(parsed.inviter.is_none());
@@ -1501,7 +1500,9 @@ mod tests {
 
     #[test]
     fn should_reject_a_link_missing_pk_or_assetlocktx() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         // No pk.
         assert!(parse_invitation_uri("dashpay://invite?assetlocktx=aa").is_err());
         // No assetlocktx.
@@ -1518,7 +1519,11 @@ mod tests {
 
     #[test]
     fn should_reject_an_uncompressed_wif() {
-        let uncompressed = PrivateKey::new_uncompressed(voucher(), Network::Testnet).to_wif();
+        let mut private_key =
+            PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+                .expect("valid voucher");
+        private_key.compressed = false;
+        let uncompressed = private_key.to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={uncompressed}");
         let err = parse_invitation_uri(&uri).unwrap_err();
         assert!(err.to_string().contains("compressed"));
@@ -1541,7 +1546,9 @@ mod tests {
     /// display-name + avatar-url) parses to the right fields.
     #[test]
     fn should_parse_an_android_style_link() {
-        let wif = PrivateKey::new(voucher(), Network::Mainnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Mainnet)
+            .expect("valid voucher")
+            .to_wif();
         // Android order: du, assetlocktx, pk, islock, display-name, avatar-url.
         let uri = format!(
             "dashpay://invite?du=satoshi&assetlocktx={txid}&pk={wif}&islock={islock}&display-name=Sat%20Oshi&avatar-url=https%3A%2F%2Fimg.example%2Fa.png",
@@ -1610,7 +1617,9 @@ mod tests {
     /// surface them (the reference wallets emit those independently of `du`).
     #[test]
     fn should_keep_inviter_metadata_when_the_du_field_is_missing() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri = format!(
             "dashpay://invite?assetlocktx=aa&pk={wif}&display-name=No%20User&avatar-url=https%3A%2F%2Fimg%2Fx.png"
         );
@@ -1625,12 +1634,12 @@ mod tests {
     /// first) — reject rather than claim a wallet-dependent key.
     #[test]
     fn should_reject_a_link_with_duplicate_required_keys() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
-        let other = PrivateKey::new(
-            SecretKey::from_secret_bytes([0x44u8; 32]).unwrap(),
-            Network::Testnet,
-        )
-        .to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
+        let other = PrivateKey::from_byte_array(&[0x44u8; 32], Network::Testnet)
+            .expect("valid scalar")
+            .to_wif();
         let dup_pk = format!("dashpay://invite?assetlocktx=aa&pk={wif}&pk={other}");
         assert!(parse_invitation_uri(&dup_pk)
             .unwrap_err()
@@ -1650,7 +1659,9 @@ mod tests {
     /// (with a `pk`/`assetlocktx`) would be parsed.
     #[test]
     fn should_reject_a_link_with_a_decoy_scheme_or_host() {
-        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         // Suffixed authority — not exactly `invite`.
         let suffixed = format!("dashpay://inviteXYZ?assetlocktx=aa&pk={wif}");
         assert!(parse_invitation_uri(&suffixed).is_err());
