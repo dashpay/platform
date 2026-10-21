@@ -170,9 +170,15 @@ Behaviour:
   an unavailable quorum source, so the SDK tries another node without banning
   the one that named the quorum. A quorum of another type than the network's
   Platform quorum type is rejected as invalid.
-- Fetches of one quorum are shared, at most two quorums are proven at once,
-  failed quorums and failing sources cool down, and a fetch gives up after
-  70 s. Redirects are refused and responses are capped at 1 MiB.
+- Fetches of one quorum are shared and at most two quorums are proven at
+  once. A relay that cannot serve a quorum for the height and for its tip is
+  not asked again in that fetch; a busy relay (503) is retried after a
+  backoff; relays that fail otherwise, and quorums whose fetch failed, cool
+  down. A fetch gives up after 70 s. Redirects are refused and responses are
+  capped at 1 MiB.
+- The cache should hold at least the active Platform quorums (24 on mainnet
+  and testnet); 32 or more avoids proving keys again just because they were
+  evicted.
 - Data contracts come from the known-contracts cache and the system contracts
   enabled by cargo features; token configurations from the known cache.
 - The public mainnet quorum service currently answers `/proofs` with HTTP 403.
@@ -183,10 +189,31 @@ Behaviour:
 ### Trust model
 
 The checkpoint is trust configuration, like a hard-coded block hash: whoever
-chooses it chooses the chain. Beyond it, the provider trusts the ChainLock
-quorums the proof chain passes through, as Core does. A valid proof shows a
+chooses it chooses the chain. Beyond it, the provider trusts that no ChainLock
+quorum active at the checkpoint or mined after it ever signs dishonestly,
+retired ones included, as `dash-core-proof` documents. A valid proof shows a
 quorum was mined, not that its target is the newest ChainLock; how fresh a
 response must be is the SDK's policy.
+
+### Checkpoint shelf life
+
+A proof covers every ChainLock quorum rotation between its starting state and
+its target, so it grows as the checkpoint ages, and a relay has to keep the
+blocks back to it. Each SDK release can move the embedded checkpoints forward.
+A long-lived application should persist `latest_verified_state()` and pass it
+back to `with_checkpoint` on the next start, so its proofs stay short.
+
+### Limitations
+
+- Keys are proven for the Core height Platform reports in its responses. If
+  Platform halts, that height stops while Core moves on: a quorum not cached
+  before the halt can be proven only while a relay can still serve a proof
+  within 600 blocks of that height whose quorum root contains the quorum, and
+  retired quorums leave Core's quorum root. Such quorums may stay unprovable
+  until Platform resumes.
+- An inclusion proof cannot show that a quorum does not exist, so the
+  provider never reports a quorum as absent; nodes naming fake quorums are
+  skipped by the SDK, not banned.
 
 ### Refreshing the embedded checkpoints
 
@@ -207,7 +234,18 @@ order). To move one to a newer block `H`:
 
 ## Implementation Details
 
-The `TrustedHttpContextProvider` implements the `ContextProvider` trait and provides:
+Both providers implement the `ContextProvider` trait.
+
+`VerifiedHttpContextProvider` provides:
+
+1. **Quorum Public Keys**: proven from its checkpoint with DIP 175 proofs from
+   its relays, and kept in an LRU cache
+2. **Data Contracts**: pre-loaded or registered known contracts, then the
+   system contracts enabled by cargo features, otherwise `None`
+3. **Token Configurations**: pre-loaded known configurations, otherwise `None`
+4. **Platform Activation Height**: hardcoded values for each network
+
+`TrustedHttpContextProvider` provides:
 
 1. **Quorum Public Keys**: Fetched from trusted HTTP endpoints with LRU caching
 2. **Data Contracts**: 

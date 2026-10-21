@@ -78,9 +78,17 @@ pub enum VerifiedContextProviderError {
 ///   as invalid and never fetched.
 ///
 /// Fetches are shared per quorum, at most two quorums are proven at once,
-/// failed quorums and failing sources cool down, and each fetch has a 70 s
-/// deadline. Freshness of responses is the SDK's concern, not the
-/// provider's.
+/// relays that cannot serve a quorum are left out of its fetch, failed
+/// quorums and failing relays cool down, and each fetch has a 70 s deadline.
+/// Freshness of responses is the SDK's concern, not the provider's.
+///
+/// Keys are proven for the Core height Platform reports. If Platform halts,
+/// that height stops while Core moves on, and a quorum not cached before the
+/// halt may become unprovable once it leaves Core's quorum root.
+///
+/// A proof grows with the age of its starting state. Long-lived applications
+/// should persist [`latest_verified_state`](Self::latest_verified_state) and
+/// pass it back as the checkpoint on their next start.
 ///
 /// The public mainnet relay currently answers `/proofs` with HTTP 403, so on
 /// mainnet [`new`](Self::new) builds but fetches fail until a relay serves
@@ -167,6 +175,10 @@ impl VerifiedHttpContextProvider {
     /// A provider for mainnet or testnet that starts from the embedded
     /// checkpoint and asks the network's public quorum service. Makes no
     /// network request.
+    ///
+    /// `cache_size` is how many proven quorum keys are kept. It should be at
+    /// least the number of active Platform quorums (24 on mainnet and
+    /// testnet); 32 or more avoids proving keys again after eviction.
     pub fn new(
         network: Network,
         cache_size: NonZeroUsize,
@@ -184,8 +196,8 @@ impl VerifiedHttpContextProvider {
     /// The checkpoint is trust configuration: a ChainLocked block the
     /// application checked independently, or a state this provider verified
     /// earlier ([`latest_verified_state`](Self::latest_verified_state)).
-    /// Sources must be `https`, except on loopback hosts. Hosts are not
-    /// resolved here.
+    /// Sources must be `https`, except on loopback hosts, and distinct. Hosts
+    /// are not resolved here. `cache_size` is as for [`new`](Self::new).
     pub fn with_checkpoint(
         network: Network,
         checkpoint: State,
