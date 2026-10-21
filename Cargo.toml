@@ -22,6 +22,7 @@ members = [
     "packages/data-contracts",
     "packages/rs-drive-proof-verifier",
     "packages/rs-context-provider",
+    "packages/rs-core-proof",
     "packages/rs-sdk-trusted-context-provider",
     "packages/wasm-dpp",
     "packages/wasm-dpp2",

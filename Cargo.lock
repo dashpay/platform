@@ -1823,6 +1823,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-core-proof"
+version = "5.0.0-rc.4"
+dependencies = [
+ "blst",
+ "hex",
+ "rs-x11-hash",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "dash-network"
 version = "0.45.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
