@@ -103,7 +103,8 @@ impl ManagedIdentity {
     /// Store `keys_cs`, the key rows an earlier refused store queued, and the
     /// identity's scalar snapshot (status, revision and any queued balance)
     /// as one changeset (see `store_with_queued_key_rows`). The store's
-    /// failure is returned, and its key rows are queued for the next one. A store that
+    /// failure is returned, and its key rows are queued for the next one
+    /// (rows refused as invalid excepted, see there). A store that
     /// commits inline has committed the queued balance, which is then
     /// cleared; a buffered one keeps it queued, so it rides later snapshots
     /// until a balance write flushes it (see `retry_pending_balance`), and no
