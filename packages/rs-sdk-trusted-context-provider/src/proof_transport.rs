@@ -18,13 +18,13 @@ use std::time::Duration;
 use url::Url;
 
 #[cfg(not(target_arch = "wasm32"))]
+use crate::error::with_causes;
+#[cfg(not(target_arch = "wasm32"))]
 use futures::stream::try_unfold;
 #[cfg(not(target_arch = "wasm32"))]
 use reqwest::header::CONTENT_TYPE;
 #[cfg(not(target_arch = "wasm32"))]
 use reqwest::redirect::Policy;
-#[cfg(not(target_arch = "wasm32"))]
-use std::error::Error as StdError;
 
 #[cfg(target_arch = "wasm32")]
 use futures::future::{select, Either};
@@ -133,19 +133,6 @@ impl ProofTransport {
         let body = read_capped(declared, chunks).await?;
         Ok(Reply { status, body })
     }
-}
-
-/// An error with every cause it carries, which `Display` alone leaves out.
-#[cfg(not(target_arch = "wasm32"))]
-fn with_causes(error: &dyn StdError) -> String {
-    let mut message = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        message.push_str(": ");
-        message.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    message
 }
 
 /// Sends proof requests to relays with the browser's `fetch`.
@@ -281,7 +268,7 @@ async fn browser_post(
     Ok(Reply { status, body })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use futures::stream;
@@ -321,5 +308,133 @@ mod tests {
             read_capped(Some(MAX_PROOF_BYTES as u64 + 1), unreadable).await,
             Err(PostError::TooLarge)
         );
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod browser_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// Replace the global `fetch` with a function of `request`.
+    fn mock_fetch(body: &str) {
+        let fetch = Function::new_with_args("request", body);
+        Reflect::set(&js_sys::global(), &JsValue::from_str("fetch"), &fetch)
+            .expect("set the global fetch");
+    }
+
+    fn seen(field: &str) -> JsValue {
+        let seen = Reflect::get(&js_sys::global(), &JsValue::from_str("__seen")).expect("seen");
+        Reflect::get(&seen, &JsValue::from_str(field)).expect(field)
+    }
+
+    fn relay() -> Url {
+        Url::parse("https://relay.test/proofs").expect("a URL")
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_post_json_without_redirects_cache_or_credentials_and_stream_the_body() {
+        mock_fetch(
+            r#"
+            globalThis.__seen = {
+                method: request.method,
+                redirect: request.redirect,
+                cache: request.cache,
+                credentials: request.credentials,
+                type: request.headers.get("content-type"),
+            };
+            return request.text().then((text) => {
+                globalThis.__seen.body = text;
+                const chunks = [new Uint8Array([1, 2]), new Uint8Array([3])];
+                const stream = new ReadableStream({
+                    pull(controller) {
+                        const next = chunks.shift();
+                        if (next) controller.enqueue(next); else controller.close();
+                    },
+                });
+                return new Response(stream, { status: 200 });
+            });
+            "#,
+        );
+        let reply = ProofTransport
+            .post(
+                &relay(),
+                r#"{"height":1}"#.to_string(),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("a reply");
+        assert_eq!((reply.status, reply.body), (200, vec![1, 2, 3]));
+        for (field, expected) in [
+            ("method", "POST"),
+            ("redirect", "error"),
+            ("cache", "no-store"),
+            ("credentials", "omit"),
+            ("type", "application/json"),
+            ("body", r#"{"height":1}"#),
+        ] {
+            assert_eq!(
+                seen(field).as_string().as_deref(),
+                Some(expected),
+                "{field}"
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_refuse_an_endless_body_without_a_declared_length() {
+        mock_fetch(
+            r#"
+            const stream = new ReadableStream({
+                pull(controller) { controller.enqueue(new Uint8Array(65536)); },
+            });
+            return Promise.resolve(new Response(stream, { status: 200 }));
+            "#,
+        );
+        let reply = ProofTransport
+            .post(&relay(), "{}".to_string(), Duration::from_secs(5))
+            .await;
+        assert_eq!(reply.err(), Some(PostError::TooLarge));
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_refuse_a_declared_length_past_the_limit() {
+        mock_fetch(
+            r#"
+            return Promise.resolve(new Response("", {
+                status: 200,
+                headers: { "content-length": "99999999" },
+            }));
+            "#,
+        );
+        let reply = ProofTransport
+            .post(&relay(), "{}".to_string(), Duration::from_secs(5))
+            .await;
+        assert_eq!(reply.err(), Some(PostError::TooLarge));
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_abort_the_request_at_the_deadline() {
+        mock_fetch(
+            r#"
+            globalThis.__aborted = false;
+            return new Promise((_, reject) => {
+                request.signal.addEventListener("abort", () => {
+                    globalThis.__aborted = true;
+                    reject(new Error("aborted"));
+                });
+            });
+            "#,
+        );
+        let reply = ProofTransport
+            .post(&relay(), "{}".to_string(), Duration::from_millis(50))
+            .await;
+        assert!(
+            matches!(&reply, Err(PostError::Failed(reason)) if reason.contains("no answer within")),
+            "{reply:?}"
+        );
+        let aborted =
+            Reflect::get(&js_sys::global(), &JsValue::from_str("__aborted")).expect("the flag");
+        assert_eq!(aborted.as_bool(), Some(true));
     }
 }

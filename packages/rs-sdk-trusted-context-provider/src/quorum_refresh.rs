@@ -215,7 +215,7 @@ impl QuorumRefreshes {
     }
 
     /// Make the latest refresh look `by` older, as if that much time had passed.
-    #[cfg(test)]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn age_latest(&self, by: Duration) {
         if let Some(latest) = self.lock().latest.as_mut() {
             latest.started -= by;
@@ -338,7 +338,7 @@ where
     receiver.await.ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
