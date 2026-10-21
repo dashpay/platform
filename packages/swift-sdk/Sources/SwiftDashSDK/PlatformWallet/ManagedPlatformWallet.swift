@@ -3765,37 +3765,40 @@ extension ManagedPlatformWallet {
         let externalIds = externalKeyIds
         let disableIds = disablePublicKeyIds
         try await Task.detached(priority: .userInitiated) {
-            _ = signer
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
             // FFI sees stays valid for the call duration.
             let pubkeyBuffers: [Data] = addPubkeys.map { $0.pubkeyBytes }
-            let result = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                externalIds.withUnsafeBufferPointer { externalBp -> PlatformWalletFFIResult in
-                    disableIds.withUnsafeBufferPointer { disableBp -> PlatformWalletFFIResult in
-                        let update = { (rows: UnsafePointer<IdentityPubkeyFFI>?, count: Int) -> PlatformWalletFFIResult in
-                            let external = externalIds.isEmpty ? nil : externalBp.baseAddress
-                            let disable = disableIds.isEmpty ? nil : disableBp.baseAddress
-                            guard let revision else {
-                                return platform_wallet_update_identity_with_signer(
+            // The Rust worker borrows the signer's vtable for the whole
+            // synchronous call, so the signer must outlive it.
+            let result = withExtendedLifetime(signer) {
+                idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    externalIds.withUnsafeBufferPointer { externalBp -> PlatformWalletFFIResult in
+                        disableIds.withUnsafeBufferPointer { disableBp -> PlatformWalletFFIResult in
+                            let update = { (rows: UnsafePointer<IdentityPubkeyFFI>?, count: Int) -> PlatformWalletFFIResult in
+                                let external = externalIds.isEmpty ? nil : externalBp.baseAddress
+                                let disable = disableIds.isEmpty ? nil : disableBp.baseAddress
+                                guard let revision else {
+                                    return platform_wallet_update_identity_with_signer(
+                                        handle, idBp.baseAddress!, rows, UInt(count),
+                                        external, UInt(externalIds.count),
+                                        disable, UInt(disableIds.count), signerHandle)
+                                }
+                                return platform_wallet_update_identity_with_signer_at_revision(
                                     handle, idBp.baseAddress!, rows, UInt(count),
                                     external, UInt(externalIds.count),
-                                    disable, UInt(disableIds.count), signerHandle)
+                                    disable, UInt(disableIds.count), revision, signerHandle)
                             }
-                            return platform_wallet_update_identity_with_signer_at_revision(
-                                handle, idBp.baseAddress!, rows, UInt(count),
-                                external, UInt(externalIds.count),
-                                disable, UInt(disableIds.count), revision, signerHandle)
-                        }
-                        if addPubkeys.isEmpty {
-                            return update(nil, 0)
-                        }
-                        return ManagedPlatformWallet.withPubkeyFFIArray(
-                            addPubkeys,
-                            buffers: pubkeyBuffers
-                        ) { ffiRowsPtr, ffiRowsCount in
-                            update(ffiRowsPtr, ffiRowsCount)
+                            if addPubkeys.isEmpty {
+                                return update(nil, 0)
+                            }
+                            return ManagedPlatformWallet.withPubkeyFFIArray(
+                                addPubkeys,
+                                buffers: pubkeyBuffers
+                            ) { ffiRowsPtr, ffiRowsCount in
+                                update(ffiRowsPtr, ffiRowsCount)
+                            }
                         }
                     }
                 }
