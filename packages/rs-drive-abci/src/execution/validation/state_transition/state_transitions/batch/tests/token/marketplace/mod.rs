@@ -3,6 +3,8 @@
 //! token market contract; a buyer takes part or all of it (`FillAsk`), paying the seller in
 //! credits; the seller withdraws what is left (`CancelOrder`).
 use super::*;
+use crate::execution::check_tx::CheckTxLevel;
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
@@ -163,6 +165,30 @@ impl Market {
             .unwrap()
             .expect("expected to commit the batch");
         processing_result
+    }
+
+    /// What check_tx refuses `transition` with.
+    fn check_tx(&self, transition: &StateTransition) -> Vec<ConsensusError> {
+        let platform_version = PlatformVersion::latest();
+        let serialized = transition
+            .serialize_to_bytes()
+            .expect("expected the batch to serialize");
+        let platform_state = self.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &self.platform.drive,
+            state: &platform_state,
+            config: &self.platform.config,
+            core_rpc: &self.platform.core_rpc,
+        };
+        self.platform
+            .check_tx(
+                &serialized,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to be able to check tx")
+            .errors
     }
 
     fn process(&mut self, transition: &StateTransition) -> StateTransitionsProcessingResult {
@@ -565,6 +591,15 @@ async fn should_return_the_tokens_of_a_cancelled_listing() {
 async fn should_refuse_listing_a_token_that_is_not_tradeable() {
     let mut market = market_with(|_| {}, dash_to_credits!(1.0));
     let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+
+    // The rule reads only the contract the action carries, so the mempool refuses it too.
+    assert_matches!(
+        market.check_tx(&place).as_slice(),
+        [ConsensusError::StateError(
+            StateError::TokenNotTradeableError(_)
+        )]
+    );
+
     let processing_result = market.process(&place);
 
     assert_matches!(
@@ -608,6 +643,12 @@ async fn should_refuse_a_listing_worth_more_than_an_order_holds() {
     );
     // Two whole tokens at i64::MAX credits each.
     let (place, _) = market.place_ask(2, i64::MAX as u64, 1, None).await;
+    assert_matches!(
+        market.check_tx(&place).as_slice(),
+        [ConsensusError::StateError(
+            StateError::TokenOrderValueTooLargeError(_)
+        )]
+    );
     let processing_result = market.process(&place);
 
     assert_matches!(

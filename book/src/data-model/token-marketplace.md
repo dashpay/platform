@@ -136,7 +136,8 @@ The rounding favours the seller and is never more than one credit per fill.
 | The seller's account is not frozen (to place or fill), nor the buyer's unless the token allows transfers to frozen balances | `IdentityTokenAccountFrozenError` |
 
 The state rules are paid: a refused transition bumps the signer's nonce and charges the work that
-ran. A cancel has no rule beyond ownership, so an order can always be withdrawn, also when the
+ran. The rules that read nothing beyond the contract and the block (a tradeable token, a listing's
+value and its expiry) run with the batch's advanced structure, so check_tx refuses them too. A cancel has no rule beyond ownership, so an order can always be withdrawn, also when the
 token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
 checked with the batch's fees, which count a fill's cost like a direct purchase.
 

@@ -155,9 +155,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///    listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
 ///    to its owner). The batch's `is_allowed` gate refuses each, unpaid, before this version,
-///    as software that cannot decode them refuses them. Their structure and state validations
-///    and their high-level operation converters are 0 in every table, which only this version
-///    reaches.
+///    as software that cannot decode them refuses them. The checks that read nothing beyond the
+///    contract and the block (a tradeable token, a listing's value and expiry) run with the batch
+///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
+///    Their structure and state validations and their high-level operation converters are 0 in
+///    every table, which only this version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2
