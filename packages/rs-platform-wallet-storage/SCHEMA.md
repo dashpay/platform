@@ -392,6 +392,13 @@ the disagreement costs: under `LoadPolicy::Strict` it aborts the load, under
 Repairing the drifted columns is a writer's job, on the next write of that
 row.
 
+A decoded record must also carry the hash of its embedded transaction body.
+All record readers reject an internal hash mismatch with `BlobDecode` before
+using the body for replay or sweep decisions; column-drift tolerance does not
+apply. Strict load aborts, while Recovery omits the affected wallet and reports
+`WalletRehydration` degradation without changing its stored history. Point
+reads reject the record under both policies.
+
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_transactions_height(wallet_id, height)`.

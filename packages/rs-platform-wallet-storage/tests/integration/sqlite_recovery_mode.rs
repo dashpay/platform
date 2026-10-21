@@ -106,7 +106,7 @@ fn seed_drifted_transaction(persister: &SqlitePersister, wallet: &WalletId) {
 }
 
 fn drifted_txid() -> Txid {
-    Txid::from_byte_array([0x7Au8; 32])
+    confirmed_record().txid
 }
 
 /// A record whose blob says height 300, so a drifted typed column is
@@ -118,7 +118,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    let mut record = TransactionRecord::new(
+    TransactionRecord::new(
         Transaction {
             version: 3,
             lock_time: 0,
@@ -140,9 +140,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         Vec::new(),
         Vec::new(),
         100,
-    );
-    record.txid = drifted_txid();
-    record
+    )
 }
 
 /// Register a deterministic keyless wallet and return its BIP44 external

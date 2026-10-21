@@ -131,11 +131,6 @@ fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x01);
-    // L: arrives after F's pruning, pays this wallet, reuses F's input and
-    // the attacker's.
-    // A fresh loser claims the same coin, and an authoritative sweep later
-    // frees it — upstream's word, computed from the wallet it actually
-    // holds.
     let loser = tx_record(
         0x10,
         vec![],
@@ -535,7 +530,6 @@ fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
 
     // F: chainlocked spender of `settled_coin`. Upstream keeps only its
     // txid from here on; this row keeps everything.
-    // F: chainlocked spender of `settled_coin`.
     let mut finalized = tx_record(
         0x91,
         vec![settled_coin],
@@ -544,6 +538,8 @@ fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    // L: arrives after F's pruning, pays this wallet, reuses F's input and
+    // the attacker's.
     let loser = tx_record(
         0x92,
         vec![settled_coin, attacker_input, losers_own_coin],
@@ -672,6 +668,9 @@ fn a_stale_mempool_claimant_does_not_veto_an_authoritative_release() {
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    // A fresh loser claims the same coin, and an authoritative sweep later
+    // frees it — upstream's word, computed from the wallet it actually
+    // holds.
     let loser = tx_record(
         0xA2,
         vec![coin],
@@ -868,6 +867,7 @@ fn a_swept_key_disagreeing_with_its_stored_record_fails_the_round_closed() {
     // F's coin — consumed on chain by a settled record, must never come back.
     let settled_coin = OutPoint::new(funding_txid, 0);
 
+    // F: chainlocked spender of `settled_coin`.
     let mut finalized = tx_record(
         0xC5,
         vec![settled_coin],

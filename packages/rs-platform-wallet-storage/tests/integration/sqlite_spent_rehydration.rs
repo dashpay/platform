@@ -29,14 +29,137 @@ use platform_wallet::test_support::core_fixtures::{
     block, check, foreign_address, outside, pay, records_of, spend_of, stored_utxo,
     wallet_with_receive_address,
 };
+use platform_wallet_storage::sqlite::schema::blob;
 use platform_wallet_storage::{
-    LoadPolicy, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
+    LoadPolicy, LoadSite, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
 };
 
 const MEMPOOL: TransactionContext = TransactionContext::Mempool;
 
 /// One past half of `i64::MAX`: two owned outputs of it cannot be summed as `i64`.
 const UNREPRESENTABLE_HALF: u64 = (1 << 62) + 1;
+
+/// Strict load must reject a corrupted body before it can delete unrelated history.
+#[tokio::test]
+async fn should_reject_corrupt_record_body_before_replay_settlement() {
+    assert_corrupt_record_body_is_rejected(LoadPolicy::Strict).await;
+}
+
+#[tokio::test]
+async fn should_skip_corrupt_record_wallet_in_recovery_without_mutating_history() {
+    assert_corrupt_record_body_is_rejected(LoadPolicy::Recovery).await;
+}
+
+async fn assert_corrupt_record_body_is_rejected(policy: LoadPolicy) {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let funding = spend_of(
+        &[outside(93)],
+        vec![pay(100_000, &address), pay(20_000, &address)],
+    );
+    let settled = spend_of(
+        &[OutPoint::new(funding.txid(), 0)],
+        vec![pay(99_000, &address)],
+    );
+    let pending = spend_of(
+        &[OutPoint::new(funding.txid(), 1)],
+        vec![pay(19_000, &address)],
+    );
+    let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+    records.extend(records_of(&mut info, &mut wallet, &settled, block(101)).await);
+    records.extend(records_of(&mut info, &mut wallet, &pending, MEMPOOL).await);
+    let coins: Vec<_> = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.values().cloned())
+        .collect();
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: coins,
+            ..Default::default()
+        },
+    );
+    {
+        let conn = persister.lock_conn_for_test();
+        let payload: Vec<u8> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                rusqlite::params![
+                    wallet.wallet_id.as_slice(),
+                    settled.txid().as_byte_array().as_slice()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut corrupted: TransactionRecord = blob::decode(&payload).unwrap();
+        corrupted.transaction.input[0].previous_output.vout = 1;
+        assert_ne!(corrupted.transaction.txid(), corrupted.txid);
+        conn.execute(
+            "UPDATE core_transactions SET record_blob = ?3 WHERE wallet_id = ?1 AND txid = ?2",
+            rusqlite::params![
+                wallet.wallet_id.as_slice(),
+                settled.txid().as_byte_array().as_slice(),
+                blob::encode(&corrupted).unwrap()
+            ],
+        )
+        .unwrap();
+    }
+
+    let path = persister.config_for_test().path.clone();
+    drop(persister);
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(path).with_load_policy(policy)).unwrap();
+    let changes_before = persister.lock_conn_for_test().total_changes();
+    assert!(matches!(
+        typed_error(
+            persister
+                .get_core_tx_record(wallet.wallet_id, &settled.txid())
+                .unwrap_err()
+        ),
+        WalletStorageError::BlobDecode { .. }
+    ));
+    let result = persister.load();
+    let pending_retained: bool = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2)",
+            rusqlite::params![
+                wallet.wallet_id.as_slice(),
+                pending.txid().as_byte_array().as_slice()
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        pending_retained,
+        "corrupt history must not sweep an unrelated pending record"
+    );
+    assert_eq!(
+        persister.lock_conn_for_test().total_changes(),
+        changes_before
+    );
+    match policy {
+        LoadPolicy::Strict => {
+            let error = result.expect_err("strict load must reject the corrupted body");
+            assert!(matches!(
+                typed_error(error),
+                WalletStorageError::BlobDecode { .. }
+            ));
+        }
+        LoadPolicy::Recovery => {
+            assert!(!result.unwrap().wallets.contains_key(&wallet.wallet_id));
+            assert_eq!(
+                persister
+                    .last_load_degradation()
+                    .by_site
+                    .get(&LoadSite::WalletRehydration),
+                Some(&1)
+            );
+        }
+    }
+}
 
 /// An output burning `value` to an empty script.
 fn burn(value: u64) -> TxOut {
