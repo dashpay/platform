@@ -1,6 +1,7 @@
 //! Authorization evidence for reserving a wallet coin before Core finality.
 
 use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaSignature};
+use dashcore::ecdsa::Signature;
 use dashcore::hashes::{hash160, Hash};
 use dashcore::script::Instruction;
 use dashcore::sighash::{EcdsaSighashType, SighashCache};
@@ -40,7 +41,6 @@ pub fn verify_input_authorization(
         .filter(|candidate| candidate.previous_output == input.previous_output)
         .count()
         != 1
-        || !input.witness.is_empty()
     {
         return Ok(false);
     }
@@ -67,12 +67,16 @@ pub fn verify_input_authorization(
     let Ok(public_key) = EcdsaPublicKey::from_bytes(public_key_bytes) else {
         return Ok(false);
     };
-    let Some((&mode, signature)) = signature.as_bytes().split_last() else {
+    let Some((&mode, _)) = signature.as_bytes().split_last() else {
         return Ok(false);
     };
-    let Ok(signature) = EcdsaSignature::from_der(signature) else {
+    let Ok(mut signature) = Signature::from_slice(signature.as_bytes()) else {
         return Ok(false);
     };
+    // Low-S is a relay policy, not evidence that the owner did not authorize
+    // a spend. The crypto verifier requires normalized S.
+    signature.signature.normalize_s();
+    let signature = EcdsaSignature::from(signature.signature);
     let Ok(hash) = SighashCache::new(transaction).legacy_signature_hash(
         input_index,
         &prevout.script_pubkey,
@@ -99,7 +103,7 @@ mod tests {
     };
     use dashcore::crypto::ecdsa::EcdsaSecretKey;
     use dashcore::script::{Builder, PushBytesBuf};
-    use dashcore::{OutPoint, ScriptBuf, TxIn, Txid};
+    use dashcore::{OutPoint, ScriptBuf, TxIn, Txid, Witness};
 
     fn signed(uncompressed: bool) -> (Transaction, TxOut) {
         let key = EcdsaSecretKey::from_bytes(&[7; 32]).unwrap();
@@ -226,6 +230,50 @@ mod tests {
         let signature_len = usize::from(bytes[0]);
         bytes[signature_len] = 0x82;
         tx.input[0].script_sig = ScriptBuf::from_bytes(bytes);
+        assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(false));
+    }
+
+    #[test]
+    fn should_preserve_authorization_with_uncommitted_witness() {
+        let (mut tx, prevout) = signed(false);
+        let original_txid = tx.txid();
+        tx.input[0].witness = Witness::from_slice(&[b"peer-attached witness"]);
+        assert_eq!(tx.txid(), original_txid);
+        assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(true));
+    }
+
+    #[test]
+    fn should_accept_high_s_owner_authorization() {
+        let (mut tx, prevout) = signed(false);
+        let key = EcdsaSecretKey::from_bytes(&[7; 32]).unwrap();
+        let hash = SighashCache::new(&tx)
+            .legacy_signature_hash(0, &prevout.script_pubkey, 1)
+            .unwrap();
+        let low = key.sign(&hash.to_byte_array());
+        let mut compact = low.to_bytes();
+        // secp256k1 group order: (r, n-s) is the high-S form of (r, s).
+        let order = hex::decode("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141")
+            .unwrap();
+        let mut borrow = false;
+        for i in (0..32).rev() {
+            let (difference, first_borrow) = order[i].overflowing_sub(compact[32 + i]);
+            let (difference, second_borrow) = difference.overflowing_sub(u8::from(borrow));
+            compact[32 + i] = difference;
+            borrow = first_borrow || second_borrow;
+        }
+        let high = EcdsaSignature::from_bytes(&compact).unwrap();
+        assert!(key
+            .public_key()
+            .verify(&hash.to_byte_array(), high)
+            .is_err());
+        let mut signature = high.with_der(|der| der.to_vec());
+        signature.push(1);
+        tx.input[0].script_sig = Builder::new()
+            .push_slice(PushBytesBuf::try_from(signature).unwrap())
+            .push_slice(key.public_key().to_compressed())
+            .into_script();
+        assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(true));
+        tx.output[0].value -= 1;
         assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(false));
     }
 
