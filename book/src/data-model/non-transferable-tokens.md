@@ -46,9 +46,12 @@ contract update cannot change an existing token's configuration.
 | A document type of the token's own contract charging it with `effect: 0` (pay the contract owner) | `NonTransferableTokenPaymentMustBurnError` (10280) | Contract create and update, when the document type is parsed. A document payment refuses it again (`TokenNotTransferableError`, 40726) from the configuration the contract already carries, so a contract that bypassed registration cannot pay with it either |
 | A document type of another contract charging it | `TokenNotTransferableError` (40726) | Contract create and update state validation, which already reads the token's contract to check the token exists. Such a cost always pays the contract owner, since another contract's token cannot be burned (10261) |
 | `hasShieldedPool: true` | `NonTransferableTokenShieldedPoolError` (10279) | Contract create and update, before anything is charged |
+| `marketplaceRules.tradeMode: Tradeable` (protocol version 15) | `NonTransferableTokenTradeableError` (10281) | Contract create and update, before anything is charged, and the state validation of a `TokenConfigUpdate` that makes the token tradeable |
 
 A shielded pool is refused because a note spent inside the pool can be unshielded to any
-identity, so shielding and unshielding would move the token between holders.
+identity, so shielding and unshielding would move the token between holders. The
+[token marketplace](token-marketplace.md) is refused because filling a listing or an offer moves
+the token from the seller to the buyer.
 
 Every rule is checked when the contract is registered or when the transfer arrives, and the flag
 cannot change afterwards: a document type that could pay the owner in a non-transferable token
