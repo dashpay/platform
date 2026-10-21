@@ -887,6 +887,8 @@ fn plan_replay_sweeps(
 /// output details, and one whose input amounts `safe_inputs` rules out without
 /// its input details; the store keeps both. What a later funding attributes
 /// upstream sums unchecked, as it does for a record it recorded itself.
+/// Temporary sanitization until key-wallet provides checked restoration:
+/// https://github.com/dashpay/rust-dashcore/issues/1213.
 fn restore_unreplayed_records(
     wallet_info: &mut ManagedWalletInfo,
     records: impl Iterator<Item = TransactionRecord>,
