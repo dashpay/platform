@@ -149,8 +149,8 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
         };
 
         // Parse private key (32 bytes)
-        let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let private_key = match PrivateKey::from_slice(pk_bytes, wrapper.sdk.network) {
+        let pk_bytes = &*input.private_key.cast::<[u8; 32]>();
+        let private_key = match PrivateKey::from_byte_array(pk_bytes, wrapper.sdk.network) {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(

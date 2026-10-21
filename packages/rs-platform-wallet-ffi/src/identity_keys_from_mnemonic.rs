@@ -381,7 +381,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
         let dash_private = DashPrivateKey {
             compressed: true,
             network: kw_network,
-            inner: derived.private_key,
+            inner: derived.private_key.clone(),
         };
         let wif_cstring = match CString::new(dash_private.to_wif()) {
             Ok(s) => s,

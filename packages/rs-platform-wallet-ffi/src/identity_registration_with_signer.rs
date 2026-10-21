@@ -696,7 +696,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
             let dash_private = DashPrivateKey {
                 compressed: true,
                 network,
-                inner: ext_priv.private_key,
+                inner: ext_priv.private_key.clone(),
             };
             let wif_cstring = match CString::new(dash_private.to_wif()) {
                 Ok(s) => s,
