@@ -121,6 +121,7 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
+use platform_version::version::PlatformVersion;
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2938,16 +2939,40 @@ impl PropertyConstraint {
     }
 }
 
+/// How a property of the document, of equality kind `kind` (as the parse's `property_kind`
+/// says), compares as the value a `countOf` or `sumOf` filter binds to a key. Versioned on
+/// `parse_property_constraints`: before 1 (and where no rule parses) a byte array matches no
+/// key and is read as an integer, which the parsed document type refuses; from 1 (protocol
+/// version 15) it is the byte array it is, which a byte array key of the counted type takes.
+fn aggregate_binding_kind(
+    kind: Option<EqualityKind>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<EqualityKind>, String> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None | Some(0) => Ok(kind.filter(|kind| *kind != EqualityKind::Bytes)),
+        Some(1) => Ok(kind),
+        Some(version) => Err(format!(
+            "is parsed under parse_property_constraints version {version}, which is not \
+             supported"
+        )),
+    }
+}
+
 /// What the parse of one document type's rules knows of the type: its name,
 /// which tells an aggregate of the type's own documents from one of another
-/// type's, and `property_kind` ([`parse_property_constraints`]); and what the
-/// grammar it parses admits: `byte_array_aggregate_keys`, whether a byte array
-/// property of the document binds a key of a `countOf` or `sumOf` filter
-/// ([`parse_property_constraints_with_byte_array_keys`]).
+/// type's, and `property_kind` ([`parse_property_constraints`]); and the
+/// platform version, whose `parse_property_constraints` selects the grammar's
+/// versioned parts ([`aggregate_binding_kind`]).
 struct ParseContext<'a> {
     document_type_name: &'a str,
     property_kind: &'a dyn Fn(&str) -> Option<EqualityKind>,
-    byte_array_aggregate_keys: bool,
+    platform_version: &'a PlatformVersion,
 }
 
 impl ParseContext<'_> {
@@ -3003,33 +3028,14 @@ pub fn parse_property_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::PROPERTY_CONSTRAINTS,
         document_type_name,
         property_kind,
-        false,
-    )
-}
-
-/// [`parse_property_constraints`] with the grammar of `parse_property_constraints`
-/// 1 (protocol version 15): a key of a `countOf` or `sumOf` filter may also be
-/// bound to a byte array property of the document, `{ "nameHash": "nameHash" }`,
-/// which the parse reads as the byte array it is rather than as an integer.
-/// Whether the key it binds is a byte array of the counted type is checked once
-/// every type of the contract is parsed.
-pub fn parse_property_constraints_with_byte_array_keys(
-    schema: &Value,
-    document_type_name: &str,
-    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
-) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
-    parse_named_rules(
-        schema,
-        property_names::PROPERTY_CONSTRAINTS,
-        document_type_name,
-        property_kind,
-        true,
+        platform_version,
     )
 }
 
@@ -3045,43 +3051,25 @@ pub fn parse_delete_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::DELETE_CONSTRAINTS,
         document_type_name,
         property_kind,
-        false,
-    )
-}
-
-/// [`parse_delete_constraints`] with the grammar of `parse_property_constraints` 1
-/// (protocol version 15): a `countOf` or `sumOf` filter key may be bound to a byte
-/// array property, as [`parse_property_constraints_with_byte_array_keys`] admits.
-pub fn parse_delete_constraints_with_byte_array_keys(
-    schema: &Value,
-    document_type_name: &str,
-    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
-) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
-    parse_named_rules(
-        schema,
-        property_names::DELETE_CONSTRAINTS,
-        document_type_name,
-        property_kind,
-        true,
+        platform_version,
     )
 }
 
 /// Reads the rules `keyword` of `schema` declares by name
-/// ([`parse_property_constraints`]), a byte array property binding a `countOf`
-/// or `sumOf` filter key when `byte_array_aggregate_keys` is set
-/// ([`parse_property_constraints_with_byte_array_keys`]).
+/// ([`parse_property_constraints`]).
 fn parse_named_rules(
     schema: &Value,
     keyword: &str,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
-    byte_array_aggregate_keys: bool,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
@@ -3110,7 +3098,7 @@ fn parse_named_rules(
     let context = ParseContext {
         document_type_name,
         property_kind,
-        byte_array_aggregate_keys,
+        platform_version,
     };
     let mut constraints = BTreeMap::new();
     for (name, rule) in rules {
@@ -3142,11 +3130,12 @@ pub fn parse_property_constraint_condition(
     condition: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<PropertyConstraint, String> {
     let context = ParseContext {
         document_type_name,
         property_kind,
-        byte_array_aggregate_keys: false,
+        platform_version,
     };
     parse_condition(condition, &mut String::new(), 0, &context)
 }
@@ -4351,12 +4340,11 @@ fn parse_aggregate(
                          $ownerId and $id"
                     ))
                 }
-                // Before `parse_property_constraints` 1 a byte array matches no key: it
-                // reads as an integer, which the parsed document type refuses
                 Value::Text(path) => AggregateBinding::Property {
-                    kind: (context.property_kind)(path).filter(|kind| {
-                        context.byte_array_aggregate_keys || *kind != EqualityKind::Bytes
-                    }),
+                    kind: aggregate_binding_kind(
+                        (context.property_kind)(path),
+                        context.platform_version,
+                    )?,
                     path: path.clone(),
                 },
                 binding if is_number(binding) => {
