@@ -7,8 +7,11 @@ use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::PubkeyHash;
 use platform_wallet::spv::{
-    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
+    ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SpvRuntime, SyncProgress,
+    SyncState,
 };
+use platform_wallet::PlatformWalletError;
+use std::sync::Arc;
 
 use crate::error::*;
 use crate::handle::*;
@@ -550,28 +553,41 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         config.devnet = Some(devnet);
     }
 
-    // Look the runtime up under the registry guard, but run the start
-    // outside it — see `platform_wallet_manager_sync_progress`. The start
-    // opens the SPV disk store, which can run a one-time storage migration
-    // taking many seconds; a registry read guard held across it would stall
-    // every `platform_wallet_manager_create` (a registry write) and, through
-    // parking_lot's writer preference, every other registry reader for that
-    // long — a host that frees its main thread during the start would park
-    // it again on the first other manager it configures.
+    start_spv_outside_registry(handle, move |spv| {
+        block_on_worker(async move { spv.start(config).await })
+    })
+}
+
+/// Run `run_start` on `handle`'s SPV runtime with the handle registry
+/// released, then publish the run loop under the registry again.
+///
+/// The runtime is looked up under the registry guard, but the start runs
+/// outside it — see `platform_wallet_manager_sync_progress`. The start opens
+/// the SPV disk store, which can run a one-time storage migration taking
+/// many seconds; a registry read guard held across it would stall every
+/// `platform_wallet_manager_create` (a registry write) and, through
+/// parking_lot's writer preference, every other registry reader for that
+/// long — a host that frees its main thread during the start would park it
+/// again on the first other manager it configures.
+///
+/// The run loop is spawned under the guard again: with the guard dropped
+/// during the start, `platform_wallet_manager_destroy` may have removed the
+/// handle, joined the workers and fired the host's `release_fn` meanwhile,
+/// and a run loop spawned now would deliver block events into released host
+/// contexts. A destroyed handle means the started client has no owner: it is
+/// stopped instead of run, and the call fails with `ErrorInvalidHandle`.
+///
+/// `run_start` is the native start itself for the FFI entry point; the tests
+/// inject a gated one so the registry hold and the destroyed-handle branch
+/// are covered without a real store or network.
+fn start_spv_outside_registry<F>(handle: Handle, run_start: F) -> PlatformWalletFFIResult
+where
+    F: FnOnce(Arc<SpvRuntime>) -> Result<(), PlatformWalletError>,
+{
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
-    let start_result = {
-        let spv = spv.clone();
-        block_on_worker(async move { spv.start(config).await })
-    };
-    unwrap_result_or_return!(start_result);
+    unwrap_result_or_return!(run_start(Arc::clone(&spv)));
 
-    // Spawn the run loop under the guard again: with the guard dropped
-    // during the start, `platform_wallet_manager_destroy` may have removed
-    // the handle, joined the workers and fired the host's `release_fn`
-    // meanwhile, and a run loop spawned now would deliver block events into
-    // released host contexts. A destroyed handle means the started client
-    // has no owner: stop it instead of running it.
     let spawned = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |_manager| {
         let _guard = runtime().enter();
         spv.spawn_run_loop();
@@ -587,6 +603,146 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     PlatformWalletFFIResult::ok()
 }
 
+#[cfg(test)]
+mod spv_start_registry_tests {
+    use super::*;
+    use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+    use crate::persistence::{FFIPersister, PersistenceCallbacks};
+    use platform_wallet::PlatformWalletManager;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn mock_manager() -> PlatformWalletManager<FFIPersister> {
+        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin),
+            on_changeset_end_fn: Some(end),
+            ..Default::default()
+        });
+        let events = FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            },
+            None,
+        );
+        let _runtime_guard = runtime().enter();
+        PlatformWalletManager::new(
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(dashcore::Network::Testnet)
+                    .build()
+                    .expect("mock sdk"),
+            ),
+            Arc::new(persister),
+            Arc::new(events),
+        )
+    }
+
+    const WAIT: Duration = Duration::from_secs(10);
+
+    /// Take the code and the owned message out of a result and free it, so
+    /// a result can be inspected (and sent across threads) as plain values.
+    fn code_and_message(mut result: PlatformWalletFFIResult) -> (PlatformWalletFFIResultCode, String) {
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }.to_string_lossy().into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    /// The responsiveness fix: while the native start is suspended, the
+    /// registry is free, so another manager can be created (a registry
+    /// write) instead of parking behind the start's store open.
+    #[test]
+    fn another_manager_can_be_created_while_a_start_is_suspended() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let (entered_tx, entered_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+
+        let start_thread = std::thread::spawn(move || {
+            code_and_message(start_spv_outside_registry(handle, move |_spv| {
+                entered_tx.send(()).expect("test observes the start");
+                release_rx.recv_timeout(WAIT).expect("test releases the start");
+                Ok(())
+            }))
+        });
+        entered_rx.recv_timeout(WAIT).expect("the start must reach its native step");
+
+        // A registry write on another thread, bounded so a regression (the
+        // guard held across the start again) fails instead of hanging.
+        let (inserted_tx, inserted_rx) = mpsc::channel::<Handle>();
+        std::thread::spawn(move || {
+            let other = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+            inserted_tx.send(other).expect("test observes the insert");
+        });
+        let other = inserted_rx
+            .recv_timeout(WAIT)
+            .expect("creating another manager must not wait for the suspended start");
+
+        release_tx.send(()).expect("start thread alive");
+        let (code, message) = start_thread.join().expect("start thread panicked");
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(other));
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+    }
+
+    /// The new lifetime boundary: a handle destroyed while its start was
+    /// suspended has no owner for the started client, so the start fails
+    /// with `ErrorInvalidHandle` and leaves no started client behind
+    /// instead of publishing a run loop into released host contexts.
+    #[test]
+    fn a_handle_destroyed_during_the_start_fails_it_and_leaves_no_client() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let spv = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| manager.spv_arc())
+            .expect("manager registered");
+
+        let (code, message) = code_and_message(start_spv_outside_registry(handle, |_spv| {
+            // `platform_wallet_manager_destroy`'s registry step, racing the start.
+            drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+            Ok(())
+        }));
+
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidHandle, "{message}");
+        assert!(
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |_| ()).is_none(),
+            "the handle stays destroyed"
+        );
+        assert!(!spv.is_started(), "no started client may outlive its destroyed manager");
+    }
+
+    /// A start whose native step fails never reaches the registry again and
+    /// reports the native error as-is.
+    #[test]
+    fn a_failed_native_start_is_reported_and_spawns_no_run_loop() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+
+        let (code, message) = code_and_message(start_spv_outside_registry(handle, |_spv| {
+            Err(PlatformWalletError::SpvError("store is locked".to_string()))
+        }));
+
+        assert_ne!(code, PlatformWalletFFIResultCode::Success);
+        assert!(message.contains("store is locked"), "unexpected message: {message:?}");
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+    }
+}
+
 /// Stop the SPV client.
 ///
 /// `ErrorShutdownIncomplete`: teardown is still running; call stop again.
@@ -596,7 +752,10 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     // Under the registry guard on purpose — it mutates the manager's
-    // runtime; see `platform_wallet_manager_spv_start`.
+    // runtime, and holding the guard makes `platform_wallet_manager_destroy`
+    // wait for the stop instead of tearing the runtime down underneath it.
+    // (The start cannot afford this hold: it releases the guard for its
+    // multi-second store open and re-validates the handle afterwards.)
     //
     // A stop that did not complete (teardown outlived the stop deadline and
     // stays tracked for a retry, or it failed) is returned as an error: a
@@ -670,7 +829,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     // Under the registry guard on purpose — it mutates the manager's
-    // storage; see `platform_wallet_manager_spv_start`.
+    // storage, and holding the guard makes `platform_wallet_manager_destroy`
+    // wait instead of releasing the host contexts while the clear runs; see
+    // `platform_wallet_manager_spv_stop`.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
         block_on_worker(async move { spv.clear_storage().await })
