@@ -722,26 +722,26 @@ mod tests {
         let signer =
             unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
 
-        let sighash = [0x42u8; 32];
-        let (sig, pk) = signer
-            .sign_ecdsa(&test_path(), sighash)
-            .await
-            .expect("signing succeeds");
-
-        pk.verify(&sighash, sig)
-            .expect("signature must verify against returned pubkey");
-
         let secret = WipingSecretKey(
             secp256k1::SecretKey::from_secret_bytes(
                 *signer.derive_priv(&test_path()).expect("derived scalar"),
             )
             .expect("valid scalar"),
         );
-        let expected = secret
-            .0
-            .sign_ecdsa(secp256k1::Message::from_digest(sighash));
-        assert_eq!(sig.to_bytes(), expected.serialize_compact());
-        assert_eq!(pk.to_compressed(), secret.0.public_key().serialize());
+        for byte in 0..32 {
+            let sighash = [byte; 32];
+            let (sig, pk) = signer
+                .sign_ecdsa(&test_path(), sighash)
+                .await
+                .expect("signing succeeds");
+            pk.verify(&sighash, sig)
+                .expect("signature must verify against returned pubkey");
+            let expected = secret
+                .0
+                .sign_ecdsa(secp256k1::Message::from_digest(sighash));
+            assert_eq!(sig.to_bytes(), expected.serialize_compact());
+            assert_eq!(pk.to_compressed(), secret.0.public_key().serialize());
+        }
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
