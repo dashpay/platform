@@ -1,6 +1,6 @@
 use super::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use super::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
-use super::drive_verify_method_versions::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
+use super::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use super::v9::DRIVE_VERSION_V9;
 use super::{DriveMethodVersions, DriveVersion};
 
@@ -12,7 +12,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5,
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5,
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V3,
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9

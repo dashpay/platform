@@ -32,7 +32,6 @@
 //! each action.
 
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     bls_sig_utils::BLSSignature, hash_types::CycleHash, InstantLock, OutPoint, ScriptBuf,
@@ -173,14 +172,12 @@ pub fn instant_asset_lock_proof_fixture_with_dynamic_range(
 pub fn instant_asset_lock_proof_transaction_fixture(
     one_time_private_key: PrivateKey,
 ) -> Transaction {
-    let secp = Secp256k1::new();
-
     let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
     let private_key = PrivateKey::from_str(private_key_hex).unwrap();
-    let public_key = private_key.public_key(&secp);
+    let public_key = private_key.public_key();
     let public_key_hash = public_key.pubkey_hash();
     //let from_address = Address::p2pkh(&public_key, Network::Testnet);
-    let one_time_public_key = one_time_private_key.public_key(&secp);
+    let one_time_public_key = one_time_private_key.public_key();
 
     // We are going to fund 1 Dash and
     // assume that input has 100005000
@@ -251,14 +248,12 @@ pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
     amount_range: &AmountRange,
     rng: &mut StdRng,
 ) -> Transaction {
-    let secp = Secp256k1::new();
-
     let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
     let private_key = PrivateKey::from_str(private_key_hex).unwrap();
-    let public_key = private_key.public_key(&secp);
+    let public_key = private_key.public_key();
     let public_key_hash = public_key.pubkey_hash();
     //let from_address = Address::p2pkh(&public_key, Network::Testnet);
-    let one_time_public_key = one_time_private_key.public_key(&secp);
+    let one_time_public_key = one_time_private_key.public_key();
 
     // We are going to fund 1 Dash and
     // assume that input has 100005000
@@ -1111,8 +1106,7 @@ pub async fn create_identities_state_transitions(
 
     // Update keys with new KeyIDs and add them to signer
     for (current_id_num, (key, _)) in (starting_id_num..).zip(keys.iter_mut()) {
-        let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key;
-        id_pub_key_v0.set_id(current_id_num);
+        key.set_id(current_id_num);
     }
     signer.add_identity_public_keys(keys);
 
@@ -1129,9 +1123,8 @@ pub async fn create_identities_state_transitions(
             .values_mut()
             .enumerate()
             .for_each(|(key_index, public_key)| {
-                let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
                 let new_id = identity_starting_id + key_index as u32;
-                id_pub_key_v0.set_id(new_id);
+                public_key.set_id(new_id);
             });
 
         if let Some(proof_and_pk) = asset_lock_proofs.pop() {

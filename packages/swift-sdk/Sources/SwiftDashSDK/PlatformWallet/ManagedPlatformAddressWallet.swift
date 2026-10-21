@@ -348,10 +348,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// Only a structural failure — a bad handle or a missing account at
     /// `accountIndex` — throws.
     ///
-    /// `coreFeePerByte` is accepted for symmetry with `withdraw(...)`; the
-    /// platform-side transition fee the preflight reserves does not depend on
-    /// it (it sizes the eventual L1 payout, not the credit-side fee), but
-    /// threading it keeps the call sites parallel.
+    /// `coreFeePerByte` must match the rate passed to `withdraw(...)`: from
+    /// protocol version 14 the Core fee is carved out of the withdrawn amount,
+    /// so the minimum net the preflight enforces is the protocol floor plus
+    /// the Core fee at that rate. The platform-side transition fee the
+    /// preflight reserves does not depend on it.
     public func preflightWithdrawal(
         accountIndex: UInt32,
         coreFeePerByte: UInt32 = 1

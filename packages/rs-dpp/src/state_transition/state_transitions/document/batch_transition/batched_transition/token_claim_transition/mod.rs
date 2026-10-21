@@ -2,6 +2,10 @@ pub mod v0;
 mod v0_methods;
 pub mod validate_structure;
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
@@ -21,10 +25,10 @@ pub enum TokenClaimTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenClaimTransition {}
+impl JsonConvertible for TokenClaimTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenClaimTransition {}
+impl ValueConvertible for TokenClaimTransition {}
 
 impl Default for TokenClaimTransition {
     fn default() -> Self {

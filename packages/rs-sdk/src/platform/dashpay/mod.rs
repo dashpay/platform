@@ -1,10 +1,13 @@
-//! DashPay contact request helpers
+//! DashPay contact request and invitation helpers
 //!
 //! This module provides helper functions for creating and sending DashPay contact requests
-//! according to DIP-15 specification.
+//! according to DIP-15 specification, for creating, updating and fetching DashPay profiles,
+//! and the DashPay invitation link codec and claim.
 
 mod contact_request;
 mod contact_request_queries;
+mod invitation;
+mod profile;
 
 pub use contact_request::{
     recipient_key_purpose_is_acceptable_on_receive, recipient_key_purpose_is_valid,
@@ -12,10 +15,14 @@ pub use contact_request::{
     EcdhProvider, RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
+pub use invitation::{
+    encode_invitation_uri, parse_invitation_uri, voucher_credit_output, voucher_output_index,
+    wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo, ParsedInvitation,
+    MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
+pub use profile::ProfileFields;
 
-use crate::platform::Fetch;
 use crate::{Error, Sdk};
-use dash_context_provider::ContextProvider;
 use dpp::prelude::Identifier;
 use std::sync::Arc;
 
@@ -48,21 +55,8 @@ impl Sdk {
     /// Helper method to fetch the DashPay contract, checking context provider first
     async fn fetch_dashpay_contract(&self) -> Result<Arc<dpp::data_contract::DataContract>, Error> {
         let dashpay_contract_id = self.get_dashpay_contract_id()?;
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::Generic("Context provider not set".to_string()))?;
-
-        match context_provider.get_data_contract(&dashpay_contract_id, self.version())? {
-            Some(contract) => Ok(contract),
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dashpay_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::Generic("DashPay contract not found".to_string()))?;
-                Ok(Arc::new(contract))
-            }
-        }
+        self.fetch_system_data_contract(dashpay_contract_id)
+            .await?
+            .ok_or_else(|| Error::Generic("DashPay contract not found".to_string()))
     }
 }

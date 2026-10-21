@@ -1,17 +1,6 @@
 use platform_version::version::PlatformVersion;
 
 #[test]
-fn should_keep_released_primary_key_path_queries_unchanged() {
-    for protocol in 1..=14 {
-        let version = PlatformVersion::get(protocol).unwrap();
-        assert_eq!(
-            version.drive.methods.document.query.primary_key_path_query, 0,
-            "protocol {protocol} must keep the shipped primary-key query"
-        );
-    }
-}
-
-#[test]
 fn should_keep_released_document_history_storage_and_proofs_unchanged() {
     for protocol in [12, 13, 14] {
         let version = PlatformVersion::get(protocol).unwrap();
@@ -44,8 +33,14 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
         assert_eq!(document.query.fetch_document_history, 0);
         assert_eq!(document.query.prove_document_history, 0);
         let contract = &version.drive.methods.contract;
-        assert_eq!(contract.insert.insert_contract, 1);
-        assert_eq!(contract.update.update_contract, 1);
+        assert_eq!(
+            contract.insert.insert_contract,
+            if protocol == 14 { 2 } else { 1 }
+        );
+        assert_eq!(
+            contract.update.update_contract,
+            if protocol == 14 { 2 } else { 1 }
+        );
         assert_eq!(
             version
                 .drive
@@ -71,14 +66,14 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
                 .methods
                 .protocol_upgrade
                 .perform_events_on_first_block_of_protocol_change,
-            Some(2)
+            Some(3)
         );
     }
 }
 
 #[test]
 fn should_activate_storage_migration_and_history_proofs_together() {
-    let version = PlatformVersion::get(15).unwrap();
+    let version = PlatformVersion::latest();
     let document = &version.drive.methods.document;
     // The layout-dependent methods change together.
     assert_eq!(document.insert.add_document_to_primary_storage, 1);
@@ -104,11 +99,10 @@ fn should_activate_storage_migration_and_history_proofs_together() {
     assert_eq!(document.query.fetch_document_history_query, 1);
     assert_eq!(document.query.fetch_document_history, 1);
     assert_eq!(document.query.prove_document_history, 1);
-    assert_eq!(document.query.primary_key_path_query, 1);
     // Contract writers create the per-type history tree.
     let contract = &version.drive.methods.contract;
-    assert_eq!(contract.insert.insert_contract, 2);
-    assert_eq!(contract.update.update_contract, 2);
+    assert_eq!(contract.insert.insert_contract, 3);
+    assert_eq!(contract.update.update_contract, 3);
     assert_eq!(
         version
             .drive
@@ -136,6 +130,6 @@ fn should_activate_storage_migration_and_history_proofs_together() {
             .methods
             .protocol_upgrade
             .perform_events_on_first_block_of_protocol_change,
-        Some(2)
+        Some(3)
     );
 }

@@ -61,6 +61,26 @@ pub struct SingleDocumentDriveQuery {
 }
 
 impl SingleDocumentDriveQuery {
+    /// The query of document `document_id` of `document_type_name` on `contract_id` as it
+    /// stands now, outside any contest: the query a moderator's deletion without a record and
+    /// a moderator's field change are proved by. The prover and the verifier both build it
+    /// here, so the two can not drift apart.
+    pub fn latest_not_contested(
+        contract_id: [u8; 32],
+        document_type_name: String,
+        document_type_keeps_history: bool,
+        document_id: [u8; 32],
+    ) -> Self {
+        SingleDocumentDriveQuery {
+            contract_id,
+            document_type_name,
+            document_type_keeps_history,
+            document_id,
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        }
+    }
+
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,
@@ -216,8 +236,8 @@ mod tests {
             .drive
             .methods
             .document
-            .query
-            .primary_key_path_query = 2;
+            .insert
+            .add_document_to_primary_storage = 2;
 
         let mut query = keep_history_query(None);
         query.document_type_keeps_history = false;

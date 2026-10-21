@@ -66,7 +66,9 @@ describe('DataContractUpdateTransition', () => {
     it('should return serialized State Transition', () => {
       const result = stateTransition.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2370);
+      // The fixture contract carries a V2 config (protocol version 14), whose optional
+      // moderation declaration is one more bincode byte than a V1 config.
+      expect(result).to.have.lengthOf(2371);
     });
 
     it('should be able to restore contract config from bytes', () => {

@@ -24,6 +24,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -4529,6 +4530,184 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("contactRequest", key.contractBoundsDocumentType)
     }
 
+    /** A wallet, one account and one identity: what `onLoadWalletList` needs to restore keys. */
+    private suspend fun seedWalletWithIdentity(identityId: ByteArray) {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        seedIdentity(identityId)
+    }
+
+    @Test
+    fun shouldRestoreContractGroupBoundKeyAsKindThree() = runTest {
+        // Kind 3 (ContractGroup) carries the contract group id and no document
+        // type. The id and docType columns alone read back as kind 1, so the
+        // stored kind has to survive the round trip.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val contractGroupId = ByteArray(32) { 33 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            keyId = 5,
+            purpose = 0,
+            securityLevel = 2,
+            keyType = 0,
+            readOnly = false,
+            disabledAtIsSome = false,
+            disabledAt = 0,
+            publicKeyData = ByteArray(33) { 7 },
+            publicKeyHash = ByteArray(20),
+            walletIdIsSome = true,
+            keyWalletId = walletId,
+            derivationIndicesIsSome = false,
+            identityIndex = 0,
+            keyIndex = 0,
+            contractBoundsKind = 3,
+            contractBoundsId = contractGroupId,
+            contractBoundsDocumentType = null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 5)
+        assertNotNull(row)
+        assertEquals(3, row!!.contractBoundsKind)
+        assertNull(row.contractBoundsDocumentTypeName)
+
+        val key = handler.onLoadWalletList()[0].identities[0].keys.single()
+        assertEquals(5, key.keyId)
+        assertEquals(3.toByte(), key.contractBoundsKind)
+        assertTrue(contractGroupId.contentEquals(key.contractBoundsId))
+        assertNull(key.contractBoundsDocumentType)
+    }
+
+    @Test
+    fun shouldStoreTheContractBoundsKindTheNativeRowCarries() = runTest {
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        // (keyId = kind, docType): one key per kind the native side emits.
+        val rows = listOf(0 to null, 1 to null, 2 to "contactRequest", 3 to null)
+        handler.onChangesetBegin(walletId)
+        for ((kind, docType) in rows) {
+            handler.onPersistIdentityKeyUpsert(
+                walletId = walletId,
+                identityId = identityId,
+                keyId = kind,
+                purpose = 0,
+                securityLevel = 2,
+                keyType = 0,
+                readOnly = false,
+                disabledAtIsSome = false,
+                disabledAt = 0,
+                publicKeyData = ByteArray(33) { (kind + 7).toByte() },
+                publicKeyHash = ByteArray(20),
+                walletIdIsSome = true,
+                keyWalletId = walletId,
+                derivationIndicesIsSome = false,
+                identityIndex = 0,
+                keyIndex = 0,
+                contractBoundsKind = kind.toByte(),
+                contractBoundsId = if (kind == 0) ByteArray(32) else boundsId,
+                contractBoundsDocumentType = docType,
+            )
+        }
+        handler.onChangesetEnd(walletId, success = true)
+
+        for ((kind, _) in rows) {
+            val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), kind)
+            assertEquals(kind, row!!.contractBoundsKind)
+        }
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2, 3), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        (1..3).forEach { assertTrue(boundsId.contentEquals(keys[it].contractBoundsId)) }
+        assertEquals(
+            listOf(null, null, "contactRequest", null),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
+    @Test
+    fun shouldInferContractBoundsKindForLegacyRowsWithNoStoredKind() = runTest {
+        // Rows written before schema 13 have a NULL kind: the restore keeps
+        // inferring it from the blob and the document type name.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        fun legacyRow(keyId: Int, bounds: ByteArray?, docType: String?) = PublicKeyEntity(
+            keyId = keyId,
+            purpose = "1",
+            securityLevel = "3",
+            keyType = "0",
+            publicKeyData = ByteArray(33) { (keyId + 7).toByte() },
+            contractBoundsData = bounds?.let { contractBoundsIdToJson(it) },
+            contractBoundsDocumentTypeName = docType,
+            contractBoundsKind = null,
+            identityId = identityId.toBase58String(),
+            identityIdData = identityId,
+        )
+        db.publicKeyDao().insert(legacyRow(0, null, null))
+        db.publicKeyDao().insert(legacyRow(1, boundsId, null))
+        db.publicKeyDao().insert(legacyRow(2, boundsId, "contactRequest"))
+
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        assertTrue(boundsId.contentEquals(keys[1].contractBoundsId))
+        assertTrue(boundsId.contentEquals(keys[2].contractBoundsId))
+        assertEquals(
+            listOf(null, null, "contactRequest"),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
+    @Test
+    fun shouldRestoreUnknownOrZeroStoredKindsAsUnboundedAndDemoteKindTwoWithoutADocType() = runTest {
+        // The stored kind decides. A kind this build does not know (a
+        // variant a later build persisted) or a stored 0 next to a stale
+        // blob restores unbounded, the fallback the Swift restore path
+        // applies too, instead of asserting a SingleContract bound the key
+        // never had. A stored kind 2 whose document type is missing or
+        // empty demotes to 1, as the Rust loader does.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        fun row(keyId: Int, docType: String?, kind: Int) = PublicKeyEntity(
+            keyId = keyId,
+            purpose = "0",
+            securityLevel = "2",
+            keyType = "0",
+            publicKeyData = ByteArray(33) { (keyId + 7).toByte() },
+            contractBoundsData = contractBoundsIdToJson(boundsId),
+            contractBoundsDocumentTypeName = docType,
+            contractBoundsKind = kind,
+            identityId = identityId.toBase58String(),
+            identityIdData = identityId,
+        )
+        db.publicKeyDao().insert(row(0, docType = null, kind = 0))
+        db.publicKeyDao().insert(row(1, docType = null, kind = 4))
+        db.publicKeyDao().insert(row(2, docType = "", kind = 2))
+        db.publicKeyDao().insert(row(3, docType = null, kind = 2))
+        db.publicKeyDao().insert(row(4, docType = "contactRequest", kind = 2))
+
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 0, 1, 1, 2), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        assertEquals(0, keys[1].contractBoundsId.size)
+        (2..4).forEach { assertTrue(boundsId.contentEquals(keys[it].contractBoundsId)) }
+        assertEquals(
+            listOf(null, null, null, null, "contactRequest"),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
     // ── DashPay contacts: upsert metadata, ignore delta, restore ──────
 
     /** Persist one incoming contact row for [senderId] owned by [ownerId]. */
@@ -4652,6 +4831,115 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, identity.ignoredSenders.size)
         assertTrue(mutedId.contentEquals(identity.ignoredSenders[0]))
+    }
+
+    /**
+     * dashpay/platform#4302: the outbound-account marker
+     * (`EstablishedContact::external_account_reference`) must round-trip,
+     * or every cold start rebuilds the outbound account. `false` stores
+     * NULL and restores as absent; `true` stores the value and restores it.
+     */
+    @Test
+    fun contactUpsertRoundTripsTheExternalAccountReference() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val ownerId = ByteArray(32) { 23 }
+        val contactId = ByteArray(32) { 24 }
+        seedIdentity(ownerId)
+
+        // Absent marker (the default trailing arguments).
+        persistIncomingContact(ownerId, contactId)
+        val before = handler.onLoadWalletList().single().identities.single().contacts.single()
+        assertFalse(before.hasExternalAccountReference)
+        assertEquals(0, before.externalAccountReference)
+        assertNull(db.dashpayDao().getContactRequestsByOwner(ownerId).single().externalAccountReference)
+
+        // Stamped marker.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactUpsert(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = contactId,
+            isOutgoing = false,
+            senderKeyIndex = 2,
+            recipientKeyIndex = 3,
+            accountReference = 4,
+            encryptedPublicKey = ByteArray(96) { 5 },
+            encryptedAccountLabel = null,
+            autoAcceptProof = null,
+            coreHeightCreatedAt = 100_000,
+            createdAt = 1_700_000_000_000,
+            paymentChannelBroken = false,
+            alias = null,
+            note = null,
+            isHidden = false,
+            contactAccountLabel = null,
+            acceptedAccounts = IntArray(0),
+            hasExternalAccountReference = true,
+            externalAccountReference = 4,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val after = handler.onLoadWalletList().single().identities.single().contacts.single()
+        assertTrue(after.hasExternalAccountReference)
+        assertEquals(4, after.externalAccountReference)
+        assertEquals(4, db.dashpayDao().getContactRequestsByOwner(ownerId).single().externalAccountReference)
+    }
+
+    /**
+     * dashpay/platform#4302 review: adding the backfill record and the
+     * outbound-account marker must not change the JVM constructors of the two
+     * restore holders, or a bridge compiled against the previous SDK throws
+     * `NoSuchMethodError` when it builds restore rows. Pins both the
+     * full-arity constructor (Java callers) and `WalletRestoreData`'s
+     * default-argument synthetic (Kotlin callers leaving `providerSpecialTxs`
+     * out) against the v4.2-dev parameter lists.
+     */
+    @Test
+    fun restoreHoldersKeepTheirPreviousJvmConstructors() {
+        fun ctorTypes(cls: Class<*>) = cls.declaredConstructors.map { it.parameterTypes.map { p -> p.name } }.toSet()
+
+        val walletBase = listOf(
+            "[B", "int", "[Lorg.dashfoundation.dashsdk.ffi.AccountSpecData;", "long", "long", "long",
+            "int", "int", "int", "long",
+            "[Lorg.dashfoundation.dashsdk.ffi.IdentityRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.UtxoRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.CoreAddressPoolRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.ProviderSpecialTxRestoreData;",
+            "[B",
+        )
+        val walletCtors = ctorTypes(org.dashfoundation.dashsdk.ffi.WalletRestoreData::class.java)
+        assertTrue("full-arity constructor unchanged", walletCtors.contains(walletBase))
+        assertTrue(
+            "default-argument constructor unchanged",
+            walletCtors.contains(walletBase + listOf("int", "kotlin.jvm.internal.DefaultConstructorMarker")),
+        )
+
+        val contactBase = listOf(
+            "[B", "[B", "boolean", "int", "int", "int", "[B", "[B", "[B", "int", "long", "boolean",
+            "java.lang.String", "java.lang.String", "boolean", "java.lang.String", "[I",
+        )
+        assertTrue(
+            "contact restore constructor unchanged",
+            ctorTypes(org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData::class.java).contains(contactBase),
+        )
+
+        // The new fields are still plain fields native can read by name.
+        for ((cls, names) in listOf(
+            org.dashfoundation.dashsdk.ffi.WalletRestoreData::class.java to listOf(
+                "hasDashPayBackfill", "dashPayBackfillFloor", "dashPayBackfillRewoundFrom", "dashPayBackfillCovered",
+            ),
+            org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData::class.java to listOf(
+                "hasExternalAccountReference", "externalAccountReference",
+            ),
+        )) {
+            for (name in names) assertNotNull("$name is a JVM field", cls.getField(name))
+        }
     }
 
     @Test
@@ -6548,6 +6836,156 @@ class PlatformWalletPersistenceHandlerTest {
         chainLockHeightRound(handler, 600)
         assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
     }
+    /** One packed cover-set entry: owner id ‖ contact id ‖ covered-from (LE u32). */
+    private fun backfillEntry(owner: Byte, contact: Byte, coveredFrom: Int): ByteArray =
+        ByteArray(32) { owner } + ByteArray(32) { contact } + ByteArray(4) + byteArrayOf(
+            (coveredFrom and 0xFF).toByte(),
+            ((coveredFrom shr 8) and 0xFF).toByte(),
+            ((coveredFrom shr 16) and 0xFF).toByte(),
+            ((coveredFrom shr 24) and 0xFF).toByte(),
+        )
+
+    /**
+     * dashpay/platform#4302: the DashPay backfill record is a whole-record
+     * replace of the three `wallets.dashPayBackfill*` columns, written on
+     * the same round as the lowered `syncedHeight` the rescan carries. A
+     * later record replaces the earlier one outright — a contact the new
+     * record no longer lists is gone, never merged back — and the cover set
+     * is stored byte-for-byte so native reads back exactly what it wrote.
+     */
+    @Test
+    fun onWalletChangesetDashPayBackfillReplacesTheRecordOnTheWalletRow() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertNull("no record until the slot fires", row.dashPayBackfillFloor)
+        assertNull(row.dashPayBackfillRewoundFrom)
+        assertNull(row.dashPayBackfillCovered)
+
+        val first = backfillEntry(1, 2, 2_167_092) + backfillEntry(1, 3, 2_300_000)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_167_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        assertEquals(
+            0,
+            handler.onWalletChangesetDashPayBackfill(walletId, 2_167_092, 2_537_092, first, 2),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val stored = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("the lowered cursor lands with the record", 2_167_092, stored.syncedHeight)
+        assertEquals(2_167_092, stored.dashPayBackfillFloor)
+        assertEquals(2_537_092, stored.dashPayBackfillRewoundFrom)
+        assertTrue(first.contentEquals(stored.dashPayBackfillCovered))
+
+        // A later record replaces the whole cover set.
+        val second = backfillEntry(1, 2, 2_167_092)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetDashPayBackfill(walletId, 2_100_000, 2_600_000, second, 1)
+        handler.onChangesetEnd(walletId, success = true)
+        val replaced = db.walletDao().getByWalletId(walletId)!!
+        assertEquals(2_100_000, replaced.dashPayBackfillFloor)
+        assertEquals(2_600_000, replaced.dashPayBackfillRewoundFrom)
+        assertTrue(second.contentEquals(replaced.dashPayBackfillCovered))
+        assertEquals("sibling columns are untouched", 2_167_092, replaced.syncedHeight)
+    }
+
+    /**
+     * The record vouches for the cursor written in its round, so a round
+     * that rolls back must take the record with it: a persisted record over
+     * a cursor still at its high-water would tell native the backfill
+     * resumed when it never started — the lossy direction. A malformed cover
+     * set (not a whole number of 68-byte entries) is refused outright.
+     */
+    @Test
+    fun onWalletChangesetDashPayBackfillRollsBackWithItsRoundAndRefusesATornCoverSet() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_537_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_167_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onWalletChangesetDashPayBackfill(
+            walletId, 2_167_092, 2_537_092, backfillEntry(1, 2, 2_167_092), 1,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("the rolled-back cursor stays at its committed value", 2_537_092, row.syncedHeight)
+        assertNull("the rolled-back record never lands", row.dashPayBackfillFloor)
+        assertNull(row.dashPayBackfillRewoundFrom)
+        assertNull(row.dashPayBackfillCovered)
+
+        handler.onChangesetBegin(walletId)
+        val rc = handler.onWalletChangesetDashPayBackfill(
+            walletId, 2_167_092, 2_537_092, backfillEntry(1, 2, 2_167_092).copyOf(67), 1,
+        )
+        handler.onChangesetEnd(walletId, success = rc == 0)
+        assertTrue("a torn cover set is refused", rc != 0)
+        assertNull(db.walletDao().getByWalletId(walletId)!!.dashPayBackfillFloor)
+    }
+
+    /**
+     * The restore side of dashpay/platform#4302: a stored record comes back
+     * on `loadWalletList` exactly as written, and a wallet with no record
+     * (every pre-migration row) reports none, so native rewinds once for it
+     * as it always did.
+     */
+    @Test
+    fun loadWalletListRoundTripsTheDashPayBackfillRecord() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        val before = handler.onLoadWalletList().single()
+        assertFalse("no record on a fresh wallet", before.hasDashPayBackfill)
+        assertEquals(0, before.dashPayBackfillFloor)
+        assertEquals(0, before.dashPayBackfillRewoundFrom)
+        assertEquals(0, before.dashPayBackfillCovered.size)
+
+        val covered = backfillEntry(1, 2, 2_167_092) + backfillEntry(1, 3, 2_300_000)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetDashPayBackfill(walletId, 2_167_092, 2_537_092, covered, 2)
+        handler.onChangesetEnd(walletId, success = true)
+
+        val after = handler.onLoadWalletList().single()
+        assertTrue(after.hasDashPayBackfill)
+        assertEquals(2_167_092, after.dashPayBackfillFloor)
+        assertEquals(2_537_092, after.dashPayBackfillRewoundFrom)
+        assertTrue(covered.contentEquals(after.dashPayBackfillCovered))
+    }
+
 }
 
 /**

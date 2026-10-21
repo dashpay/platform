@@ -24,8 +24,8 @@ pub(super) fn derive_platform_deserialize_struct(
     let TrustNames {
         decode_from_slice,
         deserializable,
-        deserialize,
-        deserialize_no_limit,
+        deserialize_with_bytes_len,
+        deserialize_no_limit_with_bytes_len,
         from_versioned_structure,
         versioned_deserialize,
         limit_from_versioned_structure,
@@ -70,26 +70,31 @@ pub(super) fn derive_platform_deserialize_struct(
         )
     };
 
-    let deserialize_into = match platform_serialize_into {
+    // Every body yields the value together with the number of bytes it took.
+    let decode_with_len = match platform_serialize_into {
         Some(inner) => quote! {
             #config
-            let inner: #inner = #decode_from_slice(bytes, config).map(|(a, _)| a)?;
-            Ok(inner.into())
+            let (inner, consumed): (#inner, usize) = #decode_from_slice(bytes, config)?;
+            Ok((inner.into(), consumed))
         },
         None => {
             if !unversioned {
                 quote! {
                     #config
-                    platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version).map(|(a, _)| a)#limit_err
+                    platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version)#limit_err
                 }
             } else {
                 quote! {
                     #config
-                        #decode_from_slice(bytes, config).map(|(a,_)| a)
-                        #limit_err
+                    #decode_from_slice(bytes, config)#limit_err
                 }
             }
         }
+    };
+
+    // The versioned entry points hand back the value alone.
+    let decode = quote! {
+        { #decode_with_len }.map(|(value, _)| value)
     };
 
     // if we have passthrough or untagged we can't decode directly
@@ -108,12 +113,12 @@ pub(super) fn derive_platform_deserialize_struct(
         quote! {
             impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause
             {
-                fn #deserialize(bytes: &[u8]) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #deserialize_with_bytes_len(bytes: &[u8]) -> Result<(Self, usize), #error_type> {
+                    #decode_with_len
                 }
 
-                fn #deserialize_no_limit(bytes: &[u8]) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #deserialize_no_limit_with_bytes_len(bytes: &[u8]) -> Result<(Self, usize), #error_type> {
+                    #decode_with_len
                 }
             }
 
@@ -124,14 +129,14 @@ pub(super) fn derive_platform_deserialize_struct(
             impl #impl_generics #crate_name::serialization::#from_versioned_structure for #name #ty_generics #where_clause
             {
                 fn #versioned_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
-                    #deserialize_into
+                    #decode
                 }
             }
             impl #impl_generics #crate_name::serialization::#limit_from_versioned_structure for #name #ty_generics #where_clause
             {
 
                 fn #versioned_limit_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
-                    #deserialize_into
+                    #decode
                 }
             }
 

@@ -94,6 +94,7 @@ export default function getBaseConfigFactory() {
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
                 'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
+                'getspecialtxes', 'getdeploymentinfo',
               ],
               lowPriority: false,
             },
@@ -189,6 +190,10 @@ export default function getBaseConfigFactory() {
             port: 2444,
           },
           previousBlocksOffset: 8,
+          // How often the service reloads the quorum lists from Core. It answers
+          // requests from that copy only, so a quorum formed since the last reload
+          // is missing from its answers until the next one.
+          cacheTtlSeconds: 60,
           versionCheckHost: '',
           addressHostOverride: '',
         },
@@ -374,7 +379,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.7',
+              image: 'dashpay/tenderdash:1.8',
             },
             p2p: {
               host: '0.0.0.0',

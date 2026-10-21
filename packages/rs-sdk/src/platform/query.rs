@@ -51,6 +51,7 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{
     KeysInPath, NoParamQuery, ShieldedEncryptedNotesQuery, ShieldedNullifiersQuery,
+    TokenShieldedEncryptedNotesQuery, TokenShieldedNullifiersQuery, TokenShieldedPoolQuery,
 };
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeSet;
@@ -156,6 +157,16 @@ impl_wire_query!(
     proto::GetContestedResourceVoteStateRequest,
     proto::GetContestedResourceVotersForIdentityRequest,
     proto::GetContestedResourcesRequest,
+    proto::GetContractDocumentRemovalsRequest,
+    proto::GetContractFeePotsRequest,
+    proto::GetContractGroupInfoRequest,
+    proto::GetContractGroupMembersRequest,
+    proto::GetContractGroupsForContractRequest,
+    proto::GetContractModerationActionCountsRequest,
+    proto::GetContractModerationEntriesRequest,
+    proto::GetContractModerationStatusRequest,
+    proto::GetContractTeamActionSignersRequest,
+    proto::GetContractTeamActionsRequest,
     proto::GetCurrentQuorumsInfoRequest,
     proto::GetDataContractHistoryRequest,
     proto::GetDataContractsLatestVersionsRequest,
@@ -181,6 +192,7 @@ impl_wire_query!(
     proto::GetIdentityByNonUniquePublicKeyHashRequest,
     proto::GetIdentityByPublicKeyHashRequest,
     proto::GetIdentityContractNonceRequest,
+    proto::GetIdentityKeysRemainingBudgetsRequest,
     proto::GetIdentityKeysRequest,
     proto::GetIdentityNonceRequest,
     proto::GetIdentityRequest,
@@ -231,7 +243,9 @@ impl Query<proto::GetDataContractRequest> for Identifier {
     ) -> Result<proto::GetDataContractRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let id = self.to_vec();
         Ok(proto::GetDataContractRequest {
@@ -249,7 +263,9 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     ) -> Result<proto::GetDataContractsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let ids = self.iter().map(|id| id.to_vec()).collect();
         Ok(proto::GetDataContractsRequest {
@@ -267,7 +283,9 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
     ) -> Result<proto::GetDataContractHistoryRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let (id, start_at_ms) = self.query;
 
@@ -301,8 +319,8 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
         // unproved decoding path, so a proof-disabled request would only fail
         // after the round trip.
         if !settings.prove {
-            return Err(Error::Generic(
-                "document history queries require proofs".to_owned(),
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_owned(),
             ));
         }
         let limit = self
@@ -346,7 +364,9 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let identity_id = self.to_vec();
         Ok(GetIdentityKeysRequest {
@@ -425,7 +445,9 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(GetIdentityKeysRequest {
@@ -455,7 +477,9 @@ impl Query<GetAddressInfoRequest> for PlatformAddress {
     ) -> Result<GetAddressInfoRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(GetAddressInfoRequest {
@@ -476,7 +500,9 @@ impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
     ) -> Result<GetAddressesInfosRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let addresses = self.iter().map(|address| address.to_bytes()).collect();
@@ -496,7 +522,9 @@ impl Query<GetAddressesTrunkStateRequest> for () {
     ) -> Result<GetAddressesTrunkStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(GetAddressesTrunkStateRequest {
@@ -521,11 +549,11 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
                     .to_string(),
             ));
         }
-        // Fallible: a drive query carrying time-range resolution provenance
-        // has no faithful `DocumentQuery` form (the resolved bucket equality
-        // would demote to a raw-timestamp predicate) and is refused — build
-        // a `DocumentQuery` with `with_time_range` / `with_time_range_grid`
-        // for time-range selections instead.
+        // Fallible: a drive query carrying window resolution provenance has
+        // no faithful `DocumentQuery` form (the resolved window equality
+        // would demote to a raw-value predicate) and is refused — build a
+        // `DocumentQuery` with `with_time_range` / `with_time_range_grid` or
+        // `with_integer_range` / `with_integer_range_grid` instead.
         let q: DocumentQuery = self.try_into()?;
         Ok(q)
     }
@@ -600,7 +628,9 @@ impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for
     ) -> Result<GetEpochsInfoRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let inner: EpochQuery = self.query.clone().into();
         Ok(GetEpochsInfoRequest {
@@ -637,7 +667,9 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
     ) -> Result<GetProtocolVersionUpgradeStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(proto::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0 {prove}.into())
@@ -651,7 +683,9 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<Pro
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(proto::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0 {
@@ -706,7 +740,9 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
     ) -> Result<GetContestedResourcesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         self.clone().try_to_request().map_err(|e| e.into())
@@ -751,7 +787,9 @@ impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDr
     ) -> Result<GetContestedResourceVoteStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         if self.offset.is_some() {
@@ -771,7 +809,9 @@ impl Query<GetContestedResourceVoteStateRequest>
         let prove = settings.prove;
         use proto::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let result = match  self.query.query(settings)?.version {
             Some(proto::get_contested_resource_vote_state_request::Version::V0(v0)) =>
@@ -801,7 +841,9 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
     ) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         if self.offset.is_some() {
             return Err(Error::Generic("ContestedDocumentVotePollVotesDriveQuery.offset field is internal and must be set to None".into()));
@@ -889,7 +931,9 @@ impl Query<GetContestedResourceIdentityVotesRequest>
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         if self.offset.is_some() {
             return Err(Error::Generic("ContestedResourceVotesGivenByIdentityQuery.offset field is internal and must be set to None".into()));
@@ -906,7 +950,9 @@ impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         Ok(GetContestedResourceIdentityVotesRequestV0 {
             identity_id: self.to_byte_array().to_vec(),
@@ -927,7 +973,9 @@ impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
     ) -> Result<GetVotePollsByEndDateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         self.clone().try_to_request().map_err(|e| e.into())
@@ -941,7 +989,9 @@ impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
     ) -> Result<GetPrefundedSpecializedBalanceRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         self.clone().try_to_request().map_err(|e| e.into())
     }
@@ -969,7 +1019,9 @@ impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         use proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
 
@@ -995,7 +1047,9 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         use proto::get_contested_resource_identity_votes_request::{
             get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo, Version,
@@ -1025,7 +1079,9 @@ impl Query<GetPathElementsRequest> for KeysInPath {
     ) -> Result<GetPathElementsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request: GetPathElementsRequest = GetPathElementsRequest {
@@ -1049,7 +1105,9 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
     ) -> Result<GetTotalCreditsInPlatformRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request: GetTotalCreditsInPlatformRequest = GetTotalCreditsInPlatformRequest {
@@ -1069,9 +1127,9 @@ impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
     ) -> Result<GetCurrentQuorumsInfoRequest, Error> {
         let prove = settings.prove;
         if prove {
-            unimplemented!(
-                "query with proof are not supported yet for GetCurrentQuorumsInfoRequest"
-            );
+            return Err(Error::Config(
+                "GetCurrentQuorumsInfo does not support proofs; use FetchUnproved".to_string(),
+            ));
         }
 
         let request: GetCurrentQuorumsInfoRequest = GetCurrentQuorumsInfoRequest {
@@ -1091,7 +1149,9 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<E
     ) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(GetEvonodesProposedEpochBlocksByRangeRequest {
@@ -1133,7 +1193,9 @@ impl Query<GetTokenDirectPurchasePricesRequest> for &[Identifier] {
     ) -> Result<GetTokenDirectPurchasePricesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request: GetTokenDirectPurchasePricesRequest = GetTokenDirectPurchasePricesRequest {
@@ -1165,7 +1227,9 @@ impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuer
     ) -> Result<GetTokenPerpetualDistributionLastClaimRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request = GetTokenPerpetualDistributionLastClaimRequest {
@@ -1201,7 +1265,9 @@ impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByI
     ) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         // Convert ProTxHash to bytes
@@ -1261,7 +1327,9 @@ impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanc
     ) -> Result<proto::GetRecentAddressBalanceChangesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(proto::GetRecentAddressBalanceChangesRequest {
@@ -1301,7 +1369,9 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
     ) -> Result<proto::GetRecentCompactedAddressBalanceChangesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         Ok(proto::GetRecentCompactedAddressBalanceChangesRequest {
@@ -1326,12 +1396,18 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
     ) -> Result<GetShieldedPoolStateRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedPoolState requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedPoolStateRequest {
             version: Some(get_shielded_pool_state_request::Version::V0(
-                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1357,7 +1433,10 @@ impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
 
         Ok(GetShieldedNotesCountRequest {
             version: Some(get_shielded_notes_count_request::Version::V0(
-                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 { prove },
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1370,12 +1449,18 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
     ) -> Result<GetShieldedAnchorsRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedAnchors requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedAnchorsRequest {
             version: Some(get_shielded_anchors_request::Version::V0(
-                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 { prove },
+                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1388,13 +1473,17 @@ impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
     ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetMostRecentShieldedAnchor requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetMostRecentShieldedAnchorRequest {
             version: Some(get_most_recent_shielded_anchor_request::Version::V0(
                 get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0 {
                     prove,
+                    token_id: None,
                 },
             )),
         })
@@ -1408,7 +1497,10 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
     ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedEncryptedNotes requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedEncryptedNotesRequest {
@@ -1417,6 +1509,7 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
                     start_index: self.start_index,
                     count: self.count,
                     prove,
+                    token_id: None,
                 },
             )),
         })
@@ -1430,7 +1523,10 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
     ) -> Result<GetShieldedNullifiersRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedNullifiers requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedNullifiersRequest {
@@ -1438,6 +1534,156 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
                 get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
                     nullifiers: self.0.iter().map(|n| n.to_vec()).collect(),
                     prove,
+                    token_id: None,
+                },
+            )),
+        })
+    }
+}
+
+// --- Token Shielded Pool Queries (protocol version 14+) ---
+
+impl Query<GetShieldedPoolStateRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedPoolStateRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedPoolState requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedPoolStateRequest {
+            version: Some(get_shielded_pool_state_request::Version::V0(
+                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNotesCountRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNotesCountRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedNotesCount requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedNotesCountRequest {
+            version: Some(get_shielded_notes_count_request::Version::V0(
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedAnchorsRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedAnchorsRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedAnchors requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetMostRecentShieldedAnchorRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetMostRecentShieldedAnchor requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetMostRecentShieldedAnchorRequest {
+            version: Some(get_most_recent_shielded_anchor_request::Version::V0(
+                get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedEncryptedNotesRequest> for TokenShieldedEncryptedNotesQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedEncryptedNotes requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedEncryptedNotesRequest {
+            version: Some(get_shielded_encrypted_notes_request::Version::V0(
+                get_shielded_encrypted_notes_request::GetShieldedEncryptedNotesRequestV0 {
+                    start_index: self.start_index,
+                    count: self.count,
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNullifiersRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedNullifiers requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedNullifiersRequest {
+            version: Some(get_shielded_nullifiers_request::Version::V0(
+                get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
+                    nullifiers: self.nullifiers.iter().map(|n| n.to_vec()).collect(),
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
                 },
             )),
         })
@@ -1532,10 +1778,8 @@ mod history_query_tests {
             filter: DocumentHistoryFilter::StartAtTime(0),
             limit: Some(1),
         };
-        assert!(
-            matches!(query.query(&settings), Err(Error::Generic(message))
-            if message == "document history queries require proofs")
-        );
+        assert!(matches!(query.query(&settings), Err(Error::Config(message))
+            if message == "unproved queries are not supported for this query; enable proofs"));
     }
 
     #[test]

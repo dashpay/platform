@@ -65,7 +65,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::Batch(_)
             | StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => {
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
@@ -135,6 +138,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -179,6 +185,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -193,7 +202,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
-            | StateTransition::IdentityTopUpFromAddresses(_) => true,
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => true,
         }
     }
 
@@ -210,6 +222,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -222,7 +237,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => true,
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => true,
         }
     }
 }

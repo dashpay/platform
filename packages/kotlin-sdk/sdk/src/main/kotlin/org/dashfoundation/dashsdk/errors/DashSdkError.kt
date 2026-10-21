@@ -14,6 +14,10 @@ private const val PERSISTER_UNREADABLE_USER_MESSAGE =
 private const val PERSISTER_UNSAVED_USER_MESSAGE =
     "The wallet data could not be saved and may need to be restored."
 
+// Display text for a panicked SPV teardown; the native message is the panic text.
+private const val SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE =
+    "Sync could not be stopped cleanly. Restart the app to use it again."
+
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
  * Swift SDK's `UserFacingError`/`SDKError` split, keyed off the native
@@ -37,6 +41,14 @@ sealed class DashSdkError(
      * while logs keep [message].
      */
     open val userMessage: String get() = message.orEmpty()
+
+    /**
+     * The consensus error Platform rejected the operation with, when the
+     * native layer reported one; `null` for every other failure. Branch on
+     * its code instead of matching [message].
+     */
+    val consensusError: PlatformConsensusError?
+        get() = (cause as? DashSDKException)?.consensusError
 
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -166,10 +178,14 @@ sealed class DashSdkError(
          * UTXO one of its own earlier asset locks had already consumed. Peers
          * drop such a double spend without replying, so the lock cannot
          * confirm while that spender stands and an unbounded proof wait would
-         * hang. The resume still runs: the sighting bounds that wait instead
-         * of replacing it, so the lock was (re-)broadcast and waited on (a
-         * `Broadcast`-status lock was also sent on an earlier call), and this
-         * is what the bounded wait expired with.
+         * hang. The resume still attempts recovery. With a ready transport,
+         * the sighting bounds the proof wait and this is what that wait
+         * expired with. In the `Broadcast` arm, after a readiness miss and
+         * pre-dispatch rejection, a still-standing conflict returns
+         * immediately after refreshing local finality, and the
+         * readiness-deferred retry owns the next proof wait. A
+         * `Broadcast`-status lock may also represent an earlier attempt that
+         * sent the transaction.
          *
          * The ONLY double-spend verdict the native side emits, and it is
          * PROVISIONAL. NO discard licence: keep the tracked lock and retry
@@ -207,8 +223,8 @@ sealed class DashSdkError(
          * Distinct from [CoreInsufficientFunds] (22), which is the atomic
          * Core-send selector rather than the asset-lock builder. The shortfall
          * figures travel in [message] as `available {n} duffs, required {n}
-         * duffs` — the native result is ABI-frozen to code + message, so there
-         * are no structured fields to read.
+         * duffs`: the native result has no fields for them, so there is
+         * nothing structured to read.
          *
          * Raised by
          * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
@@ -218,6 +234,10 @@ sealed class DashSdkError(
          * when the pooled funding sources cannot cover the requested lock.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -604,6 +624,26 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
+         * teardown was still running; nothing was wiped. Retry the stop or
+         * clear. An SPV start refused with this needs an SPV stop first.
+         */
+        class ShutdownIncomplete(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
+         * teardown panicked. Not retryable: restart the app process.
+         * [message] is the panic detail; display [userMessage].
+         */
+        class SpvProcessRestartRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -725,7 +765,9 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -796,6 +838,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

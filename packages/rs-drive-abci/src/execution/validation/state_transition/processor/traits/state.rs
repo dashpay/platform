@@ -97,11 +97,36 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
             }
             StateTransition::IdentityUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractUserModeration(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ContractFeeClaim(st) => st.validate_state(
                 action,
                 platform,
                 validation_mode,
@@ -168,6 +193,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_addresses_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -206,6 +232,21 @@ impl StateTransitionStateValidation for StateTransition {
             StateTransition::IdentityTopUpFromShieldedPool(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "identity top up from shielded pool should not have state validation",
+                )))
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token shielded transfer with shielded fee should not have state validation",
+                )))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token unshield with shielded fee should not have state validation",
+                )))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token purchase from shielded pool should not have state validation",
                 )))
             }
             StateTransition::ShieldFromAssetLock(_) => {
@@ -257,6 +298,7 @@ impl StateTransitionStateValidation for StateTransition {
                 st.validate_state_for_identity_create_from_shielded_pool_transition(
                     action,
                     platform,
+                    block_info,
                     execution_context,
                     tx,
                 )
@@ -273,6 +315,9 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => true,
             StateTransition::AddressFundsTransfer(_)
@@ -286,9 +331,21 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => false,
+        }
+    }
+
+    /// A block refuses a masternode vote that fails state validation without charging anyone,
+    /// and a proposer drops it silently, so only check_tx can tell the voter why.
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        match self {
+            StateTransition::MasternodeVote(st) => st.validates_full_state_on_check_tx(),
+            _ => false,
         }
     }
 }

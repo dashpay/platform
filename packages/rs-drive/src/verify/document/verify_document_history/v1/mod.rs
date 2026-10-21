@@ -1,56 +1,14 @@
 use super::DocumentHistoryProof;
 use crate::drive::Drive;
-use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     corrupt, invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
-
-/// The GroveDB proof envelope version that binds terminal tree counts and
-/// pagination bounds. The history tree is read through a count-bound offset,
-/// which only this envelope authenticates, whatever floor the protocol
-/// version sets for other proofs.
-const COUNT_BINDING_GROVEDB_PROOF_ENVELOPE_VERSION: u32 = 1;
-
-fn require_count_binding_envelope(
-    proof: &[u8],
-    label: &'static str,
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    // GroveDB serializes its proof enum discriminant as a bincode u32.
-    let (version, _): (u32, usize) = bincode::decode_from_slice(
-        proof,
-        bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<16>(),
-    )
-    .map_err(|error| {
-        Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
-            proof: label,
-            reason: error.to_string(),
-        })
-    })?;
-    let minimum = COUNT_BINDING_GROVEDB_PROOF_ENVELOPE_VERSION.max(
-        platform_version
-            .system_limits
-            .minimum_grovedb_proof_envelope_version,
-    );
-    if version < minimum {
-        return Err(Error::Proof(
-            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
-                proof: label,
-                version,
-                minimum,
-                protocol_version: platform_version.protocol_version,
-            },
-        ));
-    }
-    Ok(())
-}
 
 impl Drive {
     /// Verifies both proofs of the per-type history tree, their common root,
@@ -62,9 +20,9 @@ impl Drive {
         version: &PlatformVersion,
     ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
         let proof = DocumentHistoryProof::from_bytes(proof)?;
-        require_count_binding_envelope(&proof.metadata_proof, "history metadata proof", version)?;
+        require_supported_grovedb_proof_envelope(&proof.metadata_proof, "history metadata proof")?;
         if let Some(entries_proof) = &proof.entries_proof {
-            require_count_binding_envelope(entries_proof, "history entries proof", version)?;
+            require_supported_grovedb_proof_envelope(entries_proof, "history entries proof")?;
         }
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
@@ -124,41 +82,5 @@ impl Drive {
                 lifecycle: Some(lifecycle),
             },
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::require_count_binding_envelope;
-    use crate::error::proof::ProofError;
-    use crate::error::Error;
-    use dpp::version::PlatformVersion;
-
-    #[test]
-    fn should_honor_a_future_global_grovedb_proof_envelope_floor() {
-        let proof = bincode::encode_to_vec(
-            1u32,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("encode the GroveDB proof envelope version");
-        let mut future_version = PlatformVersion::latest().clone();
-        future_version
-            .system_limits
-            .minimum_grovedb_proof_envelope_version = 2;
-
-        let error =
-            require_count_binding_envelope(&proof, "history metadata proof", &future_version)
-                .expect_err("a history proof below the protocol-wide floor must be rejected");
-
-        assert!(matches!(
-            error,
-            Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
-                version: 1,
-                minimum: 2,
-                ..
-            })
-        ));
     }
 }

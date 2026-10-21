@@ -26,6 +26,7 @@ pub mod dashpay_sync;
 pub mod data_contract;
 pub mod derivation;
 pub mod derive_and_persist_callbacks;
+pub mod derive_connect_key;
 pub mod derive_identity_key_at_slot;
 pub mod document;
 pub mod dpns;
@@ -38,6 +39,7 @@ pub mod event_handler;
 pub mod handle;
 pub mod identity_derive_and_persist;
 pub mod identity_discovery;
+pub mod identity_key_limits;
 pub mod identity_key_preview;
 pub mod identity_keys_from_mnemonic;
 pub mod identity_loading;
@@ -78,6 +80,8 @@ pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
+#[cfg(feature = "shielded")]
+pub mod shielded_wallet_drain;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
@@ -108,6 +112,7 @@ pub use dashpay_sync::*;
 pub use data_contract::*;
 pub use derivation::*;
 pub use derive_and_persist_callbacks::*;
+pub use derive_connect_key::*;
 pub use derive_identity_key_at_slot::*;
 pub use document::*;
 pub use dpns::*;
@@ -153,6 +158,8 @@ pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
 pub use shielded_types::*;
+#[cfg(feature = "shielded")]
+pub use shielded_wallet_drain::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
 pub use token_persistence::*;

@@ -11,6 +11,7 @@ use crate::error::Error;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -78,39 +79,6 @@ impl DocumentHistoryProof {
     }
 }
 
-/// Reject a GroveDB proof envelope older than the floor the protocol
-/// version sets in `SystemLimits::minimum_grovedb_proof_envelope_version`.
-fn require_supported_grovedb_proof(
-    proof: &[u8],
-    label: &'static str,
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
-    let (version, _): (u32, usize) =
-        bincode::decode_from_slice(proof, config).map_err(|error| {
-            Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
-                proof: label,
-                reason: error.to_string(),
-            })
-        })?;
-    let minimum = platform_version
-        .system_limits
-        .minimum_grovedb_proof_envelope_version;
-    if version < minimum {
-        return Err(Error::Proof(
-            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
-                proof: label,
-                version,
-                minimum,
-                protocol_version: platform_version.protocol_version,
-            },
-        ));
-    }
-    Ok(())
-}
-
 impl Drive {
     /// Verifies a proved page of a historical document's history in the
     /// layout the protocol version stores.
@@ -128,7 +96,7 @@ impl Drive {
             .verify_document_history
         {
             0 => {
-                require_supported_grovedb_proof(proof, "document history proof", platform_version)?;
+                require_supported_grovedb_proof_envelope(proof, "document history proof")?;
                 let (start_at_ms, limit) = query.legacy_read()?;
                 let (root, revisions) = Drive::verify_document_history_v0(
                     proof,

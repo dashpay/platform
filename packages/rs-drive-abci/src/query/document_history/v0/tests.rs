@@ -5,7 +5,7 @@ use dapi_grpc::platform::v0::{
     GetDocumentHistoryRequest, GetDocumentHistoryResponse, Proof, ResponseMetadata,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+use dpp::bls::SecretKey;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
@@ -56,7 +56,7 @@ fn signed_proof(
     bytes: Vec<u8>,
     root: [u8; 32],
     metadata: &ResponseMetadata,
-    key: &SecretKey<Bls12381G2Impl>,
+    key: &SecretKey,
     quorum_type: u32,
 ) -> Proof {
     let state = StateId {
@@ -88,12 +88,7 @@ fn signed_proof(
     Proof {
         grovedb_proof: bytes,
         quorum_hash: vec![9; 32],
-        signature: key
-            .sign(SignatureSchemes::Basic, &digest)
-            .unwrap()
-            .as_raw_value()
-            .to_compressed()
-            .to_vec(),
+        signature: key.sign(&digest).unwrap().to_bytes().to_vec(),
         round: 0,
         block_id_hash: vec![7; 32],
         quorum_type,
@@ -163,10 +158,10 @@ fn history_api_proof_round_trip(gapped: bool) {
             )
             .unwrap();
     }
-    let key = SecretKey::<Bls12381G2Impl>::from_hash(b"document-history-quorum");
+    let key = SecretKey::from_be_bytes(&[1; 32]).unwrap();
     let provider = Provider {
         contract: Arc::new(contract.clone()),
-        key: key.public_key().to_bytes().try_into().unwrap(),
+        key: key.public_key().to_bytes(),
     };
     state.last_committed_block_info = Some(
         dpp::block::extended_block_info::v0::ExtendedBlockInfoV0 {

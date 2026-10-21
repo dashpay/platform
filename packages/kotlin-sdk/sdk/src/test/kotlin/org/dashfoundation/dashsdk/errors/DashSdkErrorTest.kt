@@ -3,10 +3,21 @@ package org.dashfoundation.dashsdk.errors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashSdkErrorTest {
+
+    @Test
+    fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 60, "101 exceeds 100")
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockTooManyInputs)
+        assertEquals(native.message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse(mapped.isRetryable)
+    }
 
     @Test
     fun mapsNativeCodesToHierarchy() {
@@ -224,6 +235,28 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun spvTeardownCodes27And59MapTypedWithOppositeRetryability() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+
+        val incomplete =
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+        assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
+        assertEquals("SPV teardown timed out", incomplete.message)
+        assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
+
+        val panicDetail = "teardown task 12 panicked with message \"boom\""
+        val restart = DashSdkError.fromNative(DashSDKException(offset + 59, panicDetail))
+        assertTrue(restart is DashSdkError.PlatformWallet.SpvProcessRestartRequired)
+        assertEquals(panicDetail, restart.message)
+        assertFalse("no retry recovers a panicked teardown", restart.isRetryable)
+        assertEquals(
+            "the panic detail is diagnostic and must not be the displayed text",
+            "Sync could not be stopped cleanly. Restart the app to use it again.",
+            restart.userMessage,
+        )
     }
 
     @Test
@@ -471,5 +504,85 @@ class DashSdkErrorTest {
         assertTrue(error is DashSdkError.PlatformWallet.NotFound)
         assertFalse(error is DashSdkError.NotFound)
         assertEquals("wallet not found", (error as DashSdkError).message)
+    }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfARejectedTokenOperation() {
+        // What the JNI bridge throws for a claim Platform rejected as already
+        // claimed: ErrorUnknown (99), consensus code 40722, kind State (4).
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99,
+            "Token operation failed: Token claim failed: state transition broadcast error",
+            40722,
+            4,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what they
+        // were without it.
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(40722, ConsensusErrorKind.STATE),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldMapEveryNativeConsensusErrorKind() {
+        val kinds = mapOf(
+            1 to ConsensusErrorKind.BASIC,
+            2 to ConsensusErrorKind.SIGNATURE,
+            3 to ConsensusErrorKind.FEE,
+            4 to ConsensusErrorKind.STATE,
+            // A family this build does not know keeps its code.
+            9 to ConsensusErrorKind.UNKNOWN,
+        )
+        kinds.forEach { (native, expected) ->
+            val error = DashSdkError.fromNative(DashSDKException(1099, "rejected", 10000, native))
+            assertEquals(PlatformConsensusError(10000, expected), error.consensusError)
+        }
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorWithoutAConsensusRejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99, "code 40722 in text only"),
+        )
+        assertNull(plain.consensusError)
+        // An SDK error raised on the Kotlin side has no native cause at all.
+        assertNull(DashSdkError.InvalidParameter("bad argument").consensusError)
+    }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfAStateTransitionPlatformRejected() {
+        // What the JNI bridge throws for an rs-sdk-ffi DashSDKError Platform
+        // refused under a propertyConstraints rule: ProtocolError (5),
+        // consensus code 10422, kind Basic (1).
+        val native = DashSDKException(
+            5,
+            "Protocol error: document violates propertyConstraints rule 0",
+            10422,
+            1,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what the
+        // code alone maps to.
+        assertTrue(mapped is DashSdkError.ProtocolError)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(10422, ConsensusErrorKind.BASIC),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorForAnSdkFailureThatWasNotARejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(99, "Internal error: Failed to mint token and wait: timed out"),
+        )
+        assertTrue(plain is DashSdkError.InternalError)
+        assertNull(plain.consensusError)
     }
 }

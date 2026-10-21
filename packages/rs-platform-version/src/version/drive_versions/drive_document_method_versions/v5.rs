@@ -12,7 +12,6 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             fetch_document_history_query: 1,
             fetch_document_history: 1,
             prove_document_history: 1,
-            primary_key_path_query: 1,
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.query
         },
         delete: DriveDocumentDeleteMethodVersions {

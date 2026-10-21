@@ -18,7 +18,7 @@ A `ProvableCountTree` at the property-name level stores, per group, the group's 
 2. **Have the server sort and return the top five.** O(1) bytes, zero cryptographic value — the client has no way to check that the sixth-best restaurant wasn't quietly omitted.
 3. **Maintain a second, aggregate-ordered view of the same groups, committed to the same root hash.** Top-k becomes a bounded range read at one end of that view, and its proof is a standard Merk range proof over `k` entries. **This is what this chapter is about.**
 
-The grovedb primitive is the **indexed tree**: a primary Merk that is a byte-compatible mirror of the tree it replaces, plus one ordered **secondary** Merk per declared axis, keyed so that the aggregate sorts first and the group key only breaks ties. Because the primary is byte-compatible, every pre-existing range-aggregate query against the same tree — `AggregateCountOnRange`, `AggregateSumOnRange`, `AggregateCountAndSumOnRange` — keeps working unchanged against an index that adds a ranking axis.
+The grovedb primitive is the **indexed tree**: a primary Merk that is a byte-compatible mirror of the tree it replaces, plus one ordered **secondary** Merk per declared axis, keyed so that the aggregate sorts first and the group key only breaks ties. The primary is byte-compatible, but grovedb's range aggregates (`AggregateCountOnRange`, `AggregateSumOnRange`, `AggregateCountAndSumOnRange`) take provable trees only and do not prove through an indexed tree, so Drive refuses a range total through any index whose path passes through a ranked level, its own or another index's at a level the two share (`refuse_a_range_total_through_a_ranked_index`); per-value range reads keep working.
 
 *The dashed box is the wrapping `Element`. The primary Merk (blue) is keyed by group key and is byte-identical to the `ProvableCountTree` it replaces. The secondary (orange) holds one entry per group, keyed by `count_be ‖ group_key`, so a descending walk of its right edge yields the highest-count groups first.*
 
@@ -82,7 +82,7 @@ the per-group counts the range-count layout maintains
 
 ### Value-Sensitive Prerequisites in the Meta-Schema
 
-The document meta-schema enforces the same prerequisites, but it cannot use the `dependentRequired` rows the `range*` keywords use. `dependentRequired` fires on **key presence**, so a written-out opt-out — `"rankedCountable": false`, which the structural parser accepts as exactly that — would be made to demand a `rangeCountable` the index does not need. Meta-schema v3 therefore expresses the ranked prerequisites as value-sensitive `if` / `then` pairs:
+The document meta-schema enforces the same prerequisites, in two forms. The `range*` rows are presence rules: a `rangeSummable` key, whatever its value, needs a `summable` (or an `averageable`) key beside it, and a `rangeAverageable` key needs an `averageable`. `rangeCountable` has no row: it implies `countable`, exactly as the doctype-level `rangeCountable` implies `documentsCountable`, and the parser promotes an omitted `countable` to `"countable"` (an explicit `"countableAllowingOffset"` is kept, an explicit `"notCountable"` is rejected as a contradiction). The ranked rules are **value-sensitive** `if` / `then` pairs, because a written-out opt-out, `"rankedCountable": false`, which the structural parser accepts as exactly that, must not be made to demand a `rangeCountable` the index does not need:
 
 ```json
 {
@@ -90,17 +90,26 @@ The document meta-schema enforces the same prerequisites, but it cannot use the 
     "properties": {
       "rankedCountable": { "anyOf": [{ "const": true }, { "type": "object" }] }
     },
-    "required": ["rankedCountable"]
+    "required": ["rankedCountable"],
+    "not": { "required": ["rangeAverageable"] }
   },
   "then": { "required": ["rangeCountable"] }
 }
 ```
 
-(The `rankedCountable` conditional matches the object form as well as the literal `true` — both spellings need `rangeCountable`; only a written-out `false` escapes the requirement.)
+(The `rankedCountable` conditional matches the object form as well as the literal `true`; both spellings need a range axis, and only a written-out `false` escapes the requirement.)
 
-The `range*` rows keep their presence semantics because that is what they shipped with in v2, and changing them would move historical validation results.
+Every rule is **sugar-aware**, and the `not` clause above is what makes it so. JSON-schema validation runs over the index object exactly as authored, before `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so each rule spells the sugar out as an accepted alternative: `rangeSummable` accepts `averageable` in place of `summable`, `rankedCountable` and `rankedSummable` accept `rangeAverageable` in place of their own range axis, and `rankedAverageable` accepts the explicit `rangeCountable` + `rangeSummable` pair in place of `rangeAverageable`. The doctype-level `rangeSummable` row accepts `documentsAverageable` the same way. The parser then checks the same prerequisites on the resolved flags, so the two layers agree on every spelling, and the sugar form of a multi-axis index is the whole declaration:
 
-One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** `rankedAverageable: true` needs a literal `rangeAverageable: true` to satisfy the schema's `then`, even though the parser is satisfied by the explicit `countable` + `summable` + `rangeCountable` + `rangeSummable` longhand. Since full JSON-schema validation only runs under `full_validation`, both layers matter — write the sugar form and the two agree.
+```json
+{"name": "storeRating", "properties": [{"storeId": "asc"}],
+ "averageable": "rating", "rangeAverageable": true,
+ "rankedAverageable": true, "rankedCountable": true}
+```
+
+Up to `4.2.0-beta.1`, meta-schema v3 demanded the literal key instead: this index failed registration with `"rangeCountable" is a required property`, and adding `rangeCountable` then pulled in a literal `countable` through a presence row, so the only accepted spellings carried keys the sugar already implied. The same release also made the index-level parser demand an explicit `countable` beside `rangeCountable`, while the doctype level had always treated `rangeCountable` as implying `documentsCountable`. v3 is editable until 4.2 is live on mainnet, so both rules were corrected in place rather than carried into a v4; below protocol version 14 nothing moves.
+
+The two layers are not gated alike. The structural parser runs on every parse, `full_validation` or not, and is compiled into every build. The JSON-schema layer runs only under `full_validation`, and only in builds with rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. An SDK-side `DataContract.fromJSON(json, true, pv)` therefore sees the parser's verdict alone, which is why the two layers agreeing on every spelling matters: it is what keeps an offline acceptance from turning into a registration refusal.
 
 ### Shape Restrictions
 
@@ -331,7 +340,7 @@ The one place the two changes genuinely collide is the case the prefix-overlap r
 
 All three ranking flags are **immutable** across a contract update, for the same reason and with the same error as the count and sum flags. The set of declared axes picks the indexed tree variant and its ordered secondaries at contract creation; toggling any one of them would require rebuilding the secondaries for every existing group.
 
-`IndexLevel::find_first_ranked_change` walks the two index-level trees and returns the first path where `ranked_countable`, `ranked_summable` or `ranked_averageable` differs — e.g. `restaurantId -> (ranked_averageable: false -> true)`. `IndexLevel::validate_update` turns that into a `DataContractInvalidIndexDefinitionUpdateError`:
+Rankings parse from protocol version 14, whose document type `validate_update` (v1) refuses any changed index by comparing whole `Index` definitions, so every ranking flag, `at` level and chain stamp (and a `summableOffCountIndex` index's source) is frozen with the rest of the index. `IndexLevel::find_first_ranked_change`, which walks the two index-level trees and returns the first path where `ranked_countable`, `ranked_summable` or `ranked_averageable` differs (e.g. `restaurantId -> (ranked_averageable: false -> true)`), serves the earlier `validate_update` (v0), which no contract with a ranking reaches. Either way the update fails with `DataContractInvalidIndexDefinitionUpdateError`:
 
 ```text
 Document with type {document_type} could not add or remove '{index_path}' during

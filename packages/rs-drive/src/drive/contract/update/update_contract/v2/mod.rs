@@ -1,5 +1,3 @@
-// Protocol 15 generation: keep-history document types a contract update adds
-// get their per-type history tree; everything else matches v1.
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,25 +6,26 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use crate::drive::contract_documents_path;
-use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
+use crate::drive::balances::total_tokens_root_supply_path_vec;
+use crate::drive::tokens::paths::token_balances_path_vec;
 use crate::error::contract::DataContractError;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo::KeyRef;
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -207,6 +206,24 @@ impl Drive {
     }
 
     /// operations for updating a contract.
+    ///
+    /// The v1 operations, plus the perpetual, pre-programmed and
+    /// once-per-identity distribution storage of every token the update adds:
+    /// the same storage `insert_contract` creates for a token present at
+    /// registration. v1
+    /// created none of it, so the first claim on such a token wrote its claim
+    /// record under a tree that did not exist and failed as an internal error,
+    /// leaving the distribution unclaimable.
+    ///
+    /// It also mints the base supply of a token the update adds, to the same
+    /// identity `insert_contract` credits at registration. v1 left such a
+    /// token at a total supply of zero with nobody holding any of it.
+    ///
+    /// The moderation list trees need nothing here: which lists a contract keeps is fixed when
+    /// it is created (`DataContractConfig::validate_update` v2), so `insert_contract` made
+    /// them and an update leaves them, and their entries, alone. A document type the update
+    /// adds may be one moderators can delete documents of, and then gets the tree its removal
+    /// records go in.
     #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v2(
         &self,
@@ -221,7 +238,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = self
-            .update_contract_base_operations_v2(
+            .update_contract_operations_v1(
                 contract_element,
                 contract,
                 original_contract,
@@ -232,6 +249,18 @@ impl Drive {
             )?;
 
         for (token_pos, configuration) in contract.tokens() {
+            // Only a token absent from the original contract is new to state.
+            // A token the contract already had keeps the supply and the
+            // distribution storage it has: its base supply was minted when it
+            // was added, and both distribution helpers error when the token's
+            // tree already exists. That covers a token config update too,
+            // which reaches this method with its token present in the original
+            // contract. An update can not remove a token, so a token is new
+            // exactly once.
+            if original_contract.tokens().contains_key(token_pos) {
+                continue;
+            }
+
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
                     "data contract has a token at position {}, but it can not be found",
@@ -239,458 +268,260 @@ impl Drive {
                 )),
             ))?;
 
-            batch_operations.extend(self.create_token_trees_operations(
-                contract.id(),
-                *token_pos,
-                token_id.to_buffer(),
-                configuration.start_as_paused(),
-                true,
-                &mut None,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
+            if configuration.base_supply() > 0 {
+                let destination_identity_id = configuration
+                    .distribution_rules()
+                    .new_tokens_destination_identity()
+                    .copied()
+                    .unwrap_or(contract.owner_id());
+
+                Self::mint_base_supply_of_added_token(
+                    token_id.to_buffer(),
+                    configuration.base_supply(),
+                    destination_identity_id.to_buffer(),
+                    &mut batch_operations,
+                )?;
+            }
+
+            if let Some(perpetual_distribution) =
+                configuration.distribution_rules().perpetual_distribution()
+            {
+                self.add_perpetual_distribution(
+                    token_id.to_buffer(),
+                    perpetual_distribution,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            if let Some(pre_programmed_distribution) = configuration
+                .distribution_rules()
+                .pre_programmed_distribution()
+            {
+                self.add_pre_programmed_distributions(
+                    token_id.to_buffer(),
+                    contract.owner_id().to_buffer(),
+                    pre_programmed_distribution,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            // The once-per-identity claims subtree, as `insert_contract` creates it for the
+            // tokens of a new contract; without it every claim would insert under a path
+            // that does not exist.
+            if configuration
+                .distribution_rules()
+                .once_per_identity_distribution()
+                .is_some()
+            {
+                self.add_once_per_identity_distribution(
+                    token_id.to_buffer(),
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            // The token's own Orchard pool, as `insert_contract` creates it for the tokens of
+            // a new contract. A token is new to the contract exactly once, so a token that
+            // already owns a pool never reaches here and its pool is never recreated.
+            if configuration.has_shielded_pool() {
+                batch_operations.extend(self.create_token_shielded_pool_trees_operations(
+                    token_id.to_buffer(),
+                    true,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+            }
         }
 
-        if !contract.groups().is_empty() {
-            batch_operations.extend(self.add_new_groups_operations(
-                contract.id(),
-                contract.groups(),
+        // The removal records tree of every document type the update adds whose moderators'
+        // deletions keep records, as `insert_contract` creates it for the types of a new
+        // contract. A document type the contract already had keeps the keyword it had, so its
+        // tree, if any, exists: a document type is new exactly once. The tree they all go
+        // under exists exactly when the stored contract already had such a document type,
+        // which the original contract says without a read: the first one creates it.
+        let added_document_type_names: Vec<&str> = contract
+            .document_types()
+            .iter()
+            .filter(|(name, document_type)| {
+                document_type.moderator_deletions_keep_records()
+                    && !original_contract.document_types().contains_key(*name)
+            })
+            .map(|(name, _)| name.as_str())
+            .collect();
+        if !added_document_type_names.is_empty() {
+            let has_removals_tree = original_contract
+                .document_types()
+                .values()
+                .any(|document_type| document_type.moderator_deletions_keep_records());
+            let storage_flags = StorageFlags::new_single_epoch(
+                block_info.epoch.index,
+                Some(contract.owner_id().to_buffer()),
+            );
+            self.insert_contract_document_removal_trees_operations(
+                contract.id().to_buffer(),
+                !has_removals_tree,
+                &added_document_type_names,
+                Some(&storage_flags),
                 estimated_costs_only_with_layer_info,
                 transaction,
+                &mut batch_operations,
                 platform_version,
-            )?);
-        }
-
-        // Skipping an empty keyword set is load-bearing, but it is a shield
-        // rather than a fix, and both halves matter to anyone changing it.
-        //
-        // What it prevents: the keyword update emits its deletes blind to each
-        // other in one batch, so several of them jointly emptying the shared
-        // `byContractId/<contractId>` group would leave that group tree behind
-        // with nothing in it — and emptying the group without refilling it
-        // requires exactly this empty-set case.
-        //
-        // What it costs: the previous keyword documents are not deleted either,
-        // so a contract that clears its keywords advertises none while keyword
-        // search still returns it under the old ones. Removing this guard to fix
-        // that trades a stale index for a stranded group tree; the deletes have
-        // to become sibling-aware first. Both halves are pinned —
-        // `clearing_a_contracts_keywords_leaves_the_old_ones_indexed` and
-        // `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind`.
-        if !contract.keywords().is_empty() {
-            batch_operations.extend(self.update_contract_keywords_operations(
-                contract.id(),
-                contract.owner_id(),
-                contract.keywords(),
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
-        }
-
-        if let Some(description) = contract.description() {
-            batch_operations.extend(self.update_contract_description_operations(
-                contract.id(),
-                contract.owner_id(),
-                description,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
+            )?;
         }
 
         Ok(batch_operations)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn update_contract_base_operations_v2(
-        &self,
-        contract_element: Element,
-        contract: &DataContract,
-        original_contract: &DataContract,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-
-        let drive_version = &platform_version.drive;
-
-        if original_contract.config().readonly() {
-            return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
-                "contract is readonly",
-            )));
+    /// Turns the operations creating the trees of a token the update adds into
+    /// ones that also mint its base supply, the way `insert_contract` v1 does
+    /// at registration: `destination_identity_id` is credited `base_supply`
+    /// and the token's total supply starts at `base_supply`.
+    ///
+    /// The v1 operations already hold the insert of a zero
+    /// total supply, and a batch may hold only one operation per path and
+    /// key, so that insert is replaced rather than followed by a second one.
+    /// The supply helpers used by a mint transition do not fit here: they
+    /// read the current supply and balance from state, where this token's
+    /// trees do not exist until the batch is applied.
+    fn mint_base_supply_of_added_token(
+        token_id: [u8; 32],
+        base_supply: TokenAmount,
+        destination_identity_id: [u8; 32],
+        token_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        // The update transition's basic structure validation rejects such a
+        // base supply as a consensus error, so this is not reachable from a
+        // state transition.
+        if base_supply > i64::MAX as u64 {
+            return Err(
+                ProtocolError::CriticalCorruptedCreditsCodeExecution(format!(
+                    "Token base supply over i64 max, is {}",
+                    base_supply
+                ))
+                .into(),
+            );
         }
 
-        if contract.config().readonly() {
-            return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
-                "contract can not be changed to readonly",
-            )));
-        }
+        let zero_total_supply_insert = LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(0),
+        );
 
-        if contract.config().keeps_history() ^ original_contract.config().keeps_history() {
-            return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
-                "contract can not change whether it keeps history",
-            )));
-        }
+        // The token is new to the contract and a token id is unique to its
+        // contract and position, so no supply entry can exist yet and the
+        // insert has to be there. Minting on top of an existing entry would
+        // overwrite a live supply.
+        let total_supply_insert = token_operations
+            .iter_mut()
+            .find(|operation| **operation == zero_total_supply_insert)
+            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                "a token new to the contract already has a total supply".to_string(),
+            )))?;
 
-        if contract.config().documents_keep_history_contract_default()
-            ^ original_contract
-                .config()
-                .documents_keep_history_contract_default()
-        {
-            return Err(Error::Drive(
-                DriveError::ChangingContractDocumentsKeepsHistoryDefault(
-                    "contract can not change the default of whether documents keeps history",
-                ),
-            ));
-        }
+        *total_supply_insert = LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(base_supply as i64),
+        );
 
-        if contract.config().documents_mutable_contract_default()
-            ^ original_contract
-                .config()
-                .documents_mutable_contract_default()
-        {
-            return Err(Error::Drive(
-                DriveError::ChangingContractDocumentsMutabilityDefault(
-                    "contract can not change the default of whether documents are mutable",
-                ),
-            ));
-        }
+        token_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
+            token_balances_path_vec(token_id),
+            destination_identity_id.to_vec(),
+            Element::new_sum_item(base_supply as i64),
+        ));
 
-        let element_flags = contract_element.get_flags().clone();
-
-        // this will override the previous contract if we do not keep history
-        self.add_contract_to_storage(
-            contract_element,
-            contract,
-            block_info,
-            estimated_costs_only_with_layer_info,
-            &mut batch_operations,
-            false,
-            transaction,
-            drive_version,
-        )?;
-
-        let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
-
-        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
-        for (type_key, document_type) in contract.document_types().iter() {
-            let original_document_type = &original_contract.document_types().get(type_key);
-            if let Some(original_document_type) = original_document_type {
-                if original_document_type.documents_mutable() ^ document_type.documents_mutable() {
-                    return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
-                        "contract can not change whether a specific document type is mutable",
-                    )));
-                }
-                if original_document_type.documents_keep_history()
-                    ^ document_type.documents_keep_history()
-                {
-                    return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
-                        "contract can not change whether a specific document type keeps history",
-                    )));
-                }
-
-                let type_path = [
-                    contract_documents_path[0],
-                    contract_documents_path[1],
-                    contract_documents_path[2],
-                    type_key.as_bytes(),
-                ];
-
-                let document_type_ref = document_type.as_ref();
-                let index_structure = document_type_ref.index_structure();
-                // For each type we should insert the indices that are top
-                // level — one root sub-level per distinct top tree (plain
-                // first properties by name, time-range grids by their
-                // qualified `TimeRangeTransform::storage_key`), the same
-                // iteration `insert_contract_v0` performs.
-                //
-                // `batch_insert_empty_tree_if_not_exists` is a no-op when the
-                // index already exists, so this loop covers BOTH the
-                // pre-existing indexes (no-op, no on-disk change) AND any
-                // brand-new top-level indexes the contract update adds to an
-                // existing doctype. The latter must materialize with the
-                // matching tree variant from the `(range_countable,
-                // range_summable)` dispatch — same 4-way table the
-                // new-doctype branch below uses, identical to
-                // `insert_contract_v0`'s top-level-index dispatch. Without
-                // this, adding a new `rangeSummable: true` (or
-                // `rangeCountable: true`) index to an existing doctype via
-                // contract update silently created a NormalTree, diverging
-                // from the layout a fresh insert would have produced and
-                // breaking subsequent range-sum / range-count reads.
-                for (level_key, level) in index_structure.sub_levels() {
-                    {
-                        // Meta schema v3 (PV14) additionally upgrades the
-                        // chosen variant to its indexed mirror when the index
-                        // declares a ranking axis — including the grouping
-                        // level of a compound index ranked at its first
-                        // property (`rankedCountable: { at }`), which the
-                        // level-aware resolver maps to the Count-axis indexed
-                        // tree; `ranked_axes` is empty for every pre-v3
-                        // contract, making this arm bit-identical to the
-                        // previous 4-way dispatch for them.
-                        let (target_tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes_for_level(level)?;
-                        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                            BatchInsertTreeApplyType::StatefulBatchInsertTree
-                        } else {
-                            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                                in_tree_type: TreeType::NormalTree,
-                                tree_type: target_tree_type,
-                                flags_len: element_flags
-                                    .as_ref()
-                                    .map(|e| e.len() as u32)
-                                    .unwrap_or_default(),
-                            }
-                        };
-                        // The generic `batch_insert_empty_index_tree_if_not_exists`
-                        // already takes a `TreeType` (plus the ranking axes an
-                        // indexed element needs and a `TreeType` cannot carry)
-                        // and routes the grovedb insert to the matching
-                        // variant — same helper count's non-summable index
-                        // path uses. No-op when the path/key already exists,
-                        // which is how this branch handles both pre-existing
-                        // indexes (unchanged on disk) and brand-new ones
-                        // (materialized with the dispatch-chosen variant).
-                        self.batch_insert_empty_index_tree_if_not_exists(
-                            PathFixedSizeKeyRef((type_path, level_key.as_bytes())),
-                            target_tree_type,
-                            &ranked_axes,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                            apply_type,
-                            transaction,
-                            &mut None,
-                            &mut batch_operations,
-                            drive_version,
-                        )?;
-                    }
-                }
-            } else {
-                // We can just insert this directly because the original document type already exists
-                self.batch_insert_empty_tree(
-                    contract_documents_path,
-                    KeyRef(type_key.as_bytes()),
-                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                    &mut batch_operations,
-                    drive_version,
-                )?;
-
-                let type_path = [
-                    contract_documents_path[0],
-                    contract_documents_path[1],
-                    contract_documents_path[2],
-                    type_key.as_bytes(),
-                ];
-
-                if document_type.as_ref().documents_keep_history() {
-                    self.batch_insert_empty_tree(
-                        type_path,
-                        KeyRef(&[crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY]),
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
-                }
-
-                // primary key tree — route through the centralized
-                // primary_key_tree_type() so contract update, document inserts,
-                // deletes, and estimation paths all see the same tree-variant
-                // selection (under whichever drive method version is active).
-                // Must stay in lock-step with the matching dispatch in
-                // `insert_contract_v0::insert_contract_operations_v0`: a fresh
-                // insert and a contract-update that adds the same doctype must
-                // materialize the same on-disk tree variant, otherwise later
-                // sum/range-sum reads + fee logic operate against the wrong
-                // tree type for updated contracts.
-                let key_info = KeyRef(&[0]);
-                match document_type
-                    .as_ref()
-                    .primary_key_tree_type(platform_version)?
-                {
-                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::CountTree => self.batch_insert_empty_count_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::ProvableCountSumTree => self
-                        .batch_insert_empty_provable_count_sum_tree(
-                            type_path,
-                            key_info,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                            &mut batch_operations,
-                            drive_version,
-                        )?,
-                    TreeType::ProvableCountProvableSumTree => self
-                        .batch_insert_empty_provable_count_provable_sum_tree(
-                            type_path,
-                            key_info,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                            &mut batch_operations,
-                            drive_version,
-                        )?,
-                    _ => self.batch_insert_empty_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                }
-
-                let document_type_ref = document_type.as_ref();
-                let index_structure = document_type_ref.index_structure();
-                // For each type we should insert the indices that are top
-                // level — the index structure's root sub-levels, whose keys
-                // are grid-qualified for time-range first properties (see
-                // `insert_contract_v0`).
-                for (level_key, level) in index_structure.sub_levels() {
-                    let index_bytes = level_key.as_bytes();
-                    {
-                        // Top-level index tree variant is selected from the
-                        // index's `(range_countable, range_summable)` pair —
-                        // identical 4-way dispatch as
-                        // `insert_contract_operations_v0`. Without this dispatch
-                        // the previous unconditional `batch_insert_empty_tree`
-                        // would materialize a plain `NormalTree` for any new
-                        // sum- or range-countable top-level index added via
-                        // contract update, diverging on-disk layout from
-                        // fresh-insert contracts.
-                        let (tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes_for_level(level)?;
-                        match tree_type {
-                            TreeType::ProvableCountProvableSumTree => self
-                                .batch_insert_empty_provable_count_provable_sum_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            TreeType::ProvableCountTree => self
-                                .batch_insert_empty_provable_count_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            TreeType::ProvableSumTree => self
-                                .batch_insert_empty_provable_sum_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            // Ranked (indexed) variants — meta schema v3 / PV14.
-                            TreeType::ProvableCountIndexedTree => self
-                                .batch_insert_empty_provable_count_indexed_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            TreeType::ProvableSumIndexedTree => self
-                                .batch_insert_empty_provable_sum_indexed_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            TreeType::ProvableCountProvableSumIndexedTree => self
-                                .batch_insert_empty_provable_count_provable_sum_indexed_tree(
-                                    type_path,
-                                    KeyRef(index_bytes),
-                                    &ranked_axes,
-                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                    &mut batch_operations,
-                                    drive_version,
-                                )?,
-                            _ => self.batch_insert_empty_tree(
-                                type_path,
-                                KeyRef(index_bytes),
-                                storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                &mut batch_operations,
-                                drive_version,
-                            )?,
-                        }
-                    }
-                }
-            }
-        }
-        Ok(batch_operations)
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::balances::total_tokens_root_supply_path_vec;
+    use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-    use dpp::data_contract::group::v0::GroupV0;
-    use dpp::data_contract::group::Group;
-    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-    use dpp::platform_value::platform_value;
-    use dpp::prelude::Identifier;
-    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::prelude::{DataContract, Identifier};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+    use grovedb::Element;
     use std::collections::BTreeMap;
 
-    /// Exercises `update_contract_operations_v2` when the updated contract
-    /// gains tokens that weren't in the original. This covers the loop that
-    /// calls `create_token_trees_operations` for each token.
-    #[test]
-    fn test_update_contract_v1_adds_tokens_creates_token_trees() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+    const DISTRIBUTION_RECIPIENT: [u8; 32] = [7; 32];
 
-        // Original: no tokens.
+    fn block_based_distribution_type() -> RewardDistributionType {
+        RewardDistributionType::BlockBasedDistribution {
+            interval: 10,
+            function: DistributionFunction::FixedAmount { amount: 50 },
+        }
+    }
+
+    /// A token paying `DISTRIBUTION_RECIPIENT` 50 tokens every 10 blocks and,
+    /// once, 445 tokens at time 100.
+    fn token_with_both_distributions() -> TokenConfiguration {
+        let mut configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        let recipient = Identifier::from(DISTRIBUTION_RECIPIENT);
+        configuration
+            .distribution_rules_mut()
+            .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                TokenPerpetualDistributionV0 {
+                    distribution_type: block_based_distribution_type(),
+                    distribution_recipient: TokenDistributionRecipient::Identity(recipient),
+                },
+            )));
+        configuration
+            .distribution_rules_mut()
+            .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                TokenPreProgrammedDistributionV0 {
+                    distributions: BTreeMap::from([(100, BTreeMap::from([(recipient, 445)]))]),
+                },
+            )));
+        configuration
+    }
+
+    /// Registers a contract without tokens, then adds
+    /// `token_with_both_distributions` at position 0 through `update_contract`.
+    /// Returns the updated contract and the id of the added token.
+    fn add_token_with_distributions_by_update(
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, [u8; 32]) {
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         contract.config_mut().set_readonly(false);
@@ -706,11 +537,105 @@ mod tests {
             )
             .expect("insert initial contract without tokens");
 
-        // Updated: add a token configuration. The update path exercises the
-        // `create_token_trees_operations` call in update_contract_operations_v2.
-        let token_config = TokenConfiguration::V0(
+        contract.set_tokens(BTreeMap::from([(0, token_with_both_distributions())]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract
+            .token_id(0)
+            .expect("expected the token added at position 0")
+            .to_buffer();
+
+        (contract, token_id)
+    }
+
+    /// Writes what a perpetual claim at block 40 writes.
+    fn record_perpetual_claim(
+        drive: &Drive,
+        token_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let operations = drive.mark_perpetual_release_as_distributed_operations(
+            token_id,
+            DISTRIBUTION_RECIPIENT,
+            RewardDistributionMoment::BlockBasedMoment(40),
+            &mut None,
+            platform_version,
+        )?;
+        drive.apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
+    /// Writes what a claim of the pre-programmed release at time 100 writes.
+    fn record_pre_programmed_claim(
+        drive: &Drive,
+        token_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let operations = drive.mark_pre_programmed_release_as_distributed_operations(
+            token_id,
+            DISTRIBUTION_RECIPIENT,
+            100,
+            &BlockInfo::default(),
+            &mut None,
+            None,
+            platform_version,
+        )?;
+        drive.apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
+    /// A token added by an update whose rules carry a once-per-identity distribution gets its
+    /// claims subtree, so a claim can be recorded under it; a later update that adds nothing
+    /// leaves the existing subtree alone.
+    #[test]
+    fn should_create_once_per_identity_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        let mut token_config = TokenConfiguration::V0(
             TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
         );
+        token_config
+            .distribution_rules_mut()
+            .set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
+                TokenOncePerIdentityDistributionV0 { amount: 100 },
+            )));
         contract.set_tokens(BTreeMap::from([(0, token_config)]));
         contract.increment_version();
 
@@ -723,360 +648,686 @@ mod tests {
                 platform_version,
                 None,
             )
-            .expect("update adding tokens should succeed");
-    }
+            .expect("update adding the token should succeed");
 
-    /// Exercises `update_contract_operations_v2` where the updated contract
-    /// gains groups that weren't in the original. This covers the
-    /// `if !contract.groups().is_empty()` true branch inside
-    /// `update_contract_operations_v2`, invoking `add_new_groups_operations`.
-    #[test]
-    fn test_update_contract_v1_adds_groups() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let token_id = contract.token_id(0).expect("expected the token id");
+        let claimant = Identifier::random();
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
+        let operations = drive
+            .mark_once_per_identity_release_as_distributed_operations(
+                token_id.to_buffer(),
+                claimant.to_buffer(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
                 platform_version,
             )
-            .expect("insert");
-
-        // Add a group.
-        let member = Identifier::random();
-        let group = Group::V0(GroupV0 {
-            members: BTreeMap::from([(member, 1)]),
-            required_power: 1,
-        });
-        contract.set_groups(BTreeMap::from([(0, group)]));
-        contract.increment_version();
-
+            .expect("expected the claim operations");
         drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
+            .apply_batch_low_level_drive_operations(
                 None,
-                platform_version,
                 None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
             )
-            .expect("update adding groups should succeed");
-    }
-
-    /// Exercises `update_contract_operations_v2`'s keyword-update branch:
-    /// update a contract that starts with some keywords to a new set of
-    /// keywords (different set), routed through the full `update_contract_v2`
-    /// path rather than the dedicated `update_contract_keywords` API.
-    #[test]
-    fn test_update_contract_v1_keyword_delta_via_update_contract() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        // Insert the keyword_search system contract first (required because
-        // update_contract_v2 calls update_contract_keywords_operations).
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_keywords(vec!["initial_a".to_string(), "initial_b".to_string()]);
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with keywords");
-
-        // Now change keywords entirely.
-        contract.set_keywords(vec!["new_x".to_string(), "new_y".to_string()]);
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo {
-                    time_ms: 2000,
-                    height: 10,
-                    core_height: 5,
-                    epoch: Default::default(),
-                },
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update keyword delta via update_contract should succeed");
-    }
-
-    /// The keywords the keyword search index currently returns for `contract_id`.
-    fn indexed_keywords(
-        drive: &crate::drive::Drive,
-        keyword_search: &dpp::prelude::DataContract,
-        contract_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Vec<String> {
-        use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
-        use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
-        use dpp::document::DocumentV0Getters;
-        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-        use dpp::platform_value::Value;
-
-        let document_type = keyword_search
-            .document_type_for_name("contractKeywords")
-            .expect("contractKeywords doctype");
-        let mut query = DriveDocumentQuery::all_items_query(keyword_search, document_type, None);
-        query.internal_clauses.equal_clauses.insert(
-            "contractId".to_string(),
-            WhereClause {
-                field: "contractId".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Identifier(contract_id.to_buffer()),
-            },
-        );
-        let mut keywords: Vec<String> = drive
-            .query_documents(
-                query,
-                None,
-                false,
-                None,
-                Some(platform_version.protocol_version),
-            )
-            .expect("the byContractId query must succeed")
-            .documents_owned()
-            .into_iter()
-            .map(|document| {
-                document
-                    .properties()
-                    .get_string("keyword")
-                    .expect("every keyword document carries a keyword")
-            })
-            .collect();
-        keywords.sort();
-        keywords
-    }
-
-    /// **This test asserts a defect, not the desired behaviour**, and it is the
-    /// other half of the empty-keyword-set skip above.
-    ///
-    /// Clearing a contract's keywords does not delete its keyword documents: an
-    /// empty set skips the keyword update entirely, so the previous documents
-    /// survive and stay indexed. The contract then advertises no keywords while
-    /// keyword search still returns it under the old ones, permanently.
-    ///
-    /// The skip is a shield, not a fix. It is what keeps the deletes from
-    /// jointly emptying the shared `byContractId` group and stranding it — see
-    /// `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind` —
-    /// so removing it to make this test go green trades a stale index for an
-    /// empty group tree. Making the deletes sibling-aware has to come first.
-    #[test]
-    fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_keywords(vec!["alpha".to_string(), "bravo".to_string()]);
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with keywords");
+            .expect("the claim must insert under the token's claims subtree");
 
         assert_eq!(
-            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
-            vec!["alpha".to_string(), "bravo".to_string()],
-            "baseline: both keywords are indexed"
-        );
-
-        contract.set_keywords(vec![]);
-        contract.increment_version();
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("clearing keywords via update_contract should succeed");
-
-        assert_eq!(
-            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
-            vec!["alpha".to_string(), "bravo".to_string()],
-            "the old keyword documents are expected to survive: an empty keyword set skips \
-             the keyword update rather than performing it"
-        );
-    }
-
-    /// Exercises `update_contract_operations_v2`'s description-update branch:
-    /// changing contract description routes through
-    /// `update_contract_description_operations`. Covers the `if let Some(description)`
-    /// true branch specifically from the v1 update path (not the dedicated update
-    /// description API).
-    #[test]
-    fn test_update_contract_v1_description_via_update_contract() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_description(Some("initial description".to_string()));
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with description");
-
-        contract.set_description(Some("updated description text".to_string()));
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo {
-                    time_ms: 3000,
-                    height: 20,
-                    core_height: 7,
-                    epoch: Default::default(),
-                },
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update description via update_contract should succeed");
-    }
-
-    /// A keep-history type introduced by a contract update uses the legacy
-    /// layout at protocol 14 and the per-type history tree from protocol 15.
-    #[test]
-    fn should_create_history_tree_for_a_new_type_only_from_protocol_15() {
-        use crate::drive::document::paths::{
-            contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY,
-        };
-
-        for (protocol, expected) in [(14, false), (15, true)] {
-            let version = PlatformVersion::get(protocol).expect("protocol version");
-            let drive = setup_drive_with_initial_state_structure(Some(version));
-            let mut contract = get_dashpay_contract_fixture(None, 0, version.protocol_version)
-                .data_contract_owned();
             drive
-                .apply_contract(
+                .fetch_once_per_identity_distribution_claim(
+                    token_id.to_buffer(),
+                    claimant,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the claim"),
+            Some(1_000)
+        );
+
+        // The token now belongs to the original contract, so its subtree is not added again.
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("a later update should leave the claims subtree alone");
+    }
+
+    #[test]
+    fn should_create_perpetual_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        record_perpetual_claim(&drive, token_id, platform_version)
+            .expect("a perpetual claim on the added token should be recordable");
+
+        let last_paid_moment = drive
+            .fetch_perpetual_distribution_last_paid_moment(
+                token_id,
+                Identifier::from(DISTRIBUTION_RECIPIENT),
+                &block_based_distribution_type(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the last paid moment");
+        assert_eq!(
+            last_paid_moment,
+            Some(RewardDistributionMoment::BlockBasedMoment(40))
+        );
+    }
+
+    #[test]
+    fn should_create_pre_programmed_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        let distributions = drive
+            .fetch_token_pre_programmed_distributions(token_id, None, None, None, platform_version)
+            .expect("expected to fetch the pre-programmed distributions");
+        assert_eq!(
+            distributions,
+            BTreeMap::from([(
+                100,
+                BTreeMap::from([(Identifier::from(DISTRIBUTION_RECIPIENT), 445)])
+            )])
+        );
+
+        record_pre_programmed_claim(&drive, token_id, platform_version)
+            .expect("a pre-programmed claim on the added token should be recordable");
+
+        let last_paid_time = drive
+            .fetch_pre_programmed_distribution_last_paid_time_ms(
+                token_id,
+                Identifier::from(DISTRIBUTION_RECIPIENT),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the last paid time");
+        assert_eq!(last_paid_time, Some(100));
+    }
+
+    /// The frozen side of the gate, through the same dispatcher: protocol
+    /// version 13 selects v1, which never creates the distribution storage, so
+    /// neither claim can be recorded there.
+    #[test]
+    fn should_leave_token_added_by_update_without_distribution_storage_on_protocol_version_13() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        record_perpetual_claim(&drive, token_id, platform_version)
+            .expect_err("v1 creates no perpetual distribution tree to record the claim under");
+        record_pre_programmed_claim(&drive, token_id, platform_version)
+            .expect_err("v1 creates no pre-programmed distribution tree to record the claim under");
+    }
+
+    /// The distribution storage helpers error when a token's tree already
+    /// exists, so an update must leave the tokens it did not add alone, whether
+    /// they came from the registration or from an earlier update.
+    #[test]
+    fn should_not_recreate_distribution_storage_of_tokens_the_contract_already_had() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+        contract.set_tokens(BTreeMap::from([(0, token_with_both_distributions())]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract with a token");
+
+        // The first update adds a second token next to the registered one, the
+        // second update changes nothing about either of them.
+        let mut tokens = contract.tokens().clone();
+        tokens.insert(1, token_with_both_distributions());
+        contract.set_tokens(tokens);
+
+        for _ in 0..2 {
+            contract.increment_version();
+            drive
+                .update_contract(
                     &contract,
                     BlockInfo::default(),
                     true,
-                    StorageFlags::optional_default_as_cow(),
                     None,
-                    version,
+                    platform_version,
+                    None,
                 )
-                .expect("insert original contract");
+                .expect("update keeping existing tokens should succeed");
+        }
 
-            contract
-                .set_document_schema(
-                    "historyNote",
-                    platform_value!({
-                        "type": "object",
-                        "documentsKeepHistory": true,
-                        "documentsMutable": true,
-                        "canBeDeleted": false,
-                        "properties": {
-                            "message": {
-                                "type": "string",
-                                "position": 0,
-                                "maxLength": 100,
-                            }
-                        },
-                        "additionalProperties": false,
-                    }),
-                    true,
-                    &mut vec![],
-                    version,
+        for position in [0, 1] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
+            record_perpetual_claim(&drive, token_id, platform_version)
+                .expect("a perpetual claim should be recordable on both tokens");
+            record_pre_programmed_claim(&drive, token_id, platform_version)
+                .expect("a pre-programmed claim should be recordable on both tokens");
+        }
+    }
+
+    const BASE_SUPPLY: u64 = 1_000_000;
+    const BASE_SUPPLY_DESTINATION: [u8; 32] = [9; 32];
+
+    /// A token with a base supply of `BASE_SUPPLY`, credited to `destination`
+    /// when there is one and to the contract owner otherwise.
+    fn token_with_base_supply(destination: Option<Identifier>) -> TokenConfiguration {
+        let mut configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(BASE_SUPPLY),
+        );
+        configuration
+            .distribution_rules_mut()
+            .set_new_tokens_destination_identity(destination);
+        configuration
+    }
+
+    /// Registers a contract without tokens, then adds `configuration` at
+    /// position 0 through `update_contract`. Returns the updated contract and
+    /// the id of the added token.
+    fn add_token_by_update(
+        drive: &Drive,
+        configuration: TokenConfiguration,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, [u8; 32]) {
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        contract.set_tokens(BTreeMap::from([(0, configuration)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract
+            .token_id(0)
+            .expect("expected the token added at position 0")
+            .to_buffer();
+
+        (contract, token_id)
+    }
+
+    fn balance_and_total_supply(
+        drive: &Drive,
+        token_id: [u8; 32],
+        identity_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> (Option<u64>, Option<u64>) {
+        let balance = drive
+            .fetch_identity_token_balance(token_id, identity_id, None, platform_version)
+            .expect("expected to fetch the token balance");
+        let total_supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch the token total supply");
+        (balance, total_supply)
+    }
+
+    #[test]
+    fn should_mint_base_supply_to_contract_owner_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (Some(BASE_SUPPLY), Some(BASE_SUPPLY))
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_aggregated_identity_balances(token_id, None, platform_version)
+                .expect("expected to fetch the aggregated balances"),
+            Some(BASE_SUPPLY),
+            "the balances of the token must sum to its total supply"
+        );
+    }
+
+    #[test]
+    fn should_mint_base_supply_to_new_tokens_destination_identity_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (contract, token_id) = add_token_by_update(
+            &drive,
+            token_with_base_supply(Some(Identifier::from(BASE_SUPPLY_DESTINATION))),
+            platform_version,
+        );
+
+        assert_eq!(
+            balance_and_total_supply(&drive, token_id, BASE_SUPPLY_DESTINATION, platform_version),
+            (Some(BASE_SUPPLY), Some(BASE_SUPPLY))
+        );
+        assert_eq!(
+            drive
+                .fetch_identity_token_balance(
+                    token_id,
+                    contract.owner_id().to_buffer(),
+                    None,
+                    platform_version
                 )
-                .expect("add keep-history document type");
+                .expect("expected to fetch the owner's token balance"),
+            None,
+            "the owner gets nothing when the token names another destination"
+        );
+    }
+
+    /// The frozen side of the gate, through the same dispatcher: protocol
+    /// version 13 selects v1, which creates the token's trees with a total
+    /// supply of zero and credits nobody.
+    #[test]
+    fn should_not_mint_base_supply_of_token_added_by_update_on_protocol_version_13() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        let (contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    #[test]
+    fn should_leave_token_without_base_supply_added_by_update_at_zero_supply() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        let (contract, token_id) = add_token_by_update(&drive, configuration, platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    #[test]
+    fn should_mint_base_supply_of_every_token_added_by_one_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        let destination = Identifier::from(BASE_SUPPLY_DESTINATION);
+        contract.set_tokens(BTreeMap::from([
+            (0, token_with_base_supply(None)),
+            (1, token_with_base_supply(Some(destination))),
+        ]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding two tokens should succeed");
+
+        for (position, holder) in [(0, contract.owner_id()), (1, destination)] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
+            assert_eq!(
+                balance_and_total_supply(&drive, token_id, holder.to_buffer(), platform_version),
+                (Some(BASE_SUPPLY), Some(BASE_SUPPLY)),
+                "token at position {position}"
+            );
+        }
+    }
+
+    /// Nothing is minted retroactively. A token added by update before
+    /// protocol version 14 got no base supply, and every later update finds it
+    /// in the original contract, so it stays that way after the upgrade.
+    #[test]
+    fn should_not_mint_base_supply_of_token_added_by_update_before_protocol_version_14() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform_version = PlatformVersion::latest();
+
+        let (mut contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version_13);
+
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update after the upgrade should succeed");
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    /// Neither refusal is reachable through a state transition: the update's
+    /// basic structure validation rejects a base supply over `i64::MAX`, and a
+    /// token new to a contract has no supply entry in state.
+    #[test]
+    fn should_refuse_to_mint_an_unstorable_base_supply_or_over_an_existing_total_supply() {
+        let token_id = [3; 32];
+
+        let mut operations = vec![LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(0),
+        )];
+        let result = Drive::mint_base_supply_of_added_token(
+            token_id,
+            i64::MAX as u64 + 1,
+            BASE_SUPPLY_DESTINATION,
+            &mut operations,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(error))
+                if matches!(*error, ProtocolError::CriticalCorruptedCreditsCodeExecution(_))
+        ));
+
+        // `create_token_trees_operations` queues no total supply insert when
+        // state already holds one.
+        let result = Drive::mint_base_supply_of_added_token(
+            token_id,
+            BASE_SUPPLY,
+            BASE_SUPPLY_DESTINATION,
+            &mut vec![],
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+    }
+
+    /// The base supply is minted once, by the update that adds the token. A
+    /// later update sees the token in the original contract and must not mint
+    /// again, and neither may it touch a token that got its base supply at
+    /// registration.
+    #[test]
+    fn should_mint_base_supply_only_in_the_update_that_adds_the_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+        contract.set_tokens(BTreeMap::from([(0, token_with_base_supply(None))]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract with a token");
+
+        // The first update adds a second token next to the registered one, the
+        // second update changes nothing about either of them.
+        let mut tokens = contract.tokens().clone();
+        tokens.insert(1, token_with_base_supply(None));
+        contract.set_tokens(tokens);
+
+        for _ in 0..2 {
             contract.increment_version();
             drive
-                .update_contract(&contract, BlockInfo::default(), true, None, version, None)
-                .expect("update contract with keep-history document type");
-
-            let type_path =
-                contract_document_type_path_vec(contract.id().as_slice(), "historyNote");
-            let history_tree = drive
-                .grove
-                .get_raw(
-                    type_path.as_slice().into(),
-                    &[DOCUMENT_HISTORY_TREE_KEY],
+                .update_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
                     None,
-                    &version.drive.grove_version,
+                    platform_version,
+                    None,
                 )
-                .value;
+                .expect("update keeping existing tokens should succeed");
+        }
+
+        for position in [0, 1] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
             assert_eq!(
-                history_tree.is_ok(),
-                expected,
-                "protocol {protocol}: {history_tree:?}"
+                balance_and_total_supply(
+                    &drive,
+                    token_id,
+                    contract.owner_id().to_buffer(),
+                    platform_version
+                ),
+                (Some(BASE_SUPPLY), Some(BASE_SUPPLY)),
+                "token at position {position}"
             );
+        }
+    }
+
+    #[test]
+    fn should_create_token_pools_only_from_protocol_14_for_registration_and_updates() {
+        for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+            for add_by_update in [false, true] {
+                let drive = setup_drive_with_initial_state_structure(None);
+                let mut contract =
+                    get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                        .data_contract_owned();
+                contract.config_mut().set_readonly(false);
+
+                if add_by_update {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("insert initial contract without tokens");
+                    contract.increment_version();
+                }
+
+                let mut configuration = TokenConfiguration::V0(
+                    TokenConfigurationV0::default_most_restrictive().with_base_supply(100),
+                );
+                configuration.set_has_shielded_pool(true);
+                contract.set_tokens(BTreeMap::from([(0, configuration)]));
+                // The fee estimate CheckTx runs (apply = false) goes through the stateless
+                // insert path and must price the pool once, while it is still to be created.
+                let estimate_before_pool = if add_by_update {
+                    drive
+                        .update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("estimate adding a pooled token through contract update")
+                } else {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("estimate registering a pooled token contract")
+                };
+                assert!(estimate_before_pool.processing_fee > 0);
+                if add_by_update {
+                    drive
+                        .update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("add token through contract update");
+                } else {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("register token contract");
+                }
+
+                let token_id = contract.token_id(0).expect("token id").to_buffer();
+                assert_eq!(
+                    drive
+                        .has_token_shielded_pool(token_id, None, &mut vec![], platform_version)
+                        .expect("check token pool"),
+                    platform_version.protocol_version >= 14,
+                );
+                // Minting the base supply of a token an update adds is itself generation 2:
+                // the shipped update path leaves it at zero, while registration has always
+                // minted it.
+                let expected_supply = if add_by_update && platform_version.protocol_version < 14 {
+                    Some(0)
+                } else {
+                    Some(100)
+                };
+                assert_eq!(
+                    drive
+                        .fetch_token_total_supply(token_id, None, platform_version)
+                        .expect("read total supply"),
+                    expected_supply
+                );
+
+                // Updating an existing token must not recreate its pool or mint its supply again,
+                // and its estimate must not price the pool the token already owns.
+                contract.increment_version();
+                let estimate_with_pool = drive
+                    .update_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        false,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("estimate updating a contract whose token owns a pool");
+                assert!(estimate_with_pool.processing_fee > 0);
+                if platform_version.protocol_version >= 14 {
+                    assert!(
+                        estimate_with_pool.storage_fee < estimate_before_pool.storage_fee,
+                        "an existing pool must not be priced again: {} vs {}",
+                        estimate_with_pool.storage_fee,
+                        estimate_before_pool.storage_fee
+                    );
+                }
+                drive
+                    .update_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("update existing token without recreating storage");
+                assert_eq!(
+                    drive
+                        .fetch_token_total_supply(token_id, None, platform_version)
+                        .expect("read unchanged total supply"),
+                    expected_supply
+                );
+            }
         }
     }
 }

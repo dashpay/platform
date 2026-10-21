@@ -15,20 +15,25 @@ use grovedb::element::MaxReferenceHop;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
 
+use crate::drive::document::index_level_tree_types::{
+    zero_contribution_wrapper, ZeroContributionRefusal, ZeroContributionWrapper,
+};
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
     CalculatedCostOperation, CalculatedEphemeralCostOperation, EphemeralGroveOperation,
-    FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    FunctionOperation, GroveOperation, PreCalculatedFeeResult, RepaidIdentityDebt,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(test)]
+use crate::util::grove_operations::pending_grove_operations::count_copied_pending_grove_operations;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::refunds::FeeRefunds;
-use dpp::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::fee::Credits;
 use platform_version::version::fee::FeeVersion;
 
@@ -207,26 +212,73 @@ impl FunctionOp {
 pub enum LowLevelDriveOperation {
     /// Grove operation
     GroveOperation(QualifiedGroveDbOp),
-    /// A grove operation targeting a TTL'd `timeRange` index subtree.
-    /// Applied in its own batch and consumed at the EPHEMERAL price:
-    /// added bytes bill to processing at the fee table's
-    /// `ttl_ephemeral_disk_usage_credit_per_byte` instead of to storage
-    /// (the bytes provably live at most `ttl` plus a bounded drainage
-    /// lag), and removals produce no refunds — TTL elements carry no
-    /// storage flags. Produced only by the document index walkers for
-    /// sub-levels whose transform declares a `ttl`; unreachable before
-    /// protocol v14, where the grammar does not parse.
-    EphemeralGroveOperation(QualifiedGroveDbOp),
+    /// A grove operation writing bytes that provably live a bounded time,
+    /// applied in its own batch (one per [`EphemeralPricing`]) so its added
+    /// bytes can be priced by that rule instead of at the perpetual storage
+    /// price. The elements it writes carry no storage flags (the retag that
+    /// produces it strips them), so their removal refunds nothing. Produced
+    /// for sub-levels of a `timeRange` index that declares a `ttl`
+    /// ([`EphemeralPricing::TimeRangeTtl`]) and for the writes of a document
+    /// whose type declares a `ttl` ([`EphemeralPricing::DocumentTtl`]); both
+    /// keywords are unreachable before protocol v14, where their grammar
+    /// does not parse.
+    EphemeralGroveOperation(QualifiedGroveDbOp, EphemeralPricing),
     /// A drive operation
     FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
-    /// The applied cost of an ephemeral (TTL'd-subtree) batch — same
-    /// pricing rule as [`Self::EphemeralGroveOperation`], carrying the
-    /// cost the batch application (or its estimation) actually returned.
-    CalculatedEphemeralCostOperation(OperationCost),
+    /// The applied cost of an ephemeral batch — same pricing rule as the
+    /// [`Self::EphemeralGroveOperation`]s it applied, carrying the cost the
+    /// batch application (or its estimation) actually returned.
+    CalculatedEphemeralCostOperation(OperationCost, EphemeralPricing),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
+    /// Credits an identity's incoming balance repaid of its debt (its negative credit balance).
+    /// Not a GroveDB operation and no cost: the debt stood for processing fees the identity
+    /// could not pay, which never reached a fee pool, so whoever applies the batch owes these
+    /// credits to the current epoch's processing fee pool. Leaving them out would take them out
+    /// of every balance the credit sum counts. Produced from protocol version 14 only, by
+    /// `add_to_identity_balance_operations` 1; an apply that meets one it does not route fails
+    /// instead of dropping it.
+    RepaidIdentityDebt(Credits),
+}
+
+/// How the added bytes of an ephemeral batch are priced.
+///
+/// Both rules bill the processing of the batch exactly like any other
+/// batch; they differ from ordinary storage only in what an added byte
+/// costs and in never producing refunds (the elements carry no flags).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EphemeralPricing {
+    /// Entries under a `timeRange` index that declares a `ttl`: every added
+    /// byte bills to processing at the fee table's
+    /// `ttl_ephemeral_disk_usage_credit_per_byte` (the bytes live at most
+    /// `ttl` plus a bounded drainage lag).
+    TimeRangeTtl,
+    /// The writes of a document whose type declares a `ttl`: every added
+    /// byte costs `credit_per_byte`, resolved from the fee schedule's
+    /// `document_ttl` group for the document's remaining lifetime, as a
+    /// storage fee paid out over the `lifetime_epochs` epochs the document
+    /// has left to live (see `FeeResult::lifetime_storage_fees`).
+    DocumentTtl {
+        /// Credits per added byte
+        credit_per_byte: Credits,
+        /// The epochs the document has left to live, at least 1 and at
+        /// most one era
+        lifetime_epochs: u16,
+    },
+}
+
+impl EphemeralPricing {
+    /// The order ephemeral batches apply in, after the standing batch. A
+    /// document's own writes come first: a `timeRange` sub-level with a
+    /// `ttl` may sit under a value tree the same document creates.
+    fn apply_rank(&self) -> u8 {
+        match self {
+            EphemeralPricing::DocumentTtl { .. } => 0,
+            EphemeralPricing::TimeRangeTtl => 1,
+        }
+    }
 }
 
 /// Shared rejection message for the three `Element` wrappers
@@ -275,7 +327,46 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
-                CalculatedEphemeralCostOperation(cost) => {
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::DocumentTtl {
+                    credit_per_byte,
+                    lifetime_epochs,
+                }) => {
+                    // The writes of a document whose type declares a `ttl`:
+                    // each added byte costs the price of the document's
+                    // remaining lifetime, as a storage fee the pools pay
+                    // out over the epochs it has left to live. Processing
+                    // is billed as for any batch. Added in place in this
+                    // shipped generation: only a document type parsed from
+                    // the `ttl` keyword, which no protocol version before
+                    // 14 reads, is tagged `DocumentTtl`, so no earlier
+                    // version reaches this arm.
+                    let storage_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(credit_per_byte)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing the bytes of a document with a time to live",
+                        )))?;
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
+                    let lifetime_storage_fees = if storage_fee > 0 {
+                        LifetimeStorageFees::from([(lifetime_epochs, storage_fee)])
+                    } else {
+                        LifetimeStorageFees::new()
+                    };
+                    // The elements of such a document carry no storage flags,
+                    // so removals are basic. A sectioned (refundable) removal
+                    // could only come from an element someone else paid for;
+                    // its bytes leave the system all the same and no refund
+                    // is owed through this batch, whose writes refund nothing.
+                    let removed_bytes_from_system =
+                        cost.storage_cost.removed_bytes.total_removed_bytes();
+                    Ok(FeeResult {
+                        storage_fee,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                        lifetime_storage_fees,
+                    })
+                }
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::TimeRangeTtl) => {
                     // TTL'd-subtree bytes: the added bytes bill to
                     // PROCESSING at the ephemeral rate instead of to
                     // storage — they provably live at most `ttl` plus a
@@ -313,6 +404,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
                 _ => {
@@ -362,6 +454,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds,
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
             })
@@ -371,19 +464,53 @@ impl LowLevelDriveOperation {
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
-            GroveOperation(_) | EphemeralGroveOperation(_) => {
+            GroveOperation(_) | EphemeralGroveOperation(..) => {
                 Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "grove operations must be executed, not directly transformed to costs",
                 )))
             }
-            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c) => Ok(c),
+            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c, _) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should not be requested by operation costs",
             ))),
             FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "function operations should not be requested by operation costs",
             ))),
+            RepaidIdentityDebt(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a repaid identity debt must be routed to the processing fee pool, not priced",
+            ))),
         }
+    }
+
+    /// Removes every [`RepaidIdentityDebt`] from `operations` and returns their total: the
+    /// credits the caller owes the current epoch's processing fee pool for the batch.
+    pub fn take_repaid_identity_debt(
+        operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Credits, Error> {
+        let mut repaid: Credits = 0;
+        let mut overflowed = false;
+        operations.retain(|operation| match operation {
+            RepaidIdentityDebt(credits) => {
+                match repaid.checked_add(*credits) {
+                    Some(total) => repaid = total,
+                    None => overflowed = true,
+                }
+                false
+            }
+            _ => true,
+        });
+        if overflowed {
+            return Err(get_overflow_error("repaid identity debt overflow"));
+        }
+        Ok(repaid)
+    }
+
+    /// Whether `operations` holds a [`RepaidIdentityDebt`], which an apply must route before
+    /// it applies the rest.
+    pub fn holds_repaid_identity_debt(operations: &[LowLevelDriveOperation]) -> bool {
+        operations
+            .iter()
+            .any(|operation| matches!(operation, RepaidIdentityDebt(_)))
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
@@ -401,26 +528,32 @@ impl LowLevelDriveOperation {
     pub fn grovedb_operations_batch(
         insert_operations: &[LowLevelDriveOperation],
     ) -> GroveDbOpBatch {
-        let operations = insert_operations
+        let operations: Vec<QualifiedGroveDbOp> = insert_operations
             .iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op.clone())
                 }
                 _ => None,
             })
             .collect();
+        #[cfg(test)]
+        count_copied_pending_grove_operations(operations.len());
         GroveDbOpBatch::from_operations(operations)
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    ///
+    /// Every other operation is dropped, a [`RepaidIdentityDebt`] included: its credits are owed
+    /// to a fee pool, so operations that may hold one (identity credits from protocol version
+    /// 14) must go through [`Self::take_repaid_identity_debt`] or an apply that routes it first.
     pub fn grovedb_operations_batch_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> GroveDbOpBatch {
         let operations = insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op)
                 }
                 _ => None,
@@ -452,36 +585,83 @@ impl LowLevelDriveOperation {
         )
     }
 
-    /// Splits operations three ways: the ordinary grove batch, the
-    /// ephemeral (TTL'd-subtree) grove batch — applied separately so its
-    /// cost can be consumed at the ephemeral price — and every
-    /// non-grove leftover.
+    /// Splits operations three ways: the ordinary grove batch, one
+    /// ephemeral grove batch per [`EphemeralPricing`] — each applied
+    /// separately so its cost can be consumed under its own rule — and
+    /// every non-grove leftover. The ephemeral batches come in the order
+    /// they must apply in (a document's own writes before `timeRange` TTL
+    /// sub-levels, then first appearance), and each keeps its operations in
+    /// their original order.
     pub fn grovedb_operations_batch_consume_split_ephemeral(
         insert_operations: Vec<LowLevelDriveOperation>,
-    ) -> (GroveDbOpBatch, GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
+    ) -> (
+        GroveDbOpBatch,
+        Vec<(EphemeralPricing, GroveDbOpBatch)>,
+        Vec<LowLevelDriveOperation>,
+    ) {
         let mut grove_operations = vec![];
-        let mut ephemeral_operations = vec![];
+        let mut ephemeral_groups: Vec<(EphemeralPricing, Vec<QualifiedGroveDbOp>)> = vec![];
         let mut other_operations = vec![];
         for op in insert_operations {
             match op {
                 GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
-                EphemeralGroveOperation(grovedb_op) => ephemeral_operations.push(grovedb_op),
+                EphemeralGroveOperation(grovedb_op, pricing) => {
+                    match ephemeral_groups
+                        .iter_mut()
+                        .find(|(group_pricing, _)| *group_pricing == pricing)
+                    {
+                        Some((_, group)) => group.push(grovedb_op),
+                        None => ephemeral_groups.push((pricing, vec![grovedb_op])),
+                    }
+                }
                 other => other_operations.push(other),
             }
         }
+        // Stable: groups of one rank keep their first-appearance order.
+        //
+        // Several `DocumentTtl` groups (one document written at two prices)
+        // would apply in first-appearance order, which is only right when no
+        // later group creates a tree an earlier one writes under. No apply
+        // holds two such documents: a documents batch carries one transition
+        // (`max_transitions_in_documents_batch`), and the only operation
+        // writing several documents at once serves system contracts, which
+        // declare no `ttl`. A feature batching document writes must keep one
+        // document's writes in one group or revisit this order.
+        ephemeral_groups.sort_by_key(|(pricing, _)| pricing.apply_rank());
         (
             GroveDbOpBatch::from_operations(grove_operations),
-            GroveDbOpBatch::from_operations(ephemeral_operations),
+            ephemeral_groups
+                .into_iter()
+                .map(|(pricing, operations)| (pricing, GroveDbOpBatch::from_operations(operations)))
+                .collect(),
             other_operations,
         )
     }
 
-    /// Re-tag an operation as targeting a TTL'd (ephemeral) subtree, so
-    /// its bytes are consumed at the ephemeral price. Grove operations
-    /// move to their ephemeral batch; already-calculated costs keep their
-    /// numbers under the ephemeral consumption rule; fee results pass
-    /// through untouched (nothing byte-priced remains in them).
+    /// Re-tag an operation as targeting a TTL'd `timeRange` index subtree
+    /// ([`EphemeralPricing::TimeRangeTtl`]); see [`Self::retag_ephemeral_with`].
     pub fn retag_ephemeral(self) -> LowLevelDriveOperation {
+        self.retag_ephemeral_with(EphemeralPricing::TimeRangeTtl)
+    }
+
+    /// Re-tag one of the writes of a document whose type declares a `ttl`,
+    /// so its bytes are priced for the document's remaining lifetime. Only
+    /// ordinary grove operations move: an operation already ephemeral (a
+    /// `timeRange` TTL sub-level) keeps its own rule, and costs and fee
+    /// results pass through untouched.
+    pub fn retag_document_ttl(self, pricing: EphemeralPricing) -> LowLevelDriveOperation {
+        match self {
+            GroveOperation(_) => self.retag_ephemeral_with(pricing),
+            other => other,
+        }
+    }
+
+    /// Re-tag an operation as ephemeral under `pricing`, so its bytes are
+    /// consumed by that rule. Grove operations move to that rule's batch,
+    /// their elements stripped of storage flags; already-calculated costs
+    /// keep their numbers under the rule; everything else, operations
+    /// already ephemeral included, passes through untouched.
+    pub fn retag_ephemeral_with(self, pricing: EphemeralPricing) -> LowLevelDriveOperation {
         match self {
             GroveOperation(mut grovedb_op) => {
                 // TTL'd (ephemeral) subtrees must hold flagless elements:
@@ -505,21 +685,24 @@ impl LowLevelDriveOperation {
                     GroveOp::RefreshReference { flags, .. } => *flags = None,
                     _ => {}
                 }
-                EphemeralGroveOperation(grovedb_op)
+                EphemeralGroveOperation(grovedb_op, pricing)
             }
-            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost),
+            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost, pricing),
             other => other,
         }
     }
 
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.
+    ///
+    /// Every other operation is dropped, a [`RepaidIdentityDebt`] included, so operations that
+    /// may hold one must have it routed first (see [`Self::grovedb_operations_batch_consume`]).
     pub fn grovedb_operations_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> Vec<QualifiedGroveDbOp> {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op)
                 }
                 _ => None,
@@ -930,73 +1113,48 @@ impl LowLevelDriveOperation {
         inner_tree_type: TreeType,
         storage_flags: Option<&StorageFlags>,
     ) -> Result<Self, Error> {
-        // An indexed inner is rejected under every aggregating parent,
-        // including the sum-only ones whose non-sum fallback below is
-        // unwrapped: a ranked index's terminal property-name tree must
-        // not live inside an aggregating value tree at all (see
-        // `INDEXED_INNER_UNWRAPPABLE`), and letting the unwrapped
-        // fallback quietly accept one would create the exact shape
-        // rs-dpp's single-property ranked rule and the ranked query
-        // picker both refuse to serve.
-        if matches!(
-            inner_tree_type,
-            TreeType::ProvableSumIndexedTree
-                | TreeType::ProvableCountIndexedTree
-                | TreeType::ProvableCountProvableSumIndexedTree
-        ) {
-            return Err(Error::Drive(DriveError::NotSupported(
-                INDEXED_INNER_UNWRAPPABLE,
-            )));
-        }
-        let inner_is_sum_bearing = matches!(
-            inner_tree_type,
-            TreeType::SumTree
-                | TreeType::BigSumTree
-                | TreeType::ProvableSumTree
-                | TreeType::CountSumTree
-                | TreeType::ProvableCountSumTree
-                | TreeType::ProvableCountProvableSumTree
-        );
-        match aggregating_parent_tree_type {
-            TreeType::CountTree => Self::for_known_path_key_empty_non_counted_any_tree(
-                path,
-                key,
-                inner_tree_type,
-                storage_flags,
-            ),
-            TreeType::CountSumTree => {
-                if inner_is_sum_bearing {
-                    Self::for_known_path_key_empty_not_counted_or_summed_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    Self::for_known_path_key_empty_non_counted_any_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                }
+        // The decision is shared with the index walkers and
+        // `drive::document::layout` (`zero_contribution_wrapper`); the
+        // errors below keep their wording.
+        match zero_contribution_wrapper(aggregating_parent_tree_type, inner_tree_type) {
+            Ok(Some(ZeroContributionWrapper::NonCounted)) => {
+                Self::for_known_path_key_empty_non_counted_any_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
             }
-            TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
-                if inner_is_sum_bearing {
-                    Self::for_known_path_key_empty_not_summed_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    inner_tree_type.empty_tree_operation_for_known_path_key(
-                        path,
-                        key,
-                        storage_flags,
-                    )
-                }
+            Ok(Some(ZeroContributionWrapper::NotCountedOrSummed)) => {
+                Self::for_known_path_key_empty_not_counted_or_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
             }
+            Ok(Some(ZeroContributionWrapper::NotSummed)) => {
+                Self::for_known_path_key_empty_not_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
+            Ok(None) => {
+                inner_tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+            }
+            // An indexed inner is rejected under every aggregating parent,
+            // including the sum-only ones whose non-sum fallback above is
+            // unwrapped: a ranked index's terminal property-name tree must
+            // not live inside an aggregating value tree at all (see
+            // `INDEXED_INNER_UNWRAPPABLE`), and letting the unwrapped
+            // fallback quietly accept one would create the exact shape
+            // rs-dpp's single-property ranked rule and the ranked query
+            // picker both refuse to serve.
+            Err(ZeroContributionRefusal::IndexedInner) => Err(Error::Drive(
+                DriveError::NotSupported(INDEXED_INNER_UNWRAPPABLE),
+            )),
             // Indexed parents are structurally impossible here: the
             // ranked upgrade applies to *property-name* trees, and this
             // dispatcher is only ever called with a **value** tree as the
@@ -1006,18 +1164,14 @@ impl LowLevelDriveOperation {
             // reason (the indexed primary's secondaries are keyed by its
             // children's aggregates, which a zero-contributing child would
             // silently fall out of).
-            TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableSumIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            Err(ZeroContributionRefusal::IndexedParent) => {
                 Err(Error::Drive(DriveError::NotSupported(
                     "indexed trees are property-name trees, never value trees, so they cannot \
                      host zero-contributing continuation children — see \
                      crate::drive::document::ranked_index_tree_type.",
                 )))
             }
-            TreeType::ProvableCountTree
-            | TreeType::ProvableCountSumTree
-            | TreeType::ProvableCountProvableSumTree => {
+            Err(ZeroContributionRefusal::ProvableCountParent) => {
                 Err(Error::Drive(DriveError::NotSupported(
                     "provable count-bearing parents cannot host zero-contributing children — \
                  grovedb commits their count into every node hash and rejects NonCounted / \
@@ -1026,11 +1180,13 @@ impl LowLevelDriveOperation {
                  index_level_tree_types_with_continuation_demotion).",
                 )))
             }
-            _ => Err(Error::Drive(DriveError::NotSupported(
-                "for_known_path_key_empty_tree_contributing_zero_to_parent called with a \
+            Err(ZeroContributionRefusal::NonAggregatingParent) => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "for_known_path_key_empty_tree_contributing_zero_to_parent called with a \
                  non-aggregating parent tree type — caller should use the unwrapped \
                  `empty_tree_operation_for_known_path_key` path instead.",
-            ))),
+                )))
+            }
         }
     }
 
@@ -2336,7 +2492,7 @@ mod tests {
         assert!(
             leftovers
                 .iter()
-                .any(|op| matches!(op, EphemeralGroveOperation(_))),
+                .any(|op| matches!(op, EphemeralGroveOperation(..))),
             "an ephemeral grove op must survive as a leftover, never be dropped"
         );
     }

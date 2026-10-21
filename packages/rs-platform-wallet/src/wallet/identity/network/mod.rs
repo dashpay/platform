@@ -19,21 +19,38 @@
 //! broadcaster used by DashPay `send_payment`; it defaults to
 //! `SpvBroadcaster` so most call sites don't need to name it.
 
+use dash_sdk::drive::config::DEFAULT_MAX_QUERY_LIMIT;
+
+/// Page size for the per-identity DPNS username query: Platform's maximum
+/// query limit.
+pub(crate) const DPNS_USERNAMES_PAGE_LIMIT: u32 = DEFAULT_MAX_QUERY_LIMIT as u32;
+
+/// Pages read per identity before giving up on completeness. Paging ends as
+/// soon as a page comes back short (the complete owned set); reaching this
+/// bound means the result is only a lower bound and is merged, never used to
+/// drop names — see `ManagedIdentity::apply_fetched_dpns_names`.
+pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
+
 // Core handle + identity-lifecycle operations.
+mod balance;
 mod contract;
 mod discovery;
 mod document;
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;
+mod key_limits;
+mod key_selection;
 mod loading;
 mod register_from_addresses;
 mod registration;
+mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
+pub(crate) use key_selection::usable_authentication_key;
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
@@ -44,7 +61,8 @@ mod contacts;
 mod dashpay_view;
 mod invitation;
 pub use invitation::{
-    Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    Invitation, InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS,
+    MIN_INVITATION_DUFFS,
 };
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
@@ -53,13 +71,11 @@ pub(crate) use payment_handler::DashPayPaymentHandler;
 #[cfg(test)]
 pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
-pub(crate) use payments::{
-    confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
-    record_incoming_dashpay_payments,
-};
+pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+mod signing_key;
 pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
@@ -86,9 +102,15 @@ pub use dpns_marketplace::{
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
-    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
-    derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
-    IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
+    derive_identity_auth_key_hash_from_master, derive_identity_auth_keypair,
+    identity_auth_derivation_path_for_type, ConnectKey, DerivedIdentityAuthKey, IdentityWallet,
+    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+};
+pub use state_transition_summary::{
+    check_document_type_name, decode_state_transition, summarize_state_transition,
+    BatchedTransitionSummary, BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,
+    StateTransitionSummaryKind,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach

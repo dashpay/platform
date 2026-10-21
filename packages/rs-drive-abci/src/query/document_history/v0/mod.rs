@@ -12,6 +12,7 @@ use dapi_grpc::platform::v0::get_document_history_response::{
 };
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -73,7 +74,6 @@ impl<C> Platform<C> {
         let document_type = check_validation_result_with_data!(contract
             .document_type_for_name(&query.document_type_name)
             .map_err(|_| QueryError::NotFound("document type not found".to_owned())));
-        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         if !document_type.documents_keep_history() {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument("document type does not keep history".to_owned()),

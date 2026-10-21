@@ -41,6 +41,8 @@ pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
+#[cfg(feature = "state-transition-validation")]
+mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
@@ -48,33 +50,36 @@ mod traits;
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
-#[cfg(feature = "state-transition-validation")]
+#[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::{
-    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
+    ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
 };
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::signature::{InvalidStateTransitionSignatureError, SignatureError};
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::ConsensusError;
 pub use traits::*;
 
 use crate::address_funds::PlatformAddress;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoundsCheck;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializableUntrusted, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
@@ -86,10 +91,17 @@ use crate::state_transition::address_funds_transfer_transition::{
     AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
+use crate::state_transition::contract_fee_claim_transition::{
+    ContractFeeClaimTransition, ContractFeeClaimTransitionSignable,
+};
+use crate::state_transition::contract_user_moderation_transition::{
+    ContractUserModerationTransition, ContractUserModerationTransitionSignable,
+};
 use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
@@ -99,21 +111,24 @@ use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
 #[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::StateTransitionIsNotSignedError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
-};
+use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
 };
+use crate::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_shielded_pool_transition::{
     IdentityCreateFromShieldedPoolTransition, IdentityCreateFromShieldedPoolTransitionSignable,
 };
+use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
@@ -127,6 +142,9 @@ use crate::state_transition::identity_credit_transfer_transition::{
 use crate::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
 };
+use crate::state_transition::identity_key_limits_update_transition::{
+    IdentityKeyLimitsUpdateTransition, IdentityKeyLimitsUpdateTransitionSignable,
+};
 use crate::state_transition::identity_top_up_from_shielded_pool_transition::{
     IdentityTopUpFromShieldedPoolTransition, IdentityTopUpFromShieldedPoolTransitionSignable,
 };
@@ -136,11 +154,13 @@ use crate::state_transition::identity_topup_from_addresses_transition::{
 use crate::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionSignable,
 };
+use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::shield_from_asset_lock_transition::{
     ShieldFromAssetLockTransition, ShieldFromAssetLockTransitionSignable,
 };
@@ -156,6 +176,16 @@ use crate::state_transition::shielded_withdrawal_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::token_purchase_from_shielded_pool_transition::{
+    TokenPurchaseFromShieldedPoolTransition, TokenPurchaseFromShieldedPoolTransitionSignable,
+};
+use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::{
+    TokenShieldedTransferWithShieldedFeeTransition,
+    TokenShieldedTransferWithShieldedFeeTransitionSignable,
+};
+use crate::state_transition::token_unshield_with_shielded_fee_transition::{
+    TokenUnshieldWithShieldedFeeTransition, TokenUnshieldWithShieldedFeeTransitionSignable,
+};
 use crate::state_transition::unshield_transition::{
     UnshieldTransition, UnshieldTransitionSignable,
 };
@@ -170,11 +200,14 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::ContractUserModeration(st) => st.$method($args),
+            StateTransition::ContractFeeClaim(st) => st.$method($args),
             StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(st) => st.$method($args),
             StateTransition::IdentityTopUp(st) => st.$method($args),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
@@ -187,6 +220,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method($args),
             StateTransition::Unshield(st) => st.$method($args),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method($args),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method($args),
             StateTransition::ShieldFromAssetLock(st) => st.$method($args),
             StateTransition::ShieldedWithdrawal(st) => st.$method($args),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method($args),
@@ -197,11 +233,14 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
+            StateTransition::ContractFeeClaim(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => st.$method(),
             StateTransition::IdentityTopUp(st) => st.$method(),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -214,6 +253,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method(),
             StateTransition::Unshield(st) => st.$method(),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method(),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method(),
             StateTransition::ShieldFromAssetLock(st) => st.$method(),
             StateTransition::ShieldedWithdrawal(st) => st.$method(),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method(),
@@ -227,11 +269,14 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method($args)),
             StateTransition::DataContractUpdate(st) => Some(st.$method($args)),
+            StateTransition::ContractUserModeration(st) => Some(st.$method($args)),
+            StateTransition::ContractFeeClaim(st) => Some(st.$method($args)),
             StateTransition::Batch(st) => Some(st.$method($args)),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
             StateTransition::MasternodeVote(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method($args)),
@@ -244,6 +289,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -254,11 +302,14 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method()),
             StateTransition::DataContractUpdate(st) => Some(st.$method()),
+            StateTransition::ContractUserModeration(st) => Some(st.$method()),
+            StateTransition::ContractFeeClaim(st) => Some(st.$method()),
             StateTransition::Batch(st) => Some(st.$method()),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
             StateTransition::MasternodeVote(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method()),
@@ -271,6 +322,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -284,11 +338,14 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::ContractUserModeration(st) => st.$method($args),
+            StateTransition::ContractFeeClaim(st) => st.$method($args),
             StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(_st) => {}
             StateTransition::IdentityTopUp(_st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
@@ -301,6 +358,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -311,11 +371,14 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
+            StateTransition::ContractFeeClaim(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => {}
             StateTransition::IdentityTopUp(st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -328,6 +391,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -342,6 +408,8 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($( $arg ),*),
             StateTransition::DataContractUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::ContractUserModeration(st) => st.$method($( $arg ),*),
+            StateTransition::ContractFeeClaim(st) => st.$method($( $arg ),*),
             StateTransition::Batch(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
@@ -351,6 +419,7 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($( $arg ),*),
             StateTransition::IdentityUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
             StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($( $arg ),*),
@@ -381,6 +450,15 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+            )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
             )),
@@ -397,6 +475,8 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
+            StateTransition::ContractFeeClaim(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
@@ -406,6 +486,7 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -436,6 +517,15 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+            )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
             )),
@@ -449,6 +539,10 @@ macro_rules! call_errorable_method_identity_signed {
         }
     };
 }
+
+/// Byte budget of a serialized [`StateTransition`], as the `limit` of its `platform_serialize`
+/// attribute below declares it; the attribute takes a literal, so the number is repeated here.
+pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
 
 #[derive(
     Debug,
@@ -513,13 +607,19 @@ pub enum StateTransition {
     IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
+    IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
+    ContractUserModeration(ContractUserModerationTransition),
+    ContractFeeClaim(ContractFeeClaimTransition),
+    TokenShieldedTransferWithShieldedFee(TokenShieldedTransferWithShieldedFeeTransition),
+    TokenUnshieldWithShieldedFee(TokenUnshieldWithShieldedFeeTransition),
+    TokenPurchaseFromShieldedPool(TokenPurchaseFromShieldedPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransition {}
+impl JsonConvertible for StateTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransition {}
+impl ValueConvertible for StateTransition {}
 
 #[cfg(all(
     test,
@@ -686,6 +786,32 @@ mod json_convertible_tests {
     }
 
     #[test]
+    fn umbrella_identity_key_limits_update() {
+        let inner = crate::state_transition::identity_key_limits_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityKeyLimitsUpdate(inner),
+            "identityKeyLimitsUpdate",
+        );
+    }
+
+    #[test]
+    fn umbrella_round_trip_contract_user_moderation() {
+        let inner = crate::state_transition::contract_user_moderation_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ContractUserModeration(inner),
+            "contractUserModeration",
+        );
+    }
+
+    #[test]
+    fn umbrella_round_trip_contract_fee_claim() {
+        let inner =
+            crate::state_transition::contract_fee_claim_transition::json_convertible_tests::fixture(
+            );
+        assert_umbrella_round_trip(StateTransition::ContractFeeClaim(inner), "contractFeeClaim");
+    }
+
+    #[test]
     fn umbrella_identity_credit_transfer() {
         let inner = crate::state_transition::identity_credit_transfer_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(
@@ -810,6 +936,30 @@ mod json_convertible_tests {
             "identityTopUpFromShieldedPool",
         );
     }
+    #[test]
+    fn umbrella_token_shielded_transfer_with_shielded_fee() {
+        let inner = crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenShieldedTransferWithShieldedFee(inner),
+            "tokenShieldedTransferWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_unshield_with_shielded_fee() {
+        let inner = crate::state_transition::token_unshield_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenUnshieldWithShieldedFee(inner),
+            "tokenUnshieldWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_purchase_from_shielded_pool() {
+        let inner = crate::state_transition::token_purchase_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenPurchaseFromShieldedPool(inner),
+            "tokenPurchaseFromShieldedPool",
+        );
+    }
 
     #[test]
     fn umbrella_shield_from_identity() {
@@ -818,6 +968,59 @@ mod json_convertible_tests {
             StateTransition::ShieldFromIdentity(inner),
             "shieldFromIdentity",
         );
+    }
+
+    /// Every kind decodes from its untagged bytes (the inner transition serialized on its own)
+    /// into the same transition, and from its tagged bytes exactly.
+    #[test]
+    fn every_kind_decodes_untagged_and_exactly() {
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+
+        let transitions = [
+            StateTransition::DataContractCreate(crate::state_transition::data_contract_create_transition::json_convertible_tests::fixture()),
+            StateTransition::DataContractUpdate(crate::state_transition::data_contract_update_transition::json_convertible_tests::fixture()),
+            StateTransition::Batch(crate::state_transition::batch_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreate(crate::state_transition::identity_create_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUp(crate::state_transition::identity_topup_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditWithdrawal(crate::state_transition::identity_credit_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityUpdate(crate::state_transition::identity_update_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityKeyLimitsUpdate(crate::state_transition::identity_key_limits_update_transition::json_convertible_tests::fixture()),
+            StateTransition::ContractUserModeration(crate::state_transition::contract_user_moderation_transition::json_convertible_tests::fixture()),
+            StateTransition::ContractFeeClaim(crate::state_transition::contract_fee_claim_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditTransfer(crate::state_transition::identity_credit_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::MasternodeVote(crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreditTransferToAddresses(crate::state_transition::identity_credit_transfer_to_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreateFromAddresses(crate::state_transition::identity_create_from_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUpFromAddresses(crate::state_transition::identity_topup_from_addresses_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressFundsTransfer(crate::state_transition::address_funds_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressFundingFromAssetLock(crate::state_transition::address_funding_from_asset_lock_transition::json_convertible_tests::fixture()),
+            StateTransition::AddressCreditWithdrawal(crate::state_transition::address_credit_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::Shield(crate::state_transition::shield_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldedTransfer(crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture()),
+            StateTransition::Unshield(crate::state_transition::unshield_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldFromAssetLock(crate::state_transition::shield_from_asset_lock_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldedWithdrawal(crate::state_transition::shielded_withdrawal_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityCreateFromShieldedPool(crate::state_transition::identity_create_from_shielded_pool_transition::json_convertible_tests::fixture()),
+            StateTransition::IdentityTopUpFromShieldedPool(crate::state_transition::identity_top_up_from_shielded_pool_transition::json_convertible_tests::fixture()),
+            StateTransition::ShieldFromIdentity(crate::state_transition::shield_from_identity_transition::json_convertible_tests::fixture()),
+        ];
+        for transition in transitions {
+            let tagged = transition.serialize_to_bytes().expect("serializes");
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_exact(&tagged).expect("tagged"),
+                transition
+            );
+            // The variant tags are all below 251, so bincode's varint writes them in one byte.
+            let untagged = &tagged[1..];
+            assert_eq!(
+                StateTransition::deserialize_untagged_untrusted_exact(
+                    transition.state_transition_type(),
+                    untagged
+                )
+                .unwrap_or_else(|e| panic!("{} untagged: {e}", transition.name())),
+                transition
+            );
+        }
     }
 }
 
@@ -841,10 +1044,86 @@ pub struct StateTransitionSigningOptions {
     pub allow_signing_with_any_purpose: bool,
 }
 
+/// The active range of a transition carrying `keys`: from protocol version 14 when one of them
+/// is bound to a contract group or is a version 1 key (the format that can carry a budget or an
+/// expiry), `otherwise` when none is.
+fn active_version_range_for_keys_in_creation(
+    keys: &[IdentityPublicKeyInCreation],
+    otherwise: RangeInclusive<ProtocolVersion>,
+) -> RangeInclusive<ProtocolVersion> {
+    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
+        || IdentityPublicKeyInCreation::first_in_version_1_format(keys).is_some()
+    {
+        14..=LATEST_VERSION
+    } else {
+        otherwise
+    }
+}
+
+/// The active range of a transition carrying `contract`: from protocol version 14 when its
+/// config is version 2 (the format that can declare moderation), otherwise whatever the
+/// contract's own format admits. Binaries from before protocol version 14 cannot decode a
+/// version 2 config, so an earlier version must reject the transition without charging as they
+/// do; admitting it would also store a moderated contract whose list trees the earlier storage
+/// writer never creates.
+fn active_version_range_for_contract(
+    contract: &DataContractInSerializationFormat,
+) -> RangeInclusive<ProtocolVersion> {
+    if matches!(contract.config(), DataContractConfig::V2(_)) {
+        return 14..=LATEST_VERSION;
+    }
+    match contract {
+        DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+        DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+    }
+}
+
+/// Whether a document transition of `batch_transition` has a base of version 2 or later, the
+/// format that can carry an action fee agreement.
+fn batch_carries_a_version_2_document_base(batch_transition: &BatchTransition) -> bool {
+    batch_transition
+        .transitions_iter()
+        .any(|transition| match transition {
+            BatchedTransitionRef::Document(document_transition) => {
+                document_transition.base().feature_version() >= 2
+            }
+            BatchedTransitionRef::Token(_) => false,
+        })
+}
+
 impl StateTransition {
-    #[allow(unused_variables)]
+    /// Decodes a transition from bytes that arrived from outside this node and refuses one
+    /// whose version is not active at `platform_version`. Bytes left over after the transition
+    /// are ignored; [`Self::deserialize_from_bytes_untrusted_exact_in_version`] refuses them.
     pub fn deserialize_from_bytes_untrusted_in_version(
         bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_untrusted_in_version(
+            bytes,
+            StateTransition::deserialize_from_bytes_untrusted,
+            platform_version,
+        )
+    }
+
+    /// [`Self::deserialize_from_bytes_untrusted_in_version`] that also refuses bytes left over
+    /// after the transition, as a `PlatformDeserializationError`. Leftover bytes are checked
+    /// before the transition's active version range.
+    pub fn deserialize_from_bytes_untrusted_exact_in_version(
+        bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_untrusted_in_version(
+            bytes,
+            StateTransition::deserialize_from_bytes_untrusted_exact,
+            platform_version,
+        )
+    }
+
+    #[allow(unused_variables)]
+    fn decode_untrusted_in_version(
+        bytes: &[u8],
+        decode: fn(&[u8]) -> Result<Self, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let max_value_depth = platform_version
@@ -852,9 +1131,7 @@ impl StateTransition {
             .max_document_value_depth
             .map(usize::from);
         let state_transition =
-            platform_value::with_value_decode_depth_limit(max_value_depth, || {
-                StateTransition::deserialize_from_bytes_untrusted(bytes)
-            })?;
+            platform_value::with_value_decode_depth_limit(max_value_depth, || decode(bytes))?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
@@ -882,29 +1159,51 @@ impl StateTransition {
     pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
         match self {
             StateTransition::DataContractCreate(data_contract_create_transition) => {
-                match data_contract_create_transition.data_contract() {
-                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                match data_contract_create_transition {
+                    // Version 1 carries contract groups, which exist from protocol version 14.
+                    // The embedded contract format alone would admit it at 9 and above, where
+                    // the group data would be silently dropped.
+                    DataContractCreateTransition::V1(_) => 14..=LATEST_VERSION,
+                    DataContractCreateTransition::V0(_) => active_version_range_for_contract(
+                        data_contract_create_transition.data_contract(),
+                    ),
                 }
             }
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
-                match data_contract_update_transition.data_contract() {
-                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                active_version_range_for_contract(data_contract_update_transition.data_contract())
+            }
+            StateTransition::Batch(batch_transition) => {
+                // Version 2 of the document base (the action fee agreement) exists from
+                // protocol version 14. Binaries from before it cannot decode one, so an
+                // earlier version rejects the batch without charging, exactly as they do.
+                if batch_carries_a_version_2_document_base(batch_transition) {
+                    return 14..=LATEST_VERSION;
+                }
+                match batch_transition {
+                    BatchTransition::V0(_) => ALL_VERSIONS,
+                    BatchTransition::V1(_) => 9..=LATEST_VERSION,
                 }
             }
-            StateTransition::Batch(batch_transition) => match batch_transition {
-                BatchTransition::V0(_) => ALL_VERSIONS,
-                BatchTransition::V1(_) => 9..=LATEST_VERSION,
-            },
-            StateTransition::IdentityCreate(_)
-            | StateTransition::IdentityTopUp(_)
+            // A key bound to a contract group, and a version 1 key, exist from protocol version
+            // 14, so a transition carrying one is inactive before that: an earlier version
+            // rejects it without charging, exactly as a binary that cannot decode it does.
+            StateTransition::IdentityCreate(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), ALL_VERSIONS)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys_to_add(), ALL_VERSIONS)
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), 11..=LATEST_VERSION)
+            }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), 12..=LATEST_VERSION)
+            }
+            StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
             StateTransition::IdentityCreditTransferToAddresses(_)
-            | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
@@ -912,11 +1211,24 @@ impl StateTransition {
             StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_)
-            | StateTransition::IdentityCreateFromShieldedPool(_) => 12..=LATEST_VERSION,
+            | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
+            // From protocol version 14 the bundle must bind its kind and its asset lock, which
+            // only version 1 does. Version 0 is refused there on its version byte, before any
+            // proof is verified: uncharged, with its asset lock left unspent, so a version 0 still
+            // waiting when 14 activates costs its sender nothing. There is no window in which 14
+            // accepts version 0.
+            StateTransition::ShieldFromAssetLock(st) => match st {
+                ShieldFromAssetLockTransition::V0(_) => 12..=13,
+                ShieldFromAssetLockTransition::V1(_) => 14..=LATEST_VERSION,
+            },
             StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityTopUpFromShieldedPool(_) => 14..=LATEST_VERSION,
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => 14..=LATEST_VERSION,
         }
     }
 
@@ -932,6 +1244,9 @@ impl StateTransition {
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
                 | StateTransition::IdentityTopUpFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
         )
     }
 
@@ -971,6 +1286,8 @@ impl StateTransition {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate".to_string(),
             Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
+            Self::ContractUserModeration(_) => "ContractUserModeration".to_string(),
+            Self::ContractFeeClaim(_) => "ContractFeeClaim".to_string(),
             Self::Batch(batch_transition) => {
                 let mut document_transition_types = vec![];
                 for transition in batch_transition.transitions_iter() {
@@ -1015,6 +1332,25 @@ impl StateTransition {
                         BatchedTransitionRef::Token(
                             TokenTransition::SetPriceForDirectPurchase(_),
                         ) => "SetPriceForDirectPurchase",
+                        BatchedTransitionRef::Token(TokenTransition::Shield(_)) => "TokenShield",
+                        BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                            "TokenUnshield"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(_)) => {
+                            "TokenShieldedTransfer"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                            "TokenMintToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                            "TokenBurnFromPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                            "TokenClaimToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(_)) => {
+                            "TokenDirectPurchaseToPool"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }
@@ -1024,6 +1360,7 @@ impl StateTransition {
             Self::IdentityTopUp(_) => "IdentityTopUp".to_string(),
             Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal".to_string(),
             Self::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+            Self::IdentityKeyLimitsUpdate(_) => "IdentityKeyLimitsUpdate".to_string(),
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
             Self::MasternodeVote(_) => "MasternodeVote".to_string(),
             Self::IdentityCreditTransferToAddresses(_) => {
@@ -1038,6 +1375,11 @@ impl StateTransition {
             Self::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
             Self::Unshield(_) => "Unshield".to_string(),
             Self::IdentityTopUpFromShieldedPool(_) => "IdentityTopUpFromShieldedPool".to_string(),
+            Self::TokenShieldedTransferWithShieldedFee(_) => {
+                "TokenShieldedTransferWithShieldedFee".to_string()
+            }
+            Self::TokenUnshieldWithShieldedFee(_) => "TokenUnshieldWithShieldedFee".to_string(),
+            Self::TokenPurchaseFromShieldedPool(_) => "TokenPurchaseFromShieldedPool".to_string(),
             Self::ShieldFromAssetLock(_) => "ShieldFromAssetLock".to_string(),
             Self::ShieldedWithdrawal(_) => "ShieldedWithdrawal".to_string(),
             Self::IdentityCreateFromShieldedPool(_) => "IdentityCreateFromShieldedPool".to_string(),
@@ -1050,11 +1392,14 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => Some(st.signature()),
             StateTransition::DataContractUpdate(st) => Some(st.signature()),
+            StateTransition::ContractUserModeration(st) => Some(st.signature()),
+            StateTransition::ContractFeeClaim(st) => Some(st.signature()),
             StateTransition::Batch(st) => Some(st.signature()),
             StateTransition::IdentityCreate(st) => Some(st.signature()),
             StateTransition::IdentityTopUp(st) => Some(st.signature()),
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.signature()),
             StateTransition::IdentityUpdate(st) => Some(st.signature()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.signature()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.signature()),
             StateTransition::MasternodeVote(st) => Some(st.signature()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.signature()),
@@ -1067,6 +1412,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(st) => Some(st.signature()),
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1085,6 +1433,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
@@ -1097,11 +1448,14 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => st.user_fee_increase(),
             StateTransition::DataContractUpdate(st) => st.user_fee_increase(),
+            StateTransition::ContractUserModeration(st) => st.user_fee_increase(),
+            StateTransition::ContractFeeClaim(st) => st.user_fee_increase(),
             StateTransition::Batch(st) => st.user_fee_increase(),
             StateTransition::IdentityCreate(st) => st.user_fee_increase(),
             StateTransition::IdentityTopUp(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditWithdrawal(st) => st.user_fee_increase(),
             StateTransition::IdentityUpdate(st) => st.user_fee_increase(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditTransfer(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.user_fee_increase(),
             StateTransition::IdentityCreateFromAddresses(st) => st.user_fee_increase(),
@@ -1116,6 +1470,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldFromIdentity(st) => st.user_fee_increase(),
@@ -1168,11 +1525,14 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => Some(st.owner_id()),
             StateTransition::DataContractUpdate(st) => Some(st.owner_id()),
+            StateTransition::ContractUserModeration(st) => Some(st.owner_id()),
+            StateTransition::ContractFeeClaim(st) => Some(st.owner_id()),
             StateTransition::Batch(st) => Some(st.owner_id()),
             StateTransition::IdentityCreate(st) => Some(st.owner_id()),
             StateTransition::IdentityTopUp(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.owner_id()),
             StateTransition::IdentityUpdate(st) => Some(st.owner_id()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.owner_id()),
             StateTransition::MasternodeVote(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.owner_id()),
@@ -1185,6 +1545,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1197,11 +1560,14 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => None,
@@ -1214,6 +1580,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1242,6 +1611,14 @@ impl StateTransition {
                 st.set_signature(signature);
                 true
             }
+            StateTransition::ContractUserModeration(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::ContractFeeClaim(st) => {
+                st.set_signature(signature);
+                true
+            }
             StateTransition::Batch(st) => {
                 st.set_signature(signature);
                 true
@@ -1259,6 +1636,10 @@ impl StateTransition {
                 true
             }
             StateTransition::IdentityUpdate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
                 st.set_signature(signature);
                 true
             }
@@ -1282,6 +1663,9 @@ impl StateTransition {
             | StateTransition::Unshield(_)
             | StateTransition::ShieldedWithdrawal(_)
             | StateTransition::IdentityCreateFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => false,
             StateTransition::ShieldFromIdentity(st) => {
                 st.set_signature(signature);
@@ -1304,6 +1688,10 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::DataContractUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::ContractUserModeration(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::ContractFeeClaim(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::Batch(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::IdentityCreate(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::IdentityTopUp(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1311,6 +1699,9 @@ impl StateTransition {
                 st.set_user_fee_increase(user_fee_increase)
             }
             StateTransition::IdentityUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
             StateTransition::IdentityCreditTransfer(st) => {
                 st.set_user_fee_increase(user_fee_increase)
             }
@@ -1339,6 +1730,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromIdentity(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1378,12 +1772,21 @@ impl StateTransition {
         >,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_bounds(identity_public_key)?;
         match self {
             StateTransition::DataContractCreate(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::DataContractUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::ContractUserModeration(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::ContractFeeClaim(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
@@ -1434,6 +1837,10 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
@@ -1510,6 +1917,21 @@ impl StateTransition {
                     "identity top up from shielded pool transition can not be called for identity signing".to_string(),
                 ))
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token purchase from shielded pool transition can not be called for identity signing".to_string(),
+                ))
+            }
             StateTransition::ShieldFromAssetLock(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "shield from asset lock transition can not be called for identity signing"
@@ -1539,6 +1961,40 @@ impl StateTransition {
         Ok(())
     }
 
+    /// A contract-bound AUTHENTICATION key may only sign a Batch whose members are all inside
+    /// its bounds. Consensus enforces the same rule from the stored key; checking here saves the
+    /// round trip when the signing API is handed the key metadata. A contract group bound is
+    /// left to consensus, which reads the group's memberships.
+    #[cfg(feature = "state-transition-signing")]
+    fn verify_identity_key_bounds(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<(), ProtocolError> {
+        if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+            return Ok(());
+        }
+        let Some(bounds) = identity_public_key.contract_bounds() else {
+            return Ok(());
+        };
+        match self {
+            StateTransition::Batch(batch) => {
+                use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+                if batch.transitions_iter().all(|member| {
+                    bounds.check_batched_transition(member) != BatchedTransitionBoundsCheck::Denied
+                }) {
+                    Ok(())
+                } else {
+                    Err(ProtocolError::ConsensusError(Box::new(
+                        ContractBoundedKeyOutOfBoundsError::new(identity_public_key.id()).into(),
+                    )))
+                }
+            }
+            _ => Err(ProtocolError::ConsensusError(Box::new(
+                ContractBoundedKeyNonBatchError::new(identity_public_key.id()).into(),
+            ))),
+        }
+    }
+
     #[cfg(feature = "state-transition-signing")]
     pub fn sign(
         &mut self,
@@ -1562,6 +2018,7 @@ impl StateTransition {
         bls: &impl BlsModule,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_bounds(identity_public_key)?;
         call_errorable_method_identity_signed!(
             self,
             verify_public_key_level_and_purpose,
@@ -1733,7 +2190,7 @@ impl StateTransition {
     ///    returned public key (libsecp256k1 normalises both signing paths to
     ///    low-s form so the 64-byte `r||s` payload is bit-identical).
     /// 4. Serialise as a 65-byte compact recoverable signature with the
-    ///    `compressed` prefix convention used by `CompactSignature` — i.e.
+    ///    `compressed` prefix convention used by `MessageSignature` — i.e.
     ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.
     ///
     /// # Errors
@@ -1755,8 +2212,9 @@ impl StateTransition {
         signer: &S,
     ) -> Result<(), ProtocolError> {
         use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-        use dashcore::secp256k1::{Message, Secp256k1};
-        use dashcore::signer::{double_sha, CompactSignature};
+        use dashcore::secp256k1::Message;
+        use dashcore::sign_message::MessageSignature;
+        use dashcore::signer::double_sha;
 
         let data = self.signable_bytes()?;
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
@@ -1780,7 +2238,6 @@ impl StateTransition {
         // `r||s` payload is bit-identical to what `dashcore::signer::sign`
         // produces.
         let compact_64 = signature.serialize_compact();
-        let secp = Secp256k1::new();
         let msg = Message::from_digest(digest);
 
         let mut found: Option<RecoverableSignature> = None;
@@ -1793,7 +2250,7 @@ impl StateTransition {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            if let Ok(recovered) = secp.recover_ecdsa(&msg, &candidate) {
+            if let Ok(recovered) = candidate.recover_ecdsa(msg) {
                 if recovered == public_key {
                     found = Some(candidate);
                     break;
@@ -1815,7 +2272,7 @@ impl StateTransition {
         // always passes `true` regardless of the underlying key encoding. The
         // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
         // so this is consistent.
-        let compact_65 = recoverable.to_compact_signature(true);
+        let compact_65 = MessageSignature::new(recoverable, true).serialize();
 
         if !self.set_signature(compact_65.to_vec().into()) {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -1825,70 +2282,6 @@ impl StateTransition {
             });
         }
         Ok(())
-    }
-
-    #[cfg(feature = "state-transition-validation")]
-    fn verify_by_raw_public_key<T: BlsModule>(
-        &self,
-        public_key: &[u8],
-        public_key_type: KeyType,
-        bls: &T,
-    ) -> Result<(), ProtocolError> {
-        match public_key_type {
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key),
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
-            }
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(public_key_type),
-                ))
-            }
-        }
-    }
-
-    #[cfg(feature = "state-transition-validation")]
-    pub fn verify_identity_signed_signature(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        // self.verify_public_key_level_and_purpose(public_key)?;
-        if public_key.disabled_at().is_some() {
-            return Err(ProtocolError::PublicKeyIsDisabledError(
-                PublicKeyIsDisabledError::new(public_key.id()),
-            ));
-        }
-
-        let Some(signature) = self.signature() else {
-            return Err(ProtocolError::CorruptedCodeExecution("verifying identity signature for a state transition that doesn't use identity signatures".to_string()));
-        };
-        if signature.is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone()),
-            ));
-        }
-
-        if self.signature_public_key_id() != Some(public_key.id()) {
-            return Err(ProtocolError::PublicKeyMismatchError(
-                PublicKeyMismatchError::new(public_key.clone()),
-            ));
-        }
-
-        let public_key_bytes = public_key.data().as_slice();
-        match public_key.key_type() {
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
-            }
-
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
-
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
-
-            // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
-        }
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -1949,12 +2342,13 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    /// Verifies a BLS signature with the public key
+    /// Verifies a BLS signature with the public key: `Ok(false)` when the signature is well
+    /// formed but does not verify, an error when the key or the signature cannot be read
     fn verify_bls_signature_by_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
         bls: &T,
-    ) -> Result<(), ProtocolError> {
+    ) -> Result<bool, ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
                 needed: self.required_number_of_private_keys(),
@@ -1971,7 +2365,6 @@ impl StateTransition {
         let data = self.signable_bytes()?;
 
         bls.verify_signature(signature.as_slice(), &data, public_key)
-            .map(|_| ())
             .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
@@ -1992,11 +2385,14 @@ impl StateTransitionStructureValidation for StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => {
                 crate::validation::SimpleConsensusValidationResult::new_with_error(
@@ -2033,6 +2429,15 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::IdentityTopUpFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(transition) => {
                 transition.validate_structure(platform_version)
             }
             StateTransition::ShieldFromAssetLock(transition) => {
@@ -2413,6 +2818,48 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_bytes_after_the_transition_only_in_the_exact_in_version_decoder() {
+        use crate::serialization::PlatformSerializable;
+        let original = sample_transfer_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+        let platform_version = PlatformVersion::latest();
+
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                &bytes,
+                platform_version
+            )
+            .expect("the exact bytes decode"),
+            original
+        );
+
+        for left_over in [1usize, 100] {
+            let mut padded = bytes.clone();
+            padded.extend(std::iter::repeat_n(0xAB, left_over));
+
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(
+                    &padded,
+                    platform_version
+                )
+                .expect("the loose decoder ignores the suffix"),
+                original
+            );
+            match StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                &padded,
+                platform_version,
+            ) {
+                Err(ProtocolError::PlatformDeserializationError(message)) => assert!(
+                    message.contains(&format!("{left_over} bytes left over")),
+                    "unexpected message: {message}"
+                ),
+                other => panic!("expected a deserialization error, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_transaction_id_is_deterministic() {
         let st = sample_transfer_st();
         let a = st.transaction_id().expect("hash should succeed");
@@ -2457,6 +2904,7 @@ mod tests {
     use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
     use crate::state_transition::data_contract_create_transition::{
         DataContractCreateTransition, DataContractCreateTransitionV0,
+        DataContractCreateTransitionV1,
     };
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -2529,6 +2977,20 @@ mod tests {
         ))
     }
 
+    fn sample_data_contract_create_v1_st() -> StateTransition {
+        StateTransition::DataContractCreate(DataContractCreateTransition::V1(
+            DataContractCreateTransitionV1 {
+                data_contract: sample_data_contract_in_serialization_format(),
+                identity_nonce: 1,
+                contract_group: None,
+                contract_group_memberships: vec![],
+                user_fee_increase: 5,
+                signature_public_key_id: 2,
+                signature: BinaryData::new(vec![0xAB; 65]),
+            },
+        ))
+    }
+
     fn sample_data_contract_update_st() -> StateTransition {
         StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
@@ -2539,6 +3001,145 @@ mod tests {
                 signature: BinaryData::new(vec![0xCD; 65]),
             },
         ))
+    }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_enforce_contract_bounds_before_private_key_signing() {
+        use crate::consensus::signature::{
+            ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
+        };
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let private_key = [1; 32];
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        // `sample_batch_st_with_delete` deletes a "preorder" document of contract [2; 32].
+        let mut key = IdentityPublicKeyV0 {
+            id: 7,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: get_compressed_public_ec_key(&private_key)
+                .unwrap()
+                .to_vec()
+                .into(),
+            contract_bounds: Some(ContractBounds::SingleContract {
+                id: Identifier::from([2; 32]),
+            }),
+            ..Default::default()
+        };
+        sample_batch_st_with_delete()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .expect("a batch inside the bounds must sign");
+        key.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
+            id: Identifier::from([2; 32]),
+            document_type_name: "preorder".to_string(),
+        });
+        sample_batch_st_with_delete()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .expect("a batch of the bound document type must sign");
+
+        let err = sample_transfer_st()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .unwrap_err();
+        assert!(matches!(err, ProtocolError::ConsensusError(error)
+            if *error == ContractBoundedKeyNonBatchError::new(key.id).into()));
+
+        for denied in [
+            ContractBounds::SingleContract {
+                id: Identifier::from([3; 32]),
+            },
+            ContractBounds::SingleContractDocumentType {
+                id: Identifier::from([2; 32]),
+                document_type_name: "other".to_string(),
+            },
+        ] {
+            key.contract_bounds = Some(denied.clone());
+            let mut transition = sample_batch_st_with_delete();
+            let original = transition.clone();
+            let err = transition
+                .sign(&key.clone().into(), &private_key, &bls)
+                .unwrap_err();
+            assert!(
+                matches!(err, ProtocolError::ConsensusError(error)
+                if *error == ContractBoundedKeyOutOfBoundsError::new(key.id).into()),
+                "{denied:?}"
+            );
+            assert_eq!(
+                transition, original,
+                "rejection must preserve the transition"
+            );
+        }
+
+        key.contract_bounds = None;
+        sample_batch_st_with_delete()
+            .sign(&key.into(), &private_key, &bls)
+            .expect("unbounded keys must still sign");
+    }
+
+    // Generation 1 of `verify_identity_signed_signature` (protocol version 14) refuses a
+    // BLS12_381 signature that does not verify; generation 0 keeps accepting it for replay.
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_refuse_a_bls_signature_that_does_not_verify_from_protocol_version_14() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [7; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::BLS12_381,
+            data: bls
+                .private_key_to_public_key(&private_key)
+                .expect("a valid BLS private key")
+                .into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+
+        // The same transfer signed by another BLS key, and 96 bytes that are not a compressed
+        // curve point
+        let mut by_another_key = signed.clone();
+        by_another_key
+            .sign_by_private_key(&[8; 32], KeyType::BLS12_381, &bls)
+            .expect("another key signs the transfer");
+        let mut not_a_point = signed.clone();
+        not_a_point.set_signature(BinaryData::new(vec![0; 96]));
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(13).expect("protocol version 13");
+        for platform_version in [latest, last_without_the_check] {
+            signed
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect("a signature by the key verifies");
+        }
+
+        for (transition, label) in [
+            (by_another_key, "signed by another key"),
+            (not_a_point, "not a curve point"),
+        ] {
+            let error = transition
+                .verify_identity_signed_signature(&key, &bls, latest)
+                .expect_err(label);
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(e)
+                ) if e.message() == "BLS12_381 signature does not verify")),
+                "{label}: {error:?}"
+            );
+            transition
+                .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                .expect("protocol version 13 replays as it ran");
+        }
     }
 
     fn sample_batch_st_with_delete() -> StateTransition {
@@ -2559,6 +3160,68 @@ mod tests {
             signature_public_key_id: 7,
             signature: BinaryData::new(vec![0xEE; 65]),
         }))
+    }
+
+    fn sample_batch_st_with_base(base: DocumentBaseTransition) -> StateTransition {
+        let delete =
+            DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![delete],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    // Version 2 of the document base carries the action fee agreement, which exists from
+    // protocol version 14. Software from before it cannot decode the base, so new software
+    // must refuse the batch while an earlier version is active; version 1, which every
+    // version since 9 builds, stays active everywhere its batch is.
+    #[test]
+    fn should_not_activate_a_version_2_document_base_before_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+        use crate::state_transition::batch_transition::document_base_transition::v2::DocumentBaseTransitionV2;
+
+        let version_1 =
+            sample_batch_st_with_base(DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                id: Identifier::from([1u8; 32]),
+                identity_contract_nonce: 3,
+                document_type_name: "preorder".to_string(),
+                data_contract_id: Identifier::from([2u8; 32]),
+                token_payment_info: None,
+            }));
+        assert_eq!(version_1.active_version_range(), ALL_VERSIONS);
+
+        let version_2 =
+            sample_batch_st_with_base(DocumentBaseTransition::V2(DocumentBaseTransitionV2 {
+                id: Identifier::from([1u8; 32]),
+                identity_contract_nonce: 3,
+                document_type_name: "preorder".to_string(),
+                data_contract_id: Identifier::from([2u8; 32]),
+                token_payment_info: None,
+                action_fee_agreement: None,
+            }));
+        assert_eq!(version_2.active_version_range(), 14..=LATEST_VERSION);
+
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&version_2).expect("serialize succeeds");
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
+            Err(ProtocolError::StateTransitionError(
+                StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+        let recovered = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &bytes,
+            PlatformVersion::latest(),
+        )
+        .expect("expected protocol version 14 to decode a version 2 base");
+        assert_eq!(recovered, version_2);
     }
 
     fn sample_batch_st_empty() -> StateTransition {
@@ -2757,6 +3420,62 @@ mod tests {
         assert_eq!(
             sample_shielded_withdrawal_st().active_version_range(),
             shielded_range
+        );
+    }
+
+    fn sample_identity_update_st_adding(
+        public_key: crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+    ) -> StateTransition {
+        StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+            identity_id: Identifier::from([5u8; 32]),
+            revision: 1,
+            nonce: 2,
+            add_public_keys: vec![public_key],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![0xFF; 65]),
+        }))
+    }
+
+    #[test]
+    fn should_only_admit_a_version_1_public_key_in_creation_from_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+
+        let version_0_key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            data: BinaryData::new(vec![2; 33]),
+            ..Default::default()
+        };
+        let limited_key = IdentityPublicKeyInCreationV1::from_v0_with_limits(
+            version_0_key.clone(),
+            Some(1_000),
+            None,
+        );
+
+        let plain = sample_identity_update_st_adding(version_0_key.into());
+        assert_eq!(plain.active_version_range(), ALL_VERSIONS);
+
+        let limited = sample_identity_update_st_adding(limited_key.into());
+        assert_eq!(limited.active_version_range(), 14..=LATEST_VERSION);
+
+        // Protocol version 13 refuses it while decoding, the way a binary that does not know
+        // the version 1 key does; protocol version 14 decodes it.
+        let bytes = limited.serialize_to_bytes().expect("expected to serialize");
+        let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
+            Err(ProtocolError::StateTransitionError(
+                StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+        let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+                .expect("expected protocol version 14 to decode a limited key"),
+            limited
         );
     }
 
@@ -3296,6 +4015,207 @@ mod tests {
         }
     }
 
+    /// The exact decoder keeps the active version check: exact bytes of a transition that is
+    /// not active yet are refused as not active, not as left over bytes.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn should_refuse_an_inactive_transition_in_the_exact_in_version_decoder() {
+        use crate::serialization::PlatformSerializable;
+
+        // ShieldedTransfer has active_version_range = 12..=LATEST_VERSION.
+        let bytes = PlatformSerializable::serialize_to_bytes(&sample_shielded_transfer_st())
+            .expect("serialize succeeds");
+        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_exact_in_version(&bytes, low_version),
+            Err(ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+    }
+
+    // A `ShieldFromAssetLock` is refused on its version byte at decode, before any proof work:
+    // version 0 (whose bundle binds nothing) up to protocol version 13 only, version 1 (whose
+    // bundle binds its kind and asset lock) from 14 only.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn should_decode_each_shield_from_asset_lock_version_only_where_it_is_active() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+
+        let v0 = sample_shield_from_asset_lock_st();
+        let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(body)) = &v0
+        else {
+            panic!("expected a version 0 shield from asset lock");
+        };
+        let v1 = StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
+                asset_lock_proof: body.asset_lock_proof.clone(),
+                actions: body.actions.clone(),
+                value_balance: body.value_balance,
+                anchor: body.anchor,
+                proof: body.proof.clone(),
+                binding_signature: body.binding_signature,
+                surplus_output: body.surplus_output,
+                signature: body.signature.clone(),
+            },
+        ));
+        assert_eq!(v0.active_version_range(), 12..=13);
+        assert_eq!(v1.active_version_range(), 14..=LATEST_VERSION);
+
+        let decodes_at = |transition: &StateTransition, protocol_version: u32| {
+            let bytes =
+                PlatformSerializable::serialize_to_bytes(transition).expect("serialize succeeds");
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("known protocol version");
+            match StateTransition::deserialize_from_bytes_untrusted_in_version(
+                &bytes,
+                platform_version,
+            ) {
+                Ok(decoded) => {
+                    assert_eq!(&decoded, transition);
+                    true
+                }
+                Err(ProtocolError::StateTransitionError(
+                    crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                        current_protocol_version,
+                        ..
+                    },
+                )) => {
+                    assert_eq!(current_protocol_version, protocol_version);
+                    false
+                }
+                Err(other) => panic!("unexpected decode error: {other:?}"),
+            }
+        };
+
+        for protocol_version in [12, 13] {
+            assert!(decodes_at(&v0, protocol_version));
+            assert!(!decodes_at(&v1, protocol_version));
+        }
+        assert!(
+            !decodes_at(&v0, 14),
+            "protocol version 14 must refuse version 0"
+        );
+        assert!(decodes_at(&v1, 14));
+    }
+
+    // A version 1 data contract create carries contract groups, which only exist from
+    // protocol version 14. Below that a node must reject it rather than create the
+    // contract and drop the group data.
+    #[test]
+    fn test_data_contract_create_v1_is_not_active_before_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+
+        let original = sample_data_contract_create_v1_st();
+        assert_eq!(original.active_version_range(), 14..=LATEST_VERSION);
+
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
+            .expect_err("expected StateTransitionIsNotActiveError at protocol version 13");
+        match err {
+            ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                    active_version_range,
+                    current_protocol_version,
+                    ..
+                },
+            ) => {
+                assert_eq!(current_protocol_version, 13);
+                assert_eq!(*active_version_range.start(), 14);
+            }
+            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
+        }
+
+        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
+        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+            .expect("a version 1 create is active at protocol version 14");
+    }
+
+    #[test]
+    fn should_gate_identity_transitions_carrying_a_contract_group_bound_key_to_protocol_version_14()
+    {
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::errors::StateTransitionError;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
+        let key = |contract_bounds| {
+            IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                id: 1,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds,
+                read_only: false,
+                data: BinaryData::new(vec![2u8; 33]),
+                signature: BinaryData::default(),
+            })
+        };
+        let contract_bound = Some(ContractBounds::SingleContract {
+            id: Identifier::from([9u8; 32]),
+        });
+        let group_bound = Some(ContractBounds::ContractGroup {
+            id: Identifier::from([9u8; 32]),
+        });
+        let create = |bounds| {
+            StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                IdentityCreateTransitionV0 {
+                    identity_id: Identifier::from([3u8; 32]),
+                    public_keys: vec![key(bounds)],
+                    ..Default::default()
+                },
+            ))
+        };
+        let update = |bounds| {
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(mut v0)) =
+                sample_identity_update_st()
+            else {
+                panic!("expected a version 0 identity update");
+            };
+            v0.add_public_keys = vec![key(bounds)];
+            StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(v0))
+        };
+
+        assert_eq!(
+            create(contract_bound.clone()).active_version_range(),
+            ALL_VERSIONS
+        );
+        assert_eq!(
+            create(group_bound.clone()).active_version_range(),
+            14..=LATEST_VERSION
+        );
+        assert_eq!(update(contract_bound).active_version_range(), ALL_VERSIONS);
+        assert_eq!(
+            update(group_bound.clone()).active_version_range(),
+            14..=LATEST_VERSION
+        );
+
+        let bytes = PlatformSerializable::serialize_to_bytes(&update(group_bound))
+            .expect("serialize succeeds");
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
+            .expect_err("a contract group bound key is not active at protocol version 13");
+        assert!(
+            matches!(
+                err,
+                ProtocolError::StateTransitionError(
+                    StateTransitionError::StateTransitionIsNotActiveError { .. }
+                )
+            ),
+            "{err:?}"
+        );
+        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
+        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+            .expect("a contract group bound key is active at protocol version 14");
+    }
+
     // -----------------------------------------------------------------------
     // Additional coverage: variants not yet exercised.
     //
@@ -3602,10 +4522,10 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_from_asset_lock_active_range_12_latest() {
+    fn test_shield_from_asset_lock_version_0_active_range_12_to_13() {
+        // Version 0's bundle binds nothing; protocol version 14 admits only version 1.
         let range = sample_shield_from_asset_lock_st().active_version_range();
-        assert_eq!(*range.start(), 12);
-        assert_eq!(*range.end(), LATEST_VERSION);
+        assert_eq!(range, 12..=13);
     }
 
     // ---------- Batch with Token transition exercises TokenTransfer arm
@@ -3735,9 +4655,7 @@ mod tests {
     #[tokio::test]
     async fn sign_with_core_signer_matches_sign_by_private_key_byte_for_byte() {
         use async_trait::async_trait;
-        use dashcore::secp256k1::{
-            ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
-        };
+        use dashcore::secp256k1::{self, ecdsa, rand, Message, PublicKey, SecretKey};
         use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
         use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
@@ -3764,9 +4682,8 @@ mod tests {
                 _path: &DerivationPath,
                 sighash: [u8; 32],
             ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-                let secp = Secp256k1::new();
                 let msg = Message::from_digest(sighash);
-                let sig = secp.sign_ecdsa(&msg, &self.secret);
+                let sig = self.secret.sign_ecdsa(msg);
                 Ok((sig, self.public))
             }
 
@@ -3789,9 +4706,8 @@ mod tests {
         // load-bearing: the legacy path signs raw bytes, the signer path
         // derives + signs inside the trust boundary. If the digest pre-image
         // or compact-encoding differs, the bytes will diverge.
-        let secp = Secp256k1::new();
-        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
-        let private_key_bytes = secret_key.secret_bytes();
+        let (secret_key, public_key) = secp256k1::generate_keypair(&mut rand::rng());
+        let private_key_bytes = secret_key.to_secret_bytes();
 
         let signer = FixedKeySigner {
             secret: secret_key,

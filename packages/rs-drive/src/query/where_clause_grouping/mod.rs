@@ -14,6 +14,7 @@ mod v0;
 mod v1;
 
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use dpp::version::PlatformVersion;
@@ -27,6 +28,19 @@ pub(crate) type GroupedWhereClauses = (
 );
 
 /// Group raw where clauses under the platform version's grammar.
+///
+/// # Parameters
+///
+/// * `where_clauses`: The query's raw where clauses.
+/// * `platform_version`: The platform version.
+///
+/// # Returns
+///
+/// * `Ok(GroupedWhereClauses)`: the equality clauses by field, the range clause if any, and the
+///   `In` clauses (at most one under v0, one per distinct field under v1).
+/// * `Err(Error)` when the method version is unknown or the clauses cannot be grouped: more
+///   than one `In` clause under v0, clauses on one field that cannot be combined, range
+///   clauses on more than one field or that do not form one range, or a malformed clause.
 pub(crate) fn group_where_clauses(
     where_clauses: &[WhereClause],
     platform_version: &PlatformVersion,
@@ -39,6 +53,18 @@ pub(crate) fn group_where_clauses(
         .where_clause_grouping
     {
         0 => {
+            // The elements of a typed array are first indexed at protocol
+            // version 14, whose grammar is v1.
+            if where_clauses
+                .iter()
+                .any(|where_clause| where_clause.operator.reads_array_elements())
+            {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "contains and containsAny read the elements of a typed array, which no \
+                     index keys before protocol version 14"
+                        .to_string(),
+                )));
+            }
             let (equal_clauses, range_clause, in_clause) =
                 v0::group_where_clauses_v0(where_clauses)?;
             Ok((

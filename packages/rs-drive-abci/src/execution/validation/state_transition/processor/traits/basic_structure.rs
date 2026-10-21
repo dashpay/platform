@@ -64,6 +64,15 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::IdentityUpdate(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::ContractUserModeration(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::ContractFeeClaim(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
             StateTransition::IdentityTopUp(st) => {
                 st.validate_basic_structure(network_type, platform_version)
             }
@@ -248,14 +257,17 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                         // There is nothing expensive to add as validation methods to the execution context
                         Ok(st.validate_structure(platform_version))
                     }
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "identity create from addresses transition: validate_basic_structure"
-                            .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method:
+                                "address credit withdrawal transition: validate_basic_structure"
+                                    .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity create from addresses transition: validate_basic_structure"
+                        method: "address credit withdrawal transition: validate_basic_structure"
                             .to_string(),
                         known_versions: vec![0],
                     })),
@@ -375,6 +387,72 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_shielded_transfer_with_shielded_fee_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token shielded transfer with shielded fee transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token shielded transfer with shielded fee transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_unshield_with_shielded_fee_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token unshield with shielded fee transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token unshield with shielded fee transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_purchase_from_shielded_pool_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token purchase from shielded pool transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token purchase from shielded pool transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             StateTransition::ShieldFromAssetLock(st) => {
                 match platform_version
                     .drive_abci
@@ -487,6 +565,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -527,6 +608,27 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .validation_and_processing
                 .state_transitions
                 .identity_top_up_from_shielded_pool_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_shielded_transfer_with_shielded_fee_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_unshield_with_shielded_fee_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_purchase_from_shielded_pool_state_transition
                 .basic_structure
                 .is_some(),
             StateTransition::ShieldFromAssetLock(_) => platform_version
@@ -901,6 +1003,9 @@ mod tests {
                 | StateTransition::Batch(_)
                 | StateTransition::IdentityCreditWithdrawal(_)
                 | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+                | StateTransition::ContractFeeClaim(_)
                 | StateTransition::IdentityCreditTransfer(_)
                 | StateTransition::MasternodeVote(_)
                 | StateTransition::ShieldFromIdentity(_)
@@ -912,6 +1017,9 @@ mod tests {
                 | StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
                 | StateTransition::IdentityTopUpFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_) => false,

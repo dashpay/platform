@@ -83,21 +83,19 @@ pub enum ProofError {
         reason: String,
     },
 
-    /// The GroveDB proof envelope is older than the floor the protocol version sets in
-    /// `SystemLimits::minimum_grovedb_proof_envelope_version`, so its payload is refused
-    /// before Drive verifies it.
+    /// The GroveDB proof envelope is older than
+    /// `verify::grovedb_proof_envelope::MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`, so its
+    /// payload is refused before Drive verifies it.
     #[error(
-        "unsupported GroveDB proof envelope version {version} in the {proof}: protocol version {protocol_version} requires at least version {minimum}"
+        "unsupported GroveDB proof envelope version {version} in the {proof}: at least version {minimum} is required"
     )]
     UnsupportedGroveDBProofEnvelopeVersion {
         /// Which proof was being read: "proof", "predecessor proof", "forward proof"
         proof: &'static str,
         /// The envelope version found in the bytes
         version: u32,
-        /// The floor the protocol version sets
+        /// The lowest envelope version clients accept
         minimum: u32,
-        /// The protocol version the verifier ran with
-        protocol_version: u32,
     },
 }
 #[allow(dead_code)]

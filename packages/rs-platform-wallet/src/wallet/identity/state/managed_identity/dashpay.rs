@@ -134,13 +134,19 @@ pub struct DashPayState {
     /// recurring sweep does not re-lower the height every pass — which would
     /// reset the in-flight backfill and prevent it from ever completing.
     ///
-    /// In-memory only (never persisted): a relaunch clears it, and because
-    /// `synced_height` is restored at its monotonic high-water, an interrupted
-    /// backfill is re-triggered on the next launch — self-healing. The cost of
-    /// that reset is one historical re-match per launch while any contact is
-    /// funded below the tip; the compact filters are reused from disk (not
-    /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
-    /// backfill durable across a crash if that ever becomes necessary.
+    /// This set is the in-memory half of the guard and is never persisted: a
+    /// relaunch clears it. Its durable half is the wallet's
+    /// [`DashPayBackfillRecord`](crate::changeset::DashPayBackfillRecord),
+    /// which the rescan reconcile writes on the same persistence round as the
+    /// lowered cursor and consults on the next launch — the cursor it lowers
+    /// is durable too (the host persists every height the rescan climbs
+    /// through), so without the record every fresh process restored a cursor
+    /// inside the climb and rewound again (dashpay/platform#4302). The two
+    /// compose per contact: a mark here says "handled this process", an entry
+    /// there says "covered from this height"; the request-state transitions
+    /// that clear a mark here leave the record alone, and the reconcile
+    /// re-arms a recorded contact only when its checkpoint has dropped below
+    /// the height it was recorded at.
     pub rescan_triggered: BTreeSet<Identifier>,
 
     /// DashPay contact-crypto ops the unattended background sweep enqueued for
@@ -150,9 +156,10 @@ pub struct DashPayState {
     /// on-chain ciphertext + public-key indices; each entry still carries its
     /// `owner_identity_id` (== this identity) as the drain's routing key and the
     /// SQLite key column. In-memory only for the live session: the queue is
-    /// persisted to the changeset (SQLite backend), but cold-load restore is
-    /// blocked upstream, so a re-imported wallet re-syncs from scratch and the
-    /// sweep re-enqueues what it needs. Deliberately NOT captured by
+    /// persisted to the changeset (SQLite backend), but `load()` does not
+    /// restore it (nothing blocks that any more; see the storage crate's
+    /// `pending_contact_crypto` reader), so after a restart the sweep
+    /// re-enqueues what it needs. Deliberately NOT captured by
     /// `IdentityEntry::from_managed` — persistence rides the flat changeset
     /// delta, not a per-identity snapshot.
     /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).

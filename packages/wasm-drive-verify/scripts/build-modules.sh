@@ -65,7 +65,7 @@ cat > dist/identity.js << 'EOF'
 import init, {
   verify_full_identity_by_identity_id,
   verify_full_identity_by_unique_public_key_hash,
-  verify_full_identity_by_non_unique_public_key_hash,
+  verifyFullIdentityByNonUniquePublicKeyHash as verify_full_identity_by_non_unique_public_key_hash,
   verify_full_identities_by_public_key_hashes,
   verify_identity_balance_for_identity_id,
   verify_identity_balances_for_identity_ids,
@@ -99,9 +99,9 @@ export async function verifyFullIdentityByUniquePublicKeyHash(proof, publicKeyHa
   return verify_full_identity_by_unique_public_key_hash(proof, publicKeyHash, platformVersion);
 }
 
-export async function verifyFullIdentityByNonUniquePublicKeyHash(proof, publicKeyHash, platformVersion) {
+export async function verifyFullIdentityByNonUniquePublicKeyHash(proof, publicKeyHash, startAfter, producerProtocolVersion, platformVersion) {
   await ensureInitialized();
-  return verify_full_identity_by_non_unique_public_key_hash(proof, publicKeyHash, platformVersion);
+  return verify_full_identity_by_non_unique_public_key_hash(proof, publicKeyHash, startAfter, producerProtocolVersion, platformVersion);
 }
 
 export async function verifyFullIdentitiesByPublicKeyHashes(proof, publicKeyHashes, platformVersion) {

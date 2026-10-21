@@ -26,7 +26,6 @@
 //! - [DIP-14](https://github.com/dashpay/dips/blob/master/dip-0014.md)
 //! - [DIP-15](https://github.com/dashpay/dips/blob/master/dip-0015.md)
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, PublicKey};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
@@ -210,13 +209,11 @@ pub fn derive_contact_payment_address(
     index: u32,
     network: Network,
 ) -> Result<Address, PlatformWalletError> {
-    let secp = Secp256k1::new();
-
     let child_number = ChildNumber::from_normal_idx(index).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Invalid payment address index: {}", e))
     })?;
 
-    let address_key = contact_xpub.ckd_pub(&secp, child_number).map_err(|e| {
+    let address_key = contact_xpub.ckd_pub(child_number).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive contact payment key at index {}: {}",
             index, e
@@ -251,6 +248,12 @@ pub fn derive_contact_payment_addresses(
 ///
 /// "We recommend a gap limit of 10 at this stage, which means to load 10
 /// addresses past the last used address."
+///
+/// The wallet does not use this value for contact pools. key-wallet builds
+/// the `DashpayReceivingFunds` and `DashpayExternalAccount` address pools
+/// with a gap of 20, a deliberate, more conservative choice. Do not shrink
+/// those pools to 10 to match the DIP: that narrows the scan window for
+/// payments past a run of unused addresses.
 pub const DEFAULT_CONTACT_GAP_LIMIT: u32 = 10;
 
 // ---------------------------------------------------------------------------

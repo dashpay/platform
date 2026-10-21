@@ -34,7 +34,6 @@ use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
 use dashcore::{Address as DashAddress, Network};
-use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
@@ -42,8 +41,13 @@ use dpp::prelude::Identifier;
 use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
-use super::locator::{p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole};
-use super::record::{ListMembership, MasternodeRecord, MasternodeSource, MasternodeStatus};
+use super::locator::{
+    operator_identity_ids, p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole,
+};
+use super::record::{
+    owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
+    MasternodeStatus,
+};
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
@@ -67,9 +71,11 @@ pub struct RegistrationDetails {
     pub owner_key_hash: [u8; 20],
     pub voting_key_hash: [u8; 20],
     pub operator_public_key: [u8; 48],
-    /// Raw payout script as registered.
+    /// Raw payout script as registered; empty when the registration names
+    /// no single payout script (see `owner_payout_script`).
     pub payout_script: Vec<u8>,
-    /// `"ip:port"` as registered.
+    /// `"ip:port"` as registered; `None` for a version-3 registration that
+    /// advertises no IPv4/IPv6 address.
     pub service_address: Option<String>,
     pub is_evonode: bool,
     pub platform_node_id: Option<[u8; 20]>,
@@ -176,7 +182,10 @@ impl TrackedMasternode {
         let payout_script = platform
             .and_then(|p| p.payout_key_hash)
             .map(|hash| p2pkh_script(&hash))
-            .or_else(|| reg.map(|r| r.payout_script.clone()));
+            .or_else(|| {
+                reg.map(|r| r.payout_script.clone())
+                    .filter(|script| !script.is_empty())
+            });
 
         MasternodeRecord {
             pro_tx_hash: self.pro_tx_hash,
@@ -585,6 +594,26 @@ where
     Ok((tracked, outcome))
 }
 
+/// Fetch the first identity found among the candidate operator identity
+/// `ids`, in order. A missing identity moves on to the next id; a found one
+/// ends the search. A failed fetch ends it too, with the error: the next id
+/// may find an older identity while the current one was unreadable.
+async fn first_operator_identity<F, Fut, E>(
+    ids: impl IntoIterator<Item = Identifier>,
+    mut fetch: F,
+) -> Result<Option<Identity>, E>
+where
+    F: FnMut(Identifier) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<Identity>, E>>,
+{
+    for id in ids {
+        if let Some(identity) = fetch(id).await? {
+            return Ok(Some(identity));
+        }
+    }
+    Ok(None)
+}
+
 impl std::fmt::Debug for TrackedMasternodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TrackedMasternodes")
@@ -861,8 +890,11 @@ impl TrackedMasternodes {
                 .as_ref()
                 .map(|r| r.operator_public_key));
         if let Some(operator_key) = operator_key {
-            let operator_id = Identifier::create_operator_identifier(&display, &operator_key);
-            match Identity::fetch(self.sdk.as_ref(), operator_id).await {
+            match first_operator_identity(operator_identity_ids(&display, &operator_key), |id| {
+                Identity::fetch(self.sdk.as_ref(), id)
+            })
+            .await
+            {
                 Ok(Some(identity)) => {
                     let mut platform = snapshot.platform.clone().unwrap_or_default();
                     platform.operator_payout_key_hash = identity
@@ -1089,11 +1121,16 @@ pub fn registration_from_transaction(
         owner_key_hash,
         voting_key_hash,
         operator_public_key: *operator,
-        payout_script: p.script_payout.as_bytes().to_vec(),
-        service_address: Some(p.service_address.to_string()),
+        payout_script: owner_payout_script(&p.script_payout, p.payouts.as_deref())
+            .map(|script| script.as_bytes().to_vec())
+            .unwrap_or_default(),
+        service_address: p
+            .service_address
+            .primary_service_address()
+            .map(|address| address.to_string()),
         is_evonode: p.masternode_type == ProviderMasternodeType::HighPerformance,
         platform_node_id: p.platform_node_id.map(|id| id.to_byte_array()),
-        platform_http_port: p.platform_http_port,
+        platform_http_port: platform_http_port(&p.service_address, p.platform_http_port),
     })
 }
 
@@ -1373,6 +1410,78 @@ mod tests {
         assert_eq!(persisted, vec![live]);
     }
 
+    fn bare_identity(id: Identifier) -> Identity {
+        use dpp::identity::v0::IdentityV0;
+        IdentityV0 {
+            id,
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    /// The operator identity id derived from the listed key bytes, then the
+    /// one derived from the same key's legacy-scheme bytes.
+    fn operator_candidates() -> (Identifier, Identifier) {
+        (Identifier::from([1u8; 32]), Identifier::from([2u8; 32]))
+    }
+
+    /// Run the operator identity lookup over `[listed, legacy]`, answering
+    /// each fetch with `answer`. Returns the id of the identity it settled
+    /// on (or its error) and every id it requested, in order.
+    async fn lookup_operator_identity(
+        answer: impl Fn(Identifier) -> Result<Option<Identity>, String>,
+    ) -> (Result<Option<Identifier>, String>, Vec<Identifier>) {
+        let (listed, legacy) = operator_candidates();
+        let mut requested = Vec::new();
+        let found = first_operator_identity([listed, legacy], |id| {
+            requested.push(id);
+            std::future::ready(answer(id))
+        })
+        .await;
+        (found.map(|identity| identity.map(|i| i.id())), requested)
+    }
+
+    /// A node whose operator key Core re-encodes has no identity under the
+    /// listed bytes; its identity lives under the legacy-scheme id.
+    #[tokio::test]
+    async fn operator_identity_lookup_falls_back_to_the_legacy_id_when_the_listed_one_is_missing() {
+        let (listed, legacy) = operator_candidates();
+        let (found, requested) =
+            lookup_operator_identity(|id| Ok((id == legacy).then(|| bare_identity(id)))).await;
+        assert_eq!(requested, vec![listed, legacy]);
+        assert_eq!(found, Ok(Some(legacy)));
+    }
+
+    /// An identity under the listed bytes is the current one: the legacy id
+    /// is never requested, even when an identity exists there too.
+    #[tokio::test]
+    async fn operator_identity_lookup_stops_at_the_first_identity_found() {
+        let (listed, _) = operator_candidates();
+        let (found, requested) = lookup_operator_identity(|id| Ok(Some(bare_identity(id)))).await;
+        assert_eq!(requested, vec![listed]);
+        assert_eq!(found, Ok(Some(listed)));
+    }
+
+    /// A failed fetch of the listed id is reported, not papered over with
+    /// the identity under the legacy id: that one may be stale while the
+    /// current one was merely unreadable.
+    #[tokio::test]
+    async fn operator_identity_lookup_returns_a_fetch_error_without_trying_the_next_id() {
+        let (listed, _) = operator_candidates();
+        let (found, requested) = lookup_operator_identity(|id| {
+            if id == listed {
+                Err("listed id unreadable".to_string())
+            } else {
+                Ok(Some(bare_identity(id)))
+            }
+        })
+        .await;
+        assert_eq!(requested, vec![listed]);
+        assert_eq!(found, Err("listed id unreadable".to_string()));
+    }
+
     #[test]
     fn record_prefers_live_list_then_snapshot_then_registration() {
         let t = tracked();
@@ -1498,5 +1607,55 @@ mod tests {
             special_transaction_payload: None,
         };
         assert_eq!(registration_from_transaction(&plain, 1), None);
+    }
+
+    /// A tracked node's ProRegTx is fetched once and cached, so a version-3
+    /// registration must be read right the first time: its payout from the
+    /// payout list when it names one payout, none when it splits the reward
+    /// (never an empty script), and its platform HTTP port from the extended
+    /// address map.
+    #[test]
+    fn registration_details_lift_from_a_core_v24_proregtx() {
+        use super::super::record::core_v24_vectors::*;
+
+        let one = registration_from_transaction(&decode(PRO_REG_TX_ONE_PAYOUT), 15_146)
+            .expect("ProRegTx lifts");
+        assert_eq!(
+            devnet_address(&one.payout_script),
+            "yQohnoFhM5avKnzVzAX79xT8uCKviaPxj4"
+        );
+        assert_eq!(one.service_address, None, "it announces no address");
+        assert_eq!(one.platform_http_port, None);
+
+        let p2sh = registration_from_transaction(&decode(PRO_REG_TX_P2SH_PAYOUT), 15_166)
+            .expect("ProRegTx lifts");
+        assert_eq!(
+            devnet_address(&p2sh.payout_script),
+            "8yyRcXHGCXypDWTCNZMHUYZJJEC87GqLfK"
+        );
+
+        let split = registration_from_transaction(&decode(PRO_REG_TX_TWO_PAYOUTS), 15_153)
+            .expect("ProRegTx lifts");
+        assert!(split.payout_script.is_empty());
+        let tracked = TrackedMasternode {
+            pro_tx_hash: [0x31; 32],
+            label: None,
+            added_at: 0,
+            snapshot: TrackedMasternodeSnapshot {
+                registration: Some(split),
+                ..Default::default()
+            },
+        };
+        assert_eq!(tracked.record(None).payout_script, None);
+        assert_eq!(tracked.key_reference().payout_key_hash, None);
+
+        let details =
+            registration_from_transaction(&evonode_registration(), 15_146).expect("ProRegTx lifts");
+        assert!(details.is_evonode);
+        assert_eq!(
+            details.service_address.as_deref(),
+            Some("68.67.122.237:20001")
+        );
+        assert_eq!(details.platform_http_port, Some(1443));
     }
 }

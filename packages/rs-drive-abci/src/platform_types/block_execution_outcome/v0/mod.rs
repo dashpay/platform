@@ -30,6 +30,10 @@ pub struct BlockFinalizationOutcome {
     pub validation_result: SimpleValidationResult<AbciError>,
     /// Whether a checkpoint should be created after the transaction is committed
     pub checkpoint_needed: bool,
+    /// Whether the next block has withdrawal work waiting for it, so Tenderdash is asked to
+    /// propose that block without waiting for transactions
+    /// (`ResponseFinalizeBlock.propose_next_block_immediately`).
+    pub propose_next_block_immediately: bool,
 }
 
 impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
@@ -37,6 +41,7 @@ impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
         BlockFinalizationOutcome {
             validation_result,
             checkpoint_needed: false,
+            propose_next_block_immediately: false,
         }
     }
 }

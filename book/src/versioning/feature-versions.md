@@ -332,7 +332,10 @@ pub struct SystemLimits {
     pub max_withdrawal_amount: u64,
     /// `None` for the protocol versions that predate the relative rule.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    pub max_daily_withdrawal_amount: Option<u64>,
+    pub core_credit_pool_unlock_limit_percent: Option<u8>,
+    pub core_credit_pool_unlock_limit_floor: Option<u64>,
+    pub core_credit_pool_window_blocks: Option<u32>,
+    pub regtest_core_credit_pool_window_blocks: Option<u32>,
     pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     pub max_token_redemption_cycles: u32,
@@ -355,6 +358,7 @@ pub struct DriveAbciWithdrawalConstants {
     pub core_expiration_blocks: u32,
     pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
     pub total_credits_history_prune_limit: u16,
+    pub core_blocks_scanned_per_block_limit: u16,
 }
 
 // drive_abci_versions/drive_abci_validation_versions/mod.rs
@@ -405,9 +409,8 @@ the situation the tables exist to prevent, and it leaves a dead module behind
 every time the number moves. A new method version is warranted only when the
 *logic* changes. `daily_withdrawal_limit` in `rs-dpp` is the reference case:
 `v0` derives the limit from the current total credits, `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
-`v3`.
+`daily_withdrawal_limit_percent` from `SystemLimits`. Raising the percentage
+later is a `SYSTEM_LIMITS_V5`, not a `v3`.
 
 ## How Subsystem Version Constants Compose
 
@@ -485,16 +488,19 @@ slots edited. Newer ones use struct update syntax, so that the file *is* the
 diff:
 
 ```rust
-// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v3.rs
+// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v2.rs
 
-/// Differs from v2 in exactly one slot:
+/// Differs from v1 in two slots.
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
-/// rather than 1. That is the boolean-`HAVING` routing gate. ...
-pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
+/// rather than 0: the ranked and boolean-`HAVING` routing gate. ...
+pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryVersions {
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },
-    ..DRIVE_ABCI_QUERY_VERSIONS_V2
+    data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+        latest_versions_read: 1,
+    },
+    ..DRIVE_ABCI_QUERY_VERSIONS_V1
 };
 ```
 
@@ -564,7 +570,7 @@ version/
       v1.rs .. v10.rs
     drive_abci_query_versions/
       mod.rs
-      v0.rs .. v3.rs
+      v0.rs .. v2.rs
     drive_abci_withdrawal_constants/
       mod.rs                    # DriveAbciWithdrawalConstants (parameters, not method versions)
       v1.rs .. v3.rs

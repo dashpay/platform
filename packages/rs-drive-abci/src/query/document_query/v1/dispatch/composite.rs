@@ -9,10 +9,12 @@
 //! re-derives the whole composition from the proven page.
 
 use super::count::into_v1_entry;
+use super::document_serialization_failure;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::contract_moderation_queries::removal_entry_to_response;
 use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -36,6 +38,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
+use drive::error::Error as DriveError;
 use drive::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind,
     SubQueryResult, MAX_SUB_QUERIES,
@@ -53,6 +56,14 @@ struct DecodedSubQuery {
     order_by: Vec<drive::query::OrderClause>,
     limit: Option<u16>,
     binding: Option<SubQueryBinding>,
+}
+
+/// Drive query errors identify caller mistakes; storage failures remain node faults.
+fn composite_query_error(error: DriveError) -> Result<QueryError, Error> {
+    match error {
+        DriveError::Query(query_error) => Ok(QueryError::Query(query_error)),
+        error => Err(error.into()),
+    }
 }
 
 impl<C> Platform<C> {
@@ -129,10 +140,11 @@ impl<C> Platform<C> {
                     .iter()
                     .flat_map(|sub| sub.where_clauses.iter()),
             )
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a composite request supports no time-range (IN_TIME_RANGE) clauses",
+                "a composite request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -280,12 +292,11 @@ impl<C> Platform<C> {
         // before any execution.
         match composite.validate_composite(platform_version) {
             Ok(()) => {}
-            Err(drive::error::Error::Query(query_error)) => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    query_error,
-                )));
+            Err(error) => {
+                return Ok(QueryValidationResult::new_with_error(
+                    composite_query_error(error)?,
+                ));
             }
-            Err(e) => return Err(e.into()),
         }
 
         let response = if prove {
@@ -294,12 +305,11 @@ impl<C> Platform<C> {
                 .query_composite_documents_with_proof(&composite, platform_version)
             {
                 Ok(result) => result,
-                Err(drive::error::Error::Query(query_error)) => {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        query_error,
-                    )));
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        composite_query_error(error)?,
+                    ));
                 }
-                Err(e) => return Err(e.into()),
             };
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
@@ -314,36 +324,52 @@ impl<C> Platform<C> {
                     .query_composite_documents(&composite, None, None, platform_version)
                 {
                     Ok(outcome) => outcome,
-                    Err(drive::error::Error::Query(query_error)) => {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            query_error,
-                        )));
+                    Err(error) => {
+                        return Ok(QueryValidationResult::new_with_error(
+                            composite_query_error(error)?,
+                        ));
                     }
-                    Err(e) => return Err(e.into()),
                 };
             let serialize_all = |documents: &[dpp::document::Document],
                                  sub: Option<&DriveSubQuery>|
-             -> Result<Vec<Vec<u8>>, Error> {
+             -> Result<Vec<Vec<u8>>, dpp::ProtocolError> {
                 let (document_type, contract) = match sub {
                     None => (composite.document_type, composite.contract),
                     Some(sub) => (sub.document_type, sub.contract),
                 };
                 documents
                     .iter()
-                    .map(|document| {
-                        document
-                            .serialize(document_type, contract, platform_version)
-                            .map_err(Error::Protocol)
-                    })
+                    .map(|document| document.serialize(document_type, contract, platform_version))
                     .collect()
             };
-            let page_documents = serialize_all(&outcome.result.page_documents, None)?;
+            let page_documents = match serialize_all(&outcome.result.page_documents, None) {
+                Ok(documents) => documents,
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        document_serialization_failure(error, composite.document_type)?,
+                    ))
+                }
+            };
             let mut sub_results = Vec::with_capacity(composite.sub_queries.len());
-            for (sub, result) in composite.sub_queries.iter().zip(outcome.result.sub_results) {
+            for (((sub, result), missing_ids), removed) in composite
+                .sub_queries
+                .iter()
+                .zip(outcome.result.sub_results)
+                .zip(outcome.result.sub_result_missing_ids)
+                .zip(outcome.result.sub_result_removals)
+            {
                 let result = match result {
                     SubQueryResult::Documents(documents) => {
+                        let documents = match serialize_all(&documents, Some(sub)) {
+                            Ok(documents) => documents,
+                            Err(error) => {
+                                return Ok(QueryValidationResult::new_with_error(
+                                    document_serialization_failure(error, sub.document_type)?,
+                                ))
+                            }
+                        };
                         composite_documents::sub_query_result::Result::Documents(Documents {
-                            documents: serialize_all(&documents, Some(sub))?,
+                            documents,
                         })
                     }
                     SubQueryResult::Counts(entries) => {
@@ -354,6 +380,8 @@ impl<C> Platform<C> {
                 };
                 sub_results.push(composite_documents::SubQueryResult {
                     result: Some(result),
+                    missing_ids: missing_ids.iter().map(|id| id.to_vec()).collect(),
+                    removed: removed.into_iter().map(removal_entry_to_response).collect(),
                 });
             }
             GetDocumentsResponseV1 {
@@ -374,23 +402,65 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use crate::query::service::query_result_into_response;
+    use crate::query::tests::{
+        assert_invalid_argument_status, removal_of, remove_post_by_moderator, setup_platform,
+        store_data_contract, store_document, with_moderated_posts,
+    };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
         sub_query::Binding as ProtoBinding, ChainedJoin,
     };
     use dapi_grpc::platform::v0::get_documents_request::DocumentFieldValue as ProtoDocumentFieldValue;
     use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
+    use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
     use dapi_grpc::platform::v0::get_documents_request::WhereOperator as ProtoWhereOperator;
     use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::Result as ResponseResult;
+    use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::GetDocumentsRequest;
+    use dapi_grpc::tonic::Code;
     use dpp::dashcore::Network;
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::identifier::Identifier;
     use dpp::platform_value::Value;
     use dpp::prelude::DataContract;
-    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::tests::json_document::{json_document_to_contract, json_document_to_json_value};
+    use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+    use drive::grovedb::Error as GroveError;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
+
+    #[test]
+    fn should_keep_grovedb_faults_internal_for_composite_queries() {
+        const CAPABILITY: &str =
+            "per-instance query limits (Query::limit) require a grove version that serves them";
+        for grove_error in [
+            GroveError::NotSupported(CAPABILITY.to_owned()),
+            GroveError::NotSupported("different unsupported storage operation".to_owned()),
+            GroveError::NotSupported(format!("{CAPABILITY} extra")),
+            GroveError::InvalidQuery(CAPABILITY),
+            GroveError::CorruptedData(CAPABILITY.to_owned()),
+        ] {
+            let result: Result<QueryValidationResult<()>, Error> =
+                composite_query_error(DriveError::GroveDB(Box::new(grove_error)))
+                    .map(QueryValidationResult::new_with_error);
+            let status = query_result_into_response(result)
+                .expect_err("classification returns an error response");
+            assert_eq!(status.code(), Code::Internal);
+        }
+        let result: Result<QueryValidationResult<()>, Error> =
+            composite_query_error(DriveError::Query(QuerySyntaxError::Unsupported(
+                "existing proof-shape rejection".to_owned(),
+            )))
+            .map(QueryValidationResult::new_with_error);
+        let status = query_result_into_response(result).unwrap_err();
+        assert_eq!(status.code(), Code::InvalidArgument);
+        assert_eq!(
+            status.message(),
+            "unsupported error: existing proof-shape rejection"
+        );
+    }
 
     const FEED_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";
@@ -412,11 +482,75 @@ mod tests {
         DataContract,
         DataContract,
     ) {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let feed = json_document_to_contract(FEED_CONTRACT_PATH, false, version)
-            .expect("expected to parse the feed contract");
-        let dashpay = json_document_to_contract(DASHPAY_CONTRACT_PATH, false, version)
-            .expect("expected to parse the dashpay contract");
+        setup_feed_state_with(None, |feed, _| feed)
+    }
+
+    /// The same state, the feed contract passed through `modify_feed` first
+    fn setup_feed_state_with(
+        initial_protocol_version: Option<u32>,
+        modify_feed: impl FnOnce(DataContract, &PlatformVersion) -> DataContract,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<PlatformState>,
+        &'static PlatformVersion,
+        DataContract,
+        DataContract,
+    ) {
+        let (platform, state, version) =
+            setup_platform(None, Network::Testnet, initial_protocol_version);
+        let feed_contract = if initial_protocol_version.is_some() {
+            let mut value = json_document_to_json_value(FEED_CONTRACT_PATH).expect("feed JSON");
+            // Historical schemas store likes as documents and do not admit the
+            // generation-3 terminal, preallocation or ranked-index keywords.
+            // They also predate property references, so the historical composition
+            // joins profiles by owner and counts likes, without a quoted-post join.
+            for schema in value["documentSchemas"]
+                .as_object_mut()
+                .expect("document schemas")
+                .values_mut()
+            {
+                schema
+                    .as_object_mut()
+                    .expect("schema object")
+                    .remove("indexOnly");
+                for property in schema["properties"]
+                    .as_object_mut()
+                    .expect("properties")
+                    .values_mut()
+                {
+                    property
+                        .as_object_mut()
+                        .expect("property object")
+                        .remove("refersTo");
+                }
+                for index in schema["indices"].as_array_mut().expect("indexes") {
+                    let index = index.as_object_mut().expect("index object");
+                    for keyword in ["terminal", "preallocated", "rankedCountable"] {
+                        index.remove(keyword);
+                    }
+                }
+            }
+            // A unique lookup is value-bounded and needs no per-instance query
+            // cap, which the historical GroveDB versions do not support.
+            let quote_index = value["documentSchemas"]["post"]["indices"]
+                .as_array_mut()
+                .expect("post indexes")
+                .iter_mut()
+                .find(|index| index["name"] == "quotesOfPost")
+                .expect("quote index");
+            quote_index["unique"] = serde_json::Value::Bool(true);
+            DataContract::from_json(value, true, version).expect("valid historical feed contract")
+        } else {
+            json_document_to_contract(FEED_CONTRACT_PATH, false, version)
+                .expect("expected to parse the feed contract")
+        };
+        let feed = modify_feed(feed_contract, version);
+        let dashpay = json_document_to_contract(
+            DASHPAY_CONTRACT_PATH,
+            initial_protocol_version.is_some(),
+            version,
+        )
+        .expect("expected to parse the dashpay contract");
         store_data_contract(&platform.platform, &feed, version);
         store_data_contract(&platform.platform, &dashpay, version);
 
@@ -517,6 +651,7 @@ mod tests {
                     value: Some(ProtoDocumentFieldValue {
                         variant: Some(document_field_value::Variant::Text("dash".to_string())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],
@@ -560,6 +695,7 @@ mod tests {
     fn client_query<'a>(
         feed: &'a DataContract,
         dashpay: &'a DataContract,
+        platform_version: &PlatformVersion,
     ) -> DriveDocumentQuery<'a> {
         let page = DriveDocumentQuery {
             contract: feed,
@@ -570,7 +706,7 @@ mod tests {
                     operator: WhereOperator::Equal,
                     value: Value::Text("dash".to_string()),
                 }],
-                PlatformVersion::latest(),
+                platform_version,
             )
             .expect("clauses extract"),
             offset: None,
@@ -716,7 +852,7 @@ mod tests {
             panic!("expected a proof result");
         };
 
-        let query = client_query(&feed, &dashpay);
+        let query = client_query(&feed, &dashpay, version);
         let (_root_hash, verified) = query
             .verify_composite_documents_proof(proof.grovedb_proof.as_slice(), version)
             .expect("the composite proof verifies from the proof alone");
@@ -733,10 +869,87 @@ mod tests {
         assert_eq!(verified.sub_results[2].documents().len(), 1);
     }
 
+    /// A by-id join off a `moderatedDocument` property reports a quoted post a moderator
+    /// removed by its removal record, on both wire modes: the unproven sub-result carries the
+    /// record in `removed`, as the removals query writes it, and the proven one verifies to
+    /// the same record. Nothing is reported missing.
+    #[test]
+    fn should_report_a_removed_quoted_post_of_a_moderated_document_join_with_its_record() {
+        let (platform, state, version, feed, dashpay) =
+            setup_feed_state_with(None, with_moderated_posts);
+        let removal = removal_of(POST_D, OWNER_2);
+        remove_post_by_moderator(&platform.platform, &feed, POST_D, removal.clone(), version);
+        let entry = ContractDocumentRemovalEntry {
+            document_id: Identifier::from(POST_D),
+            removal,
+        };
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                composite_request(false, feed.id().to_vec(), dashpay.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Composite(composite)) = data.variant else {
+            panic!("expected the composite variant");
+        };
+        let quoted = &composite.sub_results[1];
+        let Some(composite_documents::sub_query_result::Result::Documents(documents)) =
+            &quoted.result
+        else {
+            panic!("expected quoted documents");
+        };
+        assert!(
+            documents.documents.is_empty(),
+            "the quoted post was removed"
+        );
+        assert!(quoted.missing_ids.is_empty());
+        assert_eq!(
+            quoted.removed,
+            vec![removal_entry_to_response(entry.clone())]
+        );
+        let record = &quoted.removed[0];
+        assert_eq!(record.document_id, POST_D.to_vec());
+        assert_eq!(record.document_owner_id, OWNER_2.to_vec());
+        assert_eq!(record.document_hash, POST_D.to_vec());
+        for other in [&composite.sub_results[0], &composite.sub_results[2]] {
+            assert!(other.removed.is_empty() && other.missing_ids.is_empty());
+        }
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                composite_request(true, feed.id().to_vec(), dashpay.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let query = client_query(&feed, &dashpay, version);
+        let (_root_hash, verified) = query
+            .verify_composite_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the removed post's record proven");
+        assert!(verified.sub_results[1].documents().is_empty());
+        assert_eq!(
+            verified.sub_result_removals,
+            vec![Vec::new(), vec![entry], Vec::new()]
+        );
+        assert!(verified.sub_result_missing_ids.iter().all(Vec::is_empty));
+    }
+
     #[test]
     fn should_reject_oversized_sub_queries_before_decoding_or_contract_fetch() {
         let (platform, state, version, feed, dashpay) = setup_feed_state();
-        let mut query = client_query(&feed, &dashpay);
+        let mut query = client_query(&feed, &dashpay, version);
         query
             .sub_queries
             .resize(MAX_SUB_QUERIES + 1, query.sub_queries[0].clone());
@@ -804,7 +1017,7 @@ mod tests {
                 match result.data.expect("response data").result.expect("result") {
                     ResponseResult::Proof(proof) => {
                         assert!(prove);
-                        let mut query = client_query(&feed, &dashpay);
+                        let mut query = client_query(&feed, &dashpay, version);
                         query.sub_queries = vec![query.sub_queries[0].clone(); count];
                         let (_, verified) = query
                             .verify_composite_documents_proof(&proof.grovedb_proof, version)
@@ -918,5 +1131,423 @@ mod tests {
             "expected Unsupported, got {:?}",
             result.errors
         );
+    }
+
+    #[test]
+    fn should_preserve_by_id_composite_data_and_proofs_at_supported_protocol_versions() {
+        for initial_protocol_version in [Some(12), Some(13), None] {
+            let (platform, state, version, feed, dashpay) =
+                setup_feed_state_with(initial_protocol_version, |feed, _| feed);
+            let stored_root = platform
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &version.drive.grove_version)
+                .value
+                .expect("stored root");
+            for prove in [false, true] {
+                let mut request =
+                    composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+                request.where_clauses = vec![ProtoWhereClause {
+                    field: "$id".to_string(),
+                    operator: ProtoWhereOperator::In as i32,
+                    value: Some(ProtoDocumentFieldValue {
+                        variant: Some(document_field_value::Variant::List(
+                            document_field_value::ValueList {
+                                values: [POST_B, POST_A]
+                                    .into_iter()
+                                    .map(|id| ProtoDocumentFieldValue {
+                                        variant: Some(document_field_value::Variant::BytesValue(
+                                            id.to_vec(),
+                                        )),
+                                    })
+                                    .collect(),
+                            },
+                        )),
+                    }),
+                    integer_range: None,
+                    time_range: None,
+                }];
+                request.limit = Some(2);
+                if initial_protocol_version.is_some() {
+                    request.sub_queries.remove(1);
+                }
+                let result = platform
+                    .platform
+                    .query_documents(
+                        GetDocumentsRequest {
+                            version: Some(RequestVersion::V1(request)),
+                        },
+                        &state,
+                        version,
+                    )
+                    .expect("the public query dispatcher executes");
+                assert!(
+                    result.errors.is_empty(),
+                    "PV{}: {:?}",
+                    version.protocol_version,
+                    result.errors
+                );
+                let Some(ResponseVersion::V1(response)) = result.data.expect("response").version
+                else {
+                    panic!("expected the V1 composite response");
+                };
+                let post_type = feed.document_type_for_name("post").expect("post type");
+                let assert_joined_documents = |quoted: &[Document], profiles: &[Document]| {
+                    if initial_protocol_version.is_none() {
+                        assert_eq!(quoted.len(), 1, "A quotes D");
+                        assert_eq!(quoted[0].id().to_buffer(), POST_D);
+                        assert_eq!(quoted[0].owner_id().to_buffer(), OWNER_2);
+                        assert_eq!(
+                            quoted[0].properties().get("message"),
+                            Some(&Value::Text("post 4".to_owned()))
+                        );
+                    }
+                    assert_eq!(profiles.len(), 1, "only owner 1 has a profile");
+                    assert_eq!(profiles[0].owner_id().to_buffer(), OWNER_1);
+                    assert_eq!(
+                        profiles[0].properties().get("displayName"),
+                        Some(&Value::Text("one".to_owned()))
+                    );
+                };
+                if prove {
+                    let Some(ResponseResult::Proof(proof)) = response.result else {
+                        panic!("a proved composite request must contain a proof");
+                    };
+                    let mut query = client_query(&feed, &dashpay, version);
+                    query.internal_clauses = InternalClauses::extract_from_clauses(
+                        vec![WhereClause {
+                            field: "$id".to_string(),
+                            operator: WhereOperator::In,
+                            value: Value::Array(vec![
+                                Value::Identifier(POST_B),
+                                Value::Identifier(POST_A),
+                            ]),
+                        }],
+                        version,
+                    )
+                    .expect("original page clause");
+                    query.limit = Some(2);
+                    if initial_protocol_version.is_some() {
+                        query.sub_queries.remove(1);
+                    }
+                    let (root, verified) = query
+                        .verify_composite_documents_proof(&proof.grovedb_proof, version)
+                        .expect("the original by-ID composition verifies");
+                    assert_eq!(root, stored_root);
+                    assert_eq!(
+                        verified
+                            .page_documents
+                            .iter()
+                            .map(|document| document.id().to_buffer())
+                            .collect::<Vec<_>>(),
+                        vec![POST_A, POST_B]
+                    );
+                    assert_eq!(
+                        verified.sub_results[0]
+                            .counts()
+                            .iter()
+                            .map(|entry| (entry.key.clone(), entry.count))
+                            .collect::<std::collections::BTreeMap<_, _>>(),
+                        std::collections::BTreeMap::from([
+                            (POST_A.to_vec(), Some(2)),
+                            (POST_B.to_vec(), Some(1))
+                        ])
+                    );
+                    if initial_protocol_version.is_some() {
+                        assert_eq!(verified.sub_results.len(), 2);
+                        assert_joined_documents(&[], verified.sub_results[1].documents());
+                    } else {
+                        assert_eq!(verified.sub_results.len(), 3);
+                        assert_joined_documents(
+                            verified.sub_results[1].documents(),
+                            verified.sub_results[2].documents(),
+                        );
+                    }
+                } else {
+                    let Some(ResponseResult::Data(data)) = response.result else {
+                        panic!("an unproved composite request must contain data");
+                    };
+                    let Some(result_data::Variant::Composite(composite)) = data.variant else {
+                        panic!("expected composite data");
+                    };
+                    assert_eq!(
+                        composite
+                            .page_documents
+                            .iter()
+                            .map(|bytes| Document::from_bytes(bytes, post_type, version)
+                                .expect("post deserializes")
+                                .id()
+                                .to_buffer())
+                            .collect::<Vec<_>>(),
+                        vec![POST_A, POST_B]
+                    );
+                    let Some(composite_documents::sub_query_result::Result::Counts(counts)) =
+                        &composite.sub_results[0].result
+                    else {
+                        panic!("expected like counts");
+                    };
+                    assert_eq!(
+                        counts
+                            .entries
+                            .iter()
+                            .map(|entry| (entry.key.clone(), entry.count))
+                            .collect::<std::collections::BTreeMap<_, _>>(),
+                        std::collections::BTreeMap::from([
+                            (POST_A.to_vec(), 2),
+                            (POST_B.to_vec(), 1)
+                        ])
+                    );
+                    let profile_type = dashpay
+                        .document_type_for_name("profile")
+                        .expect("profile type");
+                    let document_types = if initial_protocol_version.is_some() {
+                        assert_eq!(composite.sub_results.len(), 2);
+                        vec![profile_type]
+                    } else {
+                        assert_eq!(composite.sub_results.len(), 3);
+                        vec![post_type, profile_type]
+                    };
+                    let joined: Vec<Vec<Document>> = composite.sub_results[1..]
+                        .iter()
+                        .zip(document_types)
+                        .map(|(sub, document_type)| {
+                            let Some(composite_documents::sub_query_result::Result::Documents(
+                                documents,
+                            )) = &sub.result
+                            else {
+                                panic!("expected joined documents");
+                            };
+                            documents
+                                .documents
+                                .iter()
+                                .map(|bytes| {
+                                    Document::from_bytes(bytes, document_type, version)
+                                        .expect("joined document deserializes")
+                                })
+                                .collect()
+                        })
+                        .collect();
+                    if initial_protocol_version.is_some() {
+                        assert_joined_documents(&[], &joined[0]);
+                    } else {
+                        assert_joined_documents(&joined[0], &joined[1]);
+                    }
+                }
+                assert_eq!(
+                    platform
+                        .platform
+                        .drive
+                        .grove
+                        .root_hash(None, &version.drive.grove_version)
+                        .value
+                        .expect("stored root"),
+                    stored_root
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_split_overlapping_page_and_lookup_documents_at_supported_protocol_versions() {
+        for initial_protocol_version in [Some(12), Some(13), None] {
+            let (platform, state, version, feed, dashpay) =
+                setup_feed_state_with(initial_protocol_version, |feed, _| feed);
+            let stored_root = platform
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &version.drive.grove_version)
+                .value
+                .expect("stored root");
+            let post_type = feed.document_type_for_name("post").expect("post type");
+            for prove in [false, true] {
+                let mut request =
+                    composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+                request.where_clauses = vec![ProtoWhereClause {
+                    field: "$id".to_owned(),
+                    operator: ProtoWhereOperator::In as i32,
+                    value: Some(ProtoDocumentFieldValue {
+                        variant: Some(document_field_value::Variant::List(
+                            document_field_value::ValueList {
+                                values: [POST_D, POST_A]
+                                    .into_iter()
+                                    .map(|id| ProtoDocumentFieldValue {
+                                        variant: Some(document_field_value::Variant::BytesValue(
+                                            id.to_vec(),
+                                        )),
+                                    })
+                                    .collect(),
+                            },
+                        )),
+                    }),
+                    integer_range: None,
+                    time_range: None,
+                }];
+                request.limit = Some(2);
+                request.sub_queries = vec![sub(
+                    Vec::new(),
+                    "post",
+                    sub_query::Kind::Documents,
+                    initial_protocol_version.is_none().then_some(10),
+                    Some((0, "$id", "quotedPostId")),
+                )];
+                let result = platform
+                    .platform
+                    .query_documents(
+                        GetDocumentsRequest {
+                            version: Some(RequestVersion::V1(request)),
+                        },
+                        &state,
+                        version,
+                    )
+                    .expect("public query dispatcher");
+                assert!(
+                    result.errors.is_empty(),
+                    "PV{}: {:?}",
+                    version.protocol_version,
+                    result.errors
+                );
+                let Some(ResponseVersion::V1(response)) = result.data.expect("response").version
+                else {
+                    panic!("expected a V1 response");
+                };
+                let (page, joined) = if prove {
+                    let Some(ResponseResult::Proof(proof)) = response.result else {
+                        panic!("a proved request must contain a proof");
+                    };
+                    let mut query = client_query(&feed, &dashpay, version);
+                    query.internal_clauses = InternalClauses::extract_from_clauses(
+                        vec![WhereClause {
+                            field: "$id".to_owned(),
+                            operator: WhereOperator::In,
+                            value: Value::Array(vec![
+                                Value::Identifier(POST_D),
+                                Value::Identifier(POST_A),
+                            ]),
+                        }],
+                        version,
+                    )
+                    .expect("original page clause");
+                    query.limit = Some(2);
+                    let mut lookup = query.sub_queries[1].clone();
+                    lookup.limit = initial_protocol_version.is_none().then_some(10);
+                    lookup.binding = Some(SubQueryBinding {
+                        source: BindingSource::Page,
+                        source_property: "$id".to_owned(),
+                        field: "quotedPostId".to_owned(),
+                    });
+                    query.sub_queries = vec![lookup];
+                    let (root, verified) = query
+                        .verify_composite_documents_proof(&proof.grovedb_proof, version)
+                        .expect("the original overlapping composition verifies");
+                    assert_eq!(root, stored_root);
+                    assert_eq!(verified.sub_results.len(), 1);
+                    (
+                        verified.page_documents,
+                        verified.sub_results[0].documents().to_vec(),
+                    )
+                } else {
+                    let Some(ResponseResult::Data(data)) = response.result else {
+                        panic!("an unproved request must contain data");
+                    };
+                    let Some(result_data::Variant::Composite(composite)) = data.variant else {
+                        panic!("expected composite data");
+                    };
+                    assert_eq!(composite.sub_results.len(), 1);
+                    let Some(composite_documents::sub_query_result::Result::Documents(joined)) =
+                        &composite.sub_results[0].result
+                    else {
+                        panic!("expected lookup documents");
+                    };
+                    let decode = |bytes: &Vec<Vec<u8>>| {
+                        bytes
+                            .iter()
+                            .map(|bytes| {
+                                Document::from_bytes(bytes, post_type, version)
+                                    .expect("post deserializes")
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    (decode(&composite.page_documents), decode(&joined.documents))
+                };
+                assert_eq!(
+                    page.iter()
+                        .map(|document| document.id().to_buffer())
+                        .collect::<Vec<_>>(),
+                    vec![POST_A, POST_D]
+                );
+                assert_eq!(joined.len(), 1);
+                assert_eq!(joined[0].id().to_buffer(), POST_A);
+                assert_eq!(joined[0].owner_id().to_buffer(), OWNER_1);
+                assert_eq!(
+                    joined[0].properties().get("message"),
+                    Some(&Value::Text("post 1".to_owned()))
+                );
+                assert_eq!(
+                    platform
+                        .platform
+                        .drive
+                        .grove
+                        .root_hash(None, &version.drive.grove_version)
+                        .value
+                        .expect("stored root"),
+                    stored_root
+                );
+            }
+        }
+    }
+
+    /// A by-ids page's `$id IN` values are the client's: more than 100 of them, or values that
+    /// are not identifiers, are refused as the plain query refuses them, not as a node fault.
+    #[test]
+    fn should_refuse_a_malformed_by_ids_page_as_invalid_argument() {
+        for initial_protocol_version in [Some(13), None] {
+            let (platform, state, version, feed, dashpay) =
+                setup_feed_state_with(initial_protocol_version, |feed, _| feed);
+            let too_many: Vec<ProtoDocumentFieldValue> = (0..101u8)
+                .map(|i| ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::BytesValue(vec![i; 32])),
+                })
+                .collect();
+            let not_identifiers: Vec<ProtoDocumentFieldValue> = (0..3u64)
+                .map(|i| ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::Uint64Value(i)),
+                })
+                .collect();
+
+            for (values, expected) in [
+                (too_many, "at most 100 values"),
+                (not_identifiers, "must contain identifiers"),
+            ] {
+                for prove in [false, true] {
+                    let mut request =
+                        composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+                    request.where_clauses = vec![ProtoWhereClause {
+                        field: "$id".to_string(),
+                        operator: ProtoWhereOperator::In as i32,
+                        value: Some(ProtoDocumentFieldValue {
+                            variant: Some(document_field_value::Variant::List(
+                                document_field_value::ValueList {
+                                    values: values.clone(),
+                                },
+                            )),
+                        }),
+                        integer_range: None,
+                        time_range: None,
+                    }];
+                    request.limit = Some(100);
+
+                    let status = assert_invalid_argument_status(platform.platform.query_documents(
+                        GetDocumentsRequest {
+                            version: Some(RequestVersion::V1(request)),
+                        },
+                        &state,
+                        version,
+                    ));
+                    assert!(status.message().contains(expected), "{}", status.message());
+                }
+            }
+        }
     }
 }

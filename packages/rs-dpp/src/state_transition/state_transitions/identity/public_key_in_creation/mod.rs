@@ -1,10 +1,16 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
+use crate::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
+use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1Signable;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -19,6 +25,7 @@ mod fields;
 mod methods;
 mod types;
 pub mod v0;
+pub mod v1;
 mod version;
 
 #[cfg_attr(
@@ -37,6 +44,9 @@ mod version;
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),
+    /// A key in creation that may carry a budget and an expiry, from protocol version 14
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(IdentityPublicKeyInCreationV1),
 }
 
 impl IdentityPublicKeyInCreation {
@@ -54,12 +64,38 @@ impl IdentityPublicKeyInCreation {
             }),
         }
     }
+
+    /// The first of `keys` bound to a contract group, if any. A transition carrying such a key
+    /// is active from protocol version 14, and an identity created from the shielded pool
+    /// cannot register one.
+    pub fn first_bound_to_a_contract_group(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| {
+            key.contract_bounds()
+                .and_then(ContractBounds::contract_group_id)
+                .is_some()
+        })
+    }
+
+    /// The first of `keys` in the version 1 format, the one that can carry a budget or an
+    /// expiry, if any. A transition carrying such a key is active from protocol version 14,
+    /// whether or not the key has limits: a binary from before cannot decode the format.
+    pub fn first_in_version_1_format(keys: &[Self]) -> Option<&Self> {
+        keys.iter()
+            .find(|key| matches!(key, IdentityPublicKeyInCreation::V1(_)))
+    }
+
+    /// The first of `keys` that carries a budget or an expiry, if any. An identity created from
+    /// the shielded pool cannot register one; a version 1 key without limits is fine there.
+    pub fn first_with_limits(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| key.has_limits())
+    }
 }
 
 impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: &IdentityPublicKeyInCreation) -> Self {
         match val {
             IdentityPublicKeyInCreation::V0(v0) => v0.into(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.into(),
         }
     }
 }
@@ -68,18 +104,14 @@ impl From<IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: IdentityPublicKeyInCreation) -> Self {
         match val {
             IdentityPublicKeyInCreation::V0(v0) => v0.into(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.into(),
         }
     }
 }
 
 impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
     fn from(val: IdentityPublicKey) -> Self {
-        match val {
-            IdentityPublicKey::V0(_) => {
-                let v0: IdentityPublicKeyInCreationV0 = val.into();
-                v0.into()
-            }
-        }
+        (&val).into()
     }
 }
 
@@ -90,6 +122,8 @@ impl From<&IdentityPublicKey> for IdentityPublicKeyInCreation {
                 let v0: IdentityPublicKeyInCreationV0 = val.into();
                 v0.into()
             }
+            // The limits are part of what the identity signs, so they follow the key.
+            IdentityPublicKey::V1(v1) => IdentityPublicKeyInCreationV1::from(v1).into(),
         }
     }
 }
@@ -99,7 +133,9 @@ mod test {
     use super::*;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
-    use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+    use crate::state_transition::public_key_in_creation::accessors::{
+        IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+    };
     use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
     use crate::version::LATEST_PLATFORM_VERSION;
     use platform_value::BinaryData;
@@ -147,9 +183,7 @@ mod test {
     fn test_default_versioned() {
         let key = IdentityPublicKeyInCreation::default_versioned(LATEST_PLATFORM_VERSION)
             .expect("should create default");
-        match key {
-            IdentityPublicKeyInCreation::V0(_) => {}
-        }
+        assert!(matches!(key, IdentityPublicKeyInCreation::V0(_)));
     }
 
     #[test]
@@ -174,6 +208,35 @@ mod test {
         let pk: IdentityPublicKey = key.clone().into();
         let back: IdentityPublicKeyInCreation = (&pk).into();
         assert_eq!(back.id(), key.id());
+    }
+
+    /// The limits are part of what the identity signs, so a V1 key (one carrying a budget or an
+    /// expiry) must become a V1 key in creation with the limits intact, and a V0 key must stay V0
+    /// so identities that do not use limits keep their historical bytes.
+    #[test]
+    fn test_from_identity_public_key_keeps_limits() {
+        let plain: IdentityPublicKey = make_high_key(5).into();
+        let plain_in_creation = IdentityPublicKeyInCreation::from(&plain);
+        assert!(matches!(
+            plain_in_creation,
+            IdentityPublicKeyInCreation::V0(_)
+        ));
+        assert!(!plain_in_creation.has_limits());
+
+        for (total_budget, expires_at) in [
+            (Some(10_000_000_000), None),
+            (None, Some(1_800_000_000_000)),
+            (Some(10_000_000_000), Some(1_800_000_000_000)),
+        ] {
+            let limited = plain.clone().with_limits(total_budget, expires_at);
+            assert!(matches!(limited, IdentityPublicKey::V1(_)));
+
+            let in_creation = IdentityPublicKeyInCreation::from(&limited);
+            assert!(matches!(in_creation, IdentityPublicKeyInCreation::V1(_)));
+            assert_eq!(in_creation.total_budget(), total_budget);
+            assert_eq!(in_creation.expires_at(), expires_at);
+            assert_eq!(IdentityPublicKey::from(in_creation), limited);
+        }
     }
 
     #[test]

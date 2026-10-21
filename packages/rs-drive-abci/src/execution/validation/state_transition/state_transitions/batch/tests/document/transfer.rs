@@ -84,6 +84,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -295,6 +298,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -564,6 +570,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -881,6 +890,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1134,6 +1146,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1551,6 +1566,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1850,6 +1868,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -2128,6 +2149,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -2191,6 +2215,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -2328,6 +2355,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());
@@ -2454,6 +2484,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document4
+            .set_id_for_creation(card_document_type, &entropy4.0, 6, platform_version)
+            .expect("expected to set the document id");
 
         document4.set("attack", 9.into());
         document4.set("defense", 2.into());
@@ -2655,6 +2688,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -2718,6 +2754,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -2831,6 +2870,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());

@@ -98,7 +98,7 @@ impl Drive {
             ),
             // v2 (protocol version 15) keeps v1's preallocated-index pruning
             // behavior and estimates the reference shape written by the
-            // structure-B document writer.
+            // per-type history document writer.
             2 => self.remove_reference_for_index_level_for_contract_operations_v2(
                 document_and_contract_info,
                 index_path_info,

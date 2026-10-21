@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::shielded::paths::token_shielded_pool_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -62,6 +63,44 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_shielded_encrypted_notes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl Drive {
+    /// Verifies a `GetShieldedEncryptedNotes` proof for a TOKEN shielded pool. Same versioning
+    /// as [`Drive::verify_shielded_encrypted_notes`].
+    #[allow(clippy::type_complexity)]
+    pub fn verify_token_shielded_pool_encrypted_notes(
+        proof: &[u8],
+        token_id: [u8; 32],
+        start_index: u64,
+        count: u32,
+        max_elements: u32,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<VerifiedShieldedEncryptedNote>, u64), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .shielded
+            .verify_shielded_encrypted_notes
+        {
+            0 => Self::verify_pool_encrypted_notes_v0(
+                proof,
+                token_shielded_pool_path_vec(token_id),
+                start_index,
+                count,
+                max_elements,
+                verify_subset_of_proof,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_token_shielded_pool_encrypted_notes".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

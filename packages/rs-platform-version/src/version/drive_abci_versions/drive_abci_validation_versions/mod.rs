@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v10;
+pub mod v11;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -61,6 +62,13 @@ pub struct DriveAbciValidationConstants {
     /// (Merk node framing, dense path records, the amortized chunk-blob
     /// framing).
     pub shielded_storage_bytes_per_action: u64,
+    /// Effective bytes per action added by `compute_shielded_identity_balance_write_fee_v0`
+    /// to cover the estimated processing of identity-paid note and nullifier writes.
+    /// This is an admission allowance, not a physical payload size or a charged fee.
+    pub shielded_identity_action_write_storage_bytes: u64,
+    /// Flat effective-byte allowance read by `compute_shielded_identity_balance_write_fee_v0`
+    /// for estimated identity nonce/balance writes and the complete validation context.
+    pub shielded_identity_balance_write_storage_bytes: u64,
     /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
     /// donate to the fee pools when no `surplus_output` address is set. Above this
     /// cap the transition is rejected so a client cannot accidentally forfeit a
@@ -119,6 +127,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub max_asset_lock_usage_attempts: u16,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// `IdentityKeyLimitsUpdate` (protocol version 14): every gate is `None` before V10.
+    pub identity_key_limits_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,
@@ -129,6 +139,9 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// `ContractUserModeration` (protocol version 14).
+    pub contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub contract_fee_claim_state_transition: DriveAbciStateTransitionValidationVersion,
     /// Validation of the `refersTo` reference declarations a contract's
     /// document types carry, run at contract create and update. Only
     /// reachable from contract create/update state validation 1 and above.
@@ -151,12 +164,21 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_shielded_pool_state_transition:
         DriveAbciStateTransitionValidationVersion,
+    pub token_shielded_transfer_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_unshield_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_purchase_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub asset_locks: DriveAbciAssetLockValidationVersions,
     pub validate_identity_public_key_contract_bounds: FeatureVersion,
+    /// Rejects a public key in creation whose expiry is not after the block time. Public keys
+    /// cannot carry an expiry before protocol version 14, so earlier tables keep it `None`.
+    pub validate_identity_public_keys_limits: OptionalFeatureVersion,
     pub validate_identity_public_key_ids_dont_exist_in_state: FeatureVersion,
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,
@@ -207,6 +229,16 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     ///
     /// [`transform_document_transition`]: crate
     pub failed_per_transition_action: FeatureVersion,
+    /// Versions the contract moderation gate the batch transformer runs for the document
+    /// transitions of one contract: the signer's status read, the refusal of a banned or
+    /// suspended signer, and the collection of a lapsed suspension for the batch to sweep
+    /// (`contract_moderation_gate`).
+    ///
+    /// - `None` (protocol version 13 and below): no gate. Contract moderation does not exist,
+    ///   and the shared transformer does exactly what it did before it.
+    /// - `Some(0)` (protocol version 14+): the gate runs for a contract whose config declares
+    ///   moderation.
+    pub contract_moderation_gate: OptionalFeatureVersion,
     /// Versions the
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
     /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`
@@ -219,7 +251,11 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
     pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
-    pub is_allowed: FeatureVersion,
+    /// Version of the signer's minimum balance pre-check of a batch, which runs before its data
+    /// contracts are loaded. v0 requires the principal plus a fee minimum per transition from
+    /// the signer; v1 requires only the principal from a batch that asks the contract owner to
+    /// pay its gas, and leaves the gas to fee validation.
+    pub identity_minimum_balance_pre_check: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier
@@ -265,6 +301,20 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_direct_purchase_transition_state_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_structure_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_state_validation: FeatureVersion,
+    pub token_shield_transition_structure_validation: FeatureVersion,
+    pub token_shield_transition_state_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_state_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_structure_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_state_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_state_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_state_validation: FeatureVersion,
+    pub token_unshield_transition_structure_validation: FeatureVersion,
+    pub token_unshield_transition_state_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

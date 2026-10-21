@@ -72,8 +72,12 @@ mod tests {
             // cost. v0/v1 grovedb formulas are byte-stable so
             // `should_add_to_balance_first_version_estimated` keeps the
             // 4_278_840 pin.
+            // Grove version 4 then sizes the replaced root key of the sum
+            // tree holding the balance as a sum tree, 9 replaced bytes
+            // (3_600 credits) above the plain-tree sizing:
+            // 4_378_100 -> 4_381_700.
             let expected_fee_result = FeeResult {
-                processing_fee: 4378100,
+                processing_fee: 4381700,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
@@ -439,8 +443,11 @@ mod tests {
         #[test]
         fn should_remove_from_balance_latest_version_estimated() {
             let platform_version = PlatformVersion::latest();
+            // Grove version 4 sizes the replaced root key of the sum tree
+            // holding the balance as a sum tree, 9 replaced bytes (3_600
+            // credits) above the first version's plain-tree sizing.
             let expected_fee_result = FeeResult {
-                processing_fee: 2476860,
+                processing_fee: 2480460,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
@@ -516,12 +523,13 @@ mod tests {
 
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
+        use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
         use crate::error::identity::IdentityError;
         use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
-        use dpp::fee::fee_result::FeeResult;
+        use dpp::fee::fee_result::{BalanceChange, FeeResult};
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
         use grovedb::batch::GroveOp;
@@ -619,6 +627,79 @@ mod tests {
         }
 
         #[test]
+        fn should_credit_other_refunds_when_the_payers_refund_equals_its_fee() {
+            let drive = setup_drive_with_initial_state_structure(None);
+
+            let platform_version = PlatformVersion::latest();
+
+            let payer = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+            let other_identity =
+                create_test_identity(&drive, [1; 32], Some(16), None, platform_version)
+                    .expect("expected to create an identity");
+
+            let payer_balance = 1_000_000;
+            drive
+                .add_to_identity_balance(
+                    payer.id().to_buffer(),
+                    payer_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fund the payer");
+
+            let storage_fee = 30_000;
+            let processing_fee = 70_000;
+            let other_refund = 200_000;
+
+            let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
+                BTreeMap::from_iter([
+                    (
+                        payer.id().to_buffer(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, storage_fee + processing_fee)]),
+                    ),
+                    (
+                        other_identity.id().to_buffer(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, other_refund)]),
+                    ),
+                ]);
+
+            let fee_result = FeeResult {
+                storage_fee,
+                processing_fee,
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                ..Default::default()
+            };
+            let fee_change = fee_result.clone().into_balance_change(payer.id());
+
+            assert_eq!(fee_change.change(), &BalanceChange::NoBalanceChange);
+
+            let outcome = drive
+                .apply_balance_change_from_fee_to_identity(
+                    fee_change,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("should apply fee change");
+
+            // The returned fee result still takes the other identity's refund out of the pools
+            assert_eq!(outcome.actual_fee_paid_owned(), fee_result);
+
+            let fetch_balance = |identity_id: [u8; 32]| {
+                drive
+                    .fetch_identity_balance(identity_id, None, platform_version)
+                    .expect("expected to fetch a balance")
+                    .expect("expected a balance")
+            };
+
+            assert_eq!(fetch_balance(payer.id().to_buffer()), payer_balance);
+            assert_eq!(fetch_balance(other_identity.id().to_buffer()), other_refund);
+        }
+
+        #[test]
         fn should_fail_if_balance_is_not_persisted() {
             let drive = setup_drive_with_initial_state_structure(None);
 
@@ -706,8 +787,10 @@ mod tests {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes()
+                    }),
+                    // Owed to the processing fee pool by whoever applies the operations
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes() && *repaid_debt == negative_amount
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -775,8 +858,10 @@ mod tests {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if debt_bytes == &2000u64.to_be_bytes()
+                    }),
+                    // All of the refund repaid debt, owed to the processing fee pool
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if debt_bytes == &2000u64.to_be_bytes() && *repaid_debt == removed_credits
             ));
 
             assert_eq!(fee_result_outcome, fee_result);

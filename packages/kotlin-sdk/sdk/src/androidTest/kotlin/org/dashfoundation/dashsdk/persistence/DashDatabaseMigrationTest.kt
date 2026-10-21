@@ -470,13 +470,233 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v11 -> v12 adds the identity key usage limits (protocol version 14):
+     * `totalBudget` and `expiresAt` on `public_keys`, both nullable. A key
+     * persisted before the migration reads back without limits, and a limited
+     * key written afterwards keeps both values, so a restored key keeps the
+     * limits it was registered with.
+     */
+    @Test
+    fun migrate11To12AddsKeyLimitColumns() {
+        val legacy = helper.createDatabase(dbName, 11)
+        legacy.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, identityId, createdAt) " +
+                "VALUES (5, '0', '1', '0', 0, x'02', 'GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3', 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
+        db.query("SELECT totalBudget, expiresAt FROM public_keys WHERE keyId = 5").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertTrue(c.isNull(1))
+        }
+        db.execSQL(
+            "UPDATE public_keys SET totalBudget = 500000000, expiresAt = 1800000000000 " +
+                "WHERE keyId = 5",
+        )
+        db.query("SELECT totalBudget, expiresAt FROM public_keys WHERE keyId = 5").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(500_000_000L, c.getLong(0))
+            assertEquals(1_800_000_000_000L, c.getLong(1))
+        }
+        db.close()
+    }
+
+    /**
+     * v12 → v13 adds the nullable `public_keys.contractBoundsKind` column
+     * (additive). Pre-existing keys, bounded or not, must survive with a
+     * NULL kind (the restore path infers a legacy row's kind), and new rows
+     * must accept an explicit kind, including 3 (ContractGroup).
+     */
+    @Test
+    fun migrate12To13AddsContractBoundsKindColumn() {
+        helper.createDatabase(dbName, 12).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, contractBoundsData, contractBoundsDocumentTypeName, " +
+                    "identityId, createdAt, identityIdData) " +
+                    "VALUES (0, '1', '3', '0', 0, x'02AB', x'5B5D', 'contactRequest', " +
+                    "'id-base58', 0, x'0A')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 13, true, DashDatabase.MIGRATION_12_13)
+
+        // Pre-existing rows survive with a NULL kind and their bounds intact.
+        db.query(
+            "SELECT contractBoundsKind, contractBoundsDocumentTypeName FROM public_keys " +
+                "WHERE keyId = 0",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertEquals("contactRequest", c.getString(1))
+        }
+        // New rows accept an explicit kind.
+        db.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, contractBoundsData, contractBoundsKind, identityId, " +
+                "createdAt, identityIdData) " +
+                "VALUES (1, '0', '2', '0', 0, x'02CD', x'5B5D', 3, 'id-base58', 0, x'0A')",
+        )
+        db.query("SELECT contractBoundsKind FROM public_keys WHERE keyId = 1").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+        }
+        db.close()
+    }
+
+    /**
+     * v13 → v14 adds the nullable `tokens.oncePerIdentityDistribution`
+     * column (additive). Pre-existing token rows must survive with a NULL
+     * block, and new rows must accept the JSON `TokenMaterializer` writes.
+     */
+    @Test
+    fun migrate13To14AddsOncePerIdentityDistributionColumn() {
+        val tokenColumns = "id, contractId, position, name, baseSupply, decimals, isPaused, " +
+            "allowTransferToFrozenBalance, keepsTransferHistory, keepsFreezingHistory, " +
+            "keepsMintingHistory, keepsBurningHistory, keepsDirectPricingHistory, " +
+            "keepsDirectPurchaseHistory, mintingAllowChoosingDestination, tradeMode, " +
+            "createdAt, lastUpdatedAt, canManuallyMint, canManuallyBurn, canFreeze, " +
+            "canUnfreeze, canDestroyFrozenFunds, hasEmergencyActions, canChangeMaxSupply, " +
+            "canChangeConventions, canChangeTradeMode, hasDistribution"
+        helper.createDatabase(dbName, 13).apply {
+            // Seed the parent contract so the tokens FK target exists.
+            execSQL(
+                "INSERT INTO data_contracts (id, name, serializedContract, createdAt, " +
+                    "lastAccessedAt, schemaData, documentTypesData, networkRaw, lastUpdated, " +
+                    "canBeDeleted, readonly, keepsHistory, documentsKeepHistoryContractDefault, " +
+                    "documentsMutableContractDefault, documentsCanBeDeletedContractDefault, " +
+                    "hasTokens) " +
+                    "VALUES (x'C0', 'c', x'7B7D', 0, 0, x'7B7D', x'5B5D', 1, 0, 0, 0, 0, 0, 1, 1, 1)",
+            )
+            execSQL(
+                "INSERT INTO tokens ($tokenColumns) " +
+                    "VALUES (x'C000000000', x'C0', 0, 't', '1000', 8, 0, 1, 1, 1, 1, 1, 1, 1, 1, " +
+                    "'NotTradeable', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 14, true, DashDatabase.MIGRATION_13_14)
+
+        // Pre-existing rows survive with a NULL block.
+        db.query("SELECT oncePerIdentityDistribution, name FROM tokens WHERE position = 0").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertEquals("t", c.getString(1))
+        }
+        // New rows accept the materializer's JSON block.
+        val block = """{"${'$'}formatVersion":"0","amount":5000}"""
+        db.execSQL(
+            "INSERT INTO tokens ($tokenColumns, oncePerIdentityDistribution) " +
+                "VALUES (x'C000000001', x'C0', 1, 'u', '0', 8, 0, 1, 1, 1, 1, 1, 1, 1, 1, " +
+                "'NotTradeable', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, '$block')",
+        )
+        db.query("SELECT oncePerIdentityDistribution FROM tokens WHERE position = 1").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(block, c.getString(0))
+        }
+        db.close()
+    }
+
+    /**
+     * v14 -> v15 adds the DashPay backfill record columns on `wallets`
+     * (`dashPayBackfillFloor`, `dashPayBackfillRewoundFrom`,
+     * `dashPayBackfillCovered`), all nullable and additive. A pre-migration
+     * wallet reads back with no record — native then rewinds once, as it did
+     * before the record existed — and a row written afterwards keeps all
+     * three, so a restored wallet resumes its backfill instead of restarting
+     * it (dashpay/platform#4302).
+     */
+    @Test
+    fun migrate14To15AddsDashPayBackfillColumns() {
+        helper.createDatabase(dbName, 14).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 2309809, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO dashpay_contact_requests (networkRaw, ownerIdentityId, " +
+                    "contactIdentityId, isOutgoing, senderKeyIndex, recipientKeyIndex, " +
+                    "accountReference, encryptedPublicKey, coreHeightCreatedAt, createdAtMillis, " +
+                    "paymentChannelBroken, contactHidden, createdAt, lastUpdated) " +
+                    "VALUES (1, x'0A', x'0B', 0, 2, 3, 4, x'05', 1226329, 0, 0, 0, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 15, true, DashDatabase.MIGRATION_14_15)
+
+        db.query(
+            "SELECT externalAccountReference FROM dashpay_contact_requests WHERE ownerIdentityId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration contact rows carry no outbound-account marker", c.isNull(0))
+        }
+        db.execSQL(
+            "UPDATE dashpay_contact_requests SET externalAccountReference = 4 WHERE ownerIdentityId = x'0A'",
+        )
+        db.query(
+            "SELECT externalAccountReference FROM dashpay_contact_requests WHERE ownerIdentityId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(4, c.getInt(0))
+        }
+
+        db.query(
+            "SELECT dashPayBackfillFloor, dashPayBackfillRewoundFrom, dashPayBackfillCovered, " +
+                "syncedHeight FROM wallets WHERE walletId = x'01'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration wallets have no backfill record", c.isNull(0))
+            assertTrue(c.isNull(1))
+            assertTrue(c.isNull(2))
+            assertEquals("the cursor itself is untouched", 2_309_809, c.getInt(3))
+        }
+        db.execSQL(
+            "UPDATE wallets SET dashPayBackfillFloor = 2167092, " +
+                "dashPayBackfillRewoundFrom = 2537092, dashPayBackfillCovered = x'AABB' " +
+                "WHERE walletId = x'01'",
+        )
+        db.query(
+            "SELECT dashPayBackfillFloor, dashPayBackfillRewoundFrom, dashPayBackfillCovered " +
+                "FROM wallets WHERE walletId = x'01'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(2_167_092, c.getInt(0))
+            assertEquals(2_537_092, c.getInt(1))
+            assertTrue(byteArrayOf(0xAA.toByte(), 0xBB.toByte()).contentEquals(c.getBlob(2)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            15,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -485,16 +705,20 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
+            DashDatabase.MIGRATION_12_13,
+            DashDatabase.MIGRATION_13_14,
+            DashDatabase.MIGRATION_14_15,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v11 schema. */
+    /** The full chain from v1 must also land on a valid v15 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            15,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -506,6 +730,10 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
+            DashDatabase.MIGRATION_12_13,
+            DashDatabase.MIGRATION_13_14,
+            DashDatabase.MIGRATION_14_15,
         ).close()
     }
 }

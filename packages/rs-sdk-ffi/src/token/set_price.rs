@@ -52,7 +52,7 @@ pub unsafe extern "C" fn dash_sdk_token_set_price(
     }
 
     // SAFETY: We've verified all pointers are non-null above
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
 
     // Convert transition_owner_id from bytes to Identifier (32 bytes)
     let transition_owner_id = {
@@ -219,7 +219,7 @@ pub unsafe extern "C" fn dash_sdk_token_set_price(
             .token_set_price_for_direct_purchase(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to set token price and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to set token price and wait", e)
             })?;
 
         Ok(result)

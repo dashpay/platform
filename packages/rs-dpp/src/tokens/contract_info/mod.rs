@@ -1,4 +1,8 @@
 use crate::data_contract::TokenContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::contract_info::v0::TokenContractInfoV0;
 use crate::ProtocolError;
 use bincode::{DecodeUntrusted, Encode};
@@ -42,10 +46,10 @@ pub enum TokenContractInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenContractInfo {}
+impl JsonConvertible for TokenContractInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenContractInfo {}
+impl ValueConvertible for TokenContractInfo {}
 
 impl TokenContractInfo {
     pub fn new(

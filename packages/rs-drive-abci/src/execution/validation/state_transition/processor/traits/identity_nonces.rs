@@ -80,6 +80,27 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.validate_identity_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
+            StateTransition::ContractUserModeration(st) => st.validate_identity_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
+            StateTransition::ContractFeeClaim(st) => st.validate_identity_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             StateTransition::IdentityCreditTransfer(st) => st.validate_identity_nonces(
                 platform,
                 block_info,
@@ -125,6 +146,9 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -166,6 +190,9 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
                     | StateTransition::IdentityUpdate(_)
+                    | StateTransition::IdentityKeyLimitsUpdate(_)
+                    | StateTransition::ContractUserModeration(_)
+                    | StateTransition::ContractFeeClaim(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::IdentityCreditWithdrawal(_)
                     | StateTransition::MasternodeVote(_)
@@ -181,6 +208,9 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::Shield(_)
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::IdentityTopUpFromShieldedPool(_)
+                    | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                    | StateTransition::TokenUnshieldWithShieldedFee(_)
+                    | StateTransition::TokenPurchaseFromShieldedPool(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
                     | StateTransition::ShieldedWithdrawal(_)

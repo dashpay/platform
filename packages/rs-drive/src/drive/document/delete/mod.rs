@@ -57,11 +57,9 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -80,7 +78,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
@@ -89,11 +87,9 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)

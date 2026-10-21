@@ -36,20 +36,24 @@ impl<C> Platform<C> {
                 )
             }));
 
-        let limit = limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
+        // A refused limit is a request error: returned through `?` it would reach the client as
+        // an internal error, which clients retry on every other node.
+        let limit = check_validation_result_with_data!(limit.map_or(
+            Ok(config.default_query_limit),
+            |limit_value| {
                 if limit_value == 0
                     || limit_value > u16::MAX as u32
                     || limit_value as u16 > config.default_query_limit
                 {
-                    None
+                    Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit_value, config.default_query_limit
+                    ))))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit_value as u16)
                 }
-            })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            }
+        ));
 
         let start_at = match start_at_info {
             None => None,
@@ -145,8 +149,8 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
     use crate::query::tests::setup_platform_with_token_state;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0;
     use dpp::dashcore::Network;
 
@@ -413,52 +417,39 @@ mod tests {
     }
 
     #[test]
-    fn test_query_limit_zero_is_rejected_as_error() {
-        // limit == 0 routes through the `.ok_or(...)?` path, which propagates
-        // a Drive(Query(InvalidLimit(...))) error via `Err(...)`, not as a
-        // validation error inside the response.
+    fn should_refuse_a_zero_limit_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetTokenPreProgrammedDistributionsRequestV0 {
-            token_id: vec![0; 32],
-            start_at_info: None,
-            limit: Some(0),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetTokenPreProgrammedDistributionsRequestV0 {
+                token_id: vec![0; 32],
+                start_at_info: None,
+                limit: Some(0),
+                prove,
+            };
 
-        let err = platform
-            .query_token_pre_programmed_distributions_v0(request, &state, version)
-            .expect_err("limit=0 should propagate an Err");
-
-        // Accept any Drive/Query related error; we just want to verify the
-        // `.ok_or(...)?` path is exercised.
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_token_pre_programmed_distributions_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
-    fn test_query_limit_above_max_is_rejected_as_error() {
+    fn should_refuse_a_limit_over_u16_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetTokenPreProgrammedDistributionsRequestV0 {
-            token_id: vec![0; 32],
-            start_at_info: None,
-            limit: Some((u16::MAX as u32) + 1),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetTokenPreProgrammedDistributionsRequestV0 {
+                token_id: vec![0; 32],
+                start_at_info: None,
+                limit: Some((u16::MAX as u32) + 1),
+                prove,
+            };
 
-        let err = platform
-            .query_token_pre_programmed_distributions_v0(request, &state, version)
-            .expect_err("oversized limit should propagate an Err");
-
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_token_pre_programmed_distributions_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]

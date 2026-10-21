@@ -37,10 +37,10 @@ impl DriveDocumentQuery<'_> {
         document_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Document>), Error> {
-        // Reject unsupported in-clause shapes before doing any proof work,
+        // Reject unsupported where-clause shapes before doing any proof work,
         // mirroring the server-side preflight that runs before the cursor
         // document is fetched.
-        self.validate_in_clause_shape(platform_version)?;
+        self.validate_where_clause_shape(platform_version)?;
         let (start_at_document_path, start_at_document_key) =
             self.start_at_document_path_and_key(&document_id);
         let mut path_query = PathQuery::new_single_key(

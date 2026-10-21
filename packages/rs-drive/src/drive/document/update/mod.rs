@@ -1989,7 +1989,7 @@ mod tests {
 
             //todo
             if platform_version.protocol_version >= 15 {
-                1448
+                1457
             } else {
                 1238
             }
@@ -2151,7 +2151,7 @@ mod tests {
 
         let expected_added_bytes = if using_history {
             if platform_version.protocol_version >= 15 {
-                1449
+                1458
             } else {
                 1239
             }
@@ -3249,6 +3249,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3298,6 +3300,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -3503,6 +3507,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3549,6 +3555,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         drive

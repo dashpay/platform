@@ -42,7 +42,7 @@ pub fn verify_specialized_balance(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, balance_option) = Drive::verify_specialized_balance(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         specialized_balance_id_bytes,
         verify_subset_of_proof,
         platform_version,

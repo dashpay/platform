@@ -1,8 +1,13 @@
 mod v0;
 
 use derive_more::From;
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateRead, StoredSystemValues,
+};
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use dpp::document::Document;
 use dpp::fee::Credits;
+use std::collections::BTreeMap;
 
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
@@ -55,6 +60,42 @@ impl DocumentPurchaseTransitionActionAccessorsV0 for DocumentPurchaseTransitionA
     fn price(&self) -> Credits {
         match self {
             DocumentPurchaseTransitionAction::V0(v0) => v0.price,
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => {
+                PropertyConstraintReads::aggregates_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => PropertyConstraintReads::set_aggregates(
+                &mut v0.property_constraint_reads,
+                aggregates,
+            ),
+        }
+    }
+
+    fn stored_system_values(&self) -> Option<&StoredSystemValues> {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => {
+                PropertyConstraintReads::stored_system_values_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_stored_system_values(&mut self, values: StoredSystemValues) {
+        match self {
+            DocumentPurchaseTransitionAction::V0(v0) => {
+                PropertyConstraintReads::set_stored_system_values(
+                    &mut v0.property_constraint_reads,
+                    values,
+                )
+            }
         }
     }
 }

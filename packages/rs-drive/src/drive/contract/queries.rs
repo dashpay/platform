@@ -1,5 +1,6 @@
 use crate::drive::contract::paths::{
-    contract_keeping_history_root_path_vec, contract_root_path_vec, CONTRACT_VERSION_KEY,
+    contract_keeping_history_root_path_vec, contract_root_path_vec, CONTRACT_OTHER_KEY,
+    CONTRACT_VERSION_KEY,
 };
 use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::{Drive, RootTree};
@@ -89,9 +90,9 @@ impl Drive {
     /// Creates the path query that proves the version items of the given contracts
     /// (`getDataContractsLatestVersions` without the contracts), from protocol version 14.
     ///
-    /// It selects the requested contract ids under the contracts root and descends the
-    /// subquery key `2`, the four-byte version item every contract carries beside its
-    /// serialized form or history subtree. A requested id no contract has is proved absent.
+    /// It selects the requested contract ids under the contracts root and descends into each
+    /// contract's other tree (`2`) to the key `64`, the four-byte version item every contract
+    /// carries. A requested id no contract has is proved absent.
     /// Duplicate ids are folded, so the limit is the number of distinct ids; the prover and
     /// the verifier reject more distinct ids than a query limit can hold, so the saturation
     /// here is never reached.
@@ -105,7 +106,9 @@ impl Drive {
         let distinct_ids: BTreeSet<&[u8; 32]> = contract_ids.iter().collect();
         let mut query = Query::new();
         query.insert_keys(distinct_ids.iter().map(|key| key.to_vec()).collect());
-        query.set_subquery_key(vec![CONTRACT_VERSION_KEY]);
+        // One subquery path down to the item: `set_subquery_key` would replace the path rather
+        // than extend it.
+        query.set_subquery_path(vec![vec![CONTRACT_OTHER_KEY], vec![CONTRACT_VERSION_KEY]]);
         PathQuery::new(
             vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
             SizedQuery::new(

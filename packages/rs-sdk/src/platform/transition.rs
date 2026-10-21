@@ -1,6 +1,7 @@
 //! State transitions used to put changed objects to the Dash Platform.
 pub mod address_credit_withdrawal;
 pub(crate) mod address_inputs;
+pub mod asset_lock_submission;
 /// Re-export the canonical address-input fetch + hard balance check so
 /// downstream crates (e.g. platform-wallet's shield path) reuse it
 /// instead of re-implementing the fetch-and-validate dance.
@@ -8,6 +9,8 @@ pub use address_inputs::fetch_inputs_with_nonce;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
+pub mod contract_fee_claim;
+pub mod contract_user_moderation;
 #[cfg(feature = "shielded")]
 pub mod identity_create_from_shielded_pool;
 /// Shielded pool to an existing identity's balance.
@@ -38,6 +41,7 @@ pub mod transfer_to_addresses;
 mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
+pub mod update_identity_key_limits;
 pub mod update_price_of_document;
 pub(crate) mod validation;
 pub mod vote;

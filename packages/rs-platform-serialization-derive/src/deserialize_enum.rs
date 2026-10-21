@@ -25,8 +25,8 @@ pub(super) fn derive_platform_deserialize_enum(
     let TrustNames {
         decode_from_slice,
         deserializable,
-        deserialize,
-        deserialize_no_limit,
+        deserialize_with_bytes_len,
+        deserialize_no_limit_with_bytes_len,
         from_versioned_structure,
         versioned_deserialize,
         limit_from_versioned_structure,
@@ -217,44 +217,44 @@ pub(super) fn derive_platform_deserialize_enum(
         };
         quote! {
             impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause {
-                fn #deserialize(
+                fn #deserialize_with_bytes_len(
                     data: &[u8]
-                ) -> Result<Self, ProtocolError>
+                ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
-                    #decode_from_slice(&data, config).map(|(a,_)| a)#limit_map_err
+                    #decode_from_slice(&data, config)#limit_map_err
                 }
 
-                fn #deserialize_no_limit(
+                fn #deserialize_no_limit_with_bytes_len(
                     data: &[u8]
-                ) -> Result<Self, ProtocolError>
+                ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config)#map_err
                 }
             }
         }
     } else {
         quote! {
             impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause {
-                fn #deserialize(
+                fn #deserialize_with_bytes_len(
                     data: &[u8]
-                ) -> Result<Self, ProtocolError>
+                ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config)#map_err
                 }
 
-                fn #deserialize_no_limit(
+                fn #deserialize_no_limit_with_bytes_len(
                     data: &[u8]
-                ) -> Result<Self, ProtocolError>
+                ) -> Result<(Self, usize), ProtocolError>
                 where
                     Self: Sized {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();
-                    #decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                    #decode_from_slice(&data, config)#map_err
                 }
             }
         }

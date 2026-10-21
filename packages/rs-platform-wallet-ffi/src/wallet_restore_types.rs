@@ -192,7 +192,7 @@ pub struct AccountSpecFFI {
 ///
 /// `contract_bounds_*` mirror the [`IdentityKeyEntryFFI`]
 /// projection of DPP's `ContractBounds` enum (kind tag: 0=none,
-/// 1=SingleContract, 2=SingleContractDocumentType). Including them
+/// 1=SingleContract, 2=SingleContractDocumentType, 3=ContractGroup). Including them
 /// here closes the persist↔restore round-trip — without it, scoped
 /// DashPay keys (registered with `SingleContractDocumentType`) come
 /// back as unbounded on cold restart.
@@ -212,18 +212,28 @@ pub struct IdentityKeyRestoreFFI {
     pub data: *const u8,
     pub data_len: usize,
     /// ContractBounds discriminant: 0=none, 1=SingleContract,
-    /// 2=SingleContractDocumentType. Mirrors the encoding in
+    /// 2=SingleContractDocumentType, 3=ContractGroup. Mirrors the encoding in
     /// [`crate::identity_persistence::IdentityKeyEntryFFI`].
     pub contract_bounds_kind: u8,
-    /// 32-byte contract identifier. Zeroed when
-    /// `contract_bounds_kind == 0`; otherwise the contract id the
-    /// key is bound to.
+    /// 32-byte identifier. Zeroed when `contract_bounds_kind == 0`;
+    /// otherwise the contract id the key is bound to, or the contract
+    /// group id when `contract_bounds_kind == 3`.
     pub contract_bounds_id: [u8; 32],
     /// NUL-terminated UTF-8 doc-type name. Non-null iff
     /// `contract_bounds_kind == 2`. Swift-owned (released by the
     /// same load-callback allocation arena that frees the public-
     /// key data buffer).
     pub contract_bounds_document_type: *const c_char,
+    /// Usage limits (protocol version 14), mirroring
+    /// [`crate::identity_persistence::IdentityKeyEntryFFI`]: the credits
+    /// the key may spend over its lifetime when `total_budget_is_some`,
+    /// and the block time in milliseconds from which it can no longer
+    /// sign when `expires_at_is_some`. Without them a limited key would
+    /// come back unlimited on cold restart.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
@@ -573,6 +583,29 @@ pub struct ProviderSpecialTxRestoreEntryFFI {
     pub first_seen: u64,
 }
 
+/// One outgoing transaction the host still holds as unconfirmed,
+/// replayed at load so its spend effect survives a restart.
+#[repr(C)]
+pub struct UnconfirmedOutgoingTxRecordFFI {
+    /// Wire-order txid of the row this record came from.
+    ///
+    /// The load path decodes `tx_bytes` and requires the result to hash to
+    /// this, then drops the record if it does not. The replay applies the
+    /// transaction through the ordinary state-update path, so bytes that do
+    /// not belong to the row Swift selected would rewrite accounting for
+    /// inputs and outputs nobody asked about. Fail closed instead.
+    pub txid: [u8; 32],
+    /// Consensus-encoded transaction body, the same wire format
+    /// `dashcore::consensus::encode::serialize` produces. Swift-owned
+    /// for the callback window; freed by `LoadWalletListFreeFn`.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// Host's `firstSeen` for the row, in seconds. The load path
+    /// replays in ascending order so a parent send is applied before a
+    /// child that spends its change.
+    pub first_seen: u64,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -670,6 +703,40 @@ pub struct WalletRestoreEntryFFI {
     /// re-apply a fresh chainlock.
     pub last_applied_chain_lock_bytes: *const u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    /// Outgoing transactions the host still holds as unconfirmed
+    /// (mempool context, no block height), oldest `first_seen` first.
+    ///
+    /// Replayed at load through the ordinary mempool check so their
+    /// spend effect is restored — see
+    /// [`UnconfirmedOutgoingTxRecordFFI`]. `null` / `0` when the wallet
+    /// has none. Each entry's `tx_bytes` buffer is Swift-owned and
+    /// freed by `LoadWalletListFreeFn`.
+    ///
+    /// Appended at the end deliberately. This is a `#[repr(C)]` struct
+    /// shared across the FFI boundary, so a field inserted anywhere else
+    /// shifts the offsets of everything after it; keeping additions here
+    /// leaves every existing field where it was.
+    pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
+    pub unconfirmed_outgoing_tx_records_count: usize,
+    /// Whether the host holds a persisted DashPay backfill record for this
+    /// wallet (dashpay/platform#4302). `false` — the zero-init default — for
+    /// a wallet that never rewound for a contact, a row persisted before the
+    /// record existed, or a host that does not store the slot; the rescan
+    /// sweep then behaves as it always did and writes one. The three fields
+    /// below are read only when this is `true`.
+    pub has_dashpay_backfill: bool,
+    /// Lowest height the backfill rewound the cursor to.
+    pub dashpay_backfill_floor: u32,
+    /// Highest cursor the backfill rewound from — the height the scan climbs
+    /// back to for the backfill to be complete.
+    pub dashpay_backfill_rewound_from: u32,
+    /// Receival contacts the backfill covers, each with the height it is
+    /// covered from. Host-owned for the callback window, freed by
+    /// `LoadWalletListFreeFn`; `null` / `0` when the record covers no one.
+    /// Appended at the end, like every addition to this `#[repr(C)]` struct,
+    /// so no existing offset moves.
+    pub dashpay_backfill_covered: *const crate::core_wallet_types::DashPayBackfillCoveredContactFFI,
+    pub dashpay_backfill_covered_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -708,6 +775,13 @@ impl Default for WalletRestoreEntryFFI {
             core_address_pools_count: 0,
             last_applied_chain_lock_bytes: std::ptr::null(),
             last_applied_chain_lock_bytes_len: 0,
+            unconfirmed_outgoing_tx_records: std::ptr::null(),
+            unconfirmed_outgoing_tx_records_count: 0,
+            has_dashpay_backfill: false,
+            dashpay_backfill_floor: 0,
+            dashpay_backfill_rewound_from: 0,
+            dashpay_backfill_covered: std::ptr::null(),
+            dashpay_backfill_covered_count: 0,
         }
     }
 }

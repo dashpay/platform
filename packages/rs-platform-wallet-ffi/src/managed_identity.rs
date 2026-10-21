@@ -4,6 +4,7 @@ use crate::types::*;
 use crate::{check_ptr, deref_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use platform_wallet::ManagedIdentity;
 use std::os::raw::c_char;
@@ -115,7 +116,12 @@ pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
     PlatformWalletFFIResult::ok()
 }
 
-/// Set last updated balance block time.
+/// Set the block time on this detached managed-identity handle only.
+///
+/// Wallet lookups return snapshot clones. This setter neither updates the live
+/// wallet's verified balance watermark nor persists metadata. Obtain a fresh
+/// snapshot after `platform_wallet_refresh_identity_balance` to observe the
+/// authoritative wallet state; this function is not a live-watermark reset API.
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
     identity_handle: Handle,
@@ -186,6 +192,14 @@ pub struct IdentityPublicKeyFFI {
     pub disabled_at: u64,
     pub data_ptr: *mut u8,
     pub data_len: usize,
+    /// Usage limits (protocol version 14): the credits the key may spend
+    /// over its lifetime when `total_budget_is_some`, and the block time in
+    /// milliseconds from which it can no longer sign when
+    /// `expires_at_is_some`. A version 0 key has neither.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Snapshot every `IdentityPublicKey` on the identity into a flat
@@ -220,6 +234,14 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
                 Some(ts) => (true, ts),
                 None => (false, 0u64),
             };
+            let (total_budget_is_some, total_budget) = match pk.total_budget() {
+                Some(credits) => (true, credits),
+                None => (false, 0u64),
+            };
+            let (expires_at_is_some, expires_at) = match pk.expires_at() {
+                Some(ts) => (true, ts),
+                None => (false, 0u64),
+            };
 
             buf.push(IdentityPublicKeyFFI {
                 key_id,
@@ -231,6 +253,10 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
                 disabled_at: disabled_val,
                 data_ptr,
                 data_len,
+                total_budget_is_some,
+                total_budget,
+                expires_at_is_some,
+                expires_at,
             });
         }
         buf
@@ -355,6 +381,79 @@ mod tests {
             let _ = managed_identity_get_balance(handle, &mut balance);
 
             managed_identity_destroy(handle);
+        }
+    }
+
+    #[test]
+    fn should_keep_manual_balance_block_time_changes_on_detached_handles() {
+        use crate::identity_manager::{
+            identity_manager_add_identity, identity_manager_create, identity_manager_destroy,
+            identity_manager_get_identity,
+        };
+
+        unsafe {
+            let original =
+                MANAGED_IDENTITY_STORAGE.insert(ManagedIdentity::new(create_test_identity(), 0));
+            let mut manager = NULL_HANDLE;
+            assert_eq!(
+                identity_manager_create(&mut manager).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            assert_eq!(
+                identity_manager_add_identity(manager, original).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            let mut snapshot = NULL_HANDLE;
+            assert_eq!(
+                identity_manager_get_identity(manager, [1u8; 32].as_ptr(), &mut snapshot).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            let stamp = BlockTime {
+                height: u64::MAX,
+                core_height: u32::MAX,
+                timestamp: u64::MAX,
+            };
+            assert_eq!(
+                managed_identity_set_last_updated_balance_block_time(snapshot, &stamp).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            assert_eq!(
+                MANAGED_IDENTITY_STORAGE.with_item(snapshot, |identity| identity
+                    .last_updated_balance_block_time
+                    .unwrap()
+                    .height),
+                Some(u64::MAX)
+            );
+            assert_eq!(
+                IDENTITY_MANAGER_STORAGE.with_item(manager, |manager| manager
+                    .managed_identity(&Identifier::from([1; 32]))
+                    .unwrap()
+                    .last_updated_balance_block_time),
+                Some(None)
+            );
+
+            // Even adding the edited snapshot to another standalone manager
+            // imports only its DPP identity, not its manually assigned metadata.
+            let mut other_manager = NULL_HANDLE;
+            assert_eq!(
+                identity_manager_create(&mut other_manager).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            assert_eq!(
+                identity_manager_add_identity(other_manager, snapshot).code,
+                PlatformWalletFFIResultCode::Success
+            );
+            assert_eq!(
+                IDENTITY_MANAGER_STORAGE.with_item(other_manager, |manager| manager
+                    .managed_identity(&Identifier::from([1; 32]))
+                    .unwrap()
+                    .last_updated_balance_block_time),
+                Some(None)
+            );
+            managed_identity_destroy(snapshot);
+            managed_identity_destroy(original);
+            identity_manager_destroy(manager);
+            identity_manager_destroy(other_manager);
         }
     }
 

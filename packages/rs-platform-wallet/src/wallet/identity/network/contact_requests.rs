@@ -1,5 +1,6 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
+use super::signing_key::AvailableSigningKey;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -241,7 +242,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
         })?;
         Ok(platform_encryption::calculate_account_reference(
-            &xprv.private_key.secret_bytes(),
+            &xprv.private_key.to_secret_bytes(),
             compact_xpub,
             account_index,
             version,
@@ -259,7 +260,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         })?;
         Ok(platform_encryption::unmask_account_reference(
             account_reference,
-            &xprv.private_key.secret_bytes(),
+            &xprv.private_key.to_secret_bytes(),
             compact_xpub,
         ))
     }
@@ -340,7 +341,7 @@ impl SeedCryptoProvider {
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
             })?;
-        Ok(xprv.private_key.secret_bytes())
+        Ok(xprv.private_key.to_secret_bytes())
     }
 }
 
@@ -610,12 +611,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // Contact-request send writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is rejected on document writes.
-            .get_first_public_key_matching(
+            .available_signing_key(
+                signer,
                 Purpose::AUTHENTICATION,
-                [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                [KeyType::ECDSA_SECP256K1].into(),
+                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                &[KeyType::ECDSA_SECP256K1],
                 false,
-            )
+            )?
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
@@ -800,6 +802,18 @@ impl DashPayView<'_> {
     }
 }
 
+/// High-water rewind window applied to the incremental contact-request query.
+/// Re-fetching the last 10 minutes each sweep covers clock skew **and**
+/// equal-`$createdAt` documents straddling a page boundary, so it is
+/// correctness-load-bearing — NOT a tunable; `0` is invalid.
+const SYNC_OVERLAP_MS: u64 = 10 * 60_000;
+
+/// Lower bound for the incremental `$createdAt >` query: the high-water minus
+/// the overlap window. `None` (no cursor yet) ⇒ full fetch.
+fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
+    high_water.map(|hw| hw.saturating_sub(SYNC_OVERLAP_MS))
+}
+
 /// Collapse a stream of parsed received contact requests to the single
 /// newest request per sender, keyed by `sender_id`.
 ///
@@ -815,18 +829,29 @@ impl DashPayView<'_> {
 /// like a "rotation" away from the tracked state, thrashing it back and
 /// forth each pass. Collapsing to the newest first makes the sweep a
 /// fixpoint.
-/// High-water rewind window applied to the incremental contact-request query.
-/// Re-fetching the last 10 minutes each sweep covers clock skew **and**
-/// equal-`$createdAt` documents straddling a page boundary, so it is
-/// correctness-load-bearing — NOT a tunable; `0` is invalid.
-const SYNC_OVERLAP_MS: u64 = 10 * 60_000;
-
-/// Lower bound for the incremental `$createdAt >` query: the high-water minus
-/// the overlap window. `None` (no cursor yet) ⇒ full fetch.
-fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
-    high_water.map(|hw| hw.saturating_sub(SYNC_OVERLAP_MS))
-}
-
+///
+/// Collapsing per sender is also why a contact has one payment channel even
+/// though DIP-15 lets a sender expose several accounts at once. Supporting
+/// several was deferred on purpose, and the collapse cannot simply be keyed
+/// by `(sender, account_reference)`:
+/// - The recipient cannot tell a rotation from a new account. The low 28 bits
+///   of `accountReference` are masked with an HMAC of the new xpub under a
+///   key only the sender knows, so a rotated channel and a brand-new account
+///   look unrelated. Which
+///   channel a request belongs to would have to come from the user.
+/// - Keying by reference brings back the sweep thrash described above: a
+///   rotated sender's old and new docs would both survive and flip the stored
+///   channel on every pass.
+/// - The receiving account index is a hardened derivation path component, so
+///   a locally invented channel index would desync the addresses we advertise
+///   from the ones we watch.
+/// - Each new reference would become a pending prompt, turning a request
+///   flood into queue exhaustion, and "add account" from an established
+///   contact can redirect payments, so it needs the same care as accepting a
+///   new contact.
+///
+/// DIP-15 section 8.4 allows ignoring additional requests, which is what the
+/// collapse does.
 fn newest_received_per_sender(
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> std::collections::BTreeMap<Identifier, ContactRequest> {
@@ -1075,11 +1100,16 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
 /// A permanently-broken channel is left alone (the sweep never rebuilds
 /// broken contacts; they heal on a superseding request). The staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
-/// a mismatch (or a `None` marker from a cold restart that did not carry it)
-/// means the persisted, tombstone-less account row rebuilt the rotated-away
-/// xpub while the contact already tracks the new reference — so `send_payment`
-/// would derive addresses the contact no longer watches until it is rebuilt.
-fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bool) -> bool {
+/// a mismatch (or a `None` marker from a cold restart on a host that did not
+/// carry it — the in-tree hosts persist it on the established rows, so a
+/// healthy account survives a restart without a rebuild) means the persisted,
+/// tombstone-less account row rebuilt the rotated-away xpub while the contact
+/// already tracks the new reference — so `send_payment` would derive addresses
+/// the contact no longer watches until it is rebuilt.
+pub(super) fn external_account_needs_rebuild(
+    contact: &EstablishedContact,
+    has_external: bool,
+) -> bool {
     has_external
         && !contact.payment_channel_broken
         && contact.external_account_reference != Some(contact.incoming_request.account_reference)
@@ -1842,7 +1872,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// permanently broken — the account-building candidates for this
     /// sweep. Runs under the caller's write guard; performs no
     /// awaits and no lock re-acquisition.
-    fn collect_account_build_candidates(
+    pub(super) fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
         identity_id: &Identifier,
     ) -> Vec<AccountBuildCandidate> {
@@ -1885,33 +1915,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         out
     }
 
-    /// Build the two DashPay accounts for one established contact,
-    /// applying the transient/permanent failure policy.
+    /// Queue the two DashPay account builds for one established contact.
     ///
-    /// Order:
-    /// 1. Register the `DashpayReceivingFunds` account — derivable from our
-    ///    own seed, no decryption needed. This is what makes *incoming*
-    ///    contact payments visible to SPV; restore-from-seed leaves it
-    ///    unbuilt, so the sweep rebuilds it for every established contact.
-    /// 2. Fetch the counterparty identity and **validate** the request's
-    ///    key indices via [`validate_contact_request`] BEFORE any ECDH —
-    ///    an attacker-crafted index pointing at an AUTHENTICATION key would
-    ///    otherwise derive a wrong shared secret and poison the account.
-    /// 3. Register the `DashpayExternalAccount` (decrypt + ECDH).
+    /// The recurring sweep runs without a signer, so it cannot derive the
+    /// receiving (friendship) xpub or the ECDH secret itself. It enqueues
+    /// both ops for the signer-backed drain
+    /// ([`Self::drain_pending_contact_crypto_verified`]), which registers the
+    /// `DashpayReceivingFunds` account, fetches the counterparty, validates
+    /// the request's key indices before any ECDH, and registers the
+    /// `DashpayExternalAccount`. Transient failures stay queued for the next
+    /// drain; permanent ones mark the contact `payment_channel_broken`.
     ///
-    /// Failure policy:
-    /// - **Transient** (identity fetch / network): logged, left for the
-    ///   next sweep to retry. The broken flag stays clear.
-    /// - **Permanent** (validation failure, decrypt/decode failure): the
-    ///   contact is marked `payment_channel_broken` so subsequent sweeps
-    ///   skip it until a superseding request arrives.
+    /// Identities that are not ours to build (no `identity_index`) are
+    /// skipped and logged. Enqueueing is idempotent per (owner, contact,
+    /// kind), so calling this every sweep is a no-op until the drain clears
+    /// the entries.
     ///
-    /// Watch-only / seedless wallets (no `identity_index`) are skipped and
-    /// logged — the watch-only ECDH path (host-side signing hook) lands
-    /// later.
-    ///
-    /// Called **after** the sync write guard is dropped: the register
-    /// functions re-acquire the non-reentrant wallet-manager lock.
+    /// Called **after** the sync write guard is dropped: this re-acquires
+    /// the non-reentrant wallet-manager lock.
     async fn build_contact_accounts(
         &self,
         identity_id: &Identifier,
@@ -3195,7 +3216,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// - Stamping `external_account_reference` lets the sweep's rotation
     ///   self-heal skip a healthy account (marker matches the tracked
-    ///   reference) and detect a stale one after a restart (F2).
+    ///   reference) and detect a stale one after a restart (F2). On a
+    ///   backend that keeps markers on disk the registration round already
+    ///   bound it, and this only clears the broken flag while that marker is
+    ///   still current; it never stamps one there.
     /// - Clearing `payment_channel_broken` heals a channel that a prior
     ///   permanent-fault marked broken but that a successful re-register (via
     ///   the drain or a user re-accept) proves is usable again — otherwise the
@@ -3243,6 +3267,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         let current_reference = contact.incoming_request.account_reference;
         let already_current = contact.external_account_reference == Some(current_reference);
+        // Where markers are kept on disk, registration is their only writer:
+        // it binds the marker in the account's own round, to the request the
+        // account was built from. A completion arriving late — after the
+        // account was torn down and rebuilt, or from a request that reused
+        // the same ciphertext under another reference — could otherwise
+        // stamp the live reference beside an obsolete durable account, and a
+        // restart would trust the pairing. So it only heals the broken flag,
+        // and only while the marker registration bound is still the live one
+        // (dashpay/platform#4302 review).
+        if self.persister.persists_outbound_account_markers() && !already_current {
+            return;
+        }
         if already_current && !contact.payment_channel_broken {
             return;
         }
@@ -3362,7 +3398,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 /// One established contact that needs its DashPay accounts (re)built
 /// during a sync sweep. Collected under the write guard, consumed
 /// after it is dropped.
-struct AccountBuildCandidate {
+pub(super) struct AccountBuildCandidate {
     /// The counterparty identity.
     contact_id: Identifier,
     /// The counterparty's 96-byte encrypted xpub (from their incoming
@@ -3847,6 +3883,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Ignore is **local-only** — there is no on-chain artifact (syncing it
     /// would leak who you ignored via the public contact-request indices).
+    /// If ignore ever syncs across devices, it must be a single list the owner
+    /// encrypts to themselves, not a `contactInfo` per ignored sender: a
+    /// `contactInfo` about a non-contact exists publicly and its `$createdAt`
+    /// lines up with the incoming request, which reveals who was ignored.
+    /// Ignore also saves no fetch cost: the query has no "sender not in"
+    /// axis, so an ignored sender's requests are still fetched and verified,
+    /// then dropped here.
     /// The ignore is persisted through the existing
     /// changeset → apply → SQLite pipeline so it survives a relaunch.
     ///
@@ -4179,6 +4222,8 @@ mod sweep_tests {
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -5152,6 +5197,8 @@ mod sweep_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let parsed =
@@ -5551,7 +5598,7 @@ mod contact_info_provider_tests {
     /// the resident `derive_shared_key_ecdh` at the same path.
     #[tokio::test]
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
-        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use dashcore::secp256k1::{PublicKey, SecretKey};
 
         let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
@@ -5563,8 +5610,7 @@ mod contact_info_provider_tests {
                 .expect("auth path");
 
         let peer = PublicKey::from_secret_key(
-            &Secp256k1::new(),
-            &SecretKey::from_slice(&[0x42u8; 32]).expect("peer secret"),
+            &SecretKey::from_secret_bytes([0x42u8; 32]).expect("peer secret"),
         );
 
         let provider = SeedCryptoProvider::from_seed(seed, network);

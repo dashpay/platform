@@ -1,6 +1,6 @@
 mod accessors;
 mod conversion;
-mod methods;
+pub(super) mod methods;
 #[cfg(feature = "random-public-keys")]
 mod random;
 

@@ -761,7 +761,7 @@ impl Strategy {
                 let funding_transition =
                     AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                         asset_lock_proof,
-                        private_key.inner.secret_bytes().as_slice(),
+                        private_key.inner.to_secret_bytes().as_slice(),
                         BTreeMap::new(), // no additional inputs
                         outputs,
                         vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
@@ -992,7 +992,16 @@ impl Strategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -1112,7 +1121,16 @@ impl Strategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -2188,7 +2206,7 @@ impl Strategy {
                             let funding_transition =
                                 AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                                     asset_lock_proof,
-                                    private_key.inner.secret_bytes().as_slice(),
+                                    private_key.inner.to_secret_bytes().as_slice(),
                                     BTreeMap::new(), // no additional inputs
                                     outputs,
                                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],

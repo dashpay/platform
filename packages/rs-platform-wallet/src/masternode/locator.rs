@@ -26,19 +26,20 @@
 //! `Unverifiable` when the reference (owner key hash, payout hash) isn't known
 //! yet — never a false pass.
 
+use dashcore::base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use dashcore::base64::{alphabet, Engine};
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
-use dashcore::blsful::{
-    Bls12381G2Impl, PublicKey as BlsPublicKey, SecretKey as BlsSecretKey, SerializationFormat,
-};
-use dashcore::ed25519_dalek::SigningKey;
 use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{PublicKey as SecpPublicKey, Secp256k1, SecretKey as SecpSecretKey};
-use dashcore::{Network, PlatformNodeId, PrivateKey};
+use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
+use dashcore::{Network, PrivateKey};
+use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
+use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -223,7 +224,7 @@ fn is_mainnet(network: Network) -> bool {
 /// only when below the group order; ed25519 accepts any 32 bytes as a seed.
 fn secret_candidates(bytes: &[u8; 32]) -> Vec<MasternodeLocatorInput> {
     let mut out = Vec::with_capacity(3);
-    if SecpSecretKey::from_slice(bytes).is_ok() {
+    if SecpSecretKey::from_secret_bytes(*bytes).is_ok() {
         out.push(MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
             secret: Zeroizing::new(*bytes),
             compressed: true,
@@ -314,7 +315,7 @@ pub fn parse_locator_input(
         }
         return Ok(ParsedLocatorInput {
             candidates: vec![MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
-                secret: Zeroizing::new(key.inner.secret_bytes()),
+                secret: Zeroizing::new(key.inner.to_secret_bytes()),
                 compressed: key.compressed,
             })],
         });
@@ -322,7 +323,11 @@ pub fn parse_locator_input(
 
     // base64: dashmate's 64-byte node key, or a bare 32-byte secret.
     {
-        if let Ok(bytes) = dashcore::base64::decode(trimmed) {
+        let decoder = GeneralPurpose::new(
+            &alphabet::STANDARD,
+            GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+        );
+        if let Ok(bytes) = decoder.decode(trimmed) {
             match bytes.len() {
                 64 => {
                     let seed = ed25519_seed_from_node_key(&bytes)?;
@@ -353,8 +358,8 @@ pub fn parse_locator_input(
 /// hash160 of the secp256k1 public key for `secret`, or `None` when the
 /// scalar is out of range.
 pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
-    let sk = SecpSecretKey::from_slice(secret).ok()?;
-    let pk = SecpPublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+    let sk = SecpSecretKey::from_secret_bytes(*secret).ok()?;
+    let pk = SecpPublicKey::from_secret_key(&sk);
     let bytes: Vec<u8> = if compressed {
         pk.serialize().to_vec()
     } else {
@@ -363,25 +368,52 @@ pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
     Some(hash160::Hash::hash(&bytes).to_byte_array())
 }
 
+/// The ids Platform may give the operator identity of a masternode whose list
+/// entry carries `operator_public_key`, in the order to try them: the id
+/// derived from those bytes, then, when they read as a basic-scheme key, the
+/// id derived from the same key's legacy-scheme bytes.
+///
+/// Platform derives the operator identity id from the operator key bytes it
+/// stored, and keeps them when the listed bytes are the basic-scheme encoding
+/// of the key the stored bytes encode in the legacy scheme. So a masternode
+/// whose operator key was set in the legacy scheme keeps its legacy-derived
+/// operator identity after Dash Core re-encodes the key in the basic scheme,
+/// while the list then carries the basic bytes. When both identities exist,
+/// the first is the current one.
+///
+/// Legacy-scheme bytes with the top bit set also read as a basic-scheme key
+/// (of the negated point), so they get a second id too, which no identity of
+/// a legacy-scheme key holds.
+pub fn operator_identity_ids(
+    pro_tx_hash_display: &[u8; 32],
+    operator_public_key: &[u8; 48],
+) -> Vec<Identifier> {
+    let mut ids = vec![Identifier::create_operator_identifier(
+        pro_tx_hash_display,
+        operator_public_key,
+    )];
+    if let Ok(legacy) =
+        BlsPublicKey::try_from(operator_public_key.as_slice()).and_then(|key| key.to_legacy_bytes())
+    {
+        ids.push(Identifier::create_operator_identifier(
+            pro_tx_hash_display,
+            &legacy,
+        ));
+    }
+    ids
+}
+
 /// `(basic, legacy)` 48-byte serializations of the BLS public key for
-/// `secret`, or `None` when the scalar is not below the group order.
+/// `secret`, or `None` when the scalar reduces to zero.
 pub fn bls_public_keys(secret: &[u8; 32]) -> Option<([u8; 48], [u8; 48])> {
-    let sk: BlsSecretKey<Bls12381G2Impl> =
-        Option::from(BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(secret))?;
-    let pk = BlsPublicKey::from(&sk);
-    let basic: [u8; 48] = pk.to_bytes().as_slice().try_into().ok()?;
-    let legacy: [u8; 48] = pk
-        .to_bytes_with_mode(SerializationFormat::Legacy)
-        .as_slice()
-        .try_into()
-        .ok()?;
-    Some((basic, legacy))
+    let pk = BlsSecretKey::from_be_bytes(secret)?.public_key();
+    Some((pk.to_bytes(), pk.to_legacy_bytes().ok()?))
 }
 
 /// Tenderdash node id for an ed25519 `seed`.
 pub fn ed25519_node_id(seed: &[u8; 32]) -> [u8; 20] {
     let public = SigningKey::from_bytes(seed).verifying_key().to_bytes();
-    PlatformNodeId::from_ed25519_public_key(&public).to_byte_array()
+    EddsaPkHash::from(EddsaPkBytes::from_bytes(public)).to_canonical_bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -594,11 +626,10 @@ pub struct PlatformKeyRole {
 /// Interpret one identity returned by the non-unique-key-hash query for
 /// `key_id`: an owner identity (id == display proTxHash of a listed node)
 /// yields `Owner` / `OwnerPayout` by the matching key's purpose; an operator
-/// identity (id == `create_operator_identifier(proTxHash, operator key)` of a
-/// listed node) yields `OperatorPayout`. Anything else — a voter identity
-/// (voting keys are matched from the list), a non-masternode identity that
-/// happens to hold the key — yields nothing. Pure; the network step is the
-/// caller's.
+/// identity (an id from [`operator_identity_ids`] of a listed node) yields
+/// `OperatorPayout`. Anything else — a voter identity (voting keys are
+/// matched from the list), a non-masternode identity that happens to hold the
+/// key — yields nothing. Pure; the network step is the caller's.
 pub fn platform_roles_from_identity(
     identity: &Identity,
     key_id: &[u8; 20],
@@ -634,19 +665,19 @@ pub fn platform_roles_from_identity(
             .collect();
     }
 
-    // Operator identity of some listed node?
+    // Operator identity of some listed node? Only its payout key is ours.
+    if !identity
+        .public_keys()
+        .values()
+        .any(|k| k.data().as_slice() == key_id && k.purpose() == Purpose::TRANSFER)
+    {
+        return Vec::new();
+    }
     let id = identity.id();
     summaries
         .iter()
         .filter(|s| {
-            Identifier::create_operator_identifier(&s.pro_tx_hash_display(), &s.operator_public_key)
-                == id
-        })
-        .filter(|_| {
-            identity
-                .public_keys()
-                .values()
-                .any(|k| k.data().as_slice() == key_id && k.purpose() == Purpose::TRANSFER)
+            operator_identity_ids(&s.pro_tx_hash_display(), &s.operator_public_key).contains(&id)
         })
         .map(|s| PlatformKeyRole {
             pro_tx_hash: s.pro_tx_hash,
@@ -1101,12 +1132,32 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_unpadded_base64_secrets_and_node_keys() {
+        let seed = [0x42u8; 32];
+        let mut node_key = seed.to_vec();
+        node_key.extend_from_slice(&SigningKey::from_bytes(&seed).verifying_key().to_bytes());
+        for bytes in [seed.as_slice(), node_key.as_slice()] {
+            let unpadded = dashcore::base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes);
+            let padded = dashcore::base64::engine::general_purpose::STANDARD.encode(bytes);
+            let parsed = parse_locator_input(&unpadded, Network::Mainnet).expect("unpadded key");
+            assert_eq!(
+                parsed.candidates.len(),
+                parse_locator_input(&padded, Network::Mainnet)
+                    .unwrap()
+                    .candidates
+                    .len()
+            );
+            assert!(parsed.candidates.iter().any(|candidate| matches!(candidate, MasternodeLocatorInput::Secret(LocatorSecret::Ed25519(s)) if **s == seed)));
+        }
+    }
+
+    #[test]
     fn dashmate_node_key_parses_when_consistent() {
         let seed = [0x42u8; 32];
         let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
         let mut node_key = seed.to_vec();
         node_key.extend_from_slice(&public);
-        let b64 = dashcore::base64::encode(&node_key);
+        let b64 = dashcore::base64::engine::general_purpose::STANDARD.encode(&node_key);
 
         let parsed = parse_locator_input(&b64, Network::Mainnet).unwrap();
         assert_eq!(parsed.candidates.len(), 1);
@@ -1124,8 +1175,11 @@ mod tests {
         // A corrupted public half is rejected, not silently accepted.
         node_key[40] ^= 0x01;
         assert_eq!(
-            parse_locator_input(&dashcore::base64::encode(&node_key), Network::Mainnet)
-                .unwrap_err(),
+            parse_locator_input(
+                &dashcore::base64::engine::general_purpose::STANDARD.encode(&node_key),
+                Network::Mainnet
+            )
+            .unwrap_err(),
             LocatorParseError::NodeKeyMismatch
         );
     }
@@ -1135,10 +1189,7 @@ mod tests {
     #[test]
     fn ecdsa_key_id_matches_dashcore_address_hash() {
         let key = PrivateKey::from_byte_array(&SECP_SECRET, Network::Mainnet).unwrap();
-        let expected: [u8; 20] = key
-            .public_key(&Secp256k1::new())
-            .pubkey_hash()
-            .to_byte_array();
+        let expected: [u8; 20] = key.public_key().pubkey_hash().to_byte_array();
         assert_eq!(secp_key_id(), expected);
         assert_ne!(
             ecdsa_key_id(&SECP_SECRET, false).unwrap(),
@@ -1351,6 +1402,73 @@ mod tests {
                 role: MasternodeKeyRole::OperatorPayout
             }]
         );
+    }
+
+    /// Platform keeps the operator key bytes it stored when the key was set, so a masternode
+    /// registered with a legacy-scheme operator key keeps the operator identity derived from the
+    /// legacy bytes after Dash Core re-encodes the key in the basic scheme, while the list then
+    /// shows the basic bytes.
+    #[test]
+    fn operator_identity_of_a_re_encoded_legacy_key_yields_operator_payout_role() {
+        let (legacy, basic) = CORE_RE_ENCODINGS[1];
+        let (legacy, basic) = (key_bytes(legacy), key_bytes(basic));
+        let mut summaries = list();
+        summaries[1].operator_public_key = basic;
+        let node = &summaries[1];
+        let payout_hash = [0x66u8; 20];
+        let id = Identifier::create_operator_identifier(&node.pro_tx_hash_display(), &legacy);
+        let identity = identity_with(id.to_buffer(), vec![(Purpose::TRANSFER, payout_hash)]);
+        assert_eq!(
+            platform_roles_from_identity(&identity, &payout_hash, &summaries),
+            vec![PlatformKeyRole {
+                pro_tx_hash: node.pro_tx_hash,
+                role: MasternodeKeyRole::OperatorPayout
+            }]
+        );
+    }
+
+    /// Operator keys as Dash Core v24.0.0-rc.3 printed them before and after
+    /// re-encoding them: (legacy, basic), legacy sign bit clear and set.
+    const CORE_RE_ENCODINGS: [(&str, &str); 2] = [
+        (
+            "06ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+            "86ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+        ),
+        (
+            "910633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+            "b10633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+        ),
+    ];
+
+    fn key_bytes(hex: &str) -> [u8; 48] {
+        hex::decode(hex).unwrap().try_into().unwrap()
+    }
+
+    /// A basic-scheme key Core re-encoded yields the id from its bytes first,
+    /// then the id from the legacy bytes Core printed before. Legacy bytes with
+    /// the sign bit clear read as no basic-scheme key and yield only their own
+    /// id; with the sign bit set they also read as one (of the negated point)
+    /// and yield a second id.
+    #[test]
+    fn operator_identity_ids_add_the_legacy_encoding_of_a_basic_key() {
+        let pro_tx_hash = [0x5Au8; 32];
+        let id = |key: &[u8; 48]| Identifier::create_operator_identifier(&pro_tx_hash, key);
+        for (legacy, basic) in CORE_RE_ENCODINGS {
+            let (legacy, basic) = (key_bytes(legacy), key_bytes(basic));
+            assert_eq!(
+                operator_identity_ids(&pro_tx_hash, &basic),
+                vec![id(&basic), id(&legacy)]
+            );
+        }
+        let sign_clear = key_bytes(CORE_RE_ENCODINGS[0].0);
+        assert_eq!(
+            operator_identity_ids(&pro_tx_hash, &sign_clear),
+            vec![id(&sign_clear)]
+        );
+        let sign_set = key_bytes(CORE_RE_ENCODINGS[1].0);
+        let ids = operator_identity_ids(&pro_tx_hash, &sign_set);
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], id(&sign_set));
     }
 
     #[test]

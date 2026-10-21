@@ -1,5 +1,6 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::handler;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -96,7 +97,7 @@ where
 
 pub fn error_into_status(error: Error) -> tonic::Status {
     match error {
-        Error::Execution(crate::error::execution::ExecutionError::CheckTxProofVerificationBusy) => {
+        Error::Execution(ExecutionError::CheckTxProofVerificationBusy) => {
             tonic::Status::resource_exhausted(
                 "check tx verification capacity is temporarily unavailable",
             )

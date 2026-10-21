@@ -2,10 +2,23 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
-use dpp::version::{PlatformVersion, ProtocolVersion};
+use dpp::version::PlatformVersion;
+use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
+    /// Empties the contract cache, then runs the protocol change events of v1.
+    ///
+    /// A cached contract can carry the fee of the read that cached it, calculated under the fee
+    /// schedule of the protocol version it was read in, and a cache hit bills that fee again. A
+    /// protocol change is the only time the schedule can change, and nothing else empties the
+    /// cache, so without this a node that stayed up across the change would keep billing reads
+    /// at the old schedule while a node that restarted bills them at the new one.
+    ///
+    /// The cache is emptied first because v1 then seeds the block cache with the system
+    /// contracts the events may have rewritten. `clear` keeps the record of what this block
+    /// rewrote, so a transactional read of a rewritten contract still never falls back to a copy
+    /// a query puts into the global cache.
     pub(super) fn perform_events_on_first_block_of_protocol_change_v2(
         &self,
         platform_state: &PlatformState,
@@ -14,50 +27,14 @@ impl<C> Platform<C> {
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        self.drive.cache.data_contracts.clear();
+
         self.perform_events_on_first_block_of_protocol_change_v1(
             platform_state,
             block_info,
             transaction,
             previous_protocol_version,
             platform_version,
-        )?;
-        // Any migration error deliberately halts this activation block for every
-        // validator; the shared transaction prevents a partial migration from
-        // committing. Its corruption checks are unreachable for valid pre-15
-        // state and must never be downgraded to best-effort recovery.
-        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
-            let stats = self
-                .drive
-                .migrate_document_history_storage(transaction, platform_version)?;
-            tracing::info!(?stats, "Migrated document history storage");
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test::helpers::setup::TestPlatformBuilder;
-
-    #[test]
-    fn should_not_migrate_history_before_protocol_15() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 should exist");
-        let platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(14)
-            .build_with_mock_rpc()
-            .set_genesis_state();
-        let transaction = platform.drive.grove.start_transaction();
-        let platform_state = platform.state.load();
-
-        platform
-            .perform_events_on_first_block_of_protocol_change_v2(
-                &platform_state,
-                &BlockInfo::default(),
-                &transaction,
-                14,
-                platform_version,
-            )
-            .expect("a protocol 14 transition must not run the protocol 15 migration");
+        )
     }
 }

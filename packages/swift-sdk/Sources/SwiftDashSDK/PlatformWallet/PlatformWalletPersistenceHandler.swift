@@ -18,6 +18,13 @@ protocol ModelFetching: Sendable {
     ) throws -> [T]
 }
 
+private enum AssetLockPersistenceError: Error {
+    case malformedRecord
+    case duplicateOperationId
+    case missingRecord
+    case requiresChangeset
+}
+
 struct LiveModelFetcher: ModelFetching {
     func fetch<T: PersistentModel>(
         _ descriptor: FetchDescriptor<T>,
@@ -537,7 +544,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let descriptor = FetchDescriptor<PersistentAssetLock>(
                     predicate: #Predicate { $0.outPointHex == outPointHex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                let existingRecord: PersistentAssetLock?
+                do {
+                    existingRecord = try modelFetcher.fetch(descriptor, in: backgroundContext).first
+                    if let operationId = entry.operationId {
+                        guard operationId.count == 16 else { throw AssetLockPersistenceError.malformedRecord }
+                        let sameOperation = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                            $0.walletId == walletId && $0.operationId == operationId
+                        })
+                        if try modelFetcher.fetch(sameOperation, in: backgroundContext).contains(where: {
+                            $0.outPointHex != outPointHex
+                        }) { throw AssetLockPersistenceError.duplicateOperationId }
+                        if let previousId = existingRecord?.operationId, previousId != operationId {
+                            throw AssetLockPersistenceError.duplicateOperationId
+                        }
+                    }
+                } catch {
+                    allPersisted = false
+                    continue
+                }
+                if let existing = existingRecord {
                     // Consumed (4) is the terminal lifecycle state — never
                     // let a non-Consumed snapshot regress it. Writers race:
                     // the wallet-event adapter's batched drain can deliver a
@@ -548,7 +574,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // rs-platform-wallet-storage sqlite upsert; all other
                     // transitions stay last-write-wins because non-terminal
                     // statuses legitimately move both ways.
-                    if existing.statusRaw == 4 && entry.statusRaw != 4 {
+                    if (existing.statusRaw == 6 && entry.statusRaw != 6)
+                        || (existing.statusRaw == 4 && entry.statusRaw != 4 && entry.statusRaw != 6) {
                         continue
                     }
                     existing.walletId = walletId
@@ -559,6 +586,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.amountDuffs = entry.amountDuffs
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
+                    existing.operationId = entry.operationId ?? existing.operationId
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -570,7 +598,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         accountIndexRaw: entry.accountIndexRaw,
                         amountDuffs: entry.amountDuffs,
                         statusRaw: entry.statusRaw,
-                        proofBytes: entry.proofBytes
+                        proofBytes: entry.proofBytes,
+                        operationId: entry.operationId
                     )
                     backgroundContext.insert(record)
                 }
@@ -609,7 +638,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let descriptor = FetchDescriptor<PersistentAssetLock>(
                     predicate: #Predicate { $0.outPointHex == hex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                let existingRecord: PersistentAssetLock?
+                do {
+                    existingRecord = try modelFetcher.fetch(descriptor, in: backgroundContext).first
+                } catch {
+                    allPersisted = false
+                    continue
+                }
+                if let existing = existingRecord {
                     // Same terminal rule as the upsert guard above: a
                     // Consumed (4) row is deliberately retained for
                     // historical lookup, and neither removal producer can
@@ -623,13 +659,59 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // carries an upsert and a removal for the same
                     // outpoint, so the upserts-then-removals order above is
                     // layout, not load-bearing sequencing.
-                    if existing.statusRaw == 4 {
+                    if existing.statusRaw == 4 || existing.statusRaw == 6 {
                         continue
                     }
                     backgroundContext.delete(existing)
                 }
             }
             return allPersisted
+        }
+    }
+
+    /// UUID sidecar for the frozen legacy FFI row. The base upsert and this
+    /// association are saved together by endChangeset; a UUID can never change.
+    func persistAssetLockOperationId(walletId: Data, outPoint: Data, operationId: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, operationId.count == 16 else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.operationId, previous != operationId {
+                throw AssetLockPersistenceError.duplicateOperationId
+            }
+            let sameOperation = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.operationId == operationId
+            })
+            guard try !modelFetcher.fetch(sameOperation, in: backgroundContext).contains(where: {
+                $0.outPointHex != hex
+            }) else { throw AssetLockPersistenceError.duplicateOperationId }
+            record.operationId = operationId
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a legacy nil UUID.
+    func loadAssetLockOperationId(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let operationId = record.operationId, operationId.count != 16 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return record.operationId
         }
     }
 
@@ -941,22 +1023,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the wallet load path to rebuild `unused_asset_locks` on the
     /// Rust side so an in-flight registration that was interrupted by
     /// an app kill can resume from the latest status without
-    /// rebroadcasting the asset-lock transaction.
-    public func loadCachedAssetLocks(walletId: Data) -> [AssetLockEntrySnapshot] {
-        onQueue { loadCachedAssetLocksOnQueue(walletId: walletId) }
+    /// rebroadcasting the asset-lock transaction. Throws on unreadable or malformed
+    /// rows: an empty result must never hide a previously dispatched operation.
+    public func loadCachedAssetLocks(walletId: Data) throws -> [AssetLockEntrySnapshot] {
+        try onQueue { try loadCachedAssetLocksOnQueue(walletId: walletId) }
     }
 
     /// On-queue implementation reused by the load-wallet-list path
     /// without re-entering `onQueue`.
-    func loadCachedAssetLocksOnQueue(walletId: Data) -> [AssetLockEntrySnapshot] {
+    func loadCachedAssetLocksOnQueue(walletId: Data) throws -> [AssetLockEntrySnapshot] {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
-        guard let records = try? backgroundContext.fetch(descriptor) else {
-            return []
-        }
-        return records.map { record in
-            AssetLockEntrySnapshot(
+        let records = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        var operationIds = Set<Data>()
+        return try records.map { record in
+            guard decodeOutPointHex(record.outPointHex) != nil,
+                  !record.transactionBytes.isEmpty,
+                  (0...5).contains(record.fundingTypeRaw),
+                  (0...6).contains(record.statusRaw) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            if let operationId = record.operationId {
+                guard operationId.count == 16 else { throw AssetLockPersistenceError.malformedRecord }
+                guard operationIds.insert(operationId).inserted else {
+                    throw AssetLockPersistenceError.duplicateOperationId
+                }
+            }
+            return AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
                 transactionBytes: record.transactionBytes,
                 fundingTypeRaw: record.fundingTypeRaw,
@@ -964,7 +1058,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 accountIndexRaw: record.accountIndexRaw,
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
-                proofBytes: record.proofBytes
+                proofBytes: record.proofBytes,
+                operationId: record.operationId
             )
         }
     }
@@ -983,6 +1078,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let amountDuffs: Int64
         public let statusRaw: Int
         public let proofBytes: Data?
+        public var operationId: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -2144,14 +2240,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return try backgroundContext.fetch(descriptor).first
     }
 
-    /// Predicate matching the `PersistentWallet` row owned by THIS
-    /// handler. A handler is constructed per-network, so when
-    /// `self.network` is set we scope to `(walletId, networkRaw)` —
-    /// otherwise the mainnet handler would find and overwrite the
-    /// devnet row (and vice versa) now that the same `walletId` can
-    /// have one row per network. When `self.network` is `nil` (the
-    /// advanced `configure(sdkPointer:network:nil)` path) we fall
-    /// back to walletId-only matching to preserve that behaviour.
+    /// Match this handler's wallet and, when supplied, its network.
+    /// Wallet IDs are network-scoped and globally unique in the current model;
+    /// checking the network also rejects stale or mismatched rows. Legacy
+    /// `network: nil` handlers retain walletId-only matching.
     private func walletRecordPredicate(walletId: Data) -> Predicate<PersistentWallet> {
         if let network = self.network {
             let networkRaw = network.rawValue
@@ -2459,7 +2551,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+        guard let row = (try? modelFetcher.fetch(descriptor, in: backgroundContext))?.first,
               !row.isDeleted else { return nil }
         roundIndex?.coreAddressesByAddress[address] = row
         return row
@@ -3164,6 +3256,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.trackedMasternodes
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
+                | PlatformWalletPersistenceCapabilities.assetLockOperationIds
         )
     }
 
@@ -3199,6 +3292,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // so `upsertUtxo` has them in hand (see `roundUtxoCreditVerdicts`).
         extensionCallbacks.on_persist_wallet_changeset_utxo_verdicts_fn =
             persistWalletChangesetUtxoVerdictsCallback
+        extensionCallbacks.on_persist_identity_balance_block_time_fn = persistIdentityBalanceBlockTimeCallback
+        extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
+        extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
+        extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
         return extensionCallbacks
     }
 
@@ -3713,14 +3810,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let previouslyAssociatedRows =
             (try? backgroundContext.fetch(ownedRowsDescriptor)) ?? Array(identityRow.dpnsNames)
 
+        let pickedLabel = identityRow.mainDpnsName.map(PersistentDPNSName.normalize)
         for row in previouslyAssociatedRows
         where !canonicalLabels.contains(row.normalizedLabel) {
-            row.isOwned = false
-            row.lastUpdated = Date()
-            if row.documentIdBase58 == nil {
+            if row.documentIdBase58 == nil && row.normalizedLabel != pickedLabel {
                 // No marketplace history is attached, so this is only a stale
-                // label-cache row and can be removed entirely.
+                // label-cache row and can be removed entirely. The picked
+                // name's row stays, marked not owned, so readers can tell a
+                // departed pick from an identity that has no rows yet.
                 backgroundContext.delete(row)
+            } else if row.isOwned {
+                // Only the departure itself is a change: a row already
+                // retained as not owned is left untouched by every later
+                // snapshot that omits it, so it is not re-dirtied each time.
+                row.isOwned = false
+                row.lastUpdated = Date()
             }
         }
 
@@ -3757,6 +3861,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // transfers, and the unique constraint is per-network,
                 // so the row stays but the owner pointer moves.
                 if existing.identity !== identityRow {
+                    // The rebind is positive evidence the name left the
+                    // previous owner, so its selections of that name go too
+                    // — unlike a label merely missing from a snapshot. Once
+                    // the row moves, the old owner has nothing left to check
+                    // a stale pick against.
+                    let previousOwner = existing.identity
+                    if previousOwner.mainDpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        previousOwner.mainDpnsName = nil
+                    }
+                    if previousOwner.dpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        // Fall back to another name the old owner still
+                        // owns, as the snapshot's own fallback does for the
+                        // identity it describes — no snapshot for the old
+                        // owner may follow to repair it.
+                        previousOwner.dpnsName = previousOwner.dpnsNames
+                            .filter { $0.isOwned && $0.normalizedLabel != normalizedLabel }
+                            .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                            .first?.label
+                    }
                     existing.identity = identityRow
                     existing.lastUpdated = Date()
                 }
@@ -3771,13 +3894,40 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
-        let fallbackLabel = names.first?.label
-        if let selected = identityRow.mainDpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(selected)) {
-            identityRow.mainDpnsName = fallbackLabel
+        // `mainDpnsName` is the user's pick and is never rewritten here: a
+        // snapshot can be momentarily incomplete (a cold start adds names
+        // before the in-memory list is whole), and resetting the pick on
+        // one lost it for good. Readers skip a pick that is no longer owned
+        // — see `PersistentIdentity.displayName`.
+        //
+        // A pick the snapshot omits and that has no row anywhere on the
+        // network (stored before rows existed) gets a not-owned row, so the
+        // omission is recorded instead of the pick being trusted as
+        // unhydrated. A later snapshot carrying the name owns the row again.
+        if let pick = identityRow.mainDpnsName, !pick.isEmpty,
+           let pickedLabel, !canonicalLabels.contains(pickedLabel) {
+            let pickDescriptor = FetchDescriptor<PersistentDPNSName>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.normalizedParentDomainName == normalizedParentDomainName
+                        && $0.normalizedLabel == pickedLabel
+                }
+            )
+            if ((try? backgroundContext.fetch(pickDescriptor)) ?? []).isEmpty {
+                let row = PersistentDPNSName(
+                    identity: identityRow,
+                    label: pick,
+                    parentDomainName: parentDomainName
+                )
+                row.isOwned = false
+                backgroundContext.insert(row)
+            }
         }
-        if let displayed = identityRow.dpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(displayed)) {
+
+        // The SDK's own display cache: kept on an owned name, including when
+        // it was never set (a pick alone does not fill it).
+        let fallbackLabel = names.first?.label
+        if identityRow.dpnsName.map({ !canonicalLabels.contains(PersistentDPNSName.normalize($0)) }) ?? true {
             identityRow.dpnsName = fallbackLabel
         }
     }
@@ -3939,26 +4089,38 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             // Project the snapshot's ContractBounds enum into the
-            // pair of columns `PersistentPublicKey` uses:
-            //   * `contractBoundsIds` — `[contractId]` (or nil)
-            //   * `contractBoundsDocumentTypeName` — non-nil iff the
+            // three columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds`: `[boundId]` (or nil)
+            //   * `contractBoundsDocumentTypeName`: non-nil iff the
             //     bound was `.singleContractDocumentType`
-            // Keeping both lets the SwiftData row round-trip both
-            // variants verbatim; legacy stores without the
-            // doc-type column just see `nil` for the second field
-            // and reconstruct as `.singleContract`.
+            //   * `contractBoundsKind`: the FFI discriminant
+            // Keeping all three lets the SwiftData row round-trip
+            // every variant verbatim. The kind is what separates
+            // `.contractGroup` from `.singleContract`: both carry a
+            // bare id, so a store that only had the first two columns
+            // restored a group bound as unbounded. Legacy rows
+            // written before the column exists leave it `nil` and
+            // keep the old inference.
             let snapshotBoundsIds: [Data]?
             let snapshotBoundsDocType: String?
+            let snapshotBoundsKind: Int
             switch entry.contractBounds {
             case .some(.singleContract(let id)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 1
             case .some(.singleContractDocumentType(let id, let name)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = name
+                snapshotBoundsKind = 2
+            case .some(.contractGroup(let id)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = nil
+                snapshotBoundsKind = 3
             case .none:
                 snapshotBoundsIds = nil
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 0
             }
 
             let row: PersistentPublicKey
@@ -3978,6 +4140,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
                     contractBounds: snapshotBoundsIds,
                     contractBoundsDocumentTypeName: snapshotBoundsDocType,
+                    contractBoundsKind: snapshotBoundsKind,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -4005,6 +4168,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // scope) must overwrite any stale value here.
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
+            row.contractBoundsKind = snapshotBoundsKind
+
+            // Usage limits (protocol version 14). Rust is the source of
+            // truth on every callback, and a key limits update raises a
+            // budget / moves an expiry in place, so the row follows the
+            // snapshot rather than keeping whatever it held: a key whose
+            // budget was just raised must not read back at the old value.
+            row.totalBudgetCredits = entry.totalBudget
+            row.expiresAtMillis = entry.expiresAt
 
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
@@ -4893,6 +5065,55 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (written, skipped, failed)
     }
 
+    // MARK: - Identity balance freshness (additive persistence extension)
+
+    private func balanceMetadataDescriptor(walletId: Data, identityId: Data)
+        -> FetchDescriptor<PersistentIdentityBalanceMetadata> {
+        // Match legacy identity persistence when the wallet's network is unresolved.
+        let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
+        let networkRaw = network.rawValue
+        return FetchDescriptor(predicate: #Predicate {
+            $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+        })
+    }
+
+    func persistIdentityBalanceBlockTime(walletId: Data, identityId: Data, blockTime: BlockTime?) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Balance metadata requires an identity changeset")
+            }
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            let existing = try backgroundContext.fetch(descriptor).first
+            guard let blockTime else {
+                if let existing { backgroundContext.delete(existing) }
+                return
+            }
+            if let existing {
+                existing.platformHeight = Int64(bitPattern: blockTime.height)
+                existing.coreHeight = blockTime.core_height
+                existing.timestampMillis = Int64(bitPattern: blockTime.timestamp)
+            } else {
+                // An unresolved legacy network can mislabel this sidecar as testnet;
+                // scoped deletion may retain it until an unscoped orphan purge.
+                let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
+                backgroundContext.insert(PersistentIdentityBalanceMetadata(
+                    networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
+                    platformHeight: blockTime.height, coreHeight: blockTime.core_height,
+                    timestampMillis: blockTime.timestamp))
+            }
+            // endChangeset performs the atomic save with the balance itself.
+        }
+    }
+
+    func loadIdentityBalanceBlockTime(walletId: Data, identityId: Data) throws -> BlockTime? {
+        try onQueue {
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            guard let row = try backgroundContext.fetch(descriptor).first else { return nil }
+            return BlockTime(height: UInt64(bitPattern: row.platformHeight), core_height: row.coreHeight,
+                             timestamp: UInt64(bitPattern: row.timestampMillis))
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -5000,6 +5221,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let keyType: UInt8
         let readOnly: Bool
         let disabledAt: UInt64?
+        /// Usage limit (protocol version 14): the credits the key may take
+        /// from the identity over its whole lifetime. `nil` for a key
+        /// without a budget.
+        let totalBudget: UInt64?
+        /// Usage limit (protocol version 14): the block time in
+        /// milliseconds from which the key can no longer sign. `nil` for a
+        /// key without an expiry.
+        let expiresAt: UInt64?
         let publicKeyData: Data
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
@@ -5010,11 +5239,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
-        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
-        /// so the SwiftData row preserves the doc-type name on
-        /// round-trip (would otherwise be silently downgraded to
-        /// `.singleContract` and break local DPP projections that
-        /// read `identity.identityPublicKeys`).
+        /// kind=1; `.singleContractDocumentType` for kind=2;
+        /// `.contractGroup` for kind=3. Carried so the SwiftData row
+        /// preserves the doc-type name on round-trip (would
+        /// otherwise be silently downgraded to `.singleContract` and
+        /// break local DPP projections that read
+        /// `identity.identityPublicKeys`) and so a group bound is not
+        /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
@@ -5062,10 +5293,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return true
         }
 
+        // One emit carries a whole pool slice — thousands of entries on a
+        // restore — so both per-entry lookups below are batched into
+        // chunked `IN` fetches up front. Nothing the loop writes changes
+        // which rows those fetches match (it inserts address rows only
+        // for its own entries and never touches `PersistentTxo.address`),
+        // so resolving them before the loop is equivalent.
+        let addresses = Self.uniqueInOrder(entries.map(\.address))
+        let absentAddresses = primeCoreAddressRows(addresses)
+        let backfill = txosForAddressBackfill(addresses)
+
         for entry in entries {
             let address = entry.address
             let row: PersistentCoreAddress
-            if let existing = coreAddressRow(address: address) {
+            // A primed miss stays a miss until this loop inserts the row
+            // (which registers it), so skip the per-row fetch for it.
+            let isKnownAbsent = absentAddresses.contains(address)
+                && roundIndex?.coreAddressesByAddress[address] == nil
+            if !isKnownAbsent, let existing = coreAddressRow(address: address) {
                 row = existing
             } else {
                 row = PersistentCoreAddress(
@@ -5103,33 +5348,129 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // optional-relationship-in-predicate gotcha by
             // filtering nil-coreAddress in Swift after the fetch.
             //
-            // Deliberately NOT a round-indexed store-only lookup: this
-            // joins TXOs by `address`, and the rows it returns are the
-            // same objects the outpoint-keyed hot path mutates — a
-            // store-only fetch here would refresh those objects and
-            // discard the round's unsaved writes (see `roundIndex`).
-            // The pending-changes scan this keeps is bounded by the
-            // round's TXO inserts per emitted address entry; the
-            // outpoint-keyed quadratic hot path stays indexed.
-            let txoBackfillDescriptor = FetchDescriptor<PersistentTxo>(
-                predicate: #Predicate { $0.address == address }
-            )
-            if let txosAtAddress = try? backgroundContext.fetch(txoBackfillDescriptor) {
-                for txo in txosAtAddress where txo.coreAddress == nil {
-                    txo.coreAddress = row
-                    // This write happened outside any keyed lookup, so
-                    // register the row: a later first-touch
-                    // `fetchTxoRow` for this outpoint would otherwise
-                    // run a store-only fetch and refresh the link away
-                    // (see `roundIndex`).
-                    roundIndex?.txosByOutpoint[txo.outpoint] = txo
-                }
+            // Candidates come from `txosForAddressBackfill` above.
+            for txo in backfillTxos(at: address, from: backfill) where txo.coreAddress == nil {
+                txo.coreAddress = row
+                // This write happened outside any keyed lookup, so
+                // register the row: a later first-touch
+                // `fetchTxoRow` for this outpoint would otherwise
+                // run a store-only fetch and refresh the link away
+                // (see `roundIndex`).
+                roundIndex?.txosByOutpoint[txo.outpoint] = txo
             }
         }
 
         saveBackgroundContextIfNeeded(operation: "account_addresses", walletId: walletId)
         return true
         }  // onQueue
+    }
+
+    /// Largest key slice per bulk `IN` fetch: below SQLite's historical
+    /// 999 bind-variable limit, so every chunk's predicate translates.
+    static let bulkFetchChunkSize = 900
+
+    /// Split `keys` into `bulkFetchChunkSize` slices for chunked `IN`
+    /// fetches. Each slice is an `Array` because `#Predicate` translates
+    /// `[T].contains` into SQL `IN` (a `Set` capture does not translate).
+    static func chunked<T>(_ keys: [T], size: Int = bulkFetchChunkSize) -> [[T]] {
+        stride(from: 0, to: keys.count, by: size).map {
+            Array(keys[$0..<min($0 + size, keys.count)])
+        }
+    }
+
+    /// `keys` without repeats, first occurrence kept, so `IN` lists stay
+    /// minimal when one emit names an address more than once.
+    static func uniqueInOrder<T: Hashable>(_ keys: [T]) -> [T] {
+        var seen = Set<T>()
+        return keys.filter { seen.insert($0).inserted }
+    }
+
+    /// Resolve the round's not-yet-touched `PersistentCoreAddress` keys in
+    /// chunked store-only fetches and register every hit in `roundIndex`,
+    /// exactly as `coreAddressRow` would on each key's first touch. Returns
+    /// the keys a successful chunk proved absent from the store; a key in a
+    /// chunk whose fetch threw is left out, so it falls back to
+    /// `coreAddressRow`'s own per-row fetch.
+    ///
+    /// Only keys the index does not hold yet are fetched: a store-only fetch
+    /// that matches an object the round already registered would refresh
+    /// that object and discard its unsaved writes (see `roundIndex`). Without
+    /// an index (outside a round, or a round that began dirty) this primes
+    /// nothing and every lookup takes `coreAddressRow`'s pending-changes path.
+    private func primeCoreAddressRows(_ addresses: [String]) -> Set<String> {
+        guard roundIndex != nil else { return [] }
+        let untouched = addresses.filter { roundIndex!.coreAddressesByAddress[$0] == nil }
+        var absent = Set<String>()
+        for chunk in Self.chunked(untouched) {
+            var descriptor = FetchDescriptor<PersistentCoreAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            descriptor.includePendingChanges = false
+            guard let rows = try? modelFetcher.fetch(descriptor, in: backgroundContext) else {
+                continue
+            }
+            var found = Set<String>()
+            for row in rows {
+                found.insert(row.address)
+                // A staged-deleted row stays unregistered, as in
+                // `coreAddressRow`: the per-row fallback then reports it
+                // missing and the loop re-inserts over the unique key.
+                if !row.isDeleted {
+                    roundIndex!.coreAddressesByAddress[row.address] = row
+                }
+            }
+            absent.formUnion(chunk.lazy.filter { !found.contains($0) })
+        }
+        return absent
+    }
+
+    /// TXOs at each of `addresses`, for the `coreAddress` backfill in
+    /// `persistAccountAddresses`, gathered by chunked `IN` fetches.
+    ///
+    /// Deliberately NOT a round-indexed store-only lookup: this joins TXOs
+    /// by `address`, and the rows it returns are the same objects the
+    /// outpoint-keyed hot path mutates — a store-only fetch here would
+    /// refresh those objects and discard the round's unsaved writes (see
+    /// `roundIndex`). So each fetch keeps the default pending-changes scan
+    /// over the round's staged TXOs, once per chunk instead of once per
+    /// address entry. `PersistentTxo.address` has no store index either,
+    /// so the per-entry form also cost a full table scan per entry.
+    private func txosForAddressBackfill(_ addresses: [String]) -> AddressBackfillTxos {
+        var result = AddressBackfillTxos()
+        for chunk in Self.chunked(addresses) {
+            let descriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            if let txos = try? modelFetcher.fetch(descriptor, in: backgroundContext) {
+                for txo in txos {
+                    result.byAddress[txo.address, default: []].append(txo)
+                }
+            } else {
+                result.unresolved.formUnion(chunk)
+            }
+        }
+        return result
+    }
+
+    /// Prefetched backfill candidates, keyed by address. An address whose
+    /// chunk fetch threw is `unresolved`.
+    private struct AddressBackfillTxos {
+        var byAddress: [String: [PersistentTxo]] = [:]
+        var unresolved: Set<String> = []
+    }
+
+    /// Backfill candidates at `address`: the prefetched rows, or — when its
+    /// chunk fetch threw — its own per-address fetch, so a failed chunk
+    /// skips the backfill only for addresses whose own fetch fails too (the
+    /// per-entry `try?` this replaced skipped one address per failure).
+    private func backfillTxos(at address: String, from prefetched: AddressBackfillTxos) -> [PersistentTxo] {
+        guard prefetched.unresolved.contains(address) else {
+            return prefetched.byAddress[address] ?? []
+        }
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.address == address }
+        )
+        return (try? modelFetcher.fetch(descriptor, in: backgroundContext)) ?? []
     }
 
     /// The `AccountTypeTagFFI::IdentityInvitation` discriminant. The invitation
@@ -5149,6 +5490,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         entries: [CoreAddressEntrySnapshot]
     ) {
+        // One chunked `IN` fetch per 900 entries instead of one fetch per
+        // entry: there is no round index for this model, so each per-entry
+        // fetch scanned every platform-address row the round had staged —
+        // quadratic over a DIP-17 pool restore. Pending changes stay
+        // included: with no index holding the round's staged rows, the
+        // fetch itself must see them. A chunk whose fetch threw leaves its
+        // addresses unresolved, and those fall back to a per-row fetch.
+        var rowsByAddress: [String: PersistentPlatformAddress] = [:]
+        var unresolved = Set<String>()
+        for chunk in Self.chunked(Self.uniqueInOrder(entries.map(\.address))) {
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            if let rows = try? modelFetcher.fetch(descriptor, in: backgroundContext) {
+                for row in rows { rowsByAddress[row.address] = row }
+            } else {
+                unresolved.formUnion(chunk)
+            }
+        }
+
         for entry in entries {
             guard let (addressType, addressHash) =
                 platformAddressComponents(fromBech32m: entry.address)
@@ -5156,11 +5517,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 continue
             }
             let address = entry.address
-            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                predicate: #Predicate { $0.address == address }
-            )
+            if rowsByAddress[address] == nil, unresolved.remove(address) != nil {
+                let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                    predicate: #Predicate { $0.address == address }
+                )
+                rowsByAddress[address] = try? modelFetcher.fetch(descriptor, in: backgroundContext).first
+            }
             let row: PersistentPlatformAddress
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            if let existing = rowsByAddress[address] {
                 row = existing
                 row.addressType = addressType
                 row.addressHash = addressHash
@@ -5179,6 +5543,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     walletId: walletId
                 )
                 backgroundContext.insert(row)
+                // A repeat of this address later in `entries` must update
+                // this staged row, as the per-entry pending-changes fetch did.
+                rowsByAddress[address] = row
             }
             // Address-emit is authoritative for derivation metadata
             // and the used flag on first creation; we preserve any
@@ -6229,7 +6596,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Wipe a wallet's SwiftData footprint.
+    /// Discard completed legacy-migration snapshots for this store before an
+    /// explicit wallet deletion, even when there are no live wallet rows left.
+    /// Full snapshots can contain multiple wallets; their removal leaves all
+    /// current live rows intact. Pending recovery and cleanup errors are fatal.
+    /// Call before removing associated keys so failures remain retryable.
+    public func deleteCompletedMigrationSnapshots() throws {
+        try onQueue { try deleteCompletedMigrationSnapshotsOnQueue() }
+    }
+
+    private func deleteCompletedMigrationSnapshotsOnQueue() throws {
+        let urls = Set(modelContainer.configurations
+            .filter { !$0.isStoredInMemoryOnly }.map(\.url))
+        for url in urls.sorted(by: { $0.path < $1.path }) {
+            try DashLegacySchemaBridge.deleteCompletedSnapshots(at: url)
+        }
+    }
+
+    /// Wipe a wallet's SwiftData footprint, including completed store snapshots.
     public func deleteWalletData(walletId: Data) throws {
         SDKLogger.event(
             "persistence_wallet_delete_started",
@@ -6238,11 +6622,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         try onQueue {
             do {
+                // Run before the first saved deletion, including retries where
+                // the wallet row is already absent. Stay on the handler queue.
+                try deleteCompletedMigrationSnapshotsOnQueue()
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
                     predicate: walletRecordPredicate(walletId: walletId)
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
+                // Sidecars retain an explicit network key. Preserve other-network
+                // rows even when retrying after this handler's wallet row is gone.
+                let metadataNetwork = self.network ?? walletNetwork
+                let metadata: FetchDescriptor<PersistentIdentityBalanceMetadata>
+                if let raw = metadataNetwork?.rawValue {
+                    metadata = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    metadata = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                // Without a network, only unclaimed sidecars are safe to purge.
+                // Do not infer ownership from an unrelated handler's network.
+                var claimedNetworks = Set<UInt32>()
+                if metadataNetwork == nil {
+                    let owners = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletId })
+                    claimedNetworks = Set(try backgroundContext.fetch(owners).compactMap(\.networkRaw))
+                }
+                for row in try backgroundContext.fetch(metadata)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
 
                 if let walletRow = walletRow {
                     // Wallet → identities is `.nullify`; this delete
@@ -7109,7 +7519,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // that was killed mid-flight can resume from the latest
             // status without rebroadcasting. Empty / null when the
             // wallet has no persisted locks.
-            let assetLockRows = loadCachedAssetLocksOnQueue(walletId: w.walletId)
+            let assetLockRows: [AssetLockEntrySnapshot]
+            do {
+                assetLockRows = try loadCachedAssetLocksOnQueue(walletId: w.walletId)
+            } catch {
+                // An unreadable operation ID must never look like "not sent".
+                allocation.release()
+                return (nil, 0, true)
+            }
             let (assetLockBuf, assetLockCount) = buildAssetLockRestoreBuffer(
                 rows: assetLockRows,
                 allocation: allocation
@@ -7141,6 +7558,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
+
+            // Sends still unconfirmed on the host. Replayed Rust-side so
+            // their spend effect survives the restart; without it the
+            // input comes back spendable and the balance re-counts the
+            // coin — permanently, for a send that never reached the
+            // network. Asset-lock funding rows are excluded here because
+            // they already ride the array above and `resume_asset_lock`
+            // owns them.
+            let (unconfirmedBuf, unconfirmedCount) =
+                buildUnconfirmedOutgoingTxRecordBuffer(
+                    rows: unspentBuckets[w.walletId] ?? [],
+                    allocation: allocation,
+                    excludingTxids: unresolvedAssetLockFundingTxids(walletId: w.walletId)
+                )
+            entry.unconfirmed_outgoing_tx_records = unconfirmedBuf.map { UnsafePointer($0) }
+            entry.unconfirmed_outgoing_tx_records_count = UInt(unconfirmedCount)
 
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
@@ -7643,6 +8076,127 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct a transaction without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
+    /// Project the sends this wallet still holds as unconfirmed into the
+    /// FFI restore array, so the Rust load path can replay their spend
+    /// effect (see `ClientWalletStartState::unconfirmed_outgoing_txs`).
+    ///
+    /// Why this is needed at all: `spendIsInBlock` deliberately withholds
+    /// `isSpent` from an input whose spender is only in the mempool,
+    /// because that sighting is reversible by eviction. The UTXO restore
+    /// therefore hands the input back as spendable, and the balance
+    /// re-counts the coin. A running app never showed this — it held the
+    /// spend in memory — and a restart used to recover it only by
+    /// re-observing the transaction on the network, which never happens
+    /// for a send that did not reach the network in the first place.
+    ///
+    /// The selection is driven from the TXO side rather than the
+    /// transaction side, which makes the liveness rule fall out for free:
+    /// a row is offered only while one of *our* outputs still points at it
+    /// as its spender and is still unspent. A send that already lost a
+    /// conflict has had its inputs flipped by the winning spender, so it
+    /// drops out on its own — important, because the FFI restore does not
+    /// rebuild `observed_spent`, so Rust could not make that judgement.
+    ///
+    /// Asset-lock funding transactions are excluded: they ride
+    /// `unresolved_asset_lock_tx_records` and already have an owner in
+    /// `resume_asset_lock`. One owner per transaction.
+    ///
+    /// Takes the bucketed `isSpent == false` rows the caller already
+    /// fetched rather than querying by `walletId` again: that bucketing
+    /// routes a legacy row whose `walletId` was never backfilled through
+    /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
+    /// which this pass reads for every row.
+    /// Wire-order txids of the funding transactions already carried by
+    /// `unresolved_asset_lock_tx_records`. Read from the same rows that
+    /// buffer selects from, through the same decoder, rather than
+    /// re-deriving a txid from the serialized bytes.
+    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data>? {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        // `nil`, not an empty set, when the fetch fails: an empty exclusion
+        // set reads as "this wallet has no unresolved asset locks", which
+        // would let a funding transaction into the ordinary replay even
+        // though `resume_asset_lock` owns it. The caller offers nothing at
+        // all instead — one launch without a replay, rather than a
+        // transaction applied through the wrong path.
+        guard let locks = try? backgroundContext.fetch(descriptor) else { return nil }
+        return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
+    }
+
+    private func buildUnconfirmedOutgoingTxRecordBuffer(
+        rows txos: [PersistentTxo],
+        allocation: LoadAllocation,
+        excludingTxids excluded: Set<Data>?
+    ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
+        // Fail closed: without a trustworthy exclusion set we cannot tell an
+        // asset-lock funding transaction from an ordinary send.
+        guard let excluded else {
+            SDKLogger.event(
+                "persistence_unconfirmed_outgoing_skipped",
+                category: .persistence,
+                severity: .error,
+                fields: ["reason": .publicText("asset_lock_exclusion_fetch_failed")]
+            )
+            return (nil, 0)
+        }
+        guard !txos.isEmpty else { return (nil, 0) }
+
+        // Distinct spenders, still unconfirmed, still ours to replay.
+        var candidates: [Data: PersistentTransaction] = [:]
+        for txo in txos {
+            guard let spender = txo.spendingTransaction else { continue }
+            // Mirror `spendIsInBlock` exactly: it withholds `isSpent` for
+            // every context below `inBlock`, so an InstantSend-locked send
+            // (context 1) leaves its input unspent in the store too and needs
+            // the same replay. Filtering on `== 0` covered only half of that.
+            guard spender.context < TransactionContextType.inBlock.rawValue,
+                  spender.blockHeight == 0
+            else { continue }
+            guard !spender.transactionData.isEmpty else { continue }
+            guard !excluded.contains(spender.txid) else { continue }
+            candidates[spender.txid] = spender
+        }
+        guard !candidates.isEmpty else { return (nil, 0) }
+
+        // Ascending `firstSeen`: a parent send must be replayed before a
+        // child that spends its change, or the child finds no input and is
+        // discarded as irrelevant.
+        let ordered = candidates.values.sorted { $0.firstSeen < $1.firstSeen }
+
+        var entries: [UnconfirmedOutgoingTxRecordFFI] = []
+        entries.reserveCapacity(ordered.count)
+        for row in ordered {
+            let txBytes = row.transactionData
+            // Carry the row's identity so Rust can refuse bytes that do not
+            // hash to it. The replay applies the transaction through the
+            // ordinary state-update path, so a stale or partially-written
+            // `transactionData` would move accounting for inputs and outputs
+            // that have nothing to do with this send.
+            guard row.txid.count == 32 else { continue }
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+            var entry = UnconfirmedOutgoingTxRecordFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.first_seen = row.firstSeen
+            entries.append(entry)
+        }
+
+        let buf = UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.unconfirmedOutgoingTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
+    }
+
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -7901,12 +8455,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // identity changeset path.
             entry.status = 0
 
-            // DPNS names — currently empty. Wiring is here so a
-            // future query against `PersistentDpnsName` rows (or a
-            // dedicated array column on the identity) drops in
-            // without touching the FFI plumbing.
-            entry.dpns_names = nil
-            entry.dpns_names_count = 0
+            // DPNS names — the identity's OWNED label rows, so Rust's
+            // `ManagedIdentity.dpns_names` starts with every name already
+            // known instead of empty. A capped (partial) username fetch
+            // then only adds to that list, and no snapshot emitted before
+            // the next complete fetch carries a truncated owned set that
+            // `upsertDPNSNames` would read as departures. Rows retained as
+            // not owned (departed names, a picked name the last snapshot
+            // omitted) are not restored. Order: oldest acquisition first,
+            // then label, so the restored list is deterministic.
+            let ownedLabels = identity.dpnsNames
+                .filter { $0.isOwned }
+                .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                .map(\.label)
+            if ownedLabels.isEmpty {
+                entry.dpns_names = nil
+                entry.dpns_names_count = 0
+            } else {
+                let labelArray = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(
+                    capacity: ownedLabels.count
+                )
+                for (i, label) in ownedLabels.enumerated() {
+                    labelArray[i] = UnsafePointer(duplicateCString(label, allocation: allocation))
+                }
+                allocation.cStringPointerArrays.append((labelArray, ownedLabels.count))
+                entry.dpns_names = UnsafePointer(labelArray)
+                entry.dpns_names_count = UInt(ownedLabels.count)
+            }
             entry.contested_dpns_names = nil
             entry.contested_dpns_names_count = 0
 
@@ -7965,30 +8540,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                     // Mirror the contract-bounds projection into
                     // the restore row so scoped keys (DashPay's
-                    // SingleContractDocumentType, in particular)
-                    // come back with their full variant on cold
-                    // restart instead of silently degrading to
-                    // unbounded. Encoding matches
-                    // `IdentityKeyEntryFFI` on the persist side:
+                    // SingleContractDocumentType, and AUTHENTICATION
+                    // keys bound to a contract group) come back with
+                    // their full variant on cold restart instead of
+                    // silently degrading to unbounded. Encoding
+                    // matches `IdentityKeyEntryFFI` on the persist
+                    // side:
                     //   * kind=0 → no bounds; id zeroed, doc-type null
                     //   * kind=1 → SingleContract; id meaningful
                     //   * kind=2 → SingleContractDocumentType; id +
                     //     doc-type both meaningful
-                    // Length-validated by `pk.publicKeyData.count
-                    // == 32` (matches the gating in
-                    // `toIdentityPublicKey()`); a row with a
-                    // wrong-length id falls back to "no bounds"
-                    // rather than crashing FFI marshalling on the
-                    // Rust side.
-                    if let id = pk.contractBounds?.first, id.count == 32 {
+                    //   * kind=3 → ContractGroup; id meaningful (a
+                    //     group id), doc-type null
+                    // The kind comes off the row when it was stored
+                    // and from the legacy inference when it was not
+                    // (`effectiveContractBoundsKind`). A kind=2 row
+                    // whose doc-type went missing demotes to kind=1,
+                    // the same demotion Rust performs, rather than
+                    // handing the decoder a null doc-type for a
+                    // variant that needs one. Id length is validated
+                    // here; a row with a wrong-length id, or a kind
+                    // this build does not know, falls back to "no
+                    // bounds" rather than crashing FFI marshalling on
+                    // the Rust side or asserting a bound we cannot
+                    // describe.
+                    let boundsKind = pk.effectiveContractBoundsKind
+                    if (1...3).contains(boundsKind),
+                        let id = pk.contractBounds?.first, id.count == 32 {
                         withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
                             id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
                         }
-                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        let docType = pk.contractBoundsDocumentTypeName
+                        if boundsKind == 2, let docType = docType, !docType.isEmpty {
                             row.contract_bounds_kind = 2
                             row.contract_bounds_document_type = UnsafePointer(
                                 duplicateCString(docType, allocation: allocation)
                             )
+                        } else if boundsKind == 3 {
+                            row.contract_bounds_kind = 3
+                            row.contract_bounds_document_type = nil
                         } else {
                             row.contract_bounds_kind = 1
                             row.contract_bounds_document_type = nil
@@ -7996,6 +8586,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     } else {
                         row.contract_bounds_kind = 0
                         row.contract_bounds_document_type = nil
+                    }
+
+                    // Usage limits (protocol version 14). Without them a
+                    // key registered with a budget or an expiry would come
+                    // back unlimited on cold restart, and the restored
+                    // identity would offer it for signing work consensus
+                    // rejects. `total_budget` is credits; `expires_at` is
+                    // block time in milliseconds.
+                    if let totalBudget = pk.totalBudgetCredits {
+                        row.total_budget_is_some = true
+                        row.total_budget = totalBudget
+                    } else {
+                        row.total_budget_is_some = false
+                        row.total_budget = 0
+                    }
+                    if let expiresAt = pk.expiresAtMillis {
+                        row.expires_at_is_some = true
+                        row.expires_at = expiresAt
+                    } else {
+                        row.expires_at_is_some = false
+                        row.expires_at = 0
                     }
 
                     keyBuf[k] = row
@@ -8782,6 +9393,10 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// `UnconfirmedOutgoingTxRecordFFI` arrays per wallet. The `tx_bytes`
+    /// each entry points at are staged on `scalarBuffers`, like the
+    /// asset-lock records above.
+    var unconfirmedOutgoingTxRecordArrays: [(UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -8859,6 +9474,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in unconfirmedOutgoingTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -9658,6 +10277,8 @@ private func persistIdentityKeysCallback(
             //   0 → no bounds
             //   1 → SingleContract { id }
             //   2 → SingleContractDocumentType { id, doc_type_name }
+            //   3 → ContractGroup { id } (id is a group id, doc-type
+            //       pointer is always null)
             // The doc-type C-string for kind=2 is owned by Rust and
             // freed via `free_identity_key_entry_ffi` after this
             // callback returns, so we copy it into a Swift String
@@ -9677,6 +10298,8 @@ private func persistIdentityKeysCallback(
                 } else {
                     bounds = nil
                 }
+            case 3:
+                bounds = .contractGroup(id: dataFromTuple32(e.contract_bounds_id))
             default:
                 bounds = nil
             }
@@ -9689,6 +10312,8 @@ private func persistIdentityKeysCallback(
                 keyType: e.key_type,
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
+                totalBudget: e.total_budget_is_some ? e.total_budget : nil,
+                expiresAt: e.expires_at_is_some ? e.expires_at : nil,
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
@@ -9934,8 +10559,10 @@ private func persistAssetLocksCallback(
     removedCount: UInt
 ) -> Int32 {
     guard let context = context,
-          let walletIdPtr = walletIdPtr else {
-        return 0
+          let walletIdPtr = walletIdPtr,
+          upsertsCount == 0 || upsertsPtr != nil,
+          removedCount == 0 || removedPtr != nil else {
+        return 1
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
@@ -11230,4 +11857,66 @@ extension PlatformWalletPersistenceHandler {
             return false
         }
     }
+}
+
+private func persistAssetLockOperationIdCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, operationId: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let operationId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockOperationId(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            operationId: Data(bytes: operationId, count: 16))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockOperationIdCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outOperationId: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outOperationId else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let operationId = try handler.loadAssetLockOperationId(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            operationId.copyBytes(to: outOperationId, count: 16)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
+private func persistIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    identityId: UnsafePointer<UInt8>?, blockTime: UnsafePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32),
+            blockTime: blockTime?.pointee)
+        return 0
+    } catch { return -1 }
+}
+
+private func loadIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, identityId: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outBlockTime: UnsafeMutablePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId, let outFound, let outBlockTime else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let stamp = try handler.loadIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32)) {
+            outBlockTime.pointee = stamp
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
 }

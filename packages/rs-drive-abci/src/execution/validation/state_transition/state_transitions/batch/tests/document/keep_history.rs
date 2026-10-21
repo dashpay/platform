@@ -78,7 +78,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut rng = StdRng::seed_from_u64(437);
     let entropy = Bytes32::random_with_rng(&mut rng);
     let document_type = contract.document_type_for_name("note").unwrap();
-    let document = document_type
+    let mut document = document_type
         .random_document_with_identifier_and_entropy(
             &mut rng,
             identity.id(),
@@ -88,6 +88,9 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
             old_version,
         )
         .unwrap();
+    document
+        .set_id_for_creation(document_type, &entropy.0, 1, old_version)
+        .expect("expected to set the document id");
     let create = BatchTransition::new_document_creation_transition_from_document(
         document,
         document_type,
@@ -537,6 +540,9 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             initial_version,
         )
         .unwrap();
+    document
+        .set_id_for_creation(document_type, &entropy.0, 1, initial_version)
+        .unwrap();
     document.set("amount", 100u64.into());
     let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
@@ -787,6 +793,9 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 DocumentFieldFillSize::AnyDocumentFillSize,
                 version,
             )
+            .unwrap();
+        fresh_document
+            .set_id_for_creation(document_type, &fresh_entropy.0, 5, version)
             .unwrap();
         fresh_document.set("amount", 30u64.into());
         let fresh_query = DocumentHistoryDriveQuery {

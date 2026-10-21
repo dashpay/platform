@@ -8,7 +8,12 @@
 //! * **create**: any existing entry is a duplicate, so probe every index —
 //!   a shorter index thereby doubles as a uniqueness constraint over its
 //!   value projection plus owner (for Yappr's likes the `[postId]` index
-//!   is the one-like-per-(post, owner) rule).
+//!   is the one-like-per-(post, owner) rule). An index of a typed array
+//!   (protocol version 14) has one entry per element and is no such rule:
+//!   registration makes another index's whole key part of its key without
+//!   the array, so a create colliding on one of its elements collides on
+//!   that index's entry too, and the create's state validation does not
+//!   probe it (the storage insert's if-not-exists stays the backstop).
 //! * **delete**: probe every surviving index entry. Only paths already
 //!   drained from expired buckets are exempt. Every index
 //!   embeds `$ownerId` (the parser enforces it), so each probe — computed
@@ -21,25 +26,31 @@
 //! drift from the write path.
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_level_tree_types::{
+    document_carries, takes_part_in_index_by, terminal_member_tree_type,
+};
+use crate::drive::document::index_only_item_estimated_value_size;
+pub(crate) use crate::drive::document::index_only_member_key;
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
-use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{DirectQueryType, QueryTarget};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::OWNER_ID;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
-/// The entry paths a document's values produce under one index — one per
-/// containing bucket for a time-range index, exactly one otherwise —
-/// paired with the shared member key (the terminal property's value).
+/// The entry paths a document's values produce under one index (one per
+/// containing bucket for a time-range index and per distinct element for an
+/// index of a typed array, exactly one otherwise), paired with the shared
+/// member key (the terminal property's value).
 pub type IndexOnlyEntryPathsAndKey = (Vec<Vec<Vec<u8>>>, Vec<u8>);
 
 impl Drive {
@@ -76,20 +87,25 @@ impl Drive {
     /// doctype, (<level key>, <value key>)*, 0]` with the terminal
     /// property's value as the member key.
     ///
-    /// A plain index produces exactly one path. A time-range (bucketed)
+    /// A plain index produces exactly one path. An index of a typed array
+    /// (protocol version 14) produces one path per distinct element of the
+    /// document's list, and none for an empty or absent list, as the walkers
+    /// write it. A time-range (bucketed)
     /// index produces one path per bucket containing the document's
-    /// timestamp: the first level's segment is the grid-qualified
+    /// timestamp (times the elements, when it also names a typed array):
+    /// the first level's segment is the grid-qualified
     /// [`level_key`](Index::level_key) and its value keys come from
     /// [`TimeRangeTransform::entry_keys_for_raw`] — the same derivation
     /// the index walkers write with, so probe and write paths cannot
     /// drift (including the edge rules: a pre-origin timestamp produces
     /// NO entries, so it produces no probe paths either). A `skipIfAbsent`
-    /// index whose trigger (first property) the document omits likewise
-    /// produces NO paths (and an empty member key) — the write walkers
-    /// skipped the branch, so there is nothing to probe; the zero-path
+    /// index that skips the document (it omits a property of the index's
+    /// skip set) likewise produces NO paths (and an empty member key) — the
+    /// write walkers wrote nothing for it, so there is nothing to probe; the zero-path
     /// case flows through both consumers with the correct semantics
     /// (vacuously consistent for the delete probe, no duplicate for the
-    /// create probe).
+    /// create probe). A `summableOffCountIndex` index keeps a counter per
+    /// group and no entry per document, so it produces no paths either.
     ///
     /// [`TimeRangeTransform::entry_keys_for_raw`]:
     /// dpp::data_contract::document_type::TimeRangeTransform::entry_keys_for_raw
@@ -100,6 +116,13 @@ impl Drive {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<IndexOnlyEntryPathsAndKey, Error> {
+        // Unversioned, so every caller's protocol version reaches it (document
+        // create state validation 1 from protocol version 2): inert before
+        // protocol version 14, since only meta-schema v3 admits a
+        // `summableOffCountIndex` index (or indexOnly types at all).
+        if index.is_summable_off_count_index() {
+            return Ok((Vec::new(), Vec::new()));
+        }
         let owner_id = Some(document.owner_id().to_buffer());
 
         let raw_value_for = |property_name: &str| -> Result<Vec<u8>, Error> {
@@ -117,28 +140,34 @@ impl Drive {
         };
 
         // A skipIfAbsent index participates only when the document carries
-        // its trigger — the first property, which the parser guarantees is
-        // the only one that may be absent. Mirror the write walkers' skip
-        // exactly: no trigger, no entries.
-        if index.skip_if_absent {
-            let trigger = &index
-                .properties
-                .first()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a skipIfAbsent index has at least one property; the contract parser \
-                     enforces it",
-                )))?
-                .name;
-            if document
-                .get_raw_for_document_type(trigger, document_type, owner_id, platform_version)?
-                .is_none()
-            {
-                return Ok((Vec::new(), Vec::new()));
-            }
+        // every property of its skip set (the parser guarantees those are the
+        // only properties of the index that may be absent), an indexed typed
+        // array included, which a list without elements does not carry. The
+        // walkers' own definition (`document_takes_part_in_index`): a document
+        // the index skips has no entries in it.
+        if !takes_part_in_index_by(&index.skip_if_absent_properties, &mut |property| {
+            Ok(document_carries(document, document_type, property))
+        })? {
+            return Ok((Vec::new(), Vec::new()));
         }
 
+        // An index of a typed array (protocol version 14) enters the document
+        // under each distinct element of its list, the keys the walkers write
+        // it under (`level_keys`).
+        let array_elements = match index.indexed_array.as_deref() {
+            Some(array) => Some((
+                array,
+                document.get_raw_array_elements_for_document_type(
+                    array,
+                    document_type,
+                    platform_version,
+                )?,
+            )),
+            None => None,
+        };
+
         let prefix: Vec<Vec<u8>> = vec![
-            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            vec![RootTree::DataContractDocuments as u8],
             contract_id.to_vec(),
             vec![1],
             document_type.name().as_bytes().to_vec(),
@@ -146,12 +175,15 @@ impl Drive {
         let mut paths: Vec<Vec<Vec<u8>>> = vec![prefix];
         for (position, property) in index.properties.iter().enumerate() {
             let level_key = index.level_key(position, &property.name);
-            let raw = raw_value_for(&property.name)?;
-            // Only a time-range index's first property fans out; every
+            // A bucketed (time- or integer-range) index's first property fans
+            // out over its windows, and a typed array over its elements; every
             // other level extends each path with its single value key.
-            let value_keys: Vec<Vec<u8>> = match index.time_range.as_ref() {
-                Some(transform) if position == 0 => transform.entry_keys_for_raw(&raw),
-                _ => vec![raw],
+            let value_keys: Vec<Vec<u8>> = match (&array_elements, index.bucketing()) {
+                (Some((array, elements)), _) if property.name == *array => elements.clone(),
+                (_, Some(bucketing)) if position == 0 => {
+                    bucketing.entry_keys_for_raw(&raw_value_for(&property.name)?)
+                }
+                _ => vec![raw_value_for(&property.name)?],
             };
             paths = paths
                 .into_iter()
@@ -168,19 +200,34 @@ impl Drive {
                 })
                 .collect();
         }
+        // A flat index (no prefix properties) keeps its entries under the
+        // level keyed by its terminal's names, between the doctype and the
+        // `0` bucket.
+        if let Some(flat_key) = index.flat_level_key() {
+            for path in paths.iter_mut() {
+                path.push(flat_key.as_bytes().to_vec());
+            }
+        }
         for path in paths.iter_mut() {
             path.push(vec![0]);
         }
 
-        let terminal =
-            index
-                .terminal
-                .as_deref()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
-                 always Some there after parse normalization)",
-                )))?;
-        let member_key = raw_value_for(terminal)?;
+        if index.terminal.is_none() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
+                 Some there after parse normalization, but on a summableOffCountIndex \
+                 index, handled above)",
+            )));
+        }
+        // The member key: the terminal components' encoded values,
+        // concatenated, exactly as the write side keys the entry.
+        let member_key = index_only_member_key(
+            document,
+            document_type,
+            index.terminal_components(),
+            owner_id,
+            platform_version,
+        )?;
 
         Ok((paths, member_key))
     }
@@ -244,8 +291,11 @@ impl Drive {
                 &platform_version.drive,
             )?;
             let matches = match element {
+                // The commitment is the item's first 32 bytes; an entry
+                // payload (the type's value slot) follows it and is covered
+                // by the commitment, so the prefix is what binds.
                 Some(grovedb::Element::Item(payload, _)) => {
-                    payload == expected_commitment.as_slice()
+                    payload.get(..expected_commitment.len()) == Some(expected_commitment.as_slice())
                 }
                 // Summable indexes store `ItemWithSumItem(commitment,
                 // amount)`; the commitment payload plays the same binding
@@ -253,7 +303,7 @@ impl Drive {
                 // of the document's properties, so it is already covered
                 // by the commitment.
                 Some(grovedb::Element::ItemWithSumItem(payload, _, _)) => {
-                    payload == expected_commitment.as_slice()
+                    payload.get(..expected_commitment.len()) == Some(expected_commitment.as_slice())
                 }
                 _ => false,
             };
@@ -283,7 +333,17 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        for index in document_type.indexes().values() {
+        let estimated_item_value_size =
+            index_only_item_estimated_value_size(document_type, platform_version)?;
+        // A delete neither checks nor clears the entries of an index that
+        // outlives it, so it reads none of them. A summableOffCountIndex index
+        // keeps none: it yields no paths (its counter's read is priced where it
+        // moves).
+        for index in document_type
+            .indexes()
+            .values()
+            .filter(|index| !index.outlives_delete)
+        {
             let (paths, member_key) = Self::index_only_entry_paths_and_key(
                 contract_id,
                 document_type,
@@ -295,6 +355,16 @@ impl Drive {
             // keys the paths are built from, so the claimed tree type is
             // the one the walkers created the `0` member bucket with.
             let mut level = document_type.index_structure();
+            // A flat index terminates at its own level, directly under
+            // the root.
+            if let Some(flat_key) = index.flat_level_key() {
+                level = level.sub_levels().get(&flat_key).ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution(
+                        "a flat indexOnly index resolves to its flat level: the structure is \
+                         built from the same indexes",
+                    ),
+                ))?;
+            }
             for (position, property) in index.properties.iter().enumerate() {
                 let level_key = index.level_key(position, &property.name);
                 level = level.sub_levels().get(&*level_key).ok_or(Error::Drive(
@@ -311,9 +381,9 @@ impl Drive {
             ))?;
             let in_tree_type = terminal_member_tree_type(type_info);
             let estimated_value_size = if type_info.summable.is_some() {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+                estimated_item_value_size + 10
             } else {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                estimated_item_value_size
             };
             for path in paths {
                 let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
@@ -370,4 +440,49 @@ impl Drive {
         }
         Ok(false)
     }
+}
+
+/// The widest member key an indexOnly index's terminal can produce: the
+/// sum over its components of 32 bytes for `$ownerId` and, otherwise, the
+/// component property's maximum encoded size (a bounded byte array or
+/// string encodes to at most its declared bound — the string bound counts
+/// characters of up to four bytes — and every other indexable type
+/// encodes to a fixed width). Fee estimation sizes the `0` member bucket's
+/// keys by it, so the dry run upper-bounds the applied fee for a wide or
+/// composite terminal exactly as it does for a 32-byte one. The contract
+/// parser keeps every terminal within grovedb's 255-byte key cap, so the
+/// clamp below is a guard, not a path.
+pub(crate) fn index_only_terminal_max_key_size(
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    platform_version: &PlatformVersion,
+) -> Result<u8, Error> {
+    let mut total: u32 = 0;
+    for component in terminal {
+        let width: u32 = if component == OWNER_ID {
+            u32::from(DEFAULT_HASH_SIZE_U8)
+        } else {
+            let property =
+                document_type
+                    .flattened_properties()
+                    .get(component)
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "indexOnly terminal names a property the document type lacks: the \
+                     contract parser admits only $ownerId or schema properties as terminal \
+                     components",
+                    )))?;
+            u32::from(
+                property
+                    .property_type
+                    .max_byte_size(platform_version)
+                    .map_err(|e| Error::Protocol(Box::new(e)))?
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "indexOnly terminal component has an unbounded type: the contract \
+                         parser refuses arrays and objects as terminal components",
+                    )))?,
+            )
+        };
+        total = total.saturating_add(width);
+    }
+    Ok(u8::try_from(total).unwrap_or(u8::MAX))
 }

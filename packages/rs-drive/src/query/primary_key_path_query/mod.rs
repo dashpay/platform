@@ -23,8 +23,8 @@ pub(in crate::query) fn primary_key_path_query_target(
         .drive
         .methods
         .document
-        .query
-        .primary_key_path_query
+        .insert
+        .add_document_to_primary_storage
     {
         0 => Ok(v0::primary_key_path_query_target_v0()),
         1 => Ok(v1::primary_key_path_query_target_v1()),

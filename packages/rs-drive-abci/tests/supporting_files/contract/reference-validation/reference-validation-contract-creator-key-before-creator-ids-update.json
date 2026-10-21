@@ -1,0 +1,32 @@
+{
+  "$formatVersion": "1",
+  "id": "HGyuYtHKLGAjozwrLpnNUnz6ZQdeWYsVCXkQj718NyFW",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 2,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "transferable": 1,
+      "properties": {
+        "note": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 64
+        },
+        "senderKeyId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "position": 1,
+          "refersTo": {
+            "type": "identityPublicKey",
+            "identityProperty": "$creatorId"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

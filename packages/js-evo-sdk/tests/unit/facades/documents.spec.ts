@@ -24,6 +24,7 @@ describe('DocumentsFacade', () => {
   let getDocumentStub: SinonStub;
   let getDocumentWithProofInfoStub: SinonStub;
   let documentCreateStub: SinonStub;
+  let getContestFundToJoinStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
   let documentTransferStub: SinonStub;
@@ -90,6 +91,7 @@ describe('DocumentsFacade', () => {
 
     // Stub transition methods
     documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
+    getContestFundToJoinStub = this.sinon.stub(wasmSdk, 'getContestFundToJoin').resolves(undefined);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
@@ -239,6 +241,28 @@ describe('DocumentsFacade', () => {
       await client.documents.create(options);
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('contestFundToJoin()', () => {
+    it('should resolve to the prefunded voting balance the create states', async () => {
+      const prefundedVotingBalance = new wasmSDKPackage.PrefundedVotingBalance({
+        indexName: 'parentNameAndLabel',
+        credits: BigInt(20000000000),
+      });
+      getContestFundToJoinStub.resolves(prefundedVotingBalance);
+
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.equal(prefundedVotingBalance);
+    });
+
+    it('should resolve to undefined for a document that joins no contest', async () => {
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.be.undefined();
     });
   });
 
@@ -468,6 +492,22 @@ describe('DocumentsFacade', () => {
         aggregate: { type: 'count' },
         where: [['country', '==', 'DE']],
         direction: 'asc',
+        limit: 10,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should accept a contains pin on a typed array element', async () => {
+      // Typed so the spec stops compiling if `DocumentsIndexPin` drops `contains`.
+      const query: wasmSDKPackage.DocumentsRankedQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'like',
+        groupBy: 'postId',
+        aggregate: { type: 'count' },
+        where: [['tags', 'contains', 'dash']],
         limit: 10,
       };
 
