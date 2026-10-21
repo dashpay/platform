@@ -158,8 +158,8 @@ pub(crate) fn secret_key_from_options(
     options: &JsValue,
     field: &str,
 ) -> Result<SecretKey, WasmSdkError> {
-    let key = PrivateKeyWasm::try_from_options(options, field)?.inner();
-    SecretKey::from_secret_bytes(*key.inner.to_bytes())
+    let key = PrivateKeyWasm::try_from_options(options, field)?;
+    SecretKey::from_secret_bytes(*key.inner().inner.to_bytes())
         .map_err(|e| WasmSdkError::invalid_argument(format!("{field}: {e}")))
 }
 
