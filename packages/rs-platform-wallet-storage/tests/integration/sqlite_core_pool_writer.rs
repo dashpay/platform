@@ -431,6 +431,74 @@ fn reservation_can_be_released_or_promoted_to_used() {
     );
 }
 
+/// A contact payment stores its address reserved before the broadcast. A
+/// crash before the reservation is settled must not reload the address as
+/// fresh — the transaction may already be on the network — so the loader
+/// returns it with the used addresses. A reservation released before the
+/// crash reloads available, and a reservation on any other account is left
+/// to its TTL sweep.
+#[test]
+fn unsettled_contact_payment_reservation_reloads_used() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB4);
+    ensure_wallet_meta(&persister, &w);
+    let contact = AccountType::DashpayExternalAccount {
+        index: 0,
+        user_identity_id: [0xC1; 32],
+        friend_identity_id: [0xC2; 32],
+    };
+    let standard = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let store = |account_type: AccountType, infos: Vec<AddressInfo>| {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type,
+                        AddressPoolType::External,
+                        infos,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    // Contact index 0: reserved, then the process dies mid-send. Contact
+    // index 1: reserved, then released after a rejection. Standard index 0:
+    // a receive reservation.
+    let mut contact_infos = external_infos(0xB4);
+    contact_infos.truncate(2);
+    for info in &mut contact_infos {
+        info.state = AddressState::Reserved { at: 1_752_528_626 };
+    }
+    store(contact, contact_infos.clone());
+    contact_infos[1].state = AddressState::Available;
+    store(contact, contact_infos.clone());
+    let mut standard_infos = external_infos(0xB5);
+    standard_infos.truncate(1);
+    standard_infos[0].state = AddressState::Reserved { at: 1_752_528_626 };
+    store(standard, standard_infos);
+
+    let conn = persister.lock_conn_for_test();
+    let reloaded: Vec<_> = core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+        .unwrap()
+        .into_iter()
+        .map(|(address, owner)| (address, owner.account_type))
+        .collect();
+    assert_eq!(
+        reloaded,
+        vec![(
+            contact_infos[0].address.clone(),
+            "dashpay_external".to_string()
+        )],
+        "only the unsettled contact reservation reloads as used"
+    );
+}
+
 /// UTXOs resolve to their pool-declared account during reads.
 #[test]
 fn account_index_is_resolved_from_pool() {

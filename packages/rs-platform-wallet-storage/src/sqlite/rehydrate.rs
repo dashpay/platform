@@ -4,7 +4,7 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
-use key_wallet::account::account_collection::AccountCollection;
+use key_wallet::account::account_collection::{AccountCollection, DashpayAccountKey};
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -363,6 +363,11 @@ pub fn apply_persisted_core_state(
         // one absent from this wallet, falls back to the first account. An
         // empty map marks only the unspent-UTXO addresses.
         for (addr, owner) in used_pool_addresses {
+            // A contact's external account is no funds account; its
+            // addresses are restored on that account below.
+            if contact_external_key(owner.as_ref()).is_some() {
+                continue;
+            }
             let target =
                 route_to_funds_account(&account_keys, owner.as_ref(), &mut orphaned_owners);
             per_account_addrs[target].push(addr.clone());
@@ -405,6 +410,47 @@ pub fn apply_persisted_core_state(
         }
     }
 
+    // A DashPay contact's external account holds the addresses this wallet
+    // pays that contact at. It is no funds account, so the routing above
+    // skips it; its used addresses — and the reservations of contact
+    // payments a crash interrupted, which the loader returns as used — are
+    // restored on the account itself. Without this a relaunch hands a paid
+    // contact address out again, linking two payments on-chain.
+    let mut contact_addrs: std::collections::BTreeMap<DashpayAccountKey, Vec<key_wallet::Address>> =
+        std::collections::BTreeMap::new();
+    for (addr, owner) in used_pool_addresses {
+        if let Some(key) = contact_external_key(owner.as_ref()) {
+            contact_addrs.entry(key).or_default().push(addr.clone());
+        }
+    }
+    let mut missing_contact_accounts: Vec<String> = Vec::new();
+    for (key, addrs) in &contact_addrs {
+        match wallet_info.accounts.dashpay_external_accounts.get_mut(key) {
+            Some(account) => {
+                extend_pools_for_restored_addresses(account, manifest, addrs, wallet_id, ctx)?
+            }
+            None => missing_contact_accounts.push(format!(
+                "dashpay_external[{}] {}→{}",
+                key.index,
+                hex::encode(key.user_identity_id),
+                hex::encode(key.friend_identity_id)
+            )),
+        }
+    }
+    if !missing_contact_accounts.is_empty() {
+        ctx.note_degraded(
+            LoadSite::OrphanedUtxoOwner,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type: &missing_contact_accounts,
+                affected: missing_contact_accounts.len(),
+                detail: None,
+            },
+            "used contact-payment addresses belong to DashPay external accounts this wallet \
+             does not register; their used state is not restored",
+        );
+    }
+
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
     // UTXOs it finds, so running it earlier would record the txid and mark
     // nothing. Without it, instant-locked funds come back as merely confirmed
@@ -418,6 +464,21 @@ pub fn apply_persisted_core_state(
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
     Ok(())
+}
+
+/// The DashPay external-account key of `owner`, when it names one.
+fn contact_external_key(owner: Option<&OwningAccount>) -> Option<DashpayAccountKey> {
+    let owner = owner?;
+    let label = accounts::account_type_db_label(&AccountType::DashpayExternalAccount {
+        index: owner.account_index,
+        user_identity_id: owner.user_identity_id,
+        friend_identity_id: owner.friend_identity_id,
+    });
+    (owner.account_type == label).then_some(DashpayAccountKey {
+        index: owner.account_index,
+        user_identity_id: owner.user_identity_id,
+        friend_identity_id: owner.friend_identity_id,
+    })
 }
 
 /// Resolve an owning account to its position among `account_keys`, or fall

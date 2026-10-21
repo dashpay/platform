@@ -380,7 +380,15 @@ pub(crate) fn owning_account_for_script(
 }
 
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
-/// (`used = 1`), each paired with its owning account. This is the
+/// (`used = 1`), each paired with its owning account. A reserved DashPay
+/// contact-payment row (`dashpay_external` with `reserved_at` set) is
+/// returned as used too: a contact payment stores its reservation before the
+/// broadcast, so after a crash mid-send the address may already be paid
+/// on-chain, and handing it out again would link two payments. A reservation
+/// that never reached the network costs one skipped index; a release stores
+/// the row unreserved and it reloads available. This is the conservative
+/// reading the FFI host applies as well. Reservations of other accounts are
+/// left to their TTL sweep and do not reload as used. This is the
 /// *known-owner* reuse-guard source: the pool row carries the account
 /// discriminators directly, so no per-script round-trip is needed. Possibly
 /// empty. The caller **unions** this with the `core_utxos`-derived set — the
@@ -389,9 +397,10 @@ pub(crate) fn owning_account_for_script(
 /// drop the historical ones.
 ///
 /// A `script` reused across accounts yields several rows; this reader applies
-/// the same PK-ordered tie-break as [`owning_account_for_script`] among rows
-/// marked used. An unused row can therefore own a UTXO while a different used
-/// row supplies the reuse guard, which preserves each resolver's distinct
+/// the same PK-ordered tie-break as [`owning_account_for_script`] among the
+/// rows returned (used, or a reserved contact-payment row). An unused row
+/// can therefore own a UTXO while a different returned row supplies the reuse
+/// guard, which preserves each resolver's distinct
 /// source contract. `network` turns each stored `script` back into an
 /// [`Address`](dashcore::Address); an invalid script is fatal under Strict and
 /// skipped under Recovery, matching
@@ -419,10 +428,15 @@ pub fn load_used_addresses_with_ctx(
     // ordered read materializes or sorts any blob, so a corrupt/oversize
     // column raises a typed `BlobTooLarge` (the crate's 16 MiB cap) rather
     // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
+    //
+    // Used rows, plus the contact-payment reservations read back as used.
+    // The `dashpay_external` literal is `accounts::account_type_db_label` of
+    // `DashpayExternalAccount`; SQL here stays static.
     blob::check_max_column_len(
         conn,
         "SELECT MAX(length(script)) FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1",
+         WHERE wallet_id = ?1 AND (used = 1 OR (reserved_at IS NOT NULL \
+           AND account_type = 'dashpay_external'))",
         wallet_id,
     )?;
     // Order by script then the pool PK so the first row per script is the
@@ -432,7 +446,8 @@ pub fn load_used_addresses_with_ctx(
                 length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 \
+         WHERE wallet_id = ?1 AND (used = 1 OR (reserved_at IS NOT NULL \
+           AND account_type = 'dashpay_external')) \
          ORDER BY script, account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index",
     )?;

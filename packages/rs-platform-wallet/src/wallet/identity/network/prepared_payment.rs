@@ -30,12 +30,11 @@
 //! 1. Under the manager lock it checks that the address is still available —
 //!    not used, not reserved, and paid by no resident transaction record —
 //!    and marks it **reserved**. The pool is stored, and flushed when the
-//!    backend buffers, before anything reaches the network. The FFI host
-//!    stores a reservation as used, so a relaunch after a crash mid-send does
-//!    not hand the address out again. The SQLite backend stores it reversibly
-//!    (`reserved_at`) but does not restore it on load yet (#4188); there the
-//!    address can be handed out again until the wallet observes the
-//!    transaction — a privacy window, never a risk to funds.
+//!    backend buffers, before anything reaches the network. Both backends
+//!    reload a stored reservation as used — the FFI host stores it as used,
+//!    SQLite stores it reversibly (`reserved_at`) and reads it back as used —
+//!    so a relaunch after a crash mid-send does not hand the address out
+//!    again.
 //! 2. When the broadcast went out, or may have (an ambiguous outcome), the
 //!    reservation becomes **used** and is stored. When it provably did not —
 //!    the store failed, the network rejected it, or it was refused as stale
@@ -573,15 +572,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 });
             }
         }
-        let reserved_at = now_secs();
-        for pool in external_account
-            .managed_account_type_mut()
-            .address_pools_mut()
-        {
-            if let Some(info) = pool.address_info_mut(payment_address) {
-                info.state = AddressState::Reserved { at: reserved_at };
-            }
-        }
+        reserve_address(external_account, payment_address);
         Ok(pool_changeset(
             from_identity_id,
             to_contact_id,
@@ -597,7 +588,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Only the reservation is touched. An address key-wallet has meanwhile
     /// seen paid is already used and stays so — the reservation it promoted
     /// is gone, and the release finds nothing to release.
-    async fn settle_payment_address(
+    pub(super) async fn settle_payment_address(
         &self,
         generation: &Arc<WalletGeneration>,
         from_identity_id: &Identifier,
@@ -607,6 +598,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ) {
         // Held from the snapshot through its store, like the reservation.
         let _contact_gate = self.persister.lock_contact_payments().await;
+        self.settle_payment_address_gated(
+            generation,
+            from_identity_id,
+            to_contact_id,
+            payment_address,
+            outcome,
+        )
+        .await;
+    }
+
+    /// [`Self::settle_payment_address`] for a caller already holding the
+    /// contact-payment gate.
+    pub(super) async fn settle_payment_address_gated(
+        &self,
+        generation: &Arc<WalletGeneration>,
+        from_identity_id: &Identifier,
+        to_contact_id: &Identifier,
+        payment_address: &Address,
+        outcome: AddressOutcome,
+    ) {
         let settled = {
             let mut wm = self.wallet_manager.write().await;
             let Ok(info) = self.generation_info_mut(&mut wm, generation) else {
@@ -630,14 +641,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let paid =
                 contact_address_paid_on_chain(external_account, &payment_address.script_pubkey());
             let changed = match outcome {
-                AddressOutcome::NotSent if !paid => external_account
-                    .managed_account_type_mut()
-                    .address_pools_mut()
-                    .into_iter()
-                    .any(|pool| {
-                        pool.address_index(payment_address)
-                            .is_some_and(|index| pool.release_reservation(index))
-                    }),
+                AddressOutcome::NotSent if !paid => {
+                    release_address_reservation(external_account, payment_address)
+                }
                 _ => external_account.mark_address_used(payment_address),
             };
             if !changed {
@@ -664,10 +670,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             pool_changeset(from_identity_id, to_contact_id, external_account)
         };
-        // Flushed like the reservation: on a backend that does not restore
-        // reservations (SQLite, #4188) the used flag is the only durable
-        // record that the address was paid.
-        if let Err(e) = self.store_durably(settled) {
+        // A release is flushed like the reservation, so a relaunch does not
+        // read back the reservation it replaces. A used address needs no
+        // flush: the stored reservation already reloads as used.
+        let stored = match outcome {
+            AddressOutcome::NotSent => self.store_durably(settled),
+            AddressOutcome::Sent => self
+                .persister
+                .store(settled)
+                .map_err(|e| self.persister.classify_store_failure(e)),
+        };
+        if let Err(e) = stored {
             tracing::warn!(
                 error = %e,
                 ?outcome,
@@ -678,7 +691,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Store `changeset` and, on a backend that buffers, flush it, so it is
     /// on disk when this returns.
-    fn store_durably(&self, changeset: PlatformWalletChangeSet) -> Result<(), PlatformWalletError> {
+    pub(super) fn store_durably(
+        &self,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PlatformWalletError> {
         self.persister
             .store(changeset)
             .map_err(|e| self.persister.classify_store_failure(e))?;
@@ -705,7 +721,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
 /// Whether a send's transaction went out (or may have), or provably did not.
 #[derive(Debug, Clone, Copy)]
-enum AddressOutcome {
+pub(super) enum AddressOutcome {
     Sent,
     NotSent,
 }
@@ -727,7 +743,43 @@ impl From<PlatformWalletError> for ReserveRefusal {
     }
 }
 
-fn contact_key(from_identity_id: &Identifier, to_contact_id: &Identifier) -> DashpayAccountKey {
+/// Mark `address` reserved in whichever of `account`'s pools holds it, if it
+/// is available there — a used address is never downgraded to a reservation
+/// a release could then free. Returns whether it was reserved.
+pub(super) fn reserve_address(account: &mut ManagedCoreFundsAccount, address: &Address) -> bool {
+    let reserved_at = now_secs();
+    let mut reserved = false;
+    for pool in account.managed_account_type_mut().address_pools_mut() {
+        if let Some(info) = pool.address_info_mut(address) {
+            if info.is_available() {
+                info.state = AddressState::Reserved { at: reserved_at };
+                reserved = true;
+            }
+        }
+    }
+    reserved
+}
+
+/// Release `address`'s reservation. A used or available address is left as
+/// it is. Returns whether a reservation was released.
+pub(super) fn release_address_reservation(
+    account: &mut ManagedCoreFundsAccount,
+    address: &Address,
+) -> bool {
+    account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .any(|pool| {
+            pool.address_index(address)
+                .is_some_and(|index| pool.release_reservation(index))
+        })
+}
+
+pub(super) fn contact_key(
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+) -> DashpayAccountKey {
     DashpayAccountKey {
         index: CONTACT_ACCOUNT_INDEX,
         user_identity_id: from_identity_id.to_buffer(),
@@ -735,7 +787,7 @@ fn contact_key(from_identity_id: &Identifier, to_contact_id: &Identifier) -> Das
     }
 }
 
-fn pool_changeset(
+pub(super) fn pool_changeset(
     from_identity_id: &Identifier,
     to_contact_id: &Identifier,
     external_account: &ManagedCoreFundsAccount,

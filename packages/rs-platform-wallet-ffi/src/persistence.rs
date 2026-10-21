@@ -4615,9 +4615,10 @@ fn build_core_address_entry_ffi(
         // slot for a reservation. The row is a reuse guard, so `Reserved`
         // flattens to `true`: a handed-out address must not be handed out
         // again after a reload. Its release is a later `Available` row,
-        // stored as `false`, which the host applies as written. The one
-        // reserving caller is the two-step DashPay contact payment, which
-        // reserves the contact address for the length of its send.
+        // stored as `false`, which the host applies as written. The
+        // reserving callers are the DashPay contact sends — `send_payment`
+        // and the two-step `send_prepared_payment` — which reserve the
+        // contact address for the length of their broadcast.
         is_used: match info.state {
             AddressState::Used | AddressState::Reserved { .. } => true,
             AddressState::Available => false,

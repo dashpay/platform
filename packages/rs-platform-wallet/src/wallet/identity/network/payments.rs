@@ -1,6 +1,7 @@
 //! DashPay payment recording and send-to-contact flows.
 
 use dpp::prelude::Identifier;
+use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use std::sync::Arc;
@@ -9,10 +10,15 @@ use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
+use super::prepared_payment::{
+    contact_key, pool_changeset, release_address_reservation, reserve_address, AddressOutcome,
+};
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
+use crate::changeset::PlatformWalletChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::wallet::reservations::release_reservation_after_rejected_broadcast;
 
 // ---------------------------------------------------------------------------
 // Incoming payment recording + reconcile
@@ -1190,42 +1196,22 @@ fn record_received_payment_totals(
     recorded
 }
 
-/// Return a consumed contact payment address to its pool: clear the used
-/// mark and index, and recompute the used high-water.
-///
-/// Sound ONLY while the transaction that consumed the address never reached
-/// the network — a failed `build_signed`, or a broadcast the network
-/// definitively rejected pre-send. The address was never exposed on-chain in
-/// either case, so re-handing it later cannot break DIP-15 per-payment
-/// rotation, and clearing the mark is what preserves the invariant
-/// sent-payment reconstruction depends on: used indices chain within the gap
-/// limit. Extra lookahead addresses the selection may have generated are
-/// left in place — generated-but-available entries are harmless.
-///
-/// An address a resident transaction record of the account pays is left
-/// used: another device on the same seed paid the contact there while this
-/// payment was in flight, and re-handing it would link the two on-chain.
-/// Returns whether the address was returned.
-fn return_contact_payment_address_to_pool(
-    account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
+/// Release the reservation on a contact payment address whose transaction
+/// never left this process. Caller holds the manager write lock the
+/// reservation was taken under, so nothing has observed or persisted it since.
+fn release_unsent_contact_address(
+    info: &mut PlatformWalletInfo,
+    key: &DashpayAccountKey,
     payment_address: &dashcore::Address,
-) -> bool {
-    use key_wallet::managed_account::address_pool::AddressState;
-
-    if contact_address_paid_on_chain(account, &payment_address.script_pubkey()) {
-        return false;
+) {
+    if let Some(external_account) = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .get_mut(key)
+    {
+        release_address_reservation(external_account, payment_address);
     }
-    for pool in account.managed_account_type_mut().address_pools_mut() {
-        let Some(&index) = pool.address_index.get(payment_address) else {
-            continue;
-        };
-        pool.used_indices.remove(&index);
-        if let Some(address_info) = pool.addresses.get_mut(&index) {
-            address_info.state = AddressState::Available;
-        }
-        pool.highest_used = pool.used_indices.iter().max().copied();
-    }
-    true
 }
 
 /// Whether a resident transaction record of this contact account pays
@@ -1341,55 +1327,54 @@ async fn confirm_sent_payment_by_txid(
     }
 }
 
-/// Select and consume from the one authoritative pool shared by Core sends
-/// and externally funded contact payouts. Caller holds the manager write lock.
-fn reserve_contact_payment_address(
-    wm: &mut WalletManager<PlatformWalletInfo>,
+/// How [`reserve_contact_payment_address`] claims the address it selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContactAddressClaim {
+    /// Marked used at once — an address handed to a payout this wallet does
+    /// not broadcast, which is never released.
+    Used,
+    /// Marked reserved, to be settled used or released once the broadcast's
+    /// outcome is known. A payment key-wallet observes at the address in the
+    /// meantime promotes it to used, and the release leaves that alone.
+    Reserved,
+}
+
+/// The contact's external account and the xpub its addresses derive from.
+fn contact_external_account<'w>(
+    wm: &'w mut WalletManager<PlatformWalletInfo>,
     wallet_id: WalletId,
     from_identity_id: &Identifier,
     to_contact_id: &Identifier,
-) -> Result<(dashcore::Address, crate::changeset::PlatformWalletChangeSet), PlatformWalletError> {
-    use key_wallet::account::account_collection::DashpayAccountKey;
-    let account_index = 0;
-    // Resolve the external account's xpub so we can derive addresses.
-    let contact_xpub = {
-        // Look up the external account in the *immutable* AccountCollection on
-        // `Wallet`. The ManagedAccountCollection only stores the managed state;
-        // the xpub lives on the immutable Account in `wallet.accounts`.
-        // For a watch-only external account we stored the contact's xpub directly
-        // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
-        let wallet = wm
-            .get_wallet(&wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-        wallet
-            .accounts
-            .dashpay_external_accounts
-            .get(&DashpayAccountKey {
-                index: account_index,
-                user_identity_id: from_identity_id.to_buffer(),
-                friend_identity_id: to_contact_id.to_buffer(),
-            })
-            .map(|a| a.account_xpub)
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No DashpayExternalAccount found for contact {} — call \
-                     register_external_contact_account first",
-                    to_contact_id
-                ))
-            })?
-    };
-
-    let info = wm
+) -> Result<
+    (
+        key_wallet::bip32::ExtendedPubKey,
+        &'w mut key_wallet::managed_account::ManagedCoreFundsAccount,
+    ),
+    PlatformWalletError,
+> {
+    let key = contact_key(from_identity_id, to_contact_id);
+    // Look up the external account in the *immutable* AccountCollection on
+    // `Wallet`. The ManagedAccountCollection only stores the managed state;
+    // the xpub lives on the immutable Account in `wallet.accounts`.
+    // For a watch-only external account we stored the contact's xpub directly
+    // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
+    let contact_xpub = wm
+        .get_wallet(&wallet_id)
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
+        .accounts
+        .dashpay_external_accounts
+        .get(&key)
+        .map(|a| a.account_xpub)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No DashpayExternalAccount found for contact {} — call \
+                 register_external_contact_account first",
+                to_contact_id
+            ))
+        })?;
+    let external_account = wm
         .get_wallet_info_mut(&wallet_id)
-        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
-
-    // Derive the next unused address from the external account's address pool.
-    let key = DashpayAccountKey {
-        index: account_index,
-        user_identity_id: from_identity_id.to_buffer(),
-        friend_identity_id: to_contact_id.to_buffer(),
-    };
-    let external_account = info
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         .core_wallet
         .accounts
         .dashpay_external_accounts
@@ -1400,30 +1385,91 @@ fn reserve_contact_payment_address(
                 to_contact_id
             ))
         })?;
+    Ok((contact_xpub, external_account))
+}
 
+/// Mark used every next available address a resident record pays — paid by
+/// another device on the same seed without the pool marking it — so the next
+/// payment does not link to it on-chain. Each pass marks one more address,
+/// so the walk ends. Returns whether any address was marked.
+fn mark_contact_addresses_paid_on_chain(
+    external_account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
+    contact_xpub: &key_wallet::bip32::ExtendedPubKey,
+) -> Result<bool, PlatformWalletError> {
+    let mut marked = false;
+    loop {
+        let candidate = external_account
+            .next_address(Some(contact_xpub), true)
+            .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+        if !contact_address_paid_on_chain(external_account, &candidate.script_pubkey()) {
+            return Ok(marked);
+        }
+        if !external_account.mark_address_used(&candidate) {
+            return Err(PlatformWalletError::TransactionBuild(format!(
+                "derived payment address {candidate} is not in the external account pool"
+            )));
+        }
+        marked = true;
+    }
+}
+
+/// Run [`mark_contact_addresses_paid_on_chain`] for one contact and, when it
+/// marked anything, snapshot the pool to store after the guard drops. Caller
+/// holds the manager write lock.
+fn record_contact_addresses_paid_on_chain(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+) -> Result<Option<PlatformWalletChangeSet>, PlatformWalletError> {
+    let (contact_xpub, external_account) =
+        contact_external_account(wm, wallet_id, from_identity_id, to_contact_id)?;
+    Ok(
+        mark_contact_addresses_paid_on_chain(external_account, &contact_xpub)?
+            .then(|| pool_changeset(from_identity_id, to_contact_id, external_account)),
+    )
+}
+
+/// Select and claim from the one authoritative pool shared by Core sends
+/// and externally funded contact payouts. Run
+/// [`record_contact_addresses_paid_on_chain`] first, so the selection skips
+/// an address a resident record already pays. Caller holds the manager
+/// write lock.
+fn reserve_contact_payment_address(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    from_identity_id: &Identifier,
+    to_contact_id: &Identifier,
+    claim: ContactAddressClaim,
+) -> Result<(dashcore::Address, PlatformWalletChangeSet), PlatformWalletError> {
+    let (contact_xpub, external_account) =
+        contact_external_account(wm, wallet_id, from_identity_id, to_contact_id)?;
     let payment_address = external_account
         .next_address(Some(&contact_xpub), true)
         .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
     // `next_address`/`next_unused` only *selects* (and, when the
-    // gap-window is exhausted, generates) the next unused address —
-    // it does NOT flip its `used` flag (that lives solely on
-    // `AddressPool::mark_used`). DIP-15 per-payment rotation requires
-    // that once we commit this address to a payment it never be
-    // handed out again, so mark it used now, on the resident external
-    // account, before the snapshot below captures the pool. A
-    // `false` return would mean the address vanished from the pool
-    // between derivation and this call — a real invariant break, so
-    // fail loud rather than silently ship an un-rotated address.
-    if !external_account.mark_address_used(&payment_address) {
+    // gap-window is exhausted, generates) the next available address —
+    // it does NOT change its state. DIP-15 per-payment rotation requires
+    // that once we commit this address to a payment it never be handed
+    // out again, so claim it now, on the resident external account,
+    // before the snapshot below captures the pool. A miss would mean the
+    // address vanished from the pool between derivation and this call —
+    // a real invariant break, so fail loud rather than silently ship an
+    // un-rotated address.
+    let claimed = match claim {
+        ContactAddressClaim::Used => external_account.mark_address_used(&payment_address),
+        ContactAddressClaim::Reserved => reserve_address(external_account, &payment_address),
+    };
+    if !claimed {
         return Err(PlatformWalletError::TransactionBuild(format!(
             "derived payment address {payment_address} is not in the external \
-             account pool — cannot mark it used"
+             account pool — cannot claim it"
         )));
     }
 
-    // Snapshot the used-flag flip (and any gap-window extension)
-    // `next_address` + `mark_address_used` just applied to the
+    // Snapshot the claim (and any gap-window extension)
+    // `next_address` + the claim just applied to the
     // external account's pool, as an owned changeset. The snapshot is
     // captured here — while the pool is still borrowed under the
     // guard — so the persisted state is exactly the flip just made,
@@ -1434,20 +1480,9 @@ fn reserve_contact_payment_address(
     // every other wallet accessor for its duration, and a host store
     // that re-entered any manager API would deadlock the non-reentrant
     // lock.
-    let external_account_type = key_wallet::account::AccountType::DashpayExternalAccount {
-        index: account_index,
-        user_identity_id: from_identity_id.to_buffer(),
-        friend_identity_id: to_contact_id.to_buffer(),
-    };
-    let used_flip_changeset = crate::changeset::PlatformWalletChangeSet {
-        account_address_pools: crate::changeset::account_address_pool_entries(
-            external_account_type,
-            external_account.managed_account_type().address_pools(),
-        ),
-        ..Default::default()
-    };
+    let claim_changeset = pool_changeset(from_identity_id, to_contact_id, external_account);
 
-    Ok((payment_address, used_flip_changeset))
+    Ok((payment_address, claim_changeset))
 }
 
 // ---------------------------------------------------------------------------
@@ -1477,11 +1512,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let _payment_guard = self.persister.lock_contact_payments().await;
         let (address, changeset) = {
             let mut wm = self.wallet_manager.write().await;
+            // Stored with the claim's own snapshot below.
+            record_contact_addresses_paid_on_chain(
+                &mut wm,
+                self.wallet_id,
+                from_identity_id,
+                to_contact_id,
+            )?;
             reserve_contact_payment_address(
                 &mut wm,
                 self.wallet_id,
                 from_identity_id,
                 to_contact_id,
+                ContactAddressClaim::Used,
             )?
         };
         // Host persistence may re-enter wallet APIs, so never invoke it under
@@ -1560,7 +1603,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: key_wallet::signer::Signer,
         C: crate::wallet::identity::network::contact_requests::ContactCryptoProvider + Sync,
     {
-        use key_wallet::account::account_collection::DashpayAccountKey;
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -1591,20 +1633,47 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .await?;
         let _payment_guard = self.persister.lock_contact_payments().await;
 
-        let (payment_address, used_flip_changeset, tx, fee, funding_accounts, in_broadcast_pin) = {
+        // Addresses a resident record pays but the pool still shows
+        // available are marked used and stored first, on their own: the
+        // send below can still fail before it stores anything, and that
+        // evidence must not depend on it.
+        let found_paid = {
             let mut wm = self.wallet_manager.write().await;
-
-            let (payment_address, used_flip_changeset) = reserve_contact_payment_address(
+            record_contact_addresses_paid_on_chain(
                 &mut wm,
                 self.wallet_id,
                 from_identity_id,
                 to_contact_id,
+            )?
+        };
+        if let Some(changeset) = found_paid {
+            if let Err(e) = self.store_durably(changeset) {
+                tracing::warn!(
+                    error = %e,
+                    "failed to persist a contact address found paid on-chain"
+                );
+            }
+        }
+
+        let (
+            payment_address,
+            reservation_changeset,
+            tx,
+            fee,
+            funding_accounts,
+            in_broadcast_pin,
+            generation,
+        ) = {
+            let mut wm = self.wallet_manager.write().await;
+
+            let (payment_address, reservation_changeset) = reserve_contact_payment_address(
+                &mut wm,
+                self.wallet_id,
+                from_identity_id,
+                to_contact_id,
+                ContactAddressClaim::Reserved,
             )?;
-            let key = DashpayAccountKey {
-                index: account_index,
-                user_identity_id: from_identity_id.to_buffer(),
-                friend_identity_id: to_contact_id.to_buffer(),
-            };
+            let key = contact_key(from_identity_id, to_contact_id);
             let (wallet, info) = wm
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
@@ -1669,6 +1738,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             }
             if offered_accounts.is_empty() {
+                release_unsent_contact_address(info, &key, &payment_address);
                 return Err(PlatformWalletError::TransactionBuild(
                     "no spendable funding account (BIP44/BIP32/DashPay receiving) found"
                         .to_string(),
@@ -1690,29 +1760,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             {
                 Ok(built) => built,
                 Err(e) => {
-                    // Return the consumed address to the pool. Nothing was
-                    // signed to completion, persisted (the used-flip store
-                    // below is unreachable from here) or broadcast, so the
-                    // mark exists only in this process's memory and the
-                    // address was never exposed on-chain — un-marking it
-                    // cannot break DIP-15 rotation. Leaving it consumed
-                    // would let every failed build (insufficient funds
-                    // retried by the user, a signer refusing) advance the
-                    // next index by one with no bound; enough failures
-                    // before one successful payment would put that payment
-                    // beyond any gap-limit walk a restore-from-seed can
-                    // perform, permanently hiding it from sent-payment
-                    // reconstruction. Used indices must chain within the
-                    // gap limit, so consumption is committed only once a
-                    // fully signed transaction exists.
-                    if let Some(external_account) = info
-                        .core_wallet
-                        .accounts
-                        .dashpay_external_accounts
-                        .get_mut(&key)
-                    {
-                        return_contact_payment_address_to_pool(external_account, &payment_address);
-                    }
+                    // Nothing was signed to completion, persisted (the
+                    // reservation store below is unreachable from here) or
+                    // broadcast: release the reservation. Leaving it would let
+                    // every failed build (insufficient funds retried by the
+                    // user, a signer refusing) skip one more index with no
+                    // bound; enough of them before one successful payment
+                    // would put that payment beyond any gap-limit walk a
+                    // restore-from-seed can perform, hiding it from
+                    // sent-payment reconstruction.
+                    release_unsent_contact_address(info, &key, &payment_address);
                     return Err(PlatformWalletError::TransactionBuild(e.to_string()));
                 }
             };
@@ -1729,23 +1786,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // been held since selection — and it must sweep EVERY account
             // that offered funding (pooled selection), the same superset the
             // rejected-broadcast release below uses; accounts that supplied
-            // nothing no-op. Roll back the consumed payment address exactly
-            // like the build-failure arm above — nothing was persisted or
-            // broadcast.
+            // nothing no-op. Release the address reservation exactly like the
+            // build-failure arm above — nothing was persisted or broadcast.
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&tx) {
                 for at in &offered_accounts {
                     if let Some(managed) = info.core_wallet.accounts.funds_account_mut(at) {
                         managed.release_reservation(&tx);
                     }
                 }
-                if let Some(external_account) = info
-                    .core_wallet
-                    .accounts
-                    .dashpay_external_accounts
-                    .get_mut(&key)
-                {
-                    return_contact_payment_address_to_pool(external_account, &payment_address);
-                }
+                release_unsent_contact_address(info, &key, &payment_address);
                 // Typed, and the SAME variant the other two choke points
                 // return — see `PlatformWalletError::InputMidBroadcast`.
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
@@ -1779,42 +1828,61 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
             (
                 payment_address,
-                used_flip_changeset,
+                reservation_changeset,
                 tx,
                 fee,
                 offered_accounts,
                 in_broadcast_pin,
+                info.generation.clone(),
             )
         };
 
-        // Persist the payment-address used flip now that the wallet-manager
-        // write guard is released, but BEFORE the broadcast below. Durability
-        // must precede broadcast: once the transaction is on the network the
-        // address is publicly spent-to, and a relaunch that rehydrated the
-        // pool from a stale snapshot would re-hand the SAME address to the
-        // next payment — breaking DIP-15 per-payment rotation and linking the
-        // payments on-chain. A store failure aborts the send pre-broadcast
-        // (nothing has hit the network); the consumed in-memory address only
-        // leaves a one-address gap that the pool's gap window absorbs on
-        // retry — bounded, because a signed transaction exists here, unlike
-        // the unbounded build-failure case rolled back above.
-        if let Err(e) = self.persister.store(used_flip_changeset) {
+        // Persist the address reservation now that the wallet-manager write
+        // guard is released, but BEFORE the broadcast below, and flushed on a
+        // buffering backend. Durability must precede broadcast: once the
+        // transaction is on the network the address is publicly spent-to,
+        // and a relaunch that rehydrated the pool from a stale snapshot would
+        // re-hand the SAME address to the next payment — breaking DIP-15
+        // per-payment rotation and linking the payments on-chain. Both
+        // backends reload a stored reservation as used.
+        if let Err(e) = self.store_durably(reservation_changeset) {
             // A definitive PRE-SEND failure: the broadcaster below was never
-            // reached, so the transaction provably is not on the wire and its
-            // inputs are safe to reselect immediately. Release the fence in the
-            // same breath as the abort — carrying it past this point would hold
-            // the inputs against every later build with no transaction to
-            // protect, and (with no deadline behind it) nothing would ever
-            // clear it.
+            // reached, so the transaction provably is not on the wire. Its
+            // address, its inputs and the fence are all released. The verdict
+            // goes on the pin first, synchronously, so a cancellation from
+            // here on settles the fence as released. The address goes back
+            // before the inputs, as in `send_prepared_payment`: a build that
+            // takes the freed inputs must not find it still reserved and skip
+            // to the next index. Then the inputs, under the still-live fence,
+            // and the fence last. Carrying the fence or the inputs past this
+            // point would hold them against every later build with no
+            // transaction to protect, and the user's immediate retry would
+            // fail on a spurious insufficient-funds.
+            let mut in_broadcast_pin = in_broadcast_pin;
+            in_broadcast_pin.settle_released_on_drop();
+            self.settle_payment_address_gated(
+                &generation,
+                from_identity_id,
+                to_contact_id,
+                &payment_address,
+                AddressOutcome::NotSent,
+            )
+            .await;
+            release_reservation_after_rejected_broadcast(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &funding_accounts,
+                &tx,
+                None,
+            )
+            .await;
             in_broadcast_pin.settle_released();
-            return Err(PlatformWalletError::Persistence(format!(
-                "failed to persist payment-address used flip: {e}"
-            )));
+            return Err(e);
         }
 
         // Durability is complete. Other contact payments can reserve while
-        // this broadcast awaits the network. A definitive rejection takes
-        // the same gate again before snapshotting its address rollback.
+        // this broadcast awaits the network; settling the reservation takes
+        // the gate again.
         drop(_payment_guard);
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
@@ -1851,7 +1919,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 let mut in_broadcast_pin = in_broadcast_pin;
                 in_broadcast_pin.settle_released_on_drop();
                 //
-                // ORDER MATTERS — the cleanup runs FIRST, under the still-live
+                // ORDER MATTERS — the input cleanup runs under the still-live
                 // fence, and only then does the pin come down. The cleanup is an
                 // `.await`: it must re-acquire the wallet-manager read lock, and
                 // on this path it carries NO reservation token, so it performs an
@@ -1872,7 +1940,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // the unconditional release to clobber. `release_reservation_
                 // after_rejected_broadcast` documents this ordering requirement
                 // for exactly this reason.
-                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
                     &funding_accounts,
@@ -1883,6 +1951,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )
                 .await;
                 in_broadcast_pin.settle_released();
+                // Then the address. Leaving it claimed would let every
+                // rejected send widen the off-chain gap in the used range by
+                // one, with no bound. Only the reservation is released: a
+                // payment the wallet observed at this address meanwhile —
+                // another device on the same seed — has already promoted it
+                // to used and keeps it so, even after a ChainLock evicted its
+                // record.
+                self.settle_payment_address(
+                    &generation,
+                    from_identity_id,
+                    to_contact_id,
+                    &payment_address,
+                    AddressOutcome::NotSent,
+                )
+                .await;
                 Err(e)
             }
             other => {
@@ -1892,80 +1975,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // still selectable here and must stay fenced until an observed
                 // spend says otherwise.
                 in_broadcast_pin.settle_pending_spend();
+                // Went out or may have: the address becomes used.
+                self.settle_payment_address(
+                    &generation,
+                    from_identity_id,
+                    to_contact_id,
+                    &payment_address,
+                    AddressOutcome::Sent,
+                )
+                .await;
                 other
             }
         };
-        let txid = match broadcast_result {
-            Ok(txid) => txid,
-            Err(e) => {
-                // A definitive rejection means the transaction never reached
-                // the network, so the payment address was never exposed
-                // on-chain — but unlike the build-failure rollback above, its
-                // used flip WAS persisted (durability precedes broadcast).
-                // Return the address to the pool and persist the revert:
-                // leaving it consumed lets every definitively rejected send
-                // widen the off-chain gap in the used range by one, with no
-                // bound, until a later successful payment lands beyond any
-                // recovery walk — the same failure class as an unrolled-back
-                // build failure, one step later. An indeterminate broadcast
-                // failure keeps the consumption: the transaction may still
-                // have propagated, so the address must never be re-handed.
-                if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
-                    let _payment_guard = self.persister.lock_contact_payments().await;
-                    let revert_changeset = {
-                        let mut wm = self.wallet_manager.write().await;
-                        wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
-                            info.core_wallet
-                                .accounts
-                                .dashpay_external_accounts
-                                .get_mut(&DashpayAccountKey {
-                                    index: account_index,
-                                    user_identity_id: from_identity_id.to_buffer(),
-                                    friend_identity_id: to_contact_id.to_buffer(),
-                                })
-                                .map(|external_account| {
-                                    return_contact_payment_address_to_pool(
-                                        external_account,
-                                        &payment_address,
-                                    );
-                                    crate::changeset::PlatformWalletChangeSet {
-                                        account_address_pools:
-                                            crate::changeset::account_address_pool_entries(
-                                                key_wallet::account::AccountType::DashpayExternalAccount {
-                                                    index: account_index,
-                                                    user_identity_id: from_identity_id.to_buffer(),
-                                                    friend_identity_id: to_contact_id.to_buffer(),
-                                                },
-                                                external_account
-                                                    .managed_account_type()
-                                                    .address_pools(),
-                                            ),
-                                        ..Default::default()
-                                    }
-                                })
-                        })
-                    };
-                    match revert_changeset {
-                        // Persisted outside the write guard, same as the flip
-                        // itself. A failed revert store is logged, not fatal:
-                        // the address stays consumed and the one-address gap
-                        // is absorbed by the pool's gap window.
-                        Some(changeset) => {
-                            if let Err(persist_err) = self.persister.store(changeset) {
-                                tracing::warn!(
-                                    error = %persist_err,
-                                    "failed to persist payment-address revert after rejected broadcast"
-                                );
-                            }
-                        }
-                        None => tracing::warn!(
-                            "external account not found while reverting payment address after rejected broadcast"
-                        ),
-                    }
-                }
-                return Err(e.into());
-            }
-        };
+        let txid = broadcast_result?;
 
         tracing::info!(
             from_identity = %from_identity_id,
@@ -11333,8 +11355,8 @@ mod tests {
         }
     }
 
-    /// A failed `build_signed` must return the consumed payment address to
-    /// the pool. Without the rollback every failed build (insufficient
+    /// A failed `build_signed` must release the payment address's
+    /// reservation. Without the release every failed build (insufficient
     /// funds, a refusing signer) permanently advances the next index by one:
     /// enough failures before one successful payment put that payment past
     /// any gap-limit walk a restore-from-seed can perform, and sent-payment
@@ -11509,10 +11531,10 @@ mod tests {
             );
     }
 
-    /// A definitively rejected broadcast must return the consumed payment
-    /// address to the pool AND persist the revert — unlike a failed build,
-    /// the used flip was already persisted before the broadcast attempt, so
-    /// an in-memory revert alone would be undone by the next relaunch.
+    /// A definitively rejected broadcast must release the payment address's
+    /// reservation AND persist the release — unlike a failed build, the
+    /// reservation was already persisted before the broadcast attempt, and
+    /// a relaunch reads a stored reservation back as used.
     #[tokio::test]
     async fn send_payment_rejected_broadcast_returns_the_address_to_the_pool() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -11524,7 +11546,7 @@ mod tests {
         let iw = wallet_arc.identity();
 
         // Fund the wallet so build + sign succeed and the send reaches the
-        // broadcast (and its preceding used-flip persist).
+        // broadcast (and its preceding reservation persist).
         fund_bip44_account_0(&manager, wallet_id, 0xB7, 120_000).await;
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
@@ -11604,19 +11626,20 @@ mod tests {
                 ))
                 .count()
                 >= 2,
-            "both the pre-broadcast flip and the post-rejection revert must persist"
+            "both the pre-broadcast reservation and the post-rejection release must persist"
         );
     }
 
-    /// The `send_payment` used-flag flip persist must run only AFTER the
-    /// wallet-manager write guard is released (and before the broadcast).
+    /// Every `send_payment` contact-pool persist — the reservation before the
+    /// broadcast and its settlement after — must run only AFTER the
+    /// wallet-manager write guard is released.
     ///
     /// The host persistence callback is synchronous, so holding the manager's
     /// write lock across it would stall every other wallet accessor for the
     /// host write's duration, and a host store that re-entered a manager API
-    /// would deadlock the non-reentrant lock. This pins that the used-flip
-    /// changeset is persisted AND that the write lock was already released
-    /// when it was — a `try_read` on the shared manager succeeds iff no writer
+    /// would deadlock the non-reentrant lock. This pins that the contact
+    /// pool is persisted AND that the write lock was already released each
+    /// time it was — a `try_read` on the shared manager succeeds iff no writer
     /// holds it. Against the pre-fix ordering (store inside the write-guarded
     /// block) the lock-released assertion fails; with the persist deferred
     /// until after the guard drops it holds.
@@ -11625,8 +11648,8 @@ mod tests {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use key_wallet::account::AccountType;
 
-        // Probe persister: on the used-flip store (the changeset carrying an
-        // external account's address pools), records whether the shared
+        // Probe persister: on every contact-pool store (a changeset carrying
+        // an external account's address pools), records whether the shared
         // wallet-manager write lock was already released — a `try_read`
         // succeeds iff no writer holds it. A `Weak` back-reference avoids a
         // persister <-> manager cycle.
@@ -11635,8 +11658,8 @@ mod tests {
         >;
         struct LockProbePersister {
             manager: Mutex<Option<std::sync::Weak<ManagerLock>>>,
-            /// `Some(true)`: an external-pool store was seen with the write
-            /// lock released; `Some(false)`: seen but the lock was still held;
+            /// `Some(true)`: every external-pool store seen ran with the write
+            /// lock released; `Some(false)`: one ran with the lock still held;
             /// `None`: never seen.
             external_pool_store_unlocked: Mutex<Option<bool>>,
         }
@@ -11660,7 +11683,8 @@ mod tests {
                         .and_then(|w| w.upgrade())
                         .map(|m| m.try_read().is_ok())
                         .unwrap_or(false);
-                    *self.external_pool_store_unlocked.lock().unwrap() = Some(unlocked);
+                    let mut seen = self.external_pool_store_unlocked.lock().unwrap();
+                    *seen = Some(seen.unwrap_or(true) && unlocked);
                 }
                 Ok(())
             }
@@ -11741,8 +11765,9 @@ mod tests {
         *probe.external_pool_store_unlocked.lock().unwrap() = None;
 
         // Fund BIP-44 account 0 so the send builds, signs, and broadcasts —
-        // reaching the used-flip persist, which now fires only on the path to
-        // broadcast (a funding-build failure returns before it).
+        // reaching the reservation persist, which fires only on the path to
+        // broadcast (a funding-build failure returns before it), and the
+        // settlement persist after it.
         fund_bip44_account_0(&manager, wallet_id, 0xA1, 60_000).await;
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
@@ -11758,15 +11783,14 @@ mod tests {
             .await
             .expect("funded + signable send must succeed through the accepting broadcaster");
 
-        // The used-flip changeset was persisted (Some(_)) AND the store ran
-        // after the write guard was released (Some(true)). Some(false) means
-        // it still ran under the held write guard (the pre-fix ordering);
-        // None means the flip was never persisted.
+        // The contact pool was persisted (Some(_)) AND every store ran after
+        // the write guard was released (Some(true)). Some(false) means one
+        // ran under the held write guard; None means none was persisted.
         let observed = *probe.external_pool_store_unlocked.lock().unwrap();
         assert_eq!(
             observed,
             Some(true),
-            "send_payment must persist the external-account used flip AFTER \
+            "send_payment must persist the external-account pool AFTER \
              releasing the wallet-manager write lock (observed: {observed:?})"
         );
     }
@@ -12205,19 +12229,7 @@ mod tests {
     fn with_accepting_broadcaster(
         real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
     ) -> crate::wallet::identity::IdentityWallet<AcceptingBroadcaster> {
-        crate::wallet::identity::IdentityWallet {
-            sdk: Arc::clone(&real.sdk),
-            wallet_manager: Arc::clone(&real.wallet_manager),
-            wallet_id: real.wallet_id,
-            asset_locks: Arc::clone(&real.asset_locks),
-            persister: real.persister.clone(),
-            sync_fault: Arc::clone(&real.sync_fault),
-            durable_cursors: Arc::clone(&real.durable_cursors),
-            broadcaster: Arc::new(AcceptingBroadcaster),
-            sdk_writer: Arc::clone(&real.sdk_writer),
-            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
-            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
-        }
+        with_identity_broadcaster(real, AcceptingBroadcaster)
     }
 
     /// Broadcaster stub that definitively rejects every transaction, for the
@@ -12242,6 +12254,14 @@ mod tests {
     fn with_rejecting_broadcaster(
         real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
     ) -> crate::wallet::identity::IdentityWallet<RejectingBroadcaster> {
+        with_identity_broadcaster(real, RejectingBroadcaster)
+    }
+
+    /// `real` with `broadcaster` in place of its own.
+    fn with_identity_broadcaster<B: crate::broadcaster::TransactionBroadcaster>(
+        real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        broadcaster: B,
+    ) -> crate::wallet::identity::IdentityWallet<B> {
         crate::wallet::identity::IdentityWallet {
             sdk: Arc::clone(&real.sdk),
             wallet_manager: Arc::clone(&real.wallet_manager),
@@ -12250,7 +12270,7 @@ mod tests {
             persister: real.persister.clone(),
             sync_fault: Arc::clone(&real.sync_fault),
             durable_cursors: Arc::clone(&real.durable_cursors),
-            broadcaster: Arc::new(RejectingBroadcaster),
+            broadcaster: Arc::new(broadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
@@ -12547,13 +12567,15 @@ mod tests {
             })
             .expect("external account present");
         let pools = account.managed_account_type().address_pools();
-        pools
+        let mut used: Vec<u32> = pools
             .first()
             .expect("external pool")
             .used_indices
             .iter()
             .copied()
-            .collect()
+            .collect();
+        used.sort_unstable();
+        used
     }
 
     fn persisted_external_pool_snapshots(persister: &RecordingPersister) -> usize {
@@ -13832,5 +13854,261 @@ mod tests {
             "the paid address is not handed out again"
         );
         iw.dashpay().abandon_prepared_payment(next).await;
+    }
+
+    /// The single-shot send takes the address the same way: reserved across
+    /// the broadcast, so a rejection releases only the reservation. A payment
+    /// another device made there meanwhile, its record evicted by the
+    /// ChainLock, keeps the address used — in memory and on disk — and the
+    /// next payment goes elsewhere.
+    #[tokio::test]
+    async fn send_payment_keeps_an_address_paid_during_the_send_after_a_rejection() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xDE, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let address = next_send_address(iw, &accepting, owner_id, contact_id).await;
+
+        let racing = with_identity_broadcaster(
+            iw,
+            ForeignPaymentThenRejectBroadcaster {
+                manager: Arc::clone(&manager),
+                wallet_id,
+                owner_id,
+                contact_id,
+                address: address.clone(),
+            },
+        );
+        let err = racing
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect_err("the broadcaster rejects");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the release only drops the reservation; the observed payment keeps the address used"
+        );
+        let stored_used = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+            .find(|entry| {
+                matches!(
+                    entry.account_type,
+                    key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                )
+            })
+            .is_some_and(|entry| {
+                entry
+                    .addresses
+                    .iter()
+                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+            });
+        assert!(stored_used, "the observed payment's used flag reaches disk");
+        let next = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the rejection released the inputs");
+        assert_ne!(
+            payment_script(next.transaction(), 50_000),
+            address.script_pubkey(),
+            "the paid address is not handed out again"
+        );
+        iw.dashpay().abandon_prepared_payment(next).await;
+    }
+
+    /// The address `send_payment` would pay, learned from a prepare that is
+    /// abandoned at once.
+    async fn next_send_address(
+        iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        core: &crate::wallet::core::CoreWallet<AcceptingBroadcaster>,
+        owner_id: Identifier,
+        contact_id: Identifier,
+    ) -> dashcore::Address {
+        let (signer, provider) = test_signer_and_provider();
+        let probe = iw
+            .dashpay()
+            .prepare_payment(
+                core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("probe prepare");
+        let address = dashcore::Address::from_script(
+            &payment_script(probe.transaction(), 50_000),
+            Network::Testnet,
+        )
+        .expect("a P2PKH payment output");
+        iw.dashpay().abandon_prepared_payment(probe).await;
+        address
+    }
+
+    /// Make resident a mempool record paying `paid` on the contact's external
+    /// account, leaving the address available — another device's payment the
+    /// pool never marked.
+    async fn plant_resident_contact_payment(
+        iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        wallet_id: WalletId,
+        owner_id: Identifier,
+        contact_id: Identifier,
+        paid: &dashcore::Address,
+    ) {
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get_mut(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            })
+            .expect("external account");
+        let record = tx_record_with_outputs(
+            key_wallet::transaction_checking::TransactionContext::Mempool,
+            vec![(
+                paid.clone(),
+                30_000,
+                key_wallet::managed_account::transaction_record::OutputRole::Sent,
+            )],
+        );
+        account.transactions_mut().insert(record.txid, record);
+    }
+
+    /// A single-shot send whose reservation cannot be stored sends nothing
+    /// and gives back its inputs and its address, so the immediate retry
+    /// pays from the same coin to the same address.
+    #[tokio::test]
+    async fn send_payment_whose_reservation_cannot_be_stored_releases_inputs_and_address() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xDF, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let address = next_send_address(iw, &accepting, owner_id, contact_id).await;
+
+        let iw_send = with_accepting_broadcaster(iw);
+        *persister.fail_stores.lock().unwrap() = true;
+        let err = iw_send
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("an unstored reservation must not be broadcast");
+        *persister.fail_stores.lock().unwrap() = false;
+        assert!(
+            matches!(err, PlatformWalletError::PersisterStore(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            next_send_address(iw, &accepting, owner_id, contact_id).await,
+            address,
+            "the address is released"
+        );
+
+        iw_send
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect("the failed send released the only coin");
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the retry paid the same address"
+        );
+    }
+
+    /// An address a resident record pays while the pool still shows it
+    /// available — another device on the same seed paid the contact there —
+    /// is marked used and skipped, not paid a second time.
+    #[tokio::test]
+    async fn send_payment_skips_an_available_address_a_record_pays() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE0, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+
+        let iw_send = with_accepting_broadcaster(iw);
+        iw_send
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect("send");
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0, 1],
+            "the paid address is marked used and the payment takes the next one"
+        );
+    }
+
+    /// An address found paid is stored used even when the send then fails
+    /// before it stores its own reservation — here on insufficient funds —
+    /// so a relaunch after the record is evicted does not hand it out again.
+    #[tokio::test]
+    async fn send_payment_stores_an_address_found_paid_even_when_the_build_fails() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE1, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+        persister.stores.lock().unwrap().clear();
+
+        let iw_send = with_accepting_broadcaster(iw);
+        iw_send
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 10_000_000, None, &signer, &provider)
+            .await
+            .expect_err("more than the wallet holds");
+        let stored_used = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+            .any(|entry| {
+                entry
+                    .addresses
+                    .iter()
+                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+            });
+        assert!(stored_used, "the address found paid reaches disk");
     }
 }
