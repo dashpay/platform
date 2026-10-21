@@ -99,8 +99,15 @@ final class DashReleasedSchemaTests: XCTestCase {
         }
     }
 
+    private enum BaseV4Plan: SchemaMigrationPlan {
+        static var schemas: [any VersionedSchema.Type] { [DashSchemaV3.self, DashSchemaV4.self] }
+        static var stages: [MigrationStage] {
+            [.lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
+        }
+    }
+
     @MainActor
-    func testShouldMigrateV3AccountingAvailabilityAndPersistAnUnavailableAmount() throws {
+    func testShouldMigrateV4AccountingAvailabilityAndPersistAnUnavailableAmount() throws {
         let fixture = try XCTUnwrap(DashReleasedSchemaRegistry.fixtures.first {
             $0.version.versionIdentifier == Schema.Version(3, 0, 0)
         })
@@ -109,12 +116,19 @@ final class DashReleasedSchemaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("accounting.store")
         try FileManager.default.copyItem(at: source(fixture), to: url)
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV4.self)
+            let container = try ModelContainer(for: schema, migrationPlan: BaseV4Plan.self,
+                configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
+            try container.mainContext.save()
+        }
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
         let txid = Data(repeating: 0x32, count: 32)
         try autoreleasepool {
             let container = try DashModelContainer.create(url: url)
             let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
                 .first { $0.txid == txid })
-            XCTAssertNil(row.netAmountUnavailable, "V3 rows retain their stored accounting by default")
+            XCTAssertNil(row.netAmountUnavailable, "V4 rows retain their stored accounting by default")
             XCTAssertEqual(row.displayNetAmount(for: nil), row.netAmount)
             row.netAmountUnavailable = true
             try container.mainContext.save()
@@ -126,7 +140,7 @@ final class DashReleasedSchemaTests: XCTestCase {
             XCTAssertEqual(row.netAmountUnavailable, true)
             XCTAssertNil(row.displayNetAmount(for: nil))
             XCTAssertEqual(row.formattedAmount, "Amount unavailable")
-            XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
+            XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["5.0.0"])
         }
     }
 

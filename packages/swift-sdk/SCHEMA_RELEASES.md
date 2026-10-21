@@ -5,7 +5,7 @@ distribution. TestFlight uploads capture provenance and a synthetic SQLite
 fixture, but do not by themselves register a released schema. The accepted frozen V1 remains unchanged. Historical V2 is now reconstructed
 from `52e8d4ec68f0c772313fa1bbef223fb1eabbf1cc`; all 35 entity hashes and the
 model checksum match the observed App Store 9.0.2 database. Active models are
-V4. The released V3 graph is preserved by `DashSchemaSnapshotV3`. Other
+V5. The merged V4 graph is preserved by `DashSchemaSnapshotV4`. The released V3 graph is preserved by `DashSchemaSnapshotV3`. Other
 intermediate development shapes remain unsupported.
 
 The old V2 fixture was generated from September 8 sources containing 13
@@ -16,15 +16,15 @@ separate from archive-captured releases. This identifies a matching model
 source, not the confirmed build commit of Apple's binary. V2 is reserved:
 automated release capture must not register another shape under that number.
 
-The main migration plan is historical V2 → V3 → V4. Accepted V1 has a separate
-V1 → V4 plan: V1 already contains the 13 properties missing from historical
+The main migration plan is historical V2 → V3 → V4 → V5. Accepted V1 has a separate
+V1 → V3 → V4 → V5 plan: V1 already contains the 13 properties missing from historical
 V2, so a chain through V2 could discard values. Routing uses model metadata
 and runs after recovery; a version label alone never selects an unknown beta
 schema. The former live V2 is accepted only when its complete graph matches
 frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
-V4 adds the optional `PersistentTransaction.netAmountUnavailable` marker through
+V5 adds the optional `PersistentTransaction.netAmountUnavailable` marker through
 a lightweight migration. Existing rows receive `nil`, preserving their stored
 accounting. When deleting one participant of a shared transaction, the remaining
 wallet's amount and direction are saved before the ownership links disappear.
@@ -33,11 +33,11 @@ an authoritative wallet record or complete accounting reconciliation clears it.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
-`accepted-v1-to-v4`, `historical-v2-to-v4`, `previous-live-v2-v3-shape`,
-`published-v3-to-v4`, `unsupported-v2`, `labelled-current-v4`, `ordinary-current-plan` or, from the
+`accepted-v1-to-v5`, `historical-v2-to-v5`, `previous-live-v2-v3-shape`,
+`published-v3-to-v5`, `published-v4-to-v5`, `unsupported-v2`, `labelled-current-v5`, `ordinary-current-plan` or, from the
 bridge, `legacy-v1-bridge-to-v3`. Resolving a frozen schema's identity builds
 a temporary store, so it is memoized per process and consulted only where a
-label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0` or `4.0.0` label takes the
+label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0`, `4.0.0` or `5.0.0` label takes the
 default plan without any probe, and a probe failure on the undecidable labels
 refuses the open with the probe's own error while leaving the store untouched.
 
