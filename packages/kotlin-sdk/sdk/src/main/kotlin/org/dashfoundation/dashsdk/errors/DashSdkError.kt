@@ -236,6 +236,10 @@ sealed class DashSdkError(
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
         /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
@@ -763,6 +767,7 @@ sealed class DashSdkError(
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

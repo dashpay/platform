@@ -1,6 +1,7 @@
+use dash_sdk::error::ContextProviderError;
+use dash_sdk::platform::dashpay::InvitationError;
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
@@ -10,6 +11,11 @@ use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
+
+pub use dash_sdk::platform::transition::asset_lock_submission::{
+    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed,
+    is_instant_lock_proof_invalid,
+};
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
@@ -602,6 +608,12 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
+    /// A whole-balance asset lock needs more inputs than an asset lock may
+    /// carry (`max_asset_lock_transaction_inputs`, 100: Dash Core relay policy
+    /// and Platform consensus alike). Nothing was built for the wire.
+    #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
+    AssetLockTooManyInputs { count: usize, max: usize },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
@@ -824,6 +836,25 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
+    /// dash-spv holds the quorum but has not verified it (status `Unknown` or
+    /// `Skipped`), so its key must not verify Platform proofs yet. Usually
+    /// transient: the status settles once the lists the check needs arrive.
+    /// Distinct from a missing quorum, which is [`Self::SpvError`]. See
+    /// [`Self::quorum_lookup_context_error`] for the SDK error class.
+    #[error(
+        "quorum {quorum_type}:{} is not verified by SPV yet ({status})",
+        hex::encode(quorum_hash)
+    )]
+    QuorumNotVerified {
+        /// The LLMQ type the lookup asked for.
+        quorum_type: u32,
+        /// The quorum hash as Platform names it.
+        quorum_hash: [u8; 32],
+        /// dash-spv's verification status for the quorum. Never `Verified`
+        /// or `Invalid`.
+        status: LLMQEntryVerificationStatus,
+    },
+
     /// SPV startup or teardown panicked and may have left background work
     /// running. Not retryable: restart the process.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
@@ -1008,6 +1039,22 @@ pub enum PlatformWalletError {
     ShieldedNotBound,
 }
 
+/// The SDK's invitation errors map onto the variants the wallet used before
+/// the invitation codec and claim moved into `dash-sdk`, so hosts see the same
+/// error codes and messages.
+impl From<InvitationError> for PlatformWalletError {
+    fn from(error: InvitationError) -> Self {
+        match error {
+            InvitationError::Invalid(message) => Self::InvalidIdentityData(message),
+            InvitationError::NetworkMismatch { invitation, wallet } => {
+                Self::InvitationNetworkMismatch { invitation, wallet }
+            }
+            InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
 impl PlatformWalletError {
     /// A persister `load` failed.
     ///
@@ -1083,42 +1130,31 @@ impl PlatformWalletError {
     pub fn consensus_error(&self) -> Option<&ConsensusError> {
         match self {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
-                consensus_error_of(source)
+                source.consensus_error()
             }
             _ => None,
         }
     }
-}
 
-/// Check whether an SDK error indicates that an InstantSend lock proof was
-/// rejected by Platform (e.g. the IS lock has expired).
-///
-/// This matches the `InvalidInstantAssetLockProofSignatureError` consensus
-/// error returned by Drive when the instant lock signature cannot be verified
-/// (typically because the quorum that signed it has rotated out).
-pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
-    matches!(
-        consensus_error_of(error),
-        Some(ConsensusError::BasicError(
-            BasicError::InvalidInstantAssetLockProofSignatureError(_),
-        ))
-    )
-}
-
-/// The `StateTransitionMaxSizeExceededError` an SDK error carries, if any:
-/// the transition was larger than the protocol's `max_state_transition_size`.
-///
-/// For an asset-lock-funded transition this is usually the InstantSend proof:
-/// it embeds the whole funding transaction plus its InstantLock, about 184
-/// bytes per funding input, while a ChainLock proof is a fixed ~40 bytes.
-pub fn as_state_transition_max_size_exceeded(
-    error: &dash_sdk::Error,
-) -> Option<&StateTransitionMaxSizeExceededError> {
-    match consensus_error_of(error) {
-        Some(ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(e))) => {
-            Some(e)
+    /// The SDK error a [`ContextProvider::get_quorum_public_key`] backed by
+    /// [`SpvRuntime::get_quorum_public_key`] reports for this lookup failure.
+    ///
+    /// [`Self::QuorumNotVerified`] becomes
+    /// [`ContextProviderError::QuorumSourceUnavailable`]: the trusted source
+    /// cannot vouch for the key yet, which is not the responding node's fault,
+    /// so the SDK does not ban it. Every other error, a missing quorum
+    /// included, becomes [`ContextProviderError::Generic`], which the SDK
+    /// treats as a failed proof.
+    ///
+    /// [`ContextProvider::get_quorum_public_key`]: dash_sdk::platform::ContextProvider::get_quorum_public_key
+    /// [`SpvRuntime::get_quorum_public_key`]: crate::SpvRuntime::get_quorum_public_key
+    pub fn quorum_lookup_context_error(&self) -> ContextProviderError {
+        match self {
+            Self::QuorumNotVerified { .. } => {
+                ContextProviderError::QuorumSourceUnavailable(self.to_string())
+            }
+            _ => ContextProviderError::Generic(self.to_string()),
         }
-        _ => None,
     }
 }
 
@@ -1127,8 +1163,10 @@ pub fn as_state_transition_max_size_exceeded(
 /// proof's height (`InvalidAssetLockProofTransactionHeightError`) — the proof
 /// named a height the transaction was not mined at.
 pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+
     matches!(
-        consensus_error_of(error),
+        error.consensus_error(),
         Some(ConsensusError::BasicError(
             BasicError::InvalidAssetLockProofTransactionHeightError(_),
         ))
@@ -1150,59 +1188,6 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
 /// 300-second IS deadline elapses.
 pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
     matches!(error, PlatformWalletError::FinalityTimeout(_))
-}
-
-/// Extract the `InvalidAssetLockProofCoreChainHeightError` (DPP
-/// consensus code 10506) from an SDK error if Platform rejected a
-/// ChainLock asset-lock proof because Platform's
-/// `last_committed_core_height` is still behind the proof's
-/// `core_chain_locked_height`.
-///
-/// Returns `Some(&error)` whenever the rejection matches, exposing
-/// `proof_core_chain_locked_height()` (what the wallet claimed) and
-/// `current_core_chain_locked_height()` (Platform's currently observed
-/// tip). The latter is what the wallet can log to attribute the lag
-/// to: small means routine race against Platform's
-/// `create-empty-blocks-interval` (3m on mainnet); large or stuck
-/// means the DAPI node we hit is genuinely behind / misbehaving.
-///
-/// Returns `None` for everything else. The check is stateless and
-/// re-evaluated on every CheckTx, so a resubmit after Platform
-/// catches up will pass — but Tenderdash's mempool caches rejected-tx
-/// hashes for ~24h on mainnet/testnet (`keep-invalid-txs-in-cache =
-/// true` in dashmate's tenderdash template), so the resubmit must
-/// carry a *different* signable-bytes hash to bypass the cache. The
-/// submission layer handles that by bumping
-/// `PutSettings::user_fee_increase` before re-issuing.
-///
-/// Companion to [`is_instant_lock_proof_invalid`]; both feed the
-/// CL-proof retry path in the identity registration / top-up flow.
-///
-/// **Coverage caveat:** only inspects the two `dash_sdk::Error`
-/// variants that today wrap consensus errors —
-/// `StateTransitionBroadcastError` (from `broadcast_and_wait`) and
-/// `Protocol(ProtocolError::ConsensusError)` (from validation). If a
-/// future SDK version surfaces the same `InvalidAssetLockProofCoreChainHeightError`
-/// through a different variant (e.g. wrapped in a transport-layer
-/// error type), the retry helper silently falls through to the "Sdk"
-/// passthrough. Re-audit this matcher whenever `dash_sdk::Error`
-/// gains new variants that can carry consensus errors.
-pub fn as_asset_lock_proof_cl_height_too_low(
-    error: &dash_sdk::Error,
-) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
-    match consensus_error {
-        Some(ConsensusError::BasicError(
-            BasicError::InvalidAssetLockProofCoreChainHeightError(e),
-        )) => Some(e),
-        _ => None,
-    }
 }
 
 /// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) when
@@ -1258,46 +1243,6 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
 }
 
-/// Extract the consensus verdict from the `dash_sdk::Error` shapes that can
-/// carry one — `StateTransitionBroadcastError` (wait-stream),
-/// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
-/// exhausted-retry envelope it recurses into. Shared by the typed-promotion
-/// matchers below; the same coverage caveat as
-/// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
-/// `dash_sdk::Error` gains consensus-carrying variants).
-fn consensus_error_of(error: &dash_sdk::Error) -> Option<&ConsensusError> {
-    match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => consensus_error_of(inner),
-        _ => None,
-    }
-}
-
-/// Whether Platform rejected a transition because the exact asset-lock
-/// outpoint it submitted has already been consumed.
-///
-/// Matches the structured consensus error carried by both CheckTx
-/// (`Protocol(ConsensusError)`) and wait-stream
-/// (`StateTransitionBroadcastError`) failures. The outpoint comparison is
-/// deliberate: callers may only recognize a report for the tracked lock they
-/// actually submitted, never an unrelated outpoint mentioned by a malformed
-/// error. This signal alone does not authenticate terminal consumption.
-pub fn is_asset_lock_already_consumed(
-    error: &dash_sdk::Error,
-    out_point: &dashcore::OutPoint,
-) -> bool {
-    matches!(
-        consensus_error_of(error),
-        Some(ConsensusError::BasicError(
-            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(e),
-        )) if e.transaction_id() == out_point.txid
-            && e.output_index() == out_point.vout as usize
-    )
-}
-
 /// Promote a document-trade consensus rejection to its typed
 /// [`PlatformWalletError`] so callers get structured data instead of a
 /// stringified verdict:
@@ -1314,7 +1259,7 @@ pub fn is_asset_lock_already_consumed(
 pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
 
-    match consensus_error_of(error)? {
+    match error.consensus_error()? {
         ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
             Some(PlatformWalletError::DocumentNotForSale {
                 document_id: *e.document_id(),
@@ -1346,7 +1291,7 @@ pub fn promote_identity_insufficient_balance(
 ) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
 
-    match consensus_error_of(error)? {
+    match error.consensus_error()? {
         ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
             Some(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *e.identity_id(),
@@ -1788,90 +1733,6 @@ mod address_nonce_tests {
 }
 
 #[cfg(test)]
-mod asset_lock_already_consumed_tests {
-    use super::*;
-    use dash_sdk::error::StateTransitionBroadcastError;
-    use dashcore::hashes::Hash;
-    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
-    use dpp::consensus::basic::UnsupportedProtocolVersionError;
-
-    fn out_point() -> dashcore::OutPoint {
-        dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 7)
-    }
-
-    fn consensus_error() -> dpp::consensus::ConsensusError {
-        let out_point = out_point();
-        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
-            out_point.txid,
-            out_point.vout as usize,
-        )
-        .into()
-    }
-
-    fn unrelated_consensus_error() -> dpp::consensus::ConsensusError {
-        UnsupportedProtocolVersionError::new(2, 1).into()
-    }
-
-    #[test]
-    fn recognizes_protocol_consensus_error_for_exact_outpoint() {
-        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
-            consensus_error(),
-        )));
-
-        assert!(is_asset_lock_already_consumed(&error, &out_point()));
-    }
-
-    #[test]
-    fn recognizes_broadcast_consensus_error_for_exact_outpoint() {
-        let error = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
-            code: 10504,
-            message: "asset lock already consumed".to_string(),
-            cause: Some(consensus_error()),
-        });
-
-        assert!(is_asset_lock_already_consumed(&error, &out_point()));
-    }
-
-    #[test]
-    fn ignores_unrelated_errors_and_different_outpoints() {
-        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
-            consensus_error(),
-        )));
-        let different_out_point = dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 8);
-
-        assert!(!is_asset_lock_already_consumed(
-            &error,
-            &different_out_point
-        ));
-        assert!(!is_asset_lock_already_consumed(
-            &dash_sdk::Error::Generic("boom".to_string()),
-            &out_point()
-        ));
-
-        let unrelated_protocol = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(
-            Box::new(unrelated_consensus_error()),
-        ));
-        assert!(!is_asset_lock_already_consumed(
-            &unrelated_protocol,
-            &out_point()
-        ));
-
-        let unrelated_broadcast =
-            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
-                code: 10504,
-                // Deliberately resembles the target message: matching must
-                // depend on the structured cause, never this display text.
-                message: "asset lock output already completely used".to_string(),
-                cause: Some(unrelated_consensus_error()),
-            });
-        assert!(!is_asset_lock_already_consumed(
-            &unrelated_broadcast,
-            &out_point()
-        ));
-    }
-}
-
-#[cfg(test)]
 mod identity_insufficient_balance_tests {
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
@@ -1957,6 +1818,81 @@ mod identity_insufficient_balance_tests {
                 assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
             }
             other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod invitation_error_mapping_tests {
+    use super::*;
+
+    /// The retry-later signal keeps its own wallet variant, apart from a link
+    /// that is simply invalid, so hosts can tell "try again" from "reject".
+    #[test]
+    fn should_map_each_invitation_error_to_its_wallet_variant() {
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Invalid("bad link".to_string())),
+            PlatformWalletError::InvalidIdentityData(message) if message == "bad link"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotChainLocked("later".to_string())),
+            PlatformWalletError::AssetLockNotChainLocked(message) if message == "later"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }),
+            PlatformWalletError::InvitationNetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Sdk(dash_sdk::Error::Generic(
+                "boom".to_string()
+            ))),
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
+        ));
+    }
+}
+
+#[cfg(test)]
+mod quorum_lookup_context_error_tests {
+    use super::*;
+    use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationSkipStatus;
+
+    /// An unverified key is the trusted source's gap, not the node's fault,
+    /// so it maps to the SDK's non-ban class and keeps its diagnostic text.
+    #[test]
+    fn should_map_an_unverified_quorum_to_quorum_source_unavailable() {
+        let error = PlatformWalletError::QuorumNotVerified {
+            quorum_type: 6,
+            quorum_hash: [0xab; 32],
+            status: LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+        };
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::QuorumSourceUnavailable(reason) => {
+                assert_eq!(reason, error.to_string());
+                assert!(reason.contains(&hex::encode([0xab; 32])), "{reason}");
+                assert!(reason.contains("NotMarkedForVerification"), "{reason}");
+            }
+            other => panic!("expected QuorumSourceUnavailable, got {other:?}"),
+        }
+    }
+
+    /// A missing quorum keeps the failed-proof class: the node named a quorum
+    /// the trusted source does not hold.
+    #[test]
+    fn should_map_a_missing_quorum_to_a_generic_error() {
+        let error = PlatformWalletError::SpvError("Quorum not found".to_string());
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::Generic(reason) => assert_eq!(reason, error.to_string()),
+            other => panic!("expected Generic, got {other:?}"),
         }
     }
 }

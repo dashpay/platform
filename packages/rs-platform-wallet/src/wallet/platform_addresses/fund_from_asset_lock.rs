@@ -669,6 +669,11 @@ fn enforce_asset_lock_amount_covers_address_funding_floor(
                 minimum_lock_duffs.map_or(required, |floor| floor.max(required)),
             ),
         }),
+        AssetLockFunding::DrainWalletBalance { .. } => {
+            Err(PlatformWalletError::AssetLockTransaction(
+                "pooled wallet drain is available only for shielded funding".into(),
+            ))
+        }
         funding @ AssetLockFunding::FromExistingAssetLock { .. } => Ok(funding),
     }
 }
