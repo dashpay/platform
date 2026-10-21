@@ -1,5 +1,8 @@
 use std::borrow::Cow;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use platform_version::version::PlatformVersion;
@@ -98,6 +101,28 @@ impl DriveHighLevelBatchOperationConverter for TokenFillAskTransitionAction {
                             document_type_info,
                         }));
                     }
+                }
+
+                // The marketplace's events are a token's transfers, recorded when it keeps transfer
+                // history.
+                if self
+                    .base()
+                    .token_configuration()?
+                    .keeps_history()
+                    .keeps_transfer_history()
+                {
+                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                        token_id: self.token_id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: TokenEvent::OrderFilled(
+                            order_id,
+                            TokenOrderSide::Ask,
+                            maker_id,
+                            self.fill_amount(),
+                            credits,
+                        ),
+                    }));
                 }
 
                 Ok(ops)

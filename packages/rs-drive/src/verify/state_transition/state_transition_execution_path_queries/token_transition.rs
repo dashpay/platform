@@ -220,9 +220,9 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     .collect();
                 token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
             }
-            // The token marketplace keeps no token history: a listing is attested by its `ask`
-            // document, a cancel by the order document no longer existing, and a fill by the
-            // buyer's balance.
+            // A marketplace transition is attested by the order it leaves, whether or not the
+            // token keeps history: a listing by its `ask` document, a cancel by the order
+            // document no longer existing, and a fill by the filler's balance.
             TokenTransition::PlaceAsk(_) => create_token_order_document_query(
                 TokenOrderSide::Ask,
                 TokenOrderSide::Ask.order_id(

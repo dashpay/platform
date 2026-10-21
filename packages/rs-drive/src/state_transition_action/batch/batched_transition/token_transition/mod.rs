@@ -320,13 +320,13 @@ impl TokenTransitionAction {
             | TokenTransitionAction::BurnFromPoolAction(_)
             | TokenTransitionAction::ClaimToPoolAction(_)
             | TokenTransitionAction::DirectPurchaseToPoolAction(_) => Ok(false),
-            // The marketplace records no token history yet: the open orders themselves are
-            // documents of the token market contract.
+            // The marketplace's events are a token's transfers, recorded in the token history
+            // contract (v3, protocol version 15) when the token keeps transfer history.
             TokenTransitionAction::PlaceAskAction(_)
             | TokenTransitionAction::FillAskAction(_)
             | TokenTransitionAction::CancelOrderAction(_)
             | TokenTransitionAction::PlaceBidAction(_)
-            | TokenTransitionAction::FillBidAction(_) => Ok(false),
+            | TokenTransitionAction::FillBidAction(_) => Ok(keeps_history.keeps_transfer_history()),
         }
     }
 }

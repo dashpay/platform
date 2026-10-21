@@ -194,3 +194,20 @@ as it does for a listing, and a sale is refused when it would be paid less than
 The buyer's credits are checked with the batch's fees, which count the escrow like a purchase. The
 buyer pays the storage of the `bid` and gets it back when the offer closes. A `TokenPlaceBid` is
 proven by its `bid` document, and a `TokenFillBid` by the seller's token balance.
+
+## History
+
+A token that keeps transfer history (`keepsHistory.keepsTransferHistory`, the default) also
+records its marketplace events, from protocol version 15, in the token history contract v3. The
+signer of each transition owns the record and pays its storage, as for a transfer.
+
+| Document type | Written by | Properties |
+|---|---|---|
+| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price` |
+| `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits` |
+| `orderCancelled` | `TokenCancelOrder` | `tokenId`, `orderId`, `side` |
+
+Each type is indexed by token and date, by signer, and by order (`byOrder`); `orderFilled` also by
+maker (`byMakerId`), so an identity can list the fills of its own orders. The upgrade to 15
+replaces the stored contract with v3 and keeps its storage ownership, as the upgrade to 14 did for
+v2; a chain born at 15 stores v3 at genesis.

@@ -724,7 +724,9 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .unwrap()
         )
     );
-    // The root differs per protocol version: pinned at `PlatformVersion::latest()`.
+    // The root differs per protocol version: pinned at `PlatformVersion::latest()`. It moves
+    // with what genesis stores at that version, such as the token history contract v3 of
+    // protocol version 15.
     assert_eq!(
         hex::encode(
             pool.platform
@@ -734,7 +736,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "d4d3e450ba03232065a1444d56c3bbad58948715d8226d7ac37ae2596544b7b0"
+        "fb1d9bb98a41ad6b3b20afd439265a52af77e789b52506c112eb26aac475bc21"
     );
     assert_eq!(
         pool.platform
@@ -2158,39 +2160,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "7e3cf25f4080c94ef028ede8d3bdc982d0055feaef0d9e75dcae11287146d425",
-                "10584c4856a0a7897c2258c2c51d6f4141b5eeb38ebaccf90b5a14ef493cd154",
+                "8d73190948124434461d9841b65731e6af4b0f7386eafae92f7e9a60c1636ff1",
             ),
             "valid-payment" => (
                 "da69c2e10a0fe88df56655907ae5c3acd6700f13823358159f6240b1fb33c6d1",
-                "dab93d242f9e364877a51944dafddde83a7584cf2e99eb4076994d21c506d9dc",
+                "1a108e3ee92cffe2074df916242c6e8464c4ba6aafc2672cb72bb1ce6f4e255a",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "148b96fd9a5a577c6b1a1e59e8bf629db3379b14c5c8ab6c92268ece85f1f06c",
+                "f2d7a1e1eea57750ae1648819a1f50e63ae18ea754df9c4a0e4ad13c4d141708",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "442cdee8f9c256c642306cab8abfd53362e3c1f38c5529587999ba0bf318764e",
+                "3c74d6ee4b52a49715b43c91698f02f0416e3e5abaac39664d81c15e127be743",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "ddcd591c01930437263911b1282a83011e1327873c8bf8486df75db141c50f72",
+                "0baceaebfdf238b155a4bcdde0492659c0437aa9511cdc3f024aaf07ee32db4d",
             ),
             "open-mint-group" => (
                 "7f694d1f3507aaca0c5b5b1254eef3f8cd595379c23c32dea1d0a9c21d302088",
-                "8faa85cda86ea6ec3cd189d629cc218e5b73976114cbbcd092f16fa4f578879b",
+                "21951a62cf3e4e769f456d820a44891e5983c0f856073e3181d57783efd38ecb",
             ),
             "closing-mint-group" => (
                 "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "e5531fb8b5b7f937aa33f0eb499db2516cdcbd00c59f898edf9d36b272287df7",
+                "6130804955d939dc11d76a588eb725bdf5ce9f2b7282d102514cc599afeb36ec",
             ),
             "open-burn-group" => (
                 "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
-                "136802e28210b47624836d21ed7fcfd3cea8d7dd37400977081363a3b1429776",
+                "239aec1e6b52092c95e4fa1a7abe5b7cdc5ffb53583d2f94364e34ae1345a1f3",
             ),
             "closing-burn-group" => (
                 "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "16ee120ee53d4b8eccb11419bfd128550d01a471803b508a809e0da6f5f81a44",
+                "1c0d6d1b19dc3baa55d09f216aa3a7a25f6ea314895ceee8557069c7e808c7ef",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

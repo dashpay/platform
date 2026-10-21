@@ -1336,9 +1336,10 @@ impl Drive {
                                     Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                                 }
                             }
-                            // The token marketplace keeps no token history: a listing is proven
-                            // by its `ask` document, whose order id follows from the signer and
-                            // the nonce and whose terms are the transition's.
+                            // A marketplace transition is proven by the order it leaves, whether
+                            // or not the token keeps history: a listing by its `ask` document,
+                            // whose order id follows from the signer and the nonce and whose
+                            // terms are the transition's.
                             TokenTransition::PlaceAsk(token_place_ask_transition) => {
                                 let order_id = TokenOrderSide::Ask.order_id(
                                     token_id,

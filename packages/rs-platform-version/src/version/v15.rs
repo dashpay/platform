@@ -167,6 +167,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the change in the offer's running total rounded down out of the escrow); a
 ///    `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
 ///    same `is_allowed` gate. Their validations and converters are 0 in every table.
+///
+/// 9. **Token marketplace history**: `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token history
+///    contract v3, v2 plus the `orderPlaced`, `orderFilled` and `orderCancelled` document types.
+///    A chain born at this version stores it at genesis, and `transition_to_version_15` applies
+///    it keeping the stored contract's storage ownership, as `transition_to_version_14` did for
+///    v2. The marketplace transitions of a token that keeps transfer history write the matching
+///    history document.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2

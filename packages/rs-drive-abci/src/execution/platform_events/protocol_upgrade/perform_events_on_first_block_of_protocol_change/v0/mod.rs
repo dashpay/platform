@@ -955,6 +955,40 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        // Token history contract v3: the `orderPlaced`, `orderFilled` and `orderCancelled` types
+        // that record the marketplace's events. As at the upgrade to 14, the stored contract's
+        // storage ownership is kept and its growth accounted at the current epoch; a contract
+        // stored without flags stays unflagged.
+        let token_history_contract =
+            load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+        let token_history_storage_flags = self
+            .drive
+            .fetch_contract(
+                SystemDataContract::TokenHistory.id().to_buffer(),
+                None,
+                None,
+                Some(transaction),
+                platform_version,
+            )
+            .value?
+            .and_then(|stored| {
+                stored.storage_flags.as_ref().map(|flags| {
+                    StorageFlags::new_single_epoch(
+                        block_info.epoch.index,
+                        flags.owner_id().copied(),
+                    )
+                })
+            });
+
+        self.drive.apply_contract(
+            &token_history_contract,
+            *block_info,
+            true,
+            token_history_storage_flags.map(Cow::Owned),
+            Some(transaction),
+            platform_version,
+        )?;
+
         Ok(())
     }
 }
@@ -4025,6 +4059,79 @@ mod tests {
                  genesis-v15 node and an in-place-upgraded one"
             );
         }
+    }
+
+    #[test]
+    fn should_upgrade_the_token_history_contract_to_v3_on_transition_to_version_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::get(15).expect("expected platform version 15");
+        let token_history_id = SystemDataContract::TokenHistory.id();
+        let order_types = ["orderPlaced", "orderFilled", "orderCancelled"];
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let before = platform
+            .drive
+            .fetch_contract(
+                token_history_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version_14,
+            )
+            .value
+            .expect("expected to fetch the token history contract")
+            .expect("the token history contract exists from genesis");
+        for name in order_types {
+            assert!(
+                before
+                    .contract
+                    .document_type_optional_for_name(name)
+                    .is_none(),
+                "the token history contract v2 has no {name} type"
+            );
+        }
+
+        platform
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let after = platform
+            .drive
+            .fetch_contract(
+                token_history_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the token history contract")
+            .expect("the token history contract still exists");
+        assert_eq!(
+            after.contract.document_types().len(),
+            before.contract.document_types().len() + order_types.len()
+        );
+        for name in order_types {
+            assert!(
+                after
+                    .contract
+                    .document_type_optional_for_name(name)
+                    .is_some(),
+                "the token history contract v3 has the {name} type"
+            );
+        }
+        assert_eq!(
+            after.storage_flags, before.storage_flags,
+            "the upgrade keeps the stored contract's storage ownership"
+        );
     }
 
     #[test]

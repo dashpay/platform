@@ -21,6 +21,13 @@ use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
+/// The protocol version whose upgrade these tests cover: the token history contract v2 is
+/// installed by `transition_to_version_14`. Pinned rather than the latest version, whose own
+/// upgrade replaces the contract again (v3 at protocol version 15).
+fn pv14() -> &'static PlatformVersion {
+    PlatformVersion::get(14).expect("PV14")
+}
+
 fn block(epoch: u16) -> BlockInfo {
     BlockInfo {
         time_ms: 1_000_000 + u64::from(epoch) * 1000,
@@ -84,14 +91,14 @@ fn version_item(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg) ->
             &contract_other_path(&id),
             &[CONTRACT_VERSION_KEY],
             tx,
-            &PlatformVersion::latest().drive.grove_version,
+            &pv14().drive.grove_version,
         )
         .value
         .expect("version item")
 }
 
 fn assert_upgraded(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg) {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let info = platform
         .drive
         .fetch_contract(
@@ -129,7 +136,7 @@ fn assert_upgraded(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg)
 #[test]
 fn should_upgrade_historically_owned_token_history_without_version_item_cost_mismatch() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     platform.drive.cache.data_contracts.clear_block_cache();
     let tx = platform.drive.grove.start_transaction();
     let result = platform.perform_events_on_first_block_of_protocol_change(
@@ -149,7 +156,7 @@ fn should_upgrade_historically_owned_token_history_without_version_item_cost_mis
 #[test]
 fn should_attribute_unflagged_replacement_cost_mismatch_to_token_history_version_item() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let tx = platform.drive.grove.start_transaction();
     platform
         .drive
@@ -222,7 +229,7 @@ fn contract_element(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg
             (&contract_root_path(SystemDataContract::TokenHistory.id().as_bytes())).into(),
             &[0],
             tx,
-            &PlatformVersion::latest().drive.grove_version,
+            &pv14().drive.grove_version,
         )
         .value
         .expect("contract element")
@@ -233,7 +240,7 @@ fn document_elements(
     path: Vec<Vec<u8>>,
     tx: TransactionArg,
 ) -> BTreeMap<Vec<Vec<u8>>, Vec<u8>> {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let mut query = Query::new();
     query.insert_all();
     let path_query = PathQuery {
@@ -288,7 +295,7 @@ fn rekeyed_document_elements(
     let tx = platform.drive.grove.start_transaction();
     platform
         .drive
-        .rekey_unsigned_integer_index_values(&tx, PlatformVersion::latest())
+        .rekey_unsigned_integer_index_values(&tx, pv14())
         .expect("expected the unsigned index value keys to move");
     let rekeyed = document_elements(platform, documents_path(), Some(&tx));
     drop(tx);
@@ -349,7 +356,7 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
 
 #[test]
 fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for (flags, epoch) in [
         (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
         (StorageFlags::new_single_epoch(3, Some([99; 32])), 7),
@@ -466,7 +473,7 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
 
 #[test]
 fn should_keep_unflagged_and_absent_token_history_unflagged() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for absent in [false, true] {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
@@ -514,7 +521,7 @@ fn should_keep_unflagged_and_absent_token_history_unflagged() {
 fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
     let platform = historical_platform();
     insert_claim(&platform);
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let old_element = contract_element(&platform, None);
     let documents = rekeyed_document_elements(&platform);
     let old_root = platform
@@ -587,7 +594,7 @@ fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
 
 #[test]
 fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for previous in [8, 9, 12, 13, pv.protocol_version] {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(previous)
@@ -646,7 +653,7 @@ fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
 #[test]
 fn should_read_token_history_flag_presence_from_the_candidate_transaction() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let original = contract_element(&platform, None);
     let Element::Item(bytes, _) = original.clone() else {
         panic!("contract Item")
@@ -684,9 +691,9 @@ fn should_read_token_history_flag_presence_from_the_candidate_transaction() {
 
 #[test]
 fn should_preserve_already_current_flagged_token_history_payload() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(pv14().protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let Element::Item(bytes, _) = contract_element(&platform, None) else {
