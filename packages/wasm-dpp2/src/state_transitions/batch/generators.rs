@@ -10,8 +10,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use dpp::state_transition::batch_transition::batched_transition::{
     DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
 };
-use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
 use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::document_erase_transition::DocumentEraseTransitionV0;
@@ -64,7 +64,6 @@ pub fn generate_erase_transition(
     document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
-    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentEraseTransition {
     DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -72,7 +71,7 @@ pub fn generate_erase_transition(
             identity_contract_nonce,
             document_type_name,
             data_contract_id: document.data_contract_id.into(),
-            token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
+            token_payment_info: None,
         }),
     })
 }

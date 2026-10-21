@@ -4,8 +4,7 @@ use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_erase_transition;
-use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_with, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -17,7 +16,6 @@ const DOCUMENT_ERASE_OPTIONS_TS: &str = r#"
 export interface DocumentEraseTransitionOptions {
     document: Document;
     identityContractNonce: bigint;
-    tokenPaymentInfo?: TokenPaymentInfo;
 }
 "#;
 
@@ -49,14 +47,10 @@ impl DocumentEraseTransitionWasm {
                 try_to_u64(v, "identityContractNonce")
             })?;
 
-        let token_payment_info: Option<TokenPaymentInfoWasm> =
-            try_from_options_optional(&options, "tokenPaymentInfo")?;
-
         let rs_erase_transition = generate_erase_transition(
             &document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
-            token_payment_info,
         );
 
         Ok(DocumentEraseTransitionWasm(rs_erase_transition))

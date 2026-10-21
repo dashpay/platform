@@ -1,5 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
+import type { DocumentEraseTransitionOptions } from '../../dist/dpp.compressed.js';
 import {
   document, documentTypeName, revision, dataContractId, ownerId, id,
 } from './mocks/Document/index.js';
@@ -313,6 +314,18 @@ describe('DocumentsTransitions', () => {
 
   describe('DocumentEraseTransition', () => {
     describe('constructor', () => {
+      it('should never forward token payment when erasing document history', () => {
+        const options: DocumentEraseTransitionOptions = {
+          document: createDocument(),
+          identityContractNonce: BigInt(1),
+          // @ts-expect-error Erasing history cannot pay with tokens.
+          tokenPaymentInfo: new wasm.TokenPaymentInfo({ tokenContractPosition: 0 }),
+        };
+        const eraseTransition = new wasm.DocumentEraseTransition(options);
+
+        expect(eraseTransition.base.tokenPaymentInfo).to.equal(undefined);
+      });
+
       it('should create instance from document', () => {
         const documentInstance = createDocument();
         const eraseTransition = new wasm.DocumentEraseTransition({
