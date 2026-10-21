@@ -1,7 +1,8 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
+use super::signing_key::AvailableSigningKey;
+
 use dpp::fee::Credits;
-use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -185,8 +186,6 @@ impl IdentityWallet {
     ///
     /// On success the just-registered label is appended to
     /// `ManagedIdentity.dpns_names` and an identity changeset is queued.
-    /// The identity's balance after the registration is kept when the
-    /// domain's proof carries it (from protocol version 14).
     pub async fn register_name_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -221,6 +220,7 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            drop(wm);
             // DPNS name registration writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is intentionally excluded —
@@ -229,12 +229,13 @@ impl IdentityWallet {
             // rejected by the protocol on document-side state
             // transitions.
             let key = identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No HIGH or CRITICAL authentication key found on identity \
@@ -259,23 +260,17 @@ impl IdentityWallet {
             contest_fund,
         };
 
-        let (result, owner_balance, metadata) = self
-            .sdk
-            .register_dpns_name_with_owner_balance_and_metadata(input)
-            .await
-            .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the FFI
-                // boundary can still restore code 31; only genuine operation
-                // failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to register DPNS name '{}': {}",
-                        name, e
-                    ))
-                })
-            })?;
-        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
-            .await;
+        let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
+            // Preserve a structured key-unavailable signer failure so the FFI
+            // boundary can still restore code 31; only genuine operation
+            // failures get stringified into `InvalidIdentityData`.
+            crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register DPNS name '{}': {}",
+                    name, e
+                ))
+            })
+        })?;
 
         // Same book-keeping as `register_name`: append the just-
         // registered label to `ManagedIdentity.dpns_names` and emit

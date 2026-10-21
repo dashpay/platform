@@ -12,8 +12,8 @@
 //! `&dyn Signer<IdentityPublicKey>`.
 //!
 //! `IdentityWallet` keeps doing all of the derivation (key-index
-//! resolution, ECDH-key derivation, xpub derivation, avatar hashing,
-//! document construction); this helper receives the already-derived
+//! resolution, ECDH-key derivation, xpub derivation, document
+//! construction); this helper receives the already-derived
 //! primitives and performs the final SDK call.
 
 use std::sync::Arc;
@@ -21,11 +21,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
-use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 
-use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
     SendContactRequestResult,
@@ -33,8 +31,8 @@ use dash_sdk::platform::dashpay::{
 
 use crate::error::PlatformWalletError;
 
-// Borrowed-signer adapter — same pattern used by `contact_requests.rs`
-// / `profile.rs`. Lets a `&dyn Signer<IdentityPublicKey>` satisfy the
+// Borrowed-signer adapter — same pattern used by `contact_requests.rs`.
+// Lets a `&dyn Signer<IdentityPublicKey>` satisfy the
 // owned, `Sized` `S: Signer<IdentityPublicKey>` bound the SDK input
 // types require, so the helper methods below can take a borrowed signer
 // while still threading the host's signer to the SDK.
@@ -131,10 +129,9 @@ pub(crate) struct SendContactRequestParams<'a> {
 
 /// Pre-built inputs for a single DashPay document put.
 ///
-/// `IdentityWallet` builds the [`Document`] (profile create/update) and
+/// `IdentityWallet` builds the [`Document`] (contact info) and
 /// resolves the signing key + document type; the helper performs the
-/// `put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
-/// broadcast.
+/// `put_to_platform_and_wait_for_response` broadcast.
 pub(crate) struct PutDocumentParams<'a> {
     /// Fully-built document to broadcast.
     pub document: Document,
@@ -152,12 +149,12 @@ pub(crate) struct PutDocumentParams<'a> {
 /// forwarding to the real SDK. Its two methods erase the SDK's
 /// generic write signatures (`send_contact_request`'s seven type
 /// params, the signer-generic `PutDocument`) behind concrete, by-value
-/// inputs so the call sites in `contact_requests.rs` / `profile.rs` /
+/// inputs so the call sites in `contact_requests.rs` /
 /// `contact_info.rs` stay simple.
 ///
 /// The methods' returned futures are `Send`: the write paths this
-/// helper serves (`send_contact_request_with_external_signer`, profile
-/// create/update) are driven through the FFI's `block_on_worker`, which
+/// helper serves (`send_contact_request_with_external_signer`, the
+/// contact-info put) are driven through the FFI's `block_on_worker`, which
 /// requires `Future: Send`. (The DashPay *read*/sync path, which is
 /// `!Send` and runs on a dedicated thread, does not go through this
 /// helper.)
@@ -255,13 +252,11 @@ impl SdkWriter {
     }
 
     /// Broadcast a pre-built DashPay document and wait for the
-    /// confirmation proof. Returns the confirmed document, the owner's
-    /// credit balance after the write when the proof carries it (from
-    /// protocol version 14) and the proof's verified response metadata.
+    /// confirmation proof.
     pub(crate) async fn put_document(
         &self,
         params: PutDocumentParams<'_>,
-    ) -> Result<(Document, Option<Credits>, ResponseMetadata), PlatformWalletError> {
+    ) -> Result<Document, PlatformWalletError> {
         use dash_sdk::platform::transition::put_document::PutDocument;
 
         let PutDocumentParams {
@@ -272,7 +267,7 @@ impl SdkWriter {
         } = params;
 
         document
-            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+            .put_to_platform_and_wait_for_response(
                 &self.sdk,
                 document_type,
                 None,

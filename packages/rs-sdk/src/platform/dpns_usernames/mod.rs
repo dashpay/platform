@@ -11,7 +11,6 @@ use crate::platform::transition::put_document::PutDocument;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
-use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -144,25 +143,6 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {
-        self.register_dpns_name_with_owner_balance_and_metadata(input)
-            .await
-            .map(|(result, _owner_balance, _metadata)| result)
-    }
-
-    /// Register a DPNS username like [`Sdk::register_dpns_name`], and also return
-    /// what the domain document's proof carries next to the document: the credit
-    /// balance of the registering identity after the registration (`None` for a
-    /// proof made before protocol version 14) and the verified metadata of that
-    /// response, whose height is the block the balance is a snapshot at.
-    ///
-    /// The domain is the registration's last write, so its balance already
-    /// includes what the preorder cost.
-    pub async fn register_dpns_name_with_owner_balance_and_metadata<
-        S: Signer<IdentityPublicKey>,
-    >(
-        &self,
-        input: RegisterDpnsNameInput<S>,
-    ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
         let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Get document types
@@ -175,8 +155,8 @@ impl Sdk {
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
         // Generate the preorder salt
-        let mut rng = StdRng::from_entropy();
-        let salt: [u8; 32] = rng.gen();
+        let mut rng = StdRng::from_os_rng();
+        let salt: [u8; 32] = rng.random();
 
         // The id of a new document commits to the identity contract nonce of
         // its create transition, so it only exists once `put_to_platform` has
@@ -300,8 +280,8 @@ impl Sdk {
             }),
             ..Default::default()
         });
-        let (platform_domain_document, owner_balance, metadata) = domain_document
-            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+        let platform_domain_document = domain_document
+            .put_to_platform_and_wait_for_response(
                 self,
                 domain_document_type.to_owned_document_type(),
                 None, // entropy: generated together with the id once the nonce is known
@@ -316,15 +296,11 @@ impl Sdk {
             })?;
         debug!(%identity_id, document_id = %platform_domain_document.id(), stage = "domain", "DPNS registration: document confirmed");
 
-        Ok((
-            RegisterDpnsNameResult {
-                preorder_document: platform_preorder_document,
-                domain_document: platform_domain_document,
-                full_domain_name: format!("{}.dash", normalized_label),
-            },
-            owner_balance,
-            metadata,
-        ))
+        Ok(RegisterDpnsNameResult {
+            preorder_document: platform_preorder_document,
+            domain_document: platform_domain_document,
+            full_domain_name: format!("{}.dash", normalized_label),
+        })
     }
 
     /// Check if a DPNS name is available

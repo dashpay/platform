@@ -1,43 +1,17 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dpp::bls_signatures;
+use dpp::bls;
 
 use crate::Error;
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
+use dpp::bls::Signature;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
 };
 
 use crate::ContextProvider;
-use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::error::proof::ProofError;
 use drive::error::Error as DriveError;
 use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
-
-/// Verifies the proof of a paged query against the page Drive proved, `verify` running Drive's
-/// verify function for a limit.
-///
-/// A request naming a limit is verified against it. Drive answers a request naming none with
-/// its default page (`default_query_limit`), so a missing limit is verified as the standard
-/// default page, [`DEFAULT_QUERY_LIMIT`], and failing that as no limit:
-/// - checked against no limit, the proof of a full standard page reads as missing the rest of
-///   the range;
-/// - a node whose operator set a larger default proves every result up to it, which checked
-///   against the standard page reads as more data than the limit.
-///
-/// Either way the results are proved: a proof verifying as no limit proves the whole range, and
-/// one verifying as the default page proves its first page. When both fail, the error is the
-/// default page's, the reading of a node left at the default.
-pub(crate) fn verify_page_drive_proves<T>(
-    limit: Option<u16>,
-    verify: impl Fn(Option<u16>) -> Result<T, DriveError>,
-) -> Result<T, DriveError> {
-    match limit {
-        Some(limit) => verify(Some(limit)),
-        None => verify(Some(DEFAULT_QUERY_LIMIT))
-            .or_else(|default_page_error| verify(None).map_err(|_| default_page_error)),
-    }
-}
 
 /// Reject GroveDB proof envelopes older than Drive's
 /// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION` before the bytes reach Drive.
@@ -166,8 +140,8 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
-    let pubkey = bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice())
-        .map_err(|e| Error::InvalidPublicKey {
+    let pubkey =
+        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
         })?;
 
@@ -196,20 +170,17 @@ pub(crate) fn verify_tenderdash_signature(
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],
-    public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
+    public_key: &bls::PublicKey,
 ) -> Result<bool, Error> {
     if signature == &[0; 96] {
         return Err(Error::SignatureVerificationError {
             error: "empty signature".to_string(),
         });
     }
-    let signature = Signature::Basic(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
-            .into_option()
-            .ok_or(Error::SignatureVerificationError {
-                error: "Could not verify signature digest".to_string(),
-            })?,
-    );
+    let signature =
+        Signature::from_compressed(signature).ok_or(Error::SignatureVerificationError {
+            error: "Could not verify signature digest".to_string(),
+        })?;
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
 }
@@ -371,11 +342,13 @@ mod tests {
     }
 
     /// Helper: create a deterministic BLS key pair for testing.
-    fn test_keypair() -> (
-        bls_signatures::SecretKey<Bls12381G2Impl>,
-        bls_signatures::PublicKey<Bls12381G2Impl>,
-    ) {
-        let sk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_hash(b"test-key-seed");
+    fn test_keypair() -> (bls::SecretKey, bls::PublicKey) {
+        let scalar =
+            hex::decode("659dc45452f29c17f96dda38ae1546e0e9e818423cdb8cc857f3728c518b4cb8")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let sk = bls::SecretKey::from_be_bytes(&scalar).unwrap();
         let pk = sk.public_key();
         (sk, pk)
     }
@@ -390,7 +363,7 @@ mod tests {
     impl ValidKeyContextProvider {
         fn new() -> Self {
             let (_, pk) = test_keypair();
-            let pk_vec: Vec<u8> = (&pk).into();
+            let pk_vec = pk.to_bytes().to_vec();
             let mut pubkey_bytes = [0u8; 48];
             pubkey_bytes.copy_from_slice(&pk_vec);
             Self { pubkey_bytes }
@@ -739,12 +712,7 @@ mod tests {
                 proof.round as i32,
             )
             .expect("hash vote");
-        proof.signature = key
-            .sign(bls_signatures::SignatureSchemes::Basic, &digest)
-            .expect("sign vote")
-            .as_raw_value()
-            .to_compressed()
-            .to_vec();
+        proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
         verify_tenderdash_proof(&proof, &metadata, &root, &provider)
             .expect("matching app hash control");
         let mut different_root = root;
@@ -753,72 +721,5 @@ mod tests {
             verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
             Err(Error::InvalidSignature { .. })
         ));
-    }
-
-    mod verify_page_drive_proves {
-        use super::*;
-        use std::cell::RefCell;
-
-        fn refused(reason: &str) -> DriveError {
-            DriveError::Proof(ProofError::CorruptedProof(reason.to_string()))
-        }
-
-        fn is_refused(error: &DriveError, expected: &str) -> bool {
-            matches!(error, DriveError::Proof(ProofError::CorruptedProof(reason)) if reason == expected)
-        }
-
-        #[test]
-        fn should_verify_a_named_limit_only_against_that_limit() {
-            for named in [1, DEFAULT_QUERY_LIMIT, DEFAULT_QUERY_LIMIT + 400] {
-                let tried = RefCell::new(vec![]);
-                let error = verify_page_drive_proves(Some(named), |limit| {
-                    tried.borrow_mut().push(limit);
-                    Err::<(), _>(refused("named limit"))
-                })
-                .expect_err("expected the named limit to be refused");
-                assert!(is_refused(&error, "named limit"), "got {error:?}");
-                assert_eq!(tried.into_inner(), vec![Some(named)]);
-            }
-        }
-
-        #[test]
-        fn should_verify_a_missing_limit_as_the_default_page_first() {
-            let tried = RefCell::new(vec![]);
-            let verified_as = verify_page_drive_proves(None, |limit| {
-                tried.borrow_mut().push(limit);
-                Ok(limit)
-            })
-            .expect("expected the default page to verify");
-            assert_eq!(verified_as, Some(DEFAULT_QUERY_LIMIT));
-            assert_eq!(tried.into_inner(), vec![Some(DEFAULT_QUERY_LIMIT)]);
-        }
-
-        #[test]
-        fn should_verify_a_missing_limit_as_no_limit_when_the_default_page_is_refused() {
-            let tried = RefCell::new(vec![]);
-            let verified_as = verify_page_drive_proves(None, |limit| {
-                tried.borrow_mut().push(limit);
-                match limit {
-                    Some(_) => Err(refused("more data than limit")),
-                    None => Ok(limit),
-                }
-            })
-            .expect("expected no limit to verify");
-            assert_eq!(verified_as, None);
-            assert_eq!(tried.into_inner(), vec![Some(DEFAULT_QUERY_LIMIT), None]);
-        }
-
-        #[test]
-        fn should_return_the_default_page_error_when_both_are_refused() {
-            let error = verify_page_drive_proves(None, |limit| {
-                Err::<(), _>(refused(if limit.is_some() {
-                    "default page"
-                } else {
-                    "no limit"
-                }))
-            })
-            .expect_err("expected both readings to be refused");
-            assert!(is_refused(&error, "default page"), "got {error:?}");
-        }
     }
 }

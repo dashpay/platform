@@ -10,7 +10,6 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
@@ -1559,8 +1558,8 @@ async fn should_not_be_active_before_protocol_version_14() {
         assert!(
             matches!(
                 &execution,
-                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
-                    if error.state_transition_type().starts_with("ContractUserModeration")
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("ContractUserModeration") && message.contains("not active")
             ),
             "expected the transition to be inactive before protocol version 14, got {execution:?}"
         );
@@ -1579,16 +1578,10 @@ async fn should_not_be_active_before_protocol_version_14() {
                 platform_version,
             )
         };
-        let admission = admission.expect("check_tx returns the refusal as a consensus error");
-        assert!(
-            matches!(
-                admission.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
-                    if error.state_transition_type().starts_with("ContractUserModeration")
-                        && error.current_protocol_version() == 13
-            ),
-            "expected check_tx to refuse the inactive transition, got {admission:?}"
-        );
+        let admission_error = format!("{:?}", admission.expect_err("expected inactive transition"));
+        assert!(admission_error.contains("StateTransitionIsNotActiveError"));
+        assert!(admission_error.contains("ContractUserModeration"));
+        assert!(admission_error.contains("current_protocol_version: 13"));
         assert_eq!(
             setup.balance(setup.owner.id(), Some(&transaction)),
             owner_balance
@@ -1623,8 +1616,8 @@ async fn should_not_admit_a_moderated_contract_before_protocol_version_14() {
         assert!(
             matches!(
                 &execution,
-                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
-                    if error.state_transition_type().starts_with(name)
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains(name) && message.contains("not active")
             ),
             "expected {name} to be inactive before protocol version 14, got {execution:?}"
         );

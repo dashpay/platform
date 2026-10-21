@@ -1,8 +1,11 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "5.0.0-rc.6",
+  "version": "5.0.0-rc.4",
   "description": "A decentralized API for the Dash network",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "api": "node scripts/api.js",
     "core-streams": "node scripts/core-streams.js",
@@ -39,7 +42,7 @@
     "@dashevo/dashd-rpc": "^19.1.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
-    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/grpc-js": "^1.14.3",
     "@pshenmic/zeromq": "6.0.0-beta.22",
     "ajv": "^8.18.0",
     "bs58": "^4.0.1",
@@ -53,7 +56,7 @@
     "lru-cache": "^5.1.1",
     "pino": "^9.13.0",
     "pino-pretty": "^10.2.3",
-    "ws": "^8.21.0"
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",

@@ -15,7 +15,7 @@ use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Method
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
+use dpp::bls::SecretKey as BlsSecretKey;
 use dpp::dashcore::address::NetworkUnchecked;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Address, ProTxHash};
@@ -91,13 +91,33 @@ pub(super) fn diff_entry(fields: serde_json::Value) -> DMNStateDiff {
 pub(super) fn key_and_negation(seed: u64) -> (Vec<u8>, Vec<u8>) {
     let mut rng = StdRng::seed_from_u64(seed);
     loop {
-        let key = BlsSecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
-        let basic = key.to_bytes();
+        let secret = BlsSecretKey::random(&mut rng);
+        let basic = secret.public_key().to_bytes();
         if basic[0] & 0x20 == 0 {
-            return (basic, BlsPublicKey::<Bls12381G2Impl>(-key.0).to_bytes());
+            // The negation of a key is the key of the negated secret, the group order minus it.
+            let mut negated_secret = [0u8; 32];
+            let mut borrow = 0i16;
+            for (i, (order, secret)) in bytes(BLS12_381_GROUP_ORDER)
+                .iter()
+                .zip(secret.to_be_bytes().iter())
+                .enumerate()
+                .rev()
+            {
+                let difference = i16::from(*order) - i16::from(*secret) - borrow;
+                borrow = i16::from(difference < 0);
+                negated_secret[i] = difference.rem_euclid(256) as u8;
+            }
+            let negation = BlsSecretKey::from_be_bytes(&negated_secret)
+                .expect("expected the negated secret to be a secret key")
+                .public_key();
+            return (basic.to_vec(), negation.to_bytes().to_vec());
         }
     }
 }
+
+/// The order of the BLS12-381 groups, big-endian.
+const BLS12_381_GROUP_ORDER: &str =
+    "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
 
 /// A platform whose Core reports `list_diffs` by Core height, with coinbase payload version 4
 /// from `v24_activation_height` on and version 3 before, as Core requires.
@@ -536,6 +556,101 @@ fn should_reach_the_kept_operator_identity_after_a_re_encode_and_a_restart() {
         assert_eq!(
             root_hashes[0], root_hashes[1],
             "PV{version}: a restart after the re-encode does not change the outcome"
+        );
+    }
+}
+
+/// One diff entry can carry a re-encoded operator key and an operator payout at once: MN_L2's
+/// recorded ProUpRegTx step, here with an operator payout added. Platform drops both from the
+/// entry. MN_L2 keeps its legacy key bytes, the operator payout of its full state, and its
+/// operator identity with every key, the payout key included; and the blocks end exactly as they
+/// do without the diff's operator payout.
+#[test]
+fn should_ignore_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key() {
+    let mn_l2 = pro_tx_hash(MN_L2);
+    let diff_payout = [0x81; 20];
+    let listed_payout = recorded_masternodes()[&mn_l2].state.operator_payout_address;
+    assert!(listed_payout.is_some_and(|payout| payout != diff_payout));
+    for platform_version in [
+        PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::latest(),
+    ] {
+        let version = platform_version.protocol_version;
+        let mut outcomes = vec![];
+        for with_diff_payout in [false, true] {
+            let mut list_diffs = recorded_steps();
+            if with_diff_payout {
+                let (_, entry) = list_diffs
+                    .get_mut(&(V24_ACTIVATION_HEIGHT + 2))
+                    .and_then(|diff| {
+                        diff.updated_mns
+                            .iter_mut()
+                            .find(|(pro_tx_hash, _)| *pro_tx_hash == mn_l2)
+                    })
+                    .expect("expected MN_L2's recorded re-encode");
+                assert_eq!(entry.pub_key_operator, Some(bytes(MN_L2_BASIC_KEY)));
+                entry.operator_payout_address = Some(Some(diff_payout));
+            }
+            let core_heights: Vec<u32> = list_diffs.keys().copied().collect();
+            let platform = platform_with_core(platform_version, list_diffs, V24_ACTIVATION_HEIGHT);
+            let transaction = platform.drive.grove.start_transaction();
+            let state = run_core_heights(
+                &platform,
+                &transaction,
+                platform_version,
+                core_heights,
+                None,
+            );
+            let context = format!("PV{version}, diff payout: {with_diff_payout}");
+
+            let stored = &state.full_masternode_list()[&mn_l2].state;
+            assert_eq!(
+                stored.pub_key_operator,
+                bytes(MN_L2_LEGACY_KEY),
+                "{context}"
+            );
+            assert_eq!(stored.operator_payout_address, listed_payout, "{context}");
+            let operator_keys = identity_keys(
+                &platform,
+                &transaction,
+                platform_version,
+                operator_identifier(&mn_l2, &bytes(MN_L2_LEGACY_KEY)),
+            )
+            .expect("expected MN_L2's operator identity");
+            assert!(
+                operator_keys.iter().all(|(.., disabled)| !disabled),
+                "{context}: {operator_keys:?}"
+            );
+            assert!(
+                operator_keys.iter().any(|(_, purpose, data, _)| {
+                    *purpose == Purpose::TRANSFER
+                        && listed_payout.is_some_and(|payout| data == &payout)
+                }),
+                "{context}: MN_L2's operator payout key is the listed payout: {operator_keys:?}"
+            );
+            assert_eq!(
+                identity_keys(
+                    &platform,
+                    &transaction,
+                    platform_version,
+                    operator_identifier(&mn_l2, &bytes(MN_L2_BASIC_KEY))
+                ),
+                None,
+                "{context}"
+            );
+            outcomes.push((
+                state.full_masternode_list().clone(),
+                platform
+                    .drive
+                    .grove
+                    .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                    .value
+                    .expect("expected a root hash"),
+            ));
+        }
+        assert_eq!(
+            outcomes[0], outcomes[1],
+            "PV{version}: the diff's operator payout changes nothing"
         );
     }
 }

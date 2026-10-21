@@ -8,7 +8,6 @@ use crate::queries::utils::{deserialize_query_with_default, deserialize_required
 use crate::sdk::WasmSdk;
 use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
-use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::bip32::{
     ChildNumber, DerivationPath as BIP32DerivationPath, ExtendedPrivKey as BIP32ExtendedPrivKey,
     ExtendedPubKey as BIP32ExtendedPubKey,
@@ -430,10 +429,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
 
         // Get public key
-        use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
-        let secp = Secp256k1::new();
-
-        let public_key = private_key.public_key(&secp);
+        let public_key = private_key.public_key();
         let public_key_bytes = public_key.inner.serialize();
         // Get address
         let address = dashcore::Address::p2pkh(&public_key, net);
@@ -483,7 +479,7 @@ impl WasmSdk {
 
         // Derive the key at the specified path
         let derived_key = master_key
-            .derive_priv(&dashcore::secp256k1::Secp256k1::new(), &derivation_path)
+            .derive_priv(&derivation_path)
             .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
 
         // In v0.40-dev, ExtendedPrivKey might have a different structure
@@ -491,8 +487,7 @@ impl WasmSdk {
         let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
 
         // Get public key
-        let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let public_key = private_key.public_key(&secp);
+        let public_key = private_key.public_key();
 
         // Get address
         let address = dashcore::Address::p2pkh(&public_key, net);
@@ -500,7 +495,7 @@ impl WasmSdk {
         Ok(PathDerivedKeyInfoWasm {
             path,
             private_key_wif: private_key.to_wif(),
-            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+            private_key_hex: hex::encode(private_key.inner.to_secret_bytes()),
             public_key: hex::encode(public_key.to_bytes()),
             address: address.to_string(),
             network,
@@ -613,9 +608,8 @@ impl WasmSdk {
         // Build a one-step derivation path and derive
         let child_number: ChildNumber = ChildNumber::from(index);
         let path = BIP32DerivationPath::from(vec![child_number]);
-        let secp = Secp256k1::new();
         let child_xpub = parent_xpub
-            .derive_pub(&secp, &path)
+            .derive_pub(&path)
             .map_err(|e| WasmSdkError::generic(format!("Failed to derive child key: {}", e)))?;
 
         Ok(child_xpub.to_string())
@@ -628,8 +622,7 @@ impl WasmSdk {
         let ext_prv = BIP32ExtendedPrivKey::from_str(xprv).map_err(|e| {
             WasmSdkError::invalid_argument(format!("Invalid extended private key: {}", e))
         })?;
-        let secp = Secp256k1::new();
-        let ext_pub = BIP32ExtendedPubKey::from_priv(&secp, &ext_prv);
+        let ext_pub = BIP32ExtendedPubKey::from_priv(&ext_prv);
         Ok(ext_pub.to_string())
     }
 }

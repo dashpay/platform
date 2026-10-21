@@ -10,7 +10,6 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
@@ -757,7 +756,7 @@ async fn should_not_be_active_before_protocol_version_14() {
     // `active_version_range` check, before any consensus validation.
     assert_matches!(
         setup.process(&transition, &tx),
-        StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
-            if error.state_transition_type().starts_with("IdentityKeyLimitsUpdate")
+        StateTransitionExecutionResult::InternalError(message)
+            if message.contains("IdentityKeyLimitsUpdate") && message.contains("not active")
     );
 }

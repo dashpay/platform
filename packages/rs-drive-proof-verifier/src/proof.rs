@@ -52,7 +52,7 @@ pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -98,15 +98,9 @@ use drive::error::proof::ProofError;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
-use drive::query::vote_poll_contestant_votes_query::{
-    ContestedDocumentVotePollVotesDriveQuery, ResolvedContestedDocumentVotePollVotesDriveQuery,
-};
-use drive::query::vote_poll_vote_state_query::{
-    ContestedDocumentVotePollDriveQuery, ResolvedContestedDocumentVotePollDriveQuery,
-};
-use drive::query::vote_polls_by_document_type_query::{
-    ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
-};
+use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
+use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
@@ -1994,16 +1988,10 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, items) = verify_page_drive_proves(resolved_request.limit, |limit| {
-            ResolvedVotePollsByDocumentTypeQuery {
-                limit,
-                ..resolved_request.clone()
-            }
-            .verify_contests_proof(grovedb_proof, platform_version)
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, items) = resolved_request
+            .verify_contests_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2042,16 +2030,12 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, contested_resource_vote_state) =
-            verify_page_drive_proves(resolved_request.limit, |limit| {
-                ResolvedContestedDocumentVotePollDriveQuery {
-                    limit,
-                    ..resolved_request.clone()
-                }
-                .verify_vote_poll_vote_state_proof(grovedb_proof, platform_version)
-            })
+        let (root_hash, contested_resource_vote_state) = resolved_request
+            .verify_vote_poll_vote_state_proof(
+                supported_grovedb_proof_bytes(proof)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -2101,16 +2085,10 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, voters) = verify_page_drive_proves(resolved_request.limit, |limit| {
-            ResolvedContestedDocumentVotePollVotesDriveQuery {
-                limit,
-                ..resolved_request.clone()
-            }
-            .verify_vote_poll_votes_proof(grovedb_proof, platform_version)
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) = resolved_request
+            .verify_vote_poll_votes_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2147,21 +2125,14 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
-
         let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
-            ContestedResourceVotesGivenByIdentityQuery {
-                limit,
-                ..drive_query.clone()
-            }
+        let (root_hash, voters) = drive_query
             .verify_identity_votes_given_proof::<Vec<_>>(
-                grovedb_proof,
+                supported_grovedb_proof_bytes(proof)?,
                 &contract_provider_fn,
                 platform_version,
             )
-        })
-        .map_drive_error(proof, mtd)?;
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2198,16 +2169,12 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
-
-        let (root_hash, vote_polls) = verify_page_drive_proves(drive_query.limit, |limit| {
-            VotePollsByEndDateDriveQuery {
-                limit,
-                ..drive_query.clone()
-            }
-            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(grovedb_proof, platform_version)
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, vote_polls) = drive_query
+            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(
+                supported_grovedb_proof_bytes(proof)?,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2465,16 +2432,13 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             }
         };
         let checked_limit = limit.map(try_u32_to_u16).transpose()?;
-        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, proposer_block_counts) = verify_page_drive_proves(checked_limit, |limit| {
-            Drive::verify_epoch_proposers(
-                grovedb_proof,
-                epoch_index,
-                ProposerQueryType::ByRange(limit, formatted_start),
-                platform_version,
-            )
-        })
+        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
+            supported_grovedb_proof_bytes(proof)?,
+            epoch_index,
+            ProposerQueryType::ByRange(checked_limit, formatted_start),
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

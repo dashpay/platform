@@ -1,8 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
-use crate::verify::{
-    supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof,
-};
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_group_action_signers_request, get_group_actions_request, get_group_info_request,
@@ -124,17 +122,14 @@ impl FromProof<GetGroupInfosRequest> for Groups {
 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        let grovedb_proof = supported_grovedb_proof_bytes(&proof)?;
-        let (root_hash, result) = verify_page_drive_proves(count, |count| {
-            Drive::verify_group_infos_in_contract(
-                grovedb_proof,
-                contract_id,
-                start_at_group_contract_position,
-                count,
-                false,
-                platform_version,
-            )
-        })
+        let (root_hash, result) = Drive::verify_group_infos_in_contract(
+            supported_grovedb_proof_bytes(&proof)?,
+            contract_id,
+            start_at_group_contract_position,
+            count,
+            false,
+            platform_version,
+        )
         // Make value optional
         .map(
             |(root_hash, result): (_, IndexMap<GroupContractPosition, Group>)| {
@@ -225,19 +220,16 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        let grovedb_proof = supported_grovedb_proof_bytes(&proof)?;
-        let (root_hash, result) = verify_page_drive_proves(count, |count| {
-            Drive::verify_action_infos_in_contract(
-                grovedb_proof,
-                contract_id,
-                group_contract_position,
-                status,
-                start_at_action_id,
-                count,
-                false,
-                platform_version,
-            )
-        })
+        let (root_hash, result) = Drive::verify_action_infos_in_contract(
+            supported_grovedb_proof_bytes(&proof)?,
+            contract_id,
+            group_contract_position,
+            status,
+            start_at_action_id,
+            count,
+            false,
+            platform_version,
+        )
         // Make value optional
         .map(
             |(root_hash, result): (_, IndexMap<Identifier, GroupAction>)| {

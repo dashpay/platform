@@ -1,10 +1,7 @@
-#[cfg(feature = "state-transitions")]
 use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
-#[cfg(feature = "state-transitions")]
-use crate::prelude::AddressNonce;
-use crate::prelude::Revision;
+use crate::prelude::{AddressNonce, Revision};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]

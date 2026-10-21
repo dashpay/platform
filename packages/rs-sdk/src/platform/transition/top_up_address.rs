@@ -159,7 +159,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
 
         let state_transition = create_address_funding_from_asset_lock_transition(
             asset_lock_proof,
-            asset_lock_private_key.inner.as_ref(),
+            asset_lock_private_key.inner.as_secret_bytes(),
             BTreeMap::new(),
             self.clone(),
             fee_strategy,
@@ -192,8 +192,8 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
         }
 
         // Pull `user_fee_increase` from settings *before* the
-        // broadcast call. The upstream CL-height retry path
-        // (`platform-wallet::wallet::asset_lock::orchestration::submit_with_cl_height_retry`)
+        // broadcast call. The CL-height retry path
+        // (`asset_lock_submission::submit_with_cl_height_retry`)
         // bumps this value between attempts to change the ST's
         // signable bytes — if we silently dropped it here, retries
         // would hash identically and get cached out by Tenderdash.

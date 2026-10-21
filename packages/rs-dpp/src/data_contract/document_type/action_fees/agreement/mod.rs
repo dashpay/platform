@@ -12,10 +12,8 @@
 //! charges nothing is ignored: its signer pays nothing, which is never more than they agreed to.
 
 use crate::balances::credits::Credits;
-#[cfg(feature = "state-transitions")]
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
-#[cfg(feature = "state-transitions")]
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::prelude::FeeMultiplier;
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -24,7 +22,6 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
-#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
@@ -113,7 +110,6 @@ impl DocumentActionFeeAgreement {
     /// The agreement a transition performing `action` on a document of `document_type` must
     /// carry, `None` when the document type charges nothing for it. It names what
     /// `document_type` declares, so it is only as current as the contract it was read from.
-    #[cfg(feature = "state-transitions")]
     pub fn for_document_type_action(
         document_type: DocumentTypeRef,
         action: DocumentTransitionActionType,

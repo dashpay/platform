@@ -19,7 +19,7 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
-    ApplyChainLockOutcome, WalletInfoInterface,
+    ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
@@ -140,6 +140,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.accounts()
     }
 
+    fn unrecorded_spend_heights(&self, tx: &Transaction) -> BTreeSet<u32> {
+        self.core_wallet.unrecorded_spend_heights(tx)
+    }
+
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.core_wallet.immature_transactions()
     }
@@ -186,6 +190,17 @@ impl WalletInfoInterface for PlatformWalletInfo {
     fn update_synced_height(&mut self, current_height: u32) {
         self.rewind_barrier.note_emitted();
         self.core_wallet.update_synced_height(current_height);
+    }
+
+    /// Forwarded, then noted like any other in-memory rewind (see
+    /// `note_in_memory_rewind`) when it lowered the scan cursor: the persister
+    /// does not mirror `ChainTruncated`, so the host still holds the replaced
+    /// branch's cursor. A refused truncation changes nothing and notes nothing.
+    fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        let before = self.core_wallet.metadata.synced_height;
+        let truncation = self.core_wallet.truncate_above(height)?;
+        self.note_in_memory_rewind(before);
+        Ok(truncation)
     }
 
     fn matured_coinbase_records(
@@ -268,6 +283,12 @@ impl WalletInfoInterface for PlatformWalletInfo {
         );
         outcome
     }
+
+    // The trait default is a no-op, which would keep every observed spend
+    // until the first chain lock is applied.
+    fn note_chain_lock_height(&mut self, height: CoreBlockHeight) {
+        self.core_wallet.note_chain_lock_height(height);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +324,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
     ) -> key_wallet::Result<()> {
         let before = self.core_wallet.metadata.synced_height;
         let added = self.core_wallet.add_managed_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -316,7 +337,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_account_from_xpub(account_type, account_xpub);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -330,7 +351,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_bls_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -344,7 +365,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_bls_account_from_public_key(account_type, bls_public_key);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -358,7 +379,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_eddsa_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -372,21 +393,22 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 }
 
 impl PlatformWalletInfo {
-    /// key-wallet's account-add API rewinds the scan cursor to just below
-    /// wallet birth (the new account has no filter coverage). That lowering
-    /// emits nothing and is not persisted here, so treat it like any other
-    /// in-memory rewind: advances queued before it must not be stored after
-    /// it, and the next DashPay backfill record round owes the host the
-    /// lowered cursor — otherwise a record-only round could store coverage
-    /// beside a host cursor that never came down (dashpay/platform#4302
-    /// review).
-    fn note_account_add_rewind(&mut self, before: u32) {
+    /// key-wallet lowers the scan cursor on its own: an account add rewinds
+    /// it to just below wallet birth (the new account has no filter
+    /// coverage), a chain truncation to the fork height. Neither lowering
+    /// reaches the persister (an account add emits nothing, and
+    /// `ChainTruncated` projects to an empty changeset), so treat it like any
+    /// other in-memory rewind: advances emitted before it must not be stored
+    /// after it, and the next DashPay backfill record round owes the host the
+    /// lowered cursor — otherwise a round could store coverage beside a host
+    /// cursor that never came down.
+    fn note_in_memory_rewind(&mut self, before: u32) {
         let after = self.core_wallet.metadata.synced_height;
         if after < before {
             self.rewind_barrier.arm();
@@ -406,5 +428,90 @@ impl std::fmt::Debug for PlatformWalletInfo {
             .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
             .field("identity_count", &self.identity_manager.identity_count())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::{BlockHash, OutPoint, TxIn};
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    use super::*;
+
+    fn spending(outpoint: OutPoint) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: outpoint,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// dash-spv notes a chain-lock height during the initial sync, before a
+    /// chain lock is applied. Spends observed at or below the synced height
+    /// are final from then on and are forgotten.
+    #[tokio::test]
+    async fn should_prune_final_observed_spends_when_a_chain_lock_height_is_noted() {
+        let mut wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let final_spend = OutPoint::new(Txid::from([0x01; 32]), 0);
+        let open_spend = OutPoint::new(Txid::from([0x03; 32]), 0);
+        for (outpoint, height) in [(final_spend, 50), (open_spend, 150)] {
+            let block = BlockInfo::new(height, BlockHash::from([0x07; 32]), 1_735_689_600);
+            info.check_core_transaction(
+                &spending(outpoint),
+                TransactionContext::InBlock(block),
+                &mut wallet,
+                true,
+                false,
+            )
+            .await;
+        }
+        info.update_synced_height(100);
+        assert_eq!(info.core_wallet.observed_spent_outpoints().len(), 2);
+
+        info.note_chain_lock_height(200);
+
+        let observed = info.core_wallet.observed_spent_outpoints();
+        assert!(
+            !observed.contains_key(&final_spend),
+            "a spend at height 50 is final below synced height 100"
+        );
+        assert!(
+            observed.contains_key(&open_spend),
+            "a spend at height 150 is above synced height 100"
+        );
+    }
+
+    /// Following a fork can lower the scan cursor in memory, and only a
+    /// truncation that lowered it is a rewind to account for: it arms the
+    /// barrier and owes the host the fork height. A truncation refused below
+    /// the chain lock, or one above the cursor, leaves both untouched.
+    #[test]
+    fn should_note_a_truncation_only_when_it_lowers_the_scan_cursor() {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        info.core_wallet.metadata.last_processed_height = 1_000;
+        info.core_wallet.update_synced_height(1_000);
+        info.apply_chain_lock(ChainLock::dummy(950));
+
+        assert!(info.truncate_above(949).is_err(), "below the chain lock");
+        info.truncate_above(1_000).expect("a fork at the cursor");
+        assert_eq!(info.synced_height(), 1_000);
+        assert_eq!(info.rewind_barrier.epoch(), 0);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, None);
+
+        info.truncate_above(960).expect("a fork below the cursor");
+        assert_eq!(info.synced_height(), 960);
+        assert_eq!(info.rewind_barrier.epoch(), 1);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(960));
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor_epoch, Some(1));
     }
 }
