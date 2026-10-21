@@ -248,7 +248,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
         })?;
         Ok(platform_encryption::calculate_account_reference(
-            &*xprv.private_key.to_bytes(),
+            &xprv.private_key.to_bytes(),
             compact_xpub,
             account_index,
             version,
@@ -266,7 +266,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         })?;
         Ok(platform_encryption::unmask_account_reference(
             account_reference,
-            &*xprv.private_key.to_bytes(),
+            &xprv.private_key.to_bytes(),
             compact_xpub,
         ))
     }
