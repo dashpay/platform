@@ -1042,6 +1042,40 @@ mod tests {
         );
     }
 
+    /// A key of a type the wallet never derives (here a script hash), whose
+    /// check cannot run, is settled as not this wallet's: no breadcrumb, and
+    /// its candidate's coordinates refuted.
+    #[test]
+    fn breadcrumb_decisions_refutes_a_key_type_the_wallet_never_derives() {
+        let master = test_master();
+        let wallet_id = [0xAB; 32];
+        let kp = derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 0, 2)
+            .expect("derive");
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::BIP13_SCRIPT_HASH,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x11; 20]),
+            disabled_at: None,
+        });
+        let mut scalars = BTreeMap::new();
+        scalars.insert(2u32, kp.private_key);
+        let identity = identity_with_keys(vec![key]);
+
+        let decisions = breadcrumb_decisions(&identity, 4, wallet_id, Network::Testnet, &scalars);
+        assert_eq!(decisions[0].breadcrumb, None);
+        assert_eq!(
+            decisions[0].derivation_rejected,
+            BTreeSet::from([crate::changeset::IdentityKeyDerivationIndices {
+                identity_index: 4,
+                key_index: 2,
+            }]),
+        );
+    }
+
     /// Decide key ownership from the candidate's compressed PUBLIC key alone,
     /// reproducing `IdentityPublicKey::validate_private_key_bytes` without the
     /// secret scalar: an `ECDSA_SECP256K1` key matches when the on-chain data

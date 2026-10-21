@@ -973,6 +973,38 @@ mod update_identity_at_revision_tests {
         }
     }
 
+    /// A key the update both adds and disables is taken as added on both
+    /// paths, and an out-of-wallet identity's declared external key leaves
+    /// its origin unknown (there is no slot of this wallet to refute).
+    #[tokio::test]
+    async fn should_take_an_added_and_disabled_key_as_added_and_leave_an_out_of_wallet_external_key_unknown(
+    ) {
+        let identity_id = Identifier::default();
+        for cached in [4, 5] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(cached, store.clone()).await;
+            let wallet = wallet.identity();
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], &[], vec![3])
+                .await
+                .unwrap();
+            let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+            assert_eq!(stored.public_key.disabled_at(), None, "cached at {cached}");
+            assert!(stored.derivation_indices.is_some(), "cached at {cached}");
+
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(cached, store.clone()).await;
+            let wallet = wallet.identity();
+            wallet
+                .apply_landed_update(&identity_id, None, 5, vec![key_3()], &[3], vec![])
+                .await
+                .unwrap();
+            let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+            assert_eq!(stored.derivation_indices, None, "cached at {cached}");
+            assert!(stored.derivation_rejected.is_empty(), "cached at {cached}");
+        }
+    }
+
     /// An external key id that names no key the update adds is refused
     /// before anything is signed.
     #[tokio::test]
