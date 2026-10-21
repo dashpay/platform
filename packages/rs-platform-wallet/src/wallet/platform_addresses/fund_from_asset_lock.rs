@@ -27,8 +27,7 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding,
-    FundingResolution, ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
@@ -353,55 +352,26 @@ impl PlatformAddressWallet {
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            addresses.top_up_with_signers(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                fee_strategy.clone(),
-                address_signer,
-                asset_lock_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(infos) => (Ok(infos), proof.clone()),
-            Err(e) if needs_chain_lock_proof(&e, &proof) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof unusable for platform-address top-up (tx {}): {}; \
-                     retrying with ChainLock proof",
-                    out_point.txid,
-                    e
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
-                    .await?;
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                None,
+                "platform-address top-up",
+                |proof, s| {
                     addresses.top_up_with_signers(
                         &self.sdk,
-                        chain_proof.clone(),
+                        proof,
                         &path,
                         fee_strategy.clone(),
                         address_signer,
                         asset_lock_signer,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
-        // A persisted ChainLock proof Platform places the transaction outside
-        // of must come off the row, or every later resume replays it.
-        if let Err(e) = &submit_result {
-            self.asset_locks
-                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
-                .await;
-        }
+                },
+            )
+            .await?;
         let (address_infos, proof_height) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

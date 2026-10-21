@@ -484,7 +484,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// carries the ChainLock proof rather than the InstantSend proof
     /// Platform refused, so a resume does not rebuild and refuse the same
     /// transition again. The change is queued like every other status
-    /// advance, not flushed.
+    /// advance: not flushed, and a refused store is logged rather than
+    /// returned.
     pub(crate) async fn upgrade_to_persisted_chain_lock_proof(
         &self,
         out_point: &OutPoint,
@@ -501,6 +502,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 Some(chain_proof.clone()),
             )
             .await?;
+        // Best-effort like every status advance: a refused store is logged,
+        // and the submit still goes ahead with the ChainLock proof the
+        // in-memory row already carries.
         self.queue_asset_lock_changeset(cs);
         Ok(chain_proof)
     }
@@ -2322,6 +2326,121 @@ mod chain_lock_wait_tests {
             .expect("the advanced row is queued");
         assert_eq!(entry.status, AssetLockStatus::ChainLocked);
         assert_eq!(entry.proof, Some(proof));
+    }
+
+    /// The shared IS → ChainLock submit of the funding flows
+    /// (`submit_with_chain_lock_fallback`), driven by a scripted submit.
+    mod chain_lock_fallback_submit {
+        use super::*;
+        use dash_sdk::platform::transition::put_settings::PutSettings;
+        use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+        use dpp::consensus::ConsensusError;
+        use std::collections::VecDeque;
+
+        /// The SDK's pre-broadcast refusal of a transition one byte over the
+        /// limit: the InstantSend proof is far larger than a ChainLock proof.
+        fn oversized() -> dash_sdk::Error {
+            ConsensusError::from(StateTransitionMaxSizeExceededError::new(20_481, 20_480)).into()
+        }
+
+        /// One submission: the proof it carried and whether the persister
+        /// already held the row at `ChainLocked` when it was made.
+        type Call = (AssetLockProof, bool);
+
+        type Outcome = Result<(Result<u32, dash_sdk::Error>, AssetLockProof), PlatformWalletError>;
+
+        async fn run(script: Vec<Result<u32, dash_sdk::Error>>) -> (Ctx, Outcome, Vec<Call>) {
+            let locator = ScriptedLocator::new(vec![mined(100)]);
+            let store = Arc::new(FakeRecordStore::with_records([]));
+            let ctx = ctx_with_persister(
+                instant_send_context(),
+                Network::Testnet,
+                Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+                {
+                    let store = Arc::clone(&store);
+                    move |_| store as Arc<dyn PlatformWalletPersistence>
+                },
+            )
+            .await;
+            set_wallet_chain_lock(&ctx, 150).await;
+            store.stored.lock().unwrap().clear();
+
+            let script = Mutex::new(VecDeque::from(script));
+            let calls: Mutex<Vec<Call>> = Mutex::new(Vec::new());
+            let out_point = ctx.out_point;
+            let submit = |proof: AssetLockProof, _settings: Option<PutSettings>| {
+                let stored_chain_locked = store
+                    .stored
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|cs| cs.asset_locks.as_ref())
+                    .filter_map(|locks| locks.asset_locks.get(&out_point))
+                    .any(|entry| entry.status == AssetLockStatus::ChainLocked);
+                calls.lock().unwrap().push((proof, stored_chain_locked));
+                let result = script
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("script exhausted");
+                async move { result }
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                ctx.manager.submit_with_chain_lock_fallback(
+                    ctx.instant_proof.clone(),
+                    None,
+                    None,
+                    "test",
+                    submit,
+                ),
+            )
+            .await
+            .expect("resolves without waiting");
+            let calls = calls.into_inner().unwrap();
+            (ctx, result, calls)
+        }
+
+        /// dashwallet-ios#1042: a size refusal of the InstantSend proof is
+        /// resubmitted with the ChainLock proof for the same outpoint, which
+        /// the persister already holds on the row when the resubmit is made.
+        #[tokio::test(start_paused = true)]
+        async fn should_resubmit_a_size_refusal_with_the_persisted_chain_proof() {
+            let (ctx, result, calls) = run(vec![Err(oversized()), Ok(7)]).await;
+
+            let (submitted, effective) = result.expect("no local error");
+            assert_eq!(submitted.expect("the resubmit lands"), 7);
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0], (ctx.instant_proof.clone(), false));
+            assert!(matches!(
+                &calls[1].0,
+                AssetLockProof::Chain(chain) if chain.out_point == ctx.out_point
+            ));
+            assert!(
+                calls[1].1,
+                "the ChainLock row is stored before the resubmit"
+            );
+            assert_eq!(effective, calls[1].0);
+        }
+
+        /// A failed resubmit leaves the lock tracked at `ChainLocked` with the
+        /// ChainLock proof, so a resume submits that proof rather than the
+        /// refused InstantSend one.
+        #[tokio::test(start_paused = true)]
+        async fn should_leave_the_lock_resumable_when_the_chain_proof_resubmit_fails() {
+            let (ctx, result, calls) = run(vec![
+                Err(oversized()),
+                Err(dash_sdk::Error::Generic("transport failure".into())),
+            ])
+            .await;
+
+            let (submitted, effective) = result.expect("no local error");
+            assert!(submitted.is_err());
+            assert_eq!(calls.len(), 2);
+            let row = tracked_row(&ctx).await;
+            assert_eq!(row.status, AssetLockStatus::ChainLocked);
+            assert_eq!(row.proof, Some(effective));
+        }
     }
 
     /// The record shape a promotion wait can never satisfy: without a

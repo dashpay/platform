@@ -72,8 +72,7 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::orchestration::{
-    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
@@ -225,53 +224,25 @@ impl IdentityWallet {
         // CL-height retry also iterates inside the IS→CL fallback branch
         // so a freshly-upgraded CL proof gets the same patience.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            placeholder.put_to_platform_and_wait_for_response_with_signer(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                asset_lock_signer,
-                identity_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(identity) => (Ok(identity), proof.clone()),
-            Err(e) if needs_chain_lock_proof(&e, &proof) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof unusable for identity registration (tx {}): {}; \
-                     retrying with ChainLock proof",
-                    out_point.txid,
-                    e
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
-                    .await?;
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                None,
+                "identity registration",
+                |proof, s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
                         &self.sdk,
-                        chain_proof.clone(),
+                        proof,
                         &path,
                         asset_lock_signer,
                         identity_signer,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
-        // A persisted ChainLock proof Platform places the transaction outside
-        // of must come off the row, or every later resume replays it.
-        if let Err(e) = &submit_result {
-            self.asset_locks
-                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
-                .await;
-        }
+                },
+            )
+            .await?;
         let identity = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
@@ -474,51 +445,24 @@ impl IdentityWallet {
         // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            identity.top_up_identity_with_signer_with_metadata(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                asset_lock_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(balance) => (Ok(balance), proof.clone()),
-            Err(e) if needs_chain_lock_proof(&e, &proof) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof unusable for identity top-up (tx {}): {}; \
-                     retrying with ChainLock proof",
-                    out_point.txid,
-                    e
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
-                    .await?;
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                None,
+                "identity top-up",
+                |proof, s| {
                     identity.top_up_identity_with_signer_with_metadata(
                         &self.sdk,
-                        chain_proof.clone(),
+                        proof,
                         &path,
                         asset_lock_signer,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
-        // A persisted ChainLock proof Platform places the transaction outside
-        // of must come off the row, or every later resume replays it.
-        if let Err(e) = &submit_result {
-            self.asset_locks
-                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
-                .await;
-        }
+                },
+            )
+            .await?;
         let (mut new_balance, metadata) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

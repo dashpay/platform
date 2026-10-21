@@ -30,6 +30,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -41,6 +42,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 pub(crate) use dash_sdk::platform::transition::asset_lock_submission::{
     needs_chain_lock_proof, submit_with_cl_height_retry,
 };
+use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
@@ -387,6 +389,62 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
+    }
+
+    /// Submit `proof` through `submit` with the IS → ChainLock fallback every
+    /// funding flow shares, returning the submit's result and the proof it
+    /// carried.
+    ///
+    /// Each submission is wrapped in [`submit_with_cl_height_retry`]. When the
+    /// first one fails with an unusable InstantSend proof
+    /// ([`needs_chain_lock_proof`]: a stale islock, or a transition too large
+    /// with it), the ChainLock proof for the same outpoint is built and
+    /// attached to the tracked row
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof)),
+    /// waiting up to `cl_wait` (`None`: without a bound), and submitted
+    /// instead. If the submit that ends the call fails, a ChainLock proof
+    /// Platform places the transaction outside of comes off the row
+    /// ([`invalidate_rejected_chain_proof`](Self::invalidate_rejected_chain_proof)).
+    ///
+    /// `flow` names the operation in the log.
+    pub(crate) async fn submit_with_chain_lock_fallback<F, Fut, R>(
+        &self,
+        proof: AssetLockProof,
+        settings: Option<PutSettings>,
+        cl_wait: Option<Duration>,
+        flow: &str,
+        submit: F,
+    ) -> Result<(Result<R, dash_sdk::Error>, AssetLockProof), PlatformWalletError>
+    where
+        F: Fn(AssetLockProof, Option<PutSettings>) -> Fut,
+        Fut: Future<Output = Result<R, dash_sdk::Error>>,
+    {
+        let out_point = out_point_from_proof(&proof);
+        let (result, effective_proof) =
+            match submit_with_cl_height_retry(settings, |s| submit(proof.clone(), s)).await {
+                Ok(submitted) => (Ok(submitted), proof),
+                Err(e) if needs_chain_lock_proof(&e, &proof) => {
+                    tracing::warn!(
+                        "IS-lock proof unusable for {} (tx {}): {}; retrying with ChainLock proof",
+                        flow,
+                        out_point.txid,
+                        e
+                    );
+                    let chain_proof = self
+                        .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
+                        .await?;
+                    let result =
+                        submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
+                            .await;
+                    (result, chain_proof)
+                }
+                Err(e) => (Err(e), proof),
+            };
+        if let Err(e) = &result {
+            self.invalidate_rejected_chain_proof(&out_point, &effective_proof, e)
+                .await;
+        }
+        Ok((result, effective_proof))
     }
 
     /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
