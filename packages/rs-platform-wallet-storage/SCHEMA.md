@@ -424,13 +424,13 @@ winner named in `spent_in_txid`, and decides the placeholder's lifetime
 rather than its existence. A block-context sweep stamps the winner's own
 height and `collect_finalized_tombstones` evicts the row once
 `min(chainlock_height, synced_height)` reaches it — upstream's
-`prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
-winner that is not yet mined leaves it NULL: the lock alone settles the
-input, but it carries no height to key a lifetime on, so the row resolves
-only through proof (the funding upsert materialising it, a later
-block-context sweep re-stamping it, or a release). The funding upsert
-clears the stamp, because a materialised row is the wallet's own coin held
-spent and is permanently outside the collector's reach.
+`prune_finalized_observed_spends` boundary, counting applied chainlocks
+only. An InstantSend-locked winner that is not yet mined leaves it NULL: the
+lock alone settles the input, but it carries no height to key a lifetime on,
+so the row resolves only through proof (the funding upsert materialising it,
+a later block-context sweep re-stamping it, or a release). The funding
+upsert clears the stamp, because a materialised row is the wallet's own coin
+held spent and is permanently outside the collector's reach.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -459,8 +459,10 @@ until a ChainLock has been applied and flushed.
 as a monotonic max — the height alone, which this store previously dropped.
 It is one half of the finality boundary
 `collect_finalized_tombstones` collects sweep tombstones against, so a
-tombstone is never collected before a chainlock has been persisted,
-matching upstream's "no-op until a chainlock has been applied".
+tombstone is never collected before a chainlock has been persisted. Only
+applied chainlocks reach it. Upstream also prunes its in-memory observed
+spends up to the heights of the chainlocks dash-spv holds back during the
+initial sync; those are never persisted, so this half can trail upstream's.
 
 - PK: `wallet_id` (single-row-per-wallet).
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.

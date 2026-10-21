@@ -1280,7 +1280,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// finality boundary has reached: `winnerMinedHeight <= boundary`, with
     /// `boundary = min(chainlockHeight, syncedHeight)` read off the STORED
     /// wallet row — upstream key-wallet's `prune_finalized_observed_spends`
-    /// condition verbatim, and the SQLite store's
+    /// condition over applied chainlocks, and the SQLite store's
     /// `collect_finalized_tombstones`. No observation-age margin: the stamp
     /// IS the winner's own mined height, carried on the sweep event, so
     /// nothing here guesses when the winner mined. Rows with no stamp are
