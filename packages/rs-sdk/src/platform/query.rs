@@ -335,7 +335,7 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             filter: self.filter.clone(),
             limit,
         }
-        .construct_path_query(settings.protocol_version)?;
+        .validate()?;
         let filter = match self.filter {
             DocumentHistoryFilter::StartAtTime(time) => Filter::StartAtMs(time),
             DocumentHistoryFilter::StartAfter { time_ms, revision } => {
@@ -1786,7 +1786,7 @@ mod history_query_tests {
     }
 
     #[test]
-    fn should_encode_complete_history_selectors_and_reject_legacy_protocols() {
+    fn should_encode_complete_history_selectors_before_protocol_discovery() {
         let request_settings = Default::default();
         let settings = QuerySettings {
             request_settings: &request_settings,
@@ -1813,18 +1813,78 @@ mod history_query_tests {
         };
         assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
         for protocol in [12, 13, 14] {
-            assert!(query
-                .query(&QuerySettings {
-                    protocol_version: PlatformVersion::get(protocol).unwrap(),
-                    ..settings
-                })
-                .is_err());
+            let settings = QuerySettings {
+                protocol_version: PlatformVersion::get(protocol).unwrap(),
+                ..settings
+            };
+            for filter in [
+                DocumentHistoryFilter::StartAfter {
+                    time_ms: 1000,
+                    revision: 22,
+                },
+                DocumentHistoryFilter::StartAtRevision(2),
+                DocumentHistoryFilter::Revision(2),
+            ] {
+                query.filter = filter;
+                query.limit = Some(1);
+                assert!(query.query(&settings).is_ok());
+            }
         }
         query.filter = DocumentHistoryFilter::Revision(2);
+        query.limit = Some(10);
         assert!(query.query(&settings).is_err());
         query.limit = Some(1);
         assert!(query.query(&settings).is_ok());
         query.filter = DocumentHistoryFilter::StartAtRevision(65536);
         assert!(query.query(&settings).is_err());
+    }
+
+    #[test]
+    fn should_reject_malformed_history_filters_before_protocol_discovery() {
+        let request_settings = Default::default();
+        for version in [
+            PlatformVersion::get(13).unwrap(),
+            PlatformVersion::get(14).unwrap(),
+            PlatformVersion::latest(),
+        ] {
+            let settings = QuerySettings {
+                request_settings: &request_settings,
+                protocol_version: version,
+                prove: true,
+            };
+            for (filter, limit) in [
+                (DocumentHistoryFilter::StartAtTime(0), Some(0)),
+                (DocumentHistoryFilter::StartAtTime(0), Some(11)),
+                (DocumentHistoryFilter::StartAtTime(1 << 63), None),
+                (
+                    DocumentHistoryFilter::StartAfter {
+                        time_ms: 1 << 63,
+                        revision: 1,
+                    },
+                    None,
+                ),
+                (
+                    DocumentHistoryFilter::StartAfter {
+                        time_ms: 0,
+                        revision: 0,
+                    },
+                    None,
+                ),
+                (DocumentHistoryFilter::Revision(0), None),
+                (DocumentHistoryFilter::Revision(65536), None),
+                (DocumentHistoryFilter::StartAtRevision(0), None),
+                (DocumentHistoryFilter::StartAtRevision(65536), None),
+                (DocumentHistoryFilter::Revision(1), Some(2)),
+            ] {
+                let query = DocumentHistoryQuery {
+                    data_contract_id: [1; 32].into(),
+                    document_type_name: "note".into(),
+                    document_id: [2; 32].into(),
+                    filter,
+                    limit,
+                };
+                assert!(query.query(&settings).is_err());
+            }
+        }
     }
 }

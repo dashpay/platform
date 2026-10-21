@@ -23,6 +23,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod document_history;
+
 /// A verifier double that exposes the table supplied by the SDK without
 /// interpreting proof bytes. Signature acceptance is tested separately using
 /// recorded, signed responses.
