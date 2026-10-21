@@ -8,7 +8,6 @@ use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;
 use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use dash_sdk::dpp::secp256k1::{self, Scalar, SecretKey};
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 use std::convert::TryInto;
@@ -120,31 +119,15 @@ impl Dip14ExtendedPrivKey {
         // Perform scalar addition: child_key = IL + parent_key (mod n)
         // This is the core of BIP32/DIP14 child key derivation
 
-        // First, try to create a secret key from IL
-        let il_scalar = match <[u8; 32]>::try_from(il_bytes)
-            .map_err(|_| secp256k1::Error::InvalidSecretKey)
-            .and_then(SecretKey::from_secret_bytes)
-        {
-            Ok(key) => key,
-            Err(_) => {
-                return Err(Dip14Error::DerivationFailed(
-                    "Invalid IL bytes (IL >= n)".to_string(),
-                ))
-            }
-        };
-
-        // Add parent key to IL
-        // In secp256k1, we perform scalar addition: child_key = parent_key + IL (mod n)
-        // Convert IL to a Scalar for the tweak operation
-        let il_scalar_bytes = il_scalar.to_secret_bytes();
-        let tweak = Scalar::from_be_bytes(il_scalar_bytes).map_err(|_| {
-            Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string())
-        })?;
+        let il_bytes: &[u8; 32] = il_bytes.try_into().map_err(|_| Dip14Error::InvalidKey)?;
+        // Retain rejection of a zero IL as well as out-of-range scalars.
+        let il_scalar = EcdsaSecretKey::from_bytes(il_bytes)
+            .map_err(|_| Dip14Error::DerivationFailed("Invalid IL bytes (IL >= n)".to_string()))?;
 
         // Perform scalar addition: child_key = parent_key + IL (mod n)
         let child_key = self
             .private_key
-            .add_tweak(&tweak.to_be_bytes())
+            .add_tweak(&il_scalar.to_bytes())
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)

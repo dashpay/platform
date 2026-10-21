@@ -11,6 +11,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 
 [dependencies]
+# Core does not expose the ECDH primitives used at this binding boundary.
+secp256k1 = { workspace = true }
 dash-sdk = { path = "../rs-sdk", features = [
     "dpns-contract",
     "dashpay-contract",

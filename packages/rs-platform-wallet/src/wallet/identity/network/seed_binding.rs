@@ -609,6 +609,7 @@ impl PlatformWallet {
 #[cfg(test)]
 mod tests {
     use super::SeedBindingVerification;
+    use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -1753,7 +1754,7 @@ mod tests {
         async fn ecdh_shared_secret(
             &self,
             _path: &key_wallet::bip32::DerivationPath,
-            _peer: &dpp::secp256k1::PublicKey,
+            _peer: &secp256k1::PublicKey,
         ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
             unreachable!("the gate refuses, so no queue entry is ever derived")
         }
@@ -1761,7 +1762,7 @@ mod tests {
         async fn export_auto_accept_private_key(
             &self,
             _path: &key_wallet::bip32::DerivationPath,
-        ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+        ) -> Result<EcdsaSecretKey, PlatformWalletError> {
             unreachable!("the gate refuses, so no queue entry is ever derived")
         }
 

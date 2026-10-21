@@ -5,6 +5,8 @@
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::Document;
 use crate::{Error, Sdk};
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::DocumentV0;
@@ -15,12 +17,10 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
 };
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 
 /// ECDH provider for contact request encryption
@@ -575,8 +575,7 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::secp256k1;
-    use dpp::secp256k1::rand::{self, RngCore};
+    use dpp::dashcore::key::rand::{self, RngCore};
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {

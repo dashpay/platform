@@ -3,13 +3,14 @@ use anyhow::bail;
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
+use dashcore::crypto::ecdsa::EcdsaSecretKey;
+#[cfg(feature = "random-public-keys")]
+use dashcore::key::rand::rngs::StdRng as EcdsaRng;
+#[cfg(feature = "random-public-keys")]
+use dashcore::key::rand::{RngCore, SeedableRng};
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-#[cfg(feature = "random-public-keys")]
-use secp256k1::rand::rngs::StdRng as EcdsaRng;
-#[cfg(feature = "random-public-keys")]
-use secp256k1::rand::SeedableRng;
 
 #[cfg(feature = "bls-signatures")]
 use crate::bls::{self, BlsError};
@@ -69,6 +70,17 @@ lazy_static! {
         .last()
         .map(|(key_type, _)| *key_type)
         .unwrap();
+}
+
+#[cfg(feature = "random-public-keys")]
+fn random_ecdsa_secret_key(rng: &mut EcdsaRng) -> EcdsaSecretKey {
+    loop {
+        let mut bytes = [0; 32];
+        rng.fill_bytes(&mut bytes);
+        if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
+            return key;
+        }
+    }
 }
 
 impl KeyType {
@@ -163,9 +175,9 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = secp256k1::SecretKey::new(&mut rng);
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
-                public_key.serialize().to_vec()
+                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let public_key = secret_key.public_key();
+                public_key.to_compressed().to_vec()
             }
             KeyType::BLS12_381 => {
                 let private_key = bls::SecretKey::random(rng);
@@ -207,11 +219,11 @@ impl KeyType {
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             KeyType::ECDSA_SECP256K1 => {
-                let secret_key = secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
+                let secret_key = EcdsaSecretKey::from_bytes(private_key_bytes)
                     .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+                let public_key = secret_key.public_key();
 
-                Ok(public_key.serialize().to_vec())
+                Ok(public_key.to_compressed().to_vec())
             }
             KeyType::BLS12_381 => {
                 #[cfg(feature = "bls-signatures")]
@@ -233,11 +245,11 @@ impl KeyType {
                 ));
             }
             KeyType::ECDSA_HASH160 => {
-                let secret_key = secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
+                let secret_key = EcdsaSecretKey::from_bytes(private_key_bytes)
                     .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+                let public_key = secret_key.public_key();
 
-                Ok(ripemd160_sha256(public_key.serialize().as_slice()).to_vec())
+                Ok(ripemd160_sha256(public_key.to_compressed().as_slice()).to_vec())
             }
             KeyType::EDDSA_25519_HASH160 => {
                 #[cfg(feature = "ed25519-dalek")]
@@ -264,12 +276,9 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = secp256k1::SecretKey::new(&mut rng);
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
-                (
-                    public_key.serialize().to_vec(),
-                    secret_key.to_secret_bytes(),
-                )
+                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let public_key = secret_key.public_key();
+                (public_key.to_compressed().to_vec(), *secret_key.to_bytes())
             }
             KeyType::BLS12_381 => {
                 let private_key = crate::bls::SecretKey::random(rng);
@@ -280,11 +289,11 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = secp256k1::SecretKey::new(&mut rng);
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let public_key = secret_key.public_key();
                 (
-                    ripemd160_sha256(public_key.serialize().as_slice()).to_vec(),
-                    secret_key.to_secret_bytes(),
+                    ripemd160_sha256(public_key.to_compressed().as_slice()).to_vec(),
+                    *secret_key.to_bytes(),
                 )
             }
             KeyType::EDDSA_25519_HASH160 => {
@@ -299,11 +308,11 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = secp256k1::SecretKey::new(&mut rng);
-                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+                let secret_key = random_ecdsa_secret_key(&mut rng);
+                let public_key = secret_key.public_key();
                 (
-                    ripemd160_sha256(public_key.serialize().as_slice()).to_vec(),
-                    secret_key.to_secret_bytes(),
+                    ripemd160_sha256(public_key.to_compressed().as_slice()).to_vec(),
+                    *secret_key.to_bytes(),
                 )
             }
         }

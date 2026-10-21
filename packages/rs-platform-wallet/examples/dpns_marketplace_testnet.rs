@@ -115,10 +115,10 @@ fn dapi_addresses() -> AddressList {
 /// Whether `sk_bytes` is the private key for `key` (33-byte pubkey for
 /// ECDSA_SECP256K1, hash160 for ECDSA_HASH160).
 fn private_key_matches(key: &dpp::identity::IdentityPublicKey, sk_bytes: &[u8; 32]) -> bool {
-    let Ok(sk) = dpp::secp256k1::SecretKey::from_secret_bytes(*sk_bytes) else {
+    let Ok(sk) = dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(sk_bytes) else {
         return false;
     };
-    let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&sk).serialize();
+    let pubkey = sk.public_key().to_compressed();
     match key.key_type() {
         KeyType::ECDSA_SECP256K1 => key.data().as_slice() == pubkey.as_slice(),
         KeyType::ECDSA_HASH160 => {

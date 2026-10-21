@@ -5,14 +5,14 @@ use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
 
 use dpp::bls;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
+use dpp::dashcore::key::rand::{RngCore as EcdsaRngCore, SeedableRng};
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
-use dpp::secp256k1::rand::SeedableRng;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::{ed25519_dalek, ProtocolError};
@@ -100,19 +100,25 @@ impl SimpleSigner {
         // Generate a valid secp256k1 secret key from random bytes
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
-        let mut ecdsa_rng = dpp::secp256k1::rand::rngs::StdRng::from_seed(seed);
-        let secret_key = SecretKey::new(&mut ecdsa_rng);
+        let mut ecdsa_rng = dpp::dashcore::key::rand::rngs::StdRng::from_seed(seed);
+        let secret_key = loop {
+            let mut bytes = [0; 32];
+            EcdsaRngCore::fill_bytes(&mut ecdsa_rng, &mut bytes);
+            if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
+                break key;
+            }
+        };
 
         // Derive compressed public key
-        let public_key = PublicKey::from_secret_key(&secret_key);
-        let pubkey_ser = public_key.serialize(); // 33-byte compressed
+        let public_key = secret_key.public_key();
+        let pubkey_ser = public_key.to_compressed(); // 33-byte compressed
 
         let address_hash = ripemd160_sha256(&pubkey_ser);
 
         // Store private key so this signer can later sign for this address
         // (use *_in_creation to mirror your identity key behavior)
         self.address_private_keys_in_creation
-            .insert(address_hash, secret_key.to_secret_bytes());
+            .insert(address_hash, *secret_key.to_bytes());
 
         PlatformAddress::P2pkh(address_hash)
     }
@@ -257,6 +263,36 @@ impl Signer<PlatformAddress> for SimpleSigner {
                 .or_else(|| self.address_private_keys_in_creation.get(hash))
                 .is_some(),
             PlatformAddress::P2sh(_) => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
+    use secp256k1::rand::{rngs::StdRng as LegacyRng, SeedableRng as _};
+
+    #[test]
+    fn should_preserve_seeded_address_key_generation() {
+        for seed in 0..64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut expected_rng = rng.clone();
+            let mut seed = [0; 32];
+            expected_rng.fill_bytes(&mut seed);
+            let expected_key = secp256k1::SecretKey::new(&mut LegacyRng::from_seed(seed));
+            let expected_public = secp256k1::PublicKey::from_secret_key(&expected_key).serialize();
+            let expected_hash = ripemd160_sha256(&expected_public);
+            let mut signer = SimpleSigner::default();
+            assert_eq!(
+                signer.add_random_address_key(&mut rng),
+                PlatformAddress::P2pkh(expected_hash)
+            );
+            assert_eq!(
+                signer.address_private_keys_in_creation[&expected_hash],
+                expected_key.to_secret_bytes()
+            );
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
         }
     }
 }
