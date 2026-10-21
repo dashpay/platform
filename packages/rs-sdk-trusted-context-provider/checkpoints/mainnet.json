@@ -1,0 +1,7 @@
+{
+  "network": 0,
+  "height": 2550000,
+  "block_hash": "000000000000000759db5eed70bf470171e7738b85765b395c1a75029c9683ce",
+  "masternode_root": "1d9ee9f97d3c393c1825c58cec162ffd66efe6a25f24bc4142f68c05b1df1750",
+  "quorum_root": "1b790dc5600ccfe0f8167412e6b751de8cbac34bcab37ed5feebbb56c117b540"
+}
