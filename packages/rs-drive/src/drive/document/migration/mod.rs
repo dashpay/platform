@@ -6,6 +6,7 @@
 //! and contract-update validation preserve the storage invariants checked here.
 
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::query::QueryResultType;
@@ -103,14 +104,7 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHistoryMigrationStats, Error> {
-        if platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            != 1
-        {
+        if !uses_current_document_history_layout(platform_version)? {
             return Err(corrupt(
                 "document history migration requires the composite-key layout",
             ));

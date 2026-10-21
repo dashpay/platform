@@ -8,6 +8,7 @@ use super::{
 /// Protocol v15 document methods for per-type keep-history storage.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
+        document_history_storage_layout: 1,
         query: DriveDocumentQueryMethodVersions {
             fetch_document_history_query: 1,
             fetch_document_history: 1,

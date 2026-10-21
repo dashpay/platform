@@ -4308,8 +4308,7 @@ mod tests {
             .drive
             .methods
             .document
-            .insert
-            .add_document_to_primary_storage = 2;
+            .document_history_storage_layout = 2;
 
         let error = query
             .construct_path_query(None, &platform_version)
@@ -4335,8 +4334,7 @@ mod tests {
             .drive
             .methods
             .document
-            .insert
-            .add_document_to_primary_storage = 2;
+            .document_history_storage_layout = 2;
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
         let error = query

@@ -6,6 +6,63 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Setters;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
+#[test]
+fn should_accept_history_migration_when_only_primary_writer_changes() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_to_primary_storage = 2;
+    let transaction = drive.grove.start_transaction();
+
+    let stats = drive
+        .migrate_document_history_storage(&transaction, &platform_version)
+        .expect("the current history layout remains supported");
+    assert_eq!(stats.migrated_documents, 0);
+}
+
+#[test]
+fn should_reject_history_migration_for_legacy_layout_with_current_writer() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout = 0;
+    let transaction = drive.grove.start_transaction();
+
+    assert!(matches!(
+        drive.migrate_document_history_storage(&transaction, &platform_version),
+        Err(Error::Drive(DriveError::CorruptedDriveState(message)))
+            if message == "document history migration requires the composite-key layout"
+    ));
+}
+
+#[test]
+fn should_reject_history_migration_for_unknown_layout() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout = 2;
+    let transaction = drive.grove.start_transaction();
+
+    assert!(matches!(
+        drive.migrate_document_history_storage(&transaction, &platform_version),
+        Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method,
+            known_versions,
+            received: 2,
+        })) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
+    ));
+}
+
 fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStats {
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;

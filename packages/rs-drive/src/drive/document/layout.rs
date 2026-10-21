@@ -1520,7 +1520,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_an_unknown_primary_writer_instead_of_describing_legacy_history() {
+    fn should_reject_an_unknown_history_layout_instead_of_describing_legacy_history() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, 0, CONTRACTS[3], platform_version);
@@ -1530,8 +1530,7 @@ mod tests {
             .drive
             .methods
             .document
-            .insert
-            .add_document_to_primary_storage = 2;
+            .document_history_storage_layout = 2;
         assert!(matches!(
             document_type_layout(person, &unknown),
             Err(Error::Drive(DriveError::UnknownVersionMismatch {

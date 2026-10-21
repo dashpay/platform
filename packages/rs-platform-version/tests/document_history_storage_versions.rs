@@ -1,4 +1,41 @@
-use platform_version::version::PlatformVersion;
+#[cfg(feature = "mock-versions")]
+use platform_version::version::mocks::{v2_test::TEST_PLATFORM_V2, v3_test::TEST_PLATFORM_V3};
+use platform_version::version::{PlatformVersion, ALL_VERSIONS};
+
+#[test]
+fn should_keep_writer_and_history_layout_versions_consistent_for_replay() {
+    for protocol in ALL_VERSIONS {
+        let version = PlatformVersion::get(protocol).expect("supported protocol version");
+        let document = &version.drive.methods.document;
+        let expected = u16::from(protocol >= 15);
+
+        assert_eq!(
+            (
+                document.insert.add_document_to_primary_storage,
+                document.document_history_storage_layout,
+            ),
+            (expected, expected),
+            "protocol {protocol} must select matching writer and history layout generations"
+        );
+    }
+}
+
+#[cfg(feature = "mock-versions")]
+#[test]
+fn should_keep_mock_writer_and_history_layout_on_legacy_storage() {
+    for version in [TEST_PLATFORM_V2, TEST_PLATFORM_V3] {
+        let document = &version.drive.methods.document;
+        assert_eq!(
+            (
+                document.insert.add_document_to_primary_storage,
+                document.document_history_storage_layout,
+            ),
+            (0, 0),
+            "mock protocol {} must retain legacy storage",
+            version.protocol_version
+        );
+    }
+}
 
 #[test]
 fn should_keep_released_document_history_storage_and_proofs_unchanged() {

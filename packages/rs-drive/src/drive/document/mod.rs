@@ -58,8 +58,7 @@ pub(crate) fn uses_current_document_history_layout(
         .drive
         .methods
         .document
-        .insert
-        .add_document_to_primary_storage
+        .document_history_storage_layout
     {
         0 => Ok(false),
         1 => Ok(true),
@@ -698,9 +697,11 @@ pub(crate) mod tests {
 
     use super::{
         document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
-        document_reference_size_v1,
+        document_reference_size_v1, uses_current_document_history_layout,
     };
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
@@ -709,6 +710,62 @@ pub(crate) mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
     use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem};
+
+    #[test]
+    fn should_keep_legacy_history_layout_when_primary_writer_changes() {
+        let mut platform_version = PlatformVersion::get(14).expect("protocol 14").clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage = 1;
+
+        assert!(!uses_current_document_history_layout(&platform_version)
+            .expect("legacy history layout remains supported"));
+    }
+
+    #[test]
+    fn should_keep_current_history_layout_when_primary_writer_changes() {
+        for writer_version in [0, 2] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage = writer_version;
+
+            assert!(
+                uses_current_document_history_layout(&platform_version)
+                    .expect("current history layout remains supported"),
+                "writer version {writer_version} must not change the history layout"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_unknown_document_history_storage_layout_versions() {
+        for received in [2, u16::MAX] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = received;
+
+            assert!(matches!(
+                uses_current_document_history_layout(&platform_version),
+                Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                    method,
+                    known_versions,
+                    received: actual,
+                })) if method == "document_history_storage_layout"
+                    && known_versions == vec![0, 1]
+                    && actual == received
+            ));
+        }
+    }
 
     #[test]
     fn summable_document_reference_estimates_include_the_sum_item() {

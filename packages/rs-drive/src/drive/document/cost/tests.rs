@@ -5,7 +5,7 @@ use crate::drive::document::fixture_contracts::{
     leave_out_optional_indexed_values, leave_out_optional_unique_values, leave_out_skip_properties,
     small_sums, CONTRACTS,
 };
-use crate::drive::document::make_document_reference;
+use crate::drive::document::{make_document_reference, uses_current_document_history_layout};
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -363,13 +363,8 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
             let type_entries = u64::from(!document_type.index_only())
                 + u64::from(
                     document_type.documents_keep_history()
-                        && platform_version
-                            .drive
-                            .methods
-                            .document
-                            .insert
-                            .add_document_to_primary_storage
-                            == 1,
+                        && uses_current_document_history_layout(platform_version)
+                            .expect("supported history layout"),
                 )
                 + document_type.index_structure().sub_levels().len() as u64;
             for seed in 0..=100u64 {

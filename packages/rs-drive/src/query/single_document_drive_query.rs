@@ -236,8 +236,7 @@ mod tests {
             .drive
             .methods
             .document
-            .insert
-            .add_document_to_primary_storage = 2;
+            .document_history_storage_layout = 2;
 
         let mut query = keep_history_query(None);
         query.document_type_keeps_history = false;
