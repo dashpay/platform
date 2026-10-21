@@ -1143,6 +1143,17 @@ mod tests {
         }
     }
 
+    fn attempt(quorum: QuorumId, id: u64, holding: Arc<AtomicBool>) -> Attempt {
+        Attempt {
+            quorum,
+            height: 150,
+            id,
+            failures: 0,
+            failed_at: None,
+            holding,
+        }
+    }
+
     #[test]
     fn should_evict_the_oldest_failure_when_the_slot_table_is_full() {
         let fetches = Arc::new(fetches());
@@ -1215,14 +1226,7 @@ mod tests {
             .join_or_start(6, [3; 32], 150)
             .expect("a place is free");
         // Back from the wait, the first must wait for a place again.
-        let attempt = Attempt {
-            quorum: (6, [1; 32]),
-            height: 150,
-            id: 1,
-            failures: 0,
-            failed_at: None,
-            holding: first,
-        };
+        let attempt = attempt((6, [1; 32]), 1, first);
         assert!(!fetches.take_place(&attempt));
         holding((6, [2; 32]))
             .expect("running")
@@ -1238,14 +1242,9 @@ mod tests {
         let _second = fetches.join_or_start(6, [2; 32], 150).expect("second");
         drop(first);
         let second = match fetches.lock().fetches.get(&(6, [2; 32])) {
-            Some(Slot::Running { holding, id, .. }) => Attempt {
-                quorum: (6, [2; 32]),
-                height: 150,
-                id: *id,
-                failures: 0,
-                failed_at: None,
-                holding: Arc::clone(holding),
-            },
+            Some(Slot::Running { holding, id, .. }) => {
+                attempt((6, [2; 32]), *id, Arc::clone(holding))
+            }
             _ => panic!("the second fetch is running"),
         };
         // The second waited out a backoff and wants to send again.
@@ -1261,12 +1260,9 @@ mod tests {
         let _fetch = fetches.join_or_start(6, [1; 32], 150).expect("starts");
         let id = running_id(&fetches, quorum).expect("running");
         let attempt = Attempt {
-            quorum,
-            height: 150,
-            id,
             failures: 3,
             failed_at: Some(at),
-            holding: Arc::new(AtomicBool::new(true)),
+            ..attempt(quorum, id, Arc::new(AtomicBool::new(true)))
         };
         fetches.finish(&attempt, &Err("nothing sent".to_string()), false);
         match fetches.lock().fetches.get(&quorum) {
