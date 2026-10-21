@@ -13,11 +13,11 @@ use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType};
 use dash_sdk::dpp::platform_value::Value;
-use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::platform::encrypted_for::{
     decrypt_property, encrypt_property, EncryptedPropertyEnvelope, EncryptionKeys,
 };
 use dash_sdk::platform::{Document, Identifier};
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;

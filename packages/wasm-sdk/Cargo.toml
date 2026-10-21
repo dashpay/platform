@@ -60,6 +60,8 @@ moderation-charters-contract = [
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
+# Core does not expose the ECDH primitives used at this binding boundary.
+secp256k1 = { workspace = true }
 dash-sdk = { path = "../rs-sdk", features = [
   "serde",
   "core_key_wallet",

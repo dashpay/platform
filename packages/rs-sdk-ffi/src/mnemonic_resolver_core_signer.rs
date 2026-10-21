@@ -60,7 +60,6 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use async_trait::async_trait;
-use dash_sdk::dpp::secp256k1;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSecretKey, EcdsaSignature};
 use key_wallet::dip9::{

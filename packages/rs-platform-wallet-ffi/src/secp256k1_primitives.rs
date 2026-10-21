@@ -2,8 +2,9 @@
 
 use std::slice;
 
-use dpp::secp256k1::ecdh::shared_secret_point;
-use dpp::secp256k1::{PublicKey, SecretKey};
+use dashcore::ecdsa::{EcdsaPublicKey, EcdsaSecretKey};
+use secp256k1::ecdh::shared_secret_point;
+use secp256k1::SecretKey;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -27,29 +28,25 @@ fn invalid_parameter(message: impl Into<String>) -> PlatformWalletFFIResult {
 fn parse_secret_key(
     private_key: *const u8,
     private_key_len: usize,
-) -> Result<WipingSecretKey, PlatformWalletFFIResult> {
+) -> Result<EcdsaSecretKey, PlatformWalletFFIResult> {
     if private_key_len != 32 {
         return Err(invalid_parameter(format!(
             "secp256k1 private keys must be exactly 32 bytes, got {private_key_len}"
         )));
     }
 
-    // Converting the caller's slice straight into the `[u8; 32]`
-    // `SecretKey::from_secret_bytes` takes would leave an unguarded copy of
-    // the scalar on the stack. Staging it here keeps every copy this side
-    // owns wiped.
+    // Keep the borrowed input's temporary scalar copy zeroized.
     let mut staged = Zeroizing::new([0u8; 32]);
     staged.copy_from_slice(unsafe { slice::from_raw_parts(private_key, private_key_len) });
 
-    SecretKey::from_secret_bytes(*staged)
-        .map(WipingSecretKey)
+    EcdsaSecretKey::from_bytes(&staged)
         .map_err(|error| invalid_parameter(format!("Invalid secp256k1 private key: {error}")))
 }
 
 fn parse_compressed_public_key(
     public_key: *const u8,
     public_key_len: usize,
-) -> Result<PublicKey, PlatformWalletFFIResult> {
+) -> Result<EcdsaPublicKey, PlatformWalletFFIResult> {
     if public_key_len != 33 {
         return Err(invalid_parameter(format!(
             "Compressed secp256k1 public keys must be exactly 33 bytes, got {public_key_len}"
@@ -63,7 +60,7 @@ fn parse_compressed_public_key(
         ));
     }
 
-    PublicKey::from_slice(bytes)
+    EcdsaPublicKey::from_bytes(bytes)
         .map_err(|error| invalid_parameter(format!("Invalid compressed secp256k1 point: {error}")))
 }
 
@@ -94,7 +91,7 @@ pub unsafe extern "C" fn platform_wallet_secp256k1_compressed_public_key(
     check_ptr!(out_pubkey);
 
     let secret_key = unwrap_result_or_return!(parse_secret_key(seckey, seckey_len));
-    let compressed = PublicKey::from_secret_key(&secret_key.0).serialize();
+    let compressed = secret_key.public_key().to_compressed();
     std::ptr::copy_nonoverlapping(compressed.as_ptr(), out_pubkey, compressed.len());
     PlatformWalletFFIResult::ok()
 }
@@ -119,7 +116,11 @@ pub unsafe extern "C" fn platform_wallet_secp256k1_ecdh_shared_x(
     // the scalar here is the wallet's private ephemeral key and the point
     // comes from the peer, so the multiplication must not branch on the
     // secret. Returns `x || y`; DashConnect wants the raw, unhashed X.
-    let shared_point = Zeroizing::new(shared_secret_point(&public_key, &secret_key.0));
+    let raw_secret = WipingSecretKey(unwrap_result_or_return!(SecretKey::from_secret_bytes(
+        *secret_key.to_bytes()
+    )
+    .map_err(|error| invalid_parameter(format!("Invalid secp256k1 private key: {error}")))));
+    let shared_point = Zeroizing::new(shared_secret_point(&public_key.into(), &raw_secret.0));
     std::ptr::copy_nonoverlapping(shared_point.as_ptr(), out_shared_x, 32);
     PlatformWalletFFIResult::ok()
 }

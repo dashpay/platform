@@ -60,10 +60,10 @@
 use crate::sdk::SDKWrapper;
 use crate::types::{FFINetwork, Network, SDKHandle};
 use crate::{DashSDKResult, FFIError};
+use dash_sdk::dpp::dashcore::ecdsa::EcdsaSecretKey;
 use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::platform_value::{Identifier, Value};
-use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
@@ -341,10 +341,10 @@ unsafe fn cast_vote_inner(
     // `masternode_voting_key.public_key_hash()` to derive the voter
     // identifier, and `SingleKeySigner::can_sign_with` recomputes the same
     // hash160 from the private key, so the two agree by construction.
-    let secret_key = SecretKey::from_secret_bytes(*key_array)
+    let secret_key = EcdsaSecretKey::from_bytes(&key_array)
         .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
-    let public_key = PublicKey::from_secret_key(&secret_key);
-    let voting_address = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
+    let public_key = secret_key.public_key();
+    let voting_address = hash160::Hash::hash(&public_key.to_compressed()).to_byte_array();
 
     // ---- Broadcast, then diagnose only on failure ---------------------------
     let wrapper = &*(sdk_handle as *const SDKWrapper);
