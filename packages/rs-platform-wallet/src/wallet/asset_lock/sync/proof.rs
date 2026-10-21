@@ -10,6 +10,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
+use super::super::tracked::AssetLockStatus;
 use super::locate::{chain_proof_height_from_lookup, HeaderLookup, Located};
 
 /// Least time between two mined-height lookups of the same transaction while a
@@ -455,6 +456,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         Ok(proof)
+    }
+
+    /// [`Self::upgrade_to_chain_lock_proof`], then the tracked row advanced to
+    /// `ChainLocked` with that proof attached and its change queued, all
+    /// before the caller submits the proof: the IS→CL fallback and the
+    /// IS-timeout fallback of every funding flow. If the submit then fails
+    /// (the CL-height retry budget runs out, a transport error), the row
+    /// carries the ChainLock proof rather than the InstantSend proof
+    /// Platform refused, so a resume does not rebuild and refuse the same
+    /// transition again. The change is queued like every other status
+    /// advance, not flushed.
+    pub(crate) async fn upgrade_to_persisted_chain_lock_proof(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
+        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, timeout).await?;
+        // The same advance the shielded and platform-address fallbacks made
+        // inline: a consumed row, an untracked one or a removed wallet is an
+        // error before the resubmit.
+        let cs = self
+            .advance_asset_lock_status(
+                out_point,
+                AssetLockStatus::ChainLocked,
+                Some(chain_proof.clone()),
+            )
+            .await?;
+        self.queue_asset_lock_changeset(cs);
+        Ok(chain_proof)
     }
 
     /// Upgrade an IS-lock proof to a ChainLock proof after a Platform
@@ -1752,13 +1782,11 @@ mod chain_lock_wait_tests {
 
     use crate::changeset::PlatformWalletPersistence;
     use crate::error::PlatformWalletError;
-    #[cfg(feature = "shielded")]
     use crate::test_support::AlwaysOkBroadcaster;
     use crate::test_support::{
         funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
-    #[cfg(feature = "shielded")]
     use crate::wallet::asset_lock::orchestration::{AssetLockFunding, FundingResolution};
     use crate::wallet::asset_lock::sync::locate::{HeaderLookup, Located, MinedHeightLocator};
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -1943,8 +1971,7 @@ mod chain_lock_wait_tests {
         wallet_id: WalletId,
         notify: Arc<Notify>,
         out_point: OutPoint,
-        // Read only by the shielded-gated revert tests.
-        #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+        // Read by the rejected-proof revert tests.
         instant_proof: AssetLockProof,
     }
 
@@ -2059,7 +2086,6 @@ mod chain_lock_wait_tests {
     /// The same fixture with a broadcaster that accepts, for the paths that
     /// re-broadcast before waiting. `Ctx` pins the rejecting broadcaster in its
     /// type, so the accepting one needs its own fixture rather than a flag.
-    #[cfg(feature = "shielded")]
     struct OkCtx {
         manager: Arc<AssetLockManager<AlwaysOkBroadcaster>>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -2070,7 +2096,6 @@ mod chain_lock_wait_tests {
 
     /// A funded testnet wallet with one tracked lock at `status` (carrying
     /// `proof`), whose funding record is in `context`.
-    #[cfg(feature = "shielded")]
     async fn ok_ctx(
         context: TransactionContext,
         status: AssetLockStatus,
@@ -2162,7 +2187,6 @@ mod chain_lock_wait_tests {
     }
 
     /// The tracked row of an [`OkCtx`].
-    #[cfg(feature = "shielded")]
     async fn ok_tracked_row(ctx: &OkCtx) -> TrackedAssetLock {
         ctx.wallet_manager
             .read()
@@ -2176,7 +2200,6 @@ mod chain_lock_wait_tests {
     }
 
     /// Set an [`OkCtx`] wallet's applied ChainLock to `height`.
-    #[cfg(feature = "shielded")]
     async fn set_ok_wallet_chain_lock(ctx: &OkCtx, height: u32) {
         let mut wm = ctx.wallet_manager.write().await;
         wm.get_wallet_info_mut(&ctx.wallet_id)
@@ -2234,6 +2257,34 @@ mod chain_lock_wait_tests {
             }) => core_chain_locked_height,
             other => panic!("expected a ChainLock proof, got {other:?}"),
         }
+    }
+
+    /// The IS→CL fallback of the funding flows: the upgraded proof is on the
+    /// tracked row, at `ChainLocked`, before the caller submits it.
+    #[tokio::test(start_paused = true)]
+    async fn should_attach_the_upgraded_chain_proof_to_the_row_before_it_is_submitted() {
+        let locator = ScriptedLocator::new(vec![mined(100)]);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let proof = tokio::time::timeout(
+            Duration::from_secs(1),
+            ctx.manager
+                .upgrade_to_persisted_chain_lock_proof(&ctx.out_point, None),
+        )
+        .await
+        .expect("resolves without waiting")
+        .expect("proof");
+
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::ChainLocked);
+        assert_eq!(row.proof, Some(proof.clone()));
+        assert_eq!(chain_proof_height(proof), 100);
     }
 
     /// The record shape a promotion wait can never satisfy: without a
@@ -2931,7 +2982,6 @@ mod chain_lock_wait_tests {
     }
 
     /// The tracked row as it stands.
-    #[cfg(feature = "shielded")]
     async fn tracked_row(ctx: &Ctx) -> TrackedAssetLock {
         ctx.wallet_manager
             .read()
@@ -2945,7 +2995,6 @@ mod chain_lock_wait_tests {
     }
 
     /// A ChainLock proof at `height` for the fixture's outpoint.
-    #[cfg(feature = "shielded")]
     fn chain_proof_at(ctx: &Ctx, height: u32) -> AssetLockProof {
         AssetLockProof::Chain(ChainAssetLockProof {
             core_chain_locked_height: height,
@@ -2954,7 +3003,6 @@ mod chain_lock_wait_tests {
     }
 
     /// Put the row on `proof` at `ChainLocked`, as a submit would have left it.
-    #[cfg(feature = "shielded")]
     async fn persist_chain_proof(ctx: &Ctx, proof: AssetLockProof) {
         ctx.manager
             .advance_asset_lock_status(&ctx.out_point, AssetLockStatus::ChainLocked, Some(proof))
@@ -2963,7 +3011,6 @@ mod chain_lock_wait_tests {
     }
 
     /// Platform's "the tx is not at that height" rejection.
-    #[cfg(feature = "shielded")]
     fn height_rejection() -> dash_sdk::Error {
         use dpp::consensus::basic::identity::InvalidAssetLockProofTransactionHeightError;
         use dpp::consensus::ConsensusError;
@@ -2974,7 +3021,6 @@ mod chain_lock_wait_tests {
     }
 
     /// A rejection that says nothing about the proof's height.
-    #[cfg(feature = "shielded")]
     fn unrelated_rejection() -> dash_sdk::Error {
         use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
         use dpp::consensus::ConsensusError;
@@ -2986,7 +3032,6 @@ mod chain_lock_wait_tests {
 
     /// A Chain proof rejected on the first submit — one loaded from the row,
     /// not built by this attempt — falls back to the record's InstantSend proof.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn persisted_chain_proof_rejected_on_first_submit_falls_back_to_the_record_instant_proof()
     {
@@ -3005,7 +3050,6 @@ mod chain_lock_wait_tests {
 
     /// With no local finality to fall back on, the row drops to `Broadcast`
     /// with no proof, which is the arm that rebuilds one.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn persisted_chain_proof_rejected_without_a_local_proof_reverts_to_broadcast() {
         let ctx = ctx(TransactionContext::Mempool, Network::Testnet, None).await;
@@ -3023,7 +3067,6 @@ mod chain_lock_wait_tests {
 
     /// When the record supports a different Chain proof, that one replaces the
     /// refused proof and the row stays `ChainLocked`.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn rejected_chain_proof_is_replaced_by_the_records_chain_proof() {
         let ctx = ctx(
@@ -3045,7 +3088,6 @@ mod chain_lock_wait_tests {
     }
 
     /// Only a Chain submission rejected for its height is invalidated.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn invalidation_ignores_instant_submissions_and_other_errors() {
         let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
@@ -3070,7 +3112,6 @@ mod chain_lock_wait_tests {
     }
 
     /// A row that has moved off `ChainLocked` is left alone.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn invalidation_leaves_a_row_that_moved_off_chain_locked() {
         let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
@@ -3086,7 +3127,6 @@ mod chain_lock_wait_tests {
     }
 
     /// The predicate: a Chain submission plus a height rejection, nothing else.
-    #[cfg(feature = "shielded")]
     #[test]
     fn rejected_chain_proof_needs_invalidation_only_for_a_chain_height_rejection() {
         type Manager = AssetLockManager<AlwaysRejectedBroadcaster>;
@@ -3127,7 +3167,6 @@ mod chain_lock_wait_tests {
     /// The IS-timeout fallback persists the proof it rebuilt before deriving
     /// the path, so the resume it runs takes the already-final arm instead of
     /// re-entering the proof wait that just timed out.
-    #[cfg(feature = "shielded")]
     #[tokio::test(start_paused = true)]
     async fn is_timeout_fallback_persists_the_rebuilt_chain_proof_before_deriving_the_path() {
         let locator = ScriptedLocator::new(vec![mined(140)]);
@@ -3159,7 +3198,6 @@ mod chain_lock_wait_tests {
     /// End to end: a row cleared by the invalidator resolves on the next
     /// resume through the lookup, and the rebuilt proof is persisted.
     #[tokio::test(start_paused = true)]
-    #[cfg(feature = "shielded")]
     async fn cleared_row_completes_the_next_resume_through_the_lookup() {
         let locator = ScriptedLocator::new(vec![mined(140)]);
         let rejected = AssetLockProof::Chain(ChainAssetLockProof {
@@ -3264,7 +3302,6 @@ mod chain_lock_wait_tests {
 
     /// The invalidator's zero-timeout probe goes through the same check, so a
     /// contradicted record cannot supply the replacement proof.
-    #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn invalidation_does_not_replace_a_rejected_proof_from_a_contradicted_record() {
         let locator = ScriptedLocator::new(vec![mined(140)]);

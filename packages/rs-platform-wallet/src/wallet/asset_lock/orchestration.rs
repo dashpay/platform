@@ -400,27 +400,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
     /// the proof this call already established.
     ///
-    /// Mirrors what the stale-IS-proof (10513) path does after its own
-    /// upgrade: advance the row to `ChainLocked` carrying the proof, queue the
-    /// changeset, then resume for the path.
+    /// The upgrade and the row update are the IS→CL fallback's own
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof));
+    /// this adds the resume that recovers the credit-output path.
     ///
-    /// Only the shielded fund path takes this fallback today, so it is
-    /// `shielded`-gated to avoid a dead-code warning without that feature.
-    #[cfg(feature = "shielded")]
+    /// Every funding flow's IS-timeout fallback goes through this.
     pub(crate) async fn resolve_chain_proof_after_is_timeout(
         &self,
         out_point: &OutPoint,
         cl_wait: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, cl_wait).await?;
-        let cs = self
-            .advance_asset_lock_status(
-                out_point,
-                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                Some(chain_proof.clone()),
-            )
+        let chain_proof = self
+            .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
             .await?;
-        self.queue_asset_lock_changeset(cs);
 
         // The row now carries the proof, so this resume takes the
         // already-final arm rather than waiting for one.

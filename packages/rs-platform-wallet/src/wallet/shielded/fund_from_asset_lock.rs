@@ -538,17 +538,8 @@ impl PlatformWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
+                    .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
                     .await?;
-                let cs = self
-                    .asset_locks
-                    .advance_asset_lock_status(
-                        &out_point,
-                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                        Some(chain_proof.clone()),
-                    )
-                    .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     build_and_broadcast_shielded(
                         sdk.clone(),

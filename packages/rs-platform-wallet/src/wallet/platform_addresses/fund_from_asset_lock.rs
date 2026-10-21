@@ -333,15 +333,10 @@ impl PlatformAddressWallet {
                      (tx {}), falling back to ChainLock proof",
                     out_point.txid
                 );
-                let chain_proof = self
+                let (chain_proof, path) = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .resolve_chain_proof_after_is_timeout(&out_point, None)
                     .await?;
-                // Re-derive the credit-output path. The lock is now
-                // CL-attached; `resume_asset_lock` short-circuits to
-                // the existing-proof branch and just hands the path
-                // back.
-                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -382,26 +377,8 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
                     .await?;
-                // Advance the tracked status from `InstantSendLocked`
-                // to `ChainLocked` with the upgraded proof attached
-                // BEFORE the second submit. If the next call fails
-                // (transport blip, fresh CL-height race that
-                // exhausts the retry budget), the row accurately
-                // reflects the lock's CL-attached state instead of
-                // the stale IS proof Platform just rejected. The
-                // catch-up scanner / Resume path then has a
-                // truthful status to work from.
-                let cs = self
-                    .asset_locks
-                    .advance_asset_lock_status(
-                        &out_point,
-                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                        Some(chain_proof.clone()),
-                    )
-                    .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     addresses.top_up_with_signers(
                         &self.sdk,
@@ -418,6 +395,13 @@ impl PlatformAddressWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
+        // A persisted ChainLock proof Platform places the transaction outside
+        // of must come off the row, or every later resume replays it.
+        if let Err(e) = &submit_result {
+            self.asset_locks
+                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
+                .await;
+        }
         let (address_infos, proof_height) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

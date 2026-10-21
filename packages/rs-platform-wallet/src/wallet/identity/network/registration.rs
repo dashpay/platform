@@ -35,8 +35,10 @@
 //!    (`StateTransitionMaxSizeExceededError`, refused by the SDK before
 //!    broadcast; dashwallet-ios#1042). Detected via
 //!    [`needs_chain_lock_proof`]. Upgrade IS→CL via
-//!    `upgrade_to_chain_lock_proof` and retry. The CL retry is itself
-//!    wrapped in the CL-height-too-low loop.
+//!    `upgrade_to_persisted_chain_lock_proof`, which attaches the proof to
+//!    the tracked row first, and retry. The CL retry is itself wrapped in
+//!    the CL-height-too-low loop, and a ChainLock proof Platform rejects
+//!    for its height comes off the row (`invalidate_rejected_chain_proof`).
 //!
 //! On the funding-build side, a third recovery handles the
 //! Core-side IS timeout:
@@ -44,9 +46,9 @@
 //! 3. **IS-lock build-time timeout** —
 //!    [`create_funded_asset_lock_proof`](crate::wallet::asset_lock::manager::AssetLockManager::create_funded_asset_lock_proof)
 //!    returns `PlatformWalletError::FinalityTimeout` because the
-//!    IS-lock didn't propagate within 300s. Resolved by re-entering
-//!    `resume_asset_lock` (which will fall through to the
-//!    `metadata.last_applied_chain_lock` fallback in `proof.rs`).
+//!    IS-lock didn't propagate within 300s. Resolved by
+//!    `resolve_chain_proof_after_is_timeout`: build the ChainLock proof,
+//!    attach it to the row, then resume for the credit-output path.
 //!
 //! All recovery paths share the same outpoint-keyed cleanup —
 //! [`consume_asset_lock`](crate::wallet::asset_lock::manager::AssetLockManager::consume_asset_lock)
@@ -119,9 +121,10 @@ impl IdentityWallet {
     ///
     /// # Idempotency note
     ///
-    /// The IS→CL retry is bounded (180s waiting for ChainLock). If the
-    /// CL retry itself fails, the asset-lock stays tracked (cleanup
-    /// only runs on Platform success) so subsequent registration
+    /// The IS→CL retry waits for the ChainLock without a bound (a
+    /// broadcast lock is pending, never failed). If the CL retry itself
+    /// fails, the asset-lock stays tracked (cleanup only runs on Platform
+    /// success), carrying the ChainLock proof, so subsequent registration
     /// attempts can resume via `FromExistingAssetLock`.
     pub async fn register_identity_with_funding<S, AS>(
         &self,
@@ -188,18 +191,10 @@ impl IdentityWallet {
                      (tx {}), falling back to ChainLock proof",
                     out_point.txid
                 );
-                let chain_proof = self
+                let (chain_proof, path) = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .resolve_chain_proof_after_is_timeout(&out_point, None)
                     .await?;
-                // Recover the credit-output derivation path. The
-                // asset lock is now CL-attached (status advanced by
-                // `upgrade_to_chain_lock_proof`'s caller path), so
-                // `resume_asset_lock` short-circuits to the existing-
-                // proof branch and just re-derives the path. This is
-                // cheap (no SPV wait) and avoids duplicating the
-                // path-derivation logic here.
-                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -253,7 +248,7 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
                     .await?;
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
@@ -270,6 +265,13 @@ impl IdentityWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
+        // A persisted ChainLock proof Platform places the transaction outside
+        // of must come off the row, or every later resume replays it.
+        if let Err(e) = &submit_result {
+            self.asset_locks
+                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
+                .await;
+        }
         let identity = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
@@ -454,11 +456,10 @@ impl IdentityWallet {
                      (tx {}), falling back to ChainLock proof",
                     out_point.txid
                 );
-                let chain_proof = self
+                let (chain_proof, path) = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .resolve_chain_proof_after_is_timeout(&out_point, None)
                     .await?;
-                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -495,7 +496,7 @@ impl IdentityWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .upgrade_to_persisted_chain_lock_proof(&out_point, None)
                     .await?;
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     identity.top_up_identity_with_signer_with_metadata(
@@ -511,6 +512,13 @@ impl IdentityWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
+        // A persisted ChainLock proof Platform places the transaction outside
+        // of must come off the row, or every later resume replays it.
+        if let Err(e) = &submit_result {
+            self.asset_locks
+                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
+                .await;
+        }
         let (mut new_balance, metadata) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

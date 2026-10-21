@@ -164,8 +164,12 @@ pub fn as_state_transition_max_size_exceeded(
 /// large for another reason (its own content) would still be too large
 /// with a ChainLock proof, so it is not retried: the retry waits for a
 /// ChainLock first, which would only delay the same error.
+///
+/// Only an InstantSend `proof` qualifies: a ChainLock proof has no smaller
+/// proof to give way to, whatever the error says.
 pub fn needs_chain_lock_proof(error: &Error, proof: &AssetLockProof) -> bool {
-    is_instant_lock_proof_invalid(error) || chain_lock_proof_fits(error, proof)
+    matches!(proof, AssetLockProof::Instant(_))
+        && (is_instant_lock_proof_invalid(error) || chain_lock_proof_fits(error, proof))
 }
 
 /// Bytes a transition sheds when it carries a ChainLock proof for the same
@@ -705,6 +709,21 @@ mod chain_lock_fallback_tests {
             &oversized_error(20_481),
             &chain_proof()
         ));
+    }
+
+    /// A stale-islock rejection reported for a ChainLock proof has nothing
+    /// smaller to fall back to.
+    #[test]
+    fn should_not_retry_a_chain_proof_on_a_stale_islock_error() {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+
+        let stale_islock: Error = dpp::ProtocolError::ConsensusError(Box::new(
+            InvalidInstantAssetLockProofSignatureError::new().into(),
+        ))
+        .into();
+
+        assert!(needs_chain_lock_proof(&stale_islock, &instant_proof(1)));
+        assert!(!needs_chain_lock_proof(&stale_islock, &chain_proof()));
     }
 
     #[test]

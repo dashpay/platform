@@ -508,7 +508,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// caller wants. Dropping a proof is its own intent — a row whose proof
     /// Platform refused must not keep it, or the next resume replays it — so it
     /// gets its own entry point rather than a flag on that one.
-    #[cfg(feature = "shielded")]
     pub(crate) async fn advance_asset_lock_status_clearing_proof_if(
         &self,
         out_point: &OutPoint,
@@ -554,7 +553,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// An InstantSend submission is not this shape, and any other rejection
     /// says nothing about the proof's height.
-    #[cfg(feature = "shielded")]
     pub(crate) fn rejected_chain_proof_needs_invalidation(
         submitted: &dpp::prelude::AssetLockProof,
         error: &dash_sdk::Error,
@@ -588,9 +586,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// alone, and no failure here is propagated — the caller still returns
     /// Platform's rejection.
     ///
-    /// Only the shielded fund path submits a proof it upgraded itself, so this
-    /// is `shielded`-gated to avoid a dead-code warning without it.
-    #[cfg(feature = "shielded")]
+    /// Every funding flow that submits a ChainLock proof calls this on a
+    /// rejection: the proof may be one it upgraded and persisted itself
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof))
+    /// or one a resume loaded from the row.
     pub(crate) async fn invalidate_rejected_chain_proof(
         &self,
         out_point: &OutPoint,
@@ -656,10 +655,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 );
             }
             Err(e) => {
-                tracing::error!(
+                tracing::warn!(
                     outpoint = %out_point,
                     error = %e,
-                    "failed to take the row off the rejected ChainLock proof"
+                    "could not take the row off the rejected ChainLock proof"
                 );
             }
         }
