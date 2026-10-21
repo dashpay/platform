@@ -31,6 +31,9 @@ pub use document_history_contract;
 #[cfg(feature = "token-history")]
 pub use token_history_contract;
 
+#[cfg(feature = "token-market")]
+pub use token_market_contract;
+
 #[cfg(feature = "wallet-utils")]
 pub use wallet_utils_contract;
 
@@ -57,6 +60,10 @@ pub enum SystemDataContract {
     /// protocol version 14 on: registered at genesis by chains born at 14 and inserted by the
     /// upgrade to 14.
     ModerationCharters = 10,
+    /// The open listings and offers of the token marketplace (protocol version 15). Registered
+    /// from protocol version 15 on: registered at genesis by chains born at 15 and inserted by
+    /// the upgrade to 15.
+    TokenMarket = 11,
 }
 
 pub struct DataContractSource {
@@ -73,7 +80,7 @@ impl SystemDataContract {
     /// Deliberately kept beside the enum so that adding a variant and adding it here are the
     /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
     /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
-    pub const ALL: [SystemDataContract; 11] = [
+    pub const ALL: [SystemDataContract; 12] = [
         SystemDataContract::Withdrawals,
         SystemDataContract::MasternodeRewards,
         SystemDataContract::FeatureFlags,
@@ -85,6 +92,7 @@ impl SystemDataContract {
         SystemDataContract::DocumentHistory,
         SystemDataContract::AppConnect,
         SystemDataContract::ModerationCharters,
+        SystemDataContract::TokenMarket,
     ];
 
     /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
@@ -177,6 +185,13 @@ impl SystemDataContract {
             SystemDataContract::ModerationCharters => [
                 197, 6, 230, 72, 106, 198, 82, 129, 253, 135, 43, 86, 185, 182, 17, 112, 164, 127,
                 96, 5, 107, 185, 156, 46, 14, 10, 109, 237, 77, 228, 248, 129,
+            ],
+            #[cfg(feature = "token-market")]
+            SystemDataContract::TokenMarket => token_market_contract::ID_BYTES,
+            #[cfg(not(feature = "token-market"))]
+            SystemDataContract::TokenMarket => [
+                137, 20, 125, 33, 9, 113, 160, 140, 158, 199, 2, 183, 75, 230, 71, 38, 213, 195,
+                65, 13, 129, 32, 10, 91, 226, 116, 230, 164, 77, 101, 0, 147,
             ],
         };
         Identifier::new(bytes)
@@ -313,6 +328,16 @@ impl SystemDataContract {
             SystemDataContract::ModerationCharters => {
                 Err(Error::ContractNotIncluded("moderation-charters"))
             }
+            #[cfg(feature = "token-market")]
+            SystemDataContract::TokenMarket => Ok(DataContractSource {
+                id_bytes: token_market_contract::ID_BYTES,
+                owner_id_bytes: token_market_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.token_market as u32,
+                definitions: token_market_contract::load_definitions(platform_version)?,
+                document_schemas: token_market_contract::load_documents_schemas(platform_version)?,
+            }),
+            #[cfg(not(feature = "token-market"))]
+            SystemDataContract::TokenMarket => Err(Error::ContractNotIncluded("token-market")),
         }
     }
 }
@@ -364,6 +389,9 @@ mod tests {
                 }
                 SystemDataContract::ModerationCharters => {
                     published("EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88")
+                }
+                SystemDataContract::TokenMarket => {
+                    published("AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e")
                 }
             };
 

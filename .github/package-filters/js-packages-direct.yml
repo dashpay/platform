@@ -16,6 +16,9 @@
 '@dashevo/moderation-charters-contract':
   - packages/moderation-charters-contract/**
 
+'@dashevo/token-market-contract':
+  - packages/token-market-contract/**
+
 '@dashevo/dashpay-contract':
   - packages/dashpay-contract/**
 

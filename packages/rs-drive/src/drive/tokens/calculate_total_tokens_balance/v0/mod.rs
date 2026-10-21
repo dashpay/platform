@@ -44,6 +44,7 @@ impl Drive {
             total_identity_token_balances,
             // Token shielded pools do not exist before protocol version 14.
             total_token_shielded_pool_balances: 0,
+            total_token_order_escrow_balances: 0,
         })
     }
 }

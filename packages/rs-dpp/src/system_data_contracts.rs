@@ -79,6 +79,15 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            // Every integer of an order is a signed 8-byte value: the `depth` index of each
+            // order type sums one of them, which a summed property must be, and a partial fill
+            // rewrites `remaining` (and a bid's `escrow`) without changing the stored size of
+            // the order.
+            SystemDataContract::TokenMarket => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
         }
     }
 }
@@ -1376,6 +1385,76 @@ mod dpns_v3_tests {
                 .answering_index(&preorder)
                 .map(|index| index.name.as_str()),
             Some("nameHash")
+        );
+    }
+}
+
+#[cfg(all(test, feature = "token-market-contract", feature = "validation"))]
+mod token_market_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use crate::data_contract::document_type::DocumentPropertyType;
+    use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+
+    /// The order types are what the marketplace transitions rely on: only they create orders,
+    /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
+    /// delete them with their storage flags, every integer is a signed 8-byte value, and the
+    /// `depth` index sums what the order holds in escrow.
+    #[test]
+    fn should_load_the_order_types_the_marketplace_writes() {
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+                .expect("the token market contract loads with full validation");
+        assert_eq!(contract.id(), token_market_contract::ID);
+        assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
+        assert_eq!(contract.document_types().len(), 2);
+
+        for (name, summed) in [
+            (ask::NAME, ask::properties::REMAINING),
+            (bid::NAME, bid::properties::ESCROW),
+        ] {
+            let document_type = contract
+                .document_type_for_name(name)
+                .unwrap_or_else(|_| panic!("the {name} type"));
+            assert!(document_type.documents_mutable(), "{name} is mutable");
+            assert!(
+                document_type.documents_can_be_deleted(),
+                "{name} is deletable"
+            );
+            assert_eq!(
+                document_type.creation_restriction_mode(),
+                CreationRestrictionMode::NoCreationAllowed,
+                "only the marketplace transitions create {name} orders"
+            );
+            for property in document_type.properties().values() {
+                if matches!(
+                    property.property_type,
+                    DocumentPropertyType::U8
+                        | DocumentPropertyType::U16
+                        | DocumentPropertyType::U32
+                        | DocumentPropertyType::U64
+                        | DocumentPropertyType::I8
+                        | DocumentPropertyType::I16
+                        | DocumentPropertyType::I32
+                ) {
+                    panic!("{name} stores an integer narrower than i64 or unsigned");
+                }
+            }
+            let depth = document_type
+                .indexes()
+                .get(ask::indexes::DEPTH)
+                .unwrap_or_else(|| panic!("{name} has a depth index"));
+            assert_eq!(depth.summable.as_deref(), Some(summed));
+        }
+    }
+
+    #[test]
+    fn should_not_exist_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
         );
     }
 }

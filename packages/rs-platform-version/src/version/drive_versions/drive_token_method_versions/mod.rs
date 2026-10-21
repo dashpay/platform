@@ -2,6 +2,7 @@ use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenMethodVersions {
@@ -10,6 +11,23 @@ pub struct DriveTokenMethodVersions {
     pub update: DriveTokenUpdateMethodVersions,
     pub calculate_total_tokens_balance: FeatureVersion,
     pub distribution: DriveTokenDistributionMethodVersions,
+    /// The escrow of the token marketplace (protocol version 15): the tokens open listings hold
+    /// and the credits open offers hold.
+    pub order_escrow: DriveTokenOrderEscrowMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveTokenOrderEscrowMethodVersions {
+    pub add_tokens: FeatureVersion,
+    pub set_tokens: FeatureVersion,
+    pub remove_tokens: FeatureVersion,
+    pub fetch_tokens: FeatureVersion,
+    pub add_credits: FeatureVersion,
+    pub set_credits: FeatureVersion,
+    pub remove_credits: FeatureVersion,
+    pub fetch_credits: FeatureVersion,
+    pub estimated_costs_for_tokens: FeatureVersion,
+    pub estimated_costs_for_credits: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

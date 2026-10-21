@@ -28,6 +28,11 @@ moderation-charters-contract:
   - packages/moderation-charters-contract/schema/**
   - packages/moderation-charters-contract/Cargo.toml
 
+token-market-contract:
+  - packages/token-market-contract/src/**
+  - packages/token-market-contract/schema/**
+  - packages/token-market-contract/Cargo.toml
+
 dashpay-contract:
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**

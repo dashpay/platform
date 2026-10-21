@@ -53,6 +53,8 @@ impl Drive {
             total_tokens_in_platform,
             total_identity_token_balances,
             total_token_shielded_pool_balances,
+            // v1 predates the token order escrow (protocol version 15).
+            total_token_order_escrow_balances: 0,
         })
     }
 }

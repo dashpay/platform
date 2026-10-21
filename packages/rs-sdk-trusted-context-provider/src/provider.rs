@@ -24,6 +24,7 @@ use dpp::data_contract::TokenConfiguration;
     feature = "document-history-contract",
     feature = "app-connect-contract",
     feature = "moderation-charters-contract",
+    feature = "token-market-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -34,6 +35,8 @@ use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIA
     feature = "all-system-contracts"
 ))]
 use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
+#[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use futures::future::{BoxFuture, FutureExt};
@@ -1050,6 +1053,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "document-history-contract",
             feature = "app-connect-contract",
             feature = "moderation-charters-contract",
+            feature = "token-market-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -1190,6 +1194,24 @@ impl ContextProvider for TrustedHttpContextProvider {
                 .map_err(|e| {
                     ContextProviderError::Generic(format!(
                         "Failed to load ModerationCharters contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+            // Below protocol version 15 the token market contract is absent too.
+            if *id == SystemDataContract::TokenMarket.id()
+                && platform_version.protocol_version >= TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(
+                    SystemDataContract::TokenMarket,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load TokenMarket contract: {}",
                         e
                     ))
                 });
@@ -2515,6 +2537,34 @@ mod tests {
             .get_data_contract(&id, PlatformVersion::latest())
             .expect("the lookup must succeed at protocol version 14")
             .expect("the moderation charters contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
+    }
+
+    /// The token market system contract is served only from its activation version on.
+    #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_serve_token_market_only_from_protocol_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::TokenMarket.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
+            .expect("the lookup must succeed at protocol version 15")
+            .expect("the token market contract must be served at protocol version 15");
         assert_eq!(contract.id(), id);
     }
 
