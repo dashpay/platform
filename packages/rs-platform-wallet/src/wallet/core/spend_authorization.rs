@@ -226,11 +226,14 @@ mod tests {
     #[test]
     fn should_not_turn_an_unauthenticated_hash_flag_into_an_unsupported_error() {
         let (mut tx, prevout) = signed(false);
-        let mut bytes = tx.input[0].script_sig.as_bytes().to_vec();
-        let signature_len = usize::from(bytes[0]);
-        bytes[signature_len] = 0x82;
-        tx.input[0].script_sig = ScriptBuf::from_bytes(bytes);
-        assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(false));
+        let original = tx.input[0].script_sig.as_bytes().to_vec();
+        for mode in [0, 0x82, 0xff] {
+            let mut bytes = original.clone();
+            let signature_len = usize::from(bytes[0]);
+            bytes[signature_len] = mode;
+            tx.input[0].script_sig = ScriptBuf::from_bytes(bytes);
+            assert_eq!(verify_input_authorization(&tx, 0, &prevout), Ok(false));
+        }
     }
 
     #[test]
@@ -281,7 +284,7 @@ mod tests {
     fn should_preserve_unsupported_authorization_as_an_error() {
         let (mut tx, prevout) = signed(false);
         let key = EcdsaSecretKey::from_bytes(&[7; 32]).unwrap();
-        for mode in [2, 3, 0x81, 0x82, 0x83] {
+        for mode in [0, 2, 3, 4, 0x81, 0x82, 0x83, 0xff] {
             sign(
                 &mut tx,
                 &prevout,
