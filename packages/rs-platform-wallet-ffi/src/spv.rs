@@ -799,6 +799,65 @@ mod spv_start_registry_tests {
     /// reads the owner flag instead, so the start completes, the stop runs
     /// after it and the writer gets in.
     ///
+    /// The scenario runs in a child process (this test binary, re-invoked on
+    /// this test alone with [`REGISTRY_DEADLOCK_CHILD`] set): a regression
+    /// forms a real deadlock whose threads no timeout can unwind, and in the
+    /// test process they would hold the process-wide registry and wedge every
+    /// other registry-backed test. The parent bounds the child and kills it
+    /// instead.
+    #[test]
+    fn a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop() {
+        if std::env::var_os(REGISTRY_DEADLOCK_CHILD).is_some() {
+            registry_deadlock_scenario();
+            return;
+        }
+
+        let test_name = format!(
+            "{}::a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop",
+            module_path!()
+                .split_once("::")
+                .map(|(_, path)| path)
+                .expect("test module path below the crate root")
+        );
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args(["--exact", &test_name, "--nocapture"])
+            .env(REGISTRY_DEADLOCK_CHILD, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn the scenario child");
+
+        let deadline = std::time::Instant::now() + WAIT;
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("child status") {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let output = child.wait_with_output().expect("reap the scenario child");
+        let transcript = format!(
+            "--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        match status {
+            Some(status) => assert!(
+                status.success(),
+                "the scenario failed in the child process ({status})\n{transcript}"
+            ),
+            None => {
+                panic!("the scenario deadlocked: the child was killed after {WAIT:?}\n{transcript}")
+            }
+        }
+    }
+
+    /// Set in the child process that runs [`registry_deadlock_scenario`].
+    const REGISTRY_DEADLOCK_CHILD: &str = "PLATFORM_WALLET_FFI_REGISTRY_DEADLOCK_CHILD";
+
     /// Each contender is established explicitly before the owner check runs:
     /// the stop signals once it holds the registry's read guard (the lock
     /// pattern of `platform_wallet_manager_spv_stop`, which keeps that guard
@@ -807,8 +866,7 @@ mod spv_start_registry_tests {
     /// the check waits until a fresh `try_read` of the registry is refused
     /// while that known reader is still held — which, with a reader present,
     /// only a queued writer causes.
-    #[test]
-    fn a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop() {
+    fn registry_deadlock_scenario() {
         let storage = std::env::temp_dir().join(format!(
             "spv-start-registry-{}-{}",
             std::process::id(),
