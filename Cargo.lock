@@ -2415,7 +2415,6 @@ dependencies = [
  "nohash-hasher",
  "num_enum 0.7.6",
  "once_cell",
- "percent-encoding",
  "platform-serialization",
  "platform-serialization-derive",
  "platform-value",

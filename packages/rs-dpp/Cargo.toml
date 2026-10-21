@@ -67,7 +67,6 @@ serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "2.0.17" }
 url = { version = "2.5", optional = true }
-percent-encoding = { version = "2.3", optional = true }
 data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
@@ -222,8 +221,8 @@ json-schema-validation = [
   "dep:json-schema-compatibility-validator",
 ]
 # The typed validation schema of a document type, apart from the JSON Schema validator it
-# mirrors, whose URL and percent-encoding crates it shares
-validation-schema = ["platform-value-json", "dep:url", "dep:percent-encoding"]
+# mirrors, whose URL crate it shares to check the document schema's URIs
+validation-schema = ["platform-value-json", "dep:url"]
 json-object = ["platform-value", "platform-value-json"]
 platform-value = []
 identity-hashing = ["identity-serialization"]

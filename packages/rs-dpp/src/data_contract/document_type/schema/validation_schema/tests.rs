@@ -12,7 +12,6 @@ use platform_value::platform_value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 use strum::IntoEnumIterator;
 
 fn build(root: Value) -> ValidationSchema {
@@ -323,26 +322,20 @@ fn should_build_each_reference_once_when_references_cycle() {
 }
 
 #[test]
-fn should_resolve_escaped_and_percent_encoded_pointers() {
+fn should_resolve_escaped_pointers() {
     let schema = build(platform_value!({
         "type": "object",
         "properties": {
             "slash": containing_reference("#/$defs/a~1b"),
             "tilde": containing_reference("#/$defs/c~0d"),
-            "space": containing_reference("#/$defs/e%20f"),
         },
         "$defs": {
             "a/b": { "maxLength": 1 },
             "c~d": { "maxLength": 2 },
-            "e f": { "maxLength": 3 },
         },
     }));
 
-    for (reference, max_length) in [
-        ("#/$defs/a~1b", 1),
-        ("#/$defs/c~0d", 2),
-        ("#/$defs/e%20f", 3),
-    ] {
+    for (reference, max_length) in [("#/$defs/a~1b", 1), ("#/$defs/c~0d", 2)] {
         assert_eq!(
             schema
                 .references
@@ -352,51 +345,6 @@ fn should_resolve_escaped_and_percent_encoded_pointers() {
             "{reference}"
         );
     }
-}
-
-#[test]
-fn should_decode_the_whole_fragment_before_splitting_it() {
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "encodedSeparators": containing_reference("#/$defs/wrapper%2Fproperties%2Flabel"),
-            "encodedLeadingSlash": containing_reference("#%2F$defs%2Fwrapper"),
-            "lonePercent": containing_reference("#/$defs/100%"),
-        },
-        "$defs": {
-            "wrapper": {
-                "type": "object",
-                "properties": { "label": { "type": "string", "maxLength": 7 } },
-            },
-            "wrapper/properties/label": { "type": "string", "maxLength": 1 },
-            "100%": { "type": "string", "maxLength": 3 },
-        },
-    }));
-
-    // `%2F` separates segments once decoded: the label inside `wrapper`, not the
-    // definition whose name holds slashes.
-    assert_eq!(
-        schema
-            .references
-            .get("#/$defs/wrapper%2Fproperties%2Flabel")
-            .and_then(|node| string(node).max_length),
-        Some(7)
-    );
-    assert_eq!(
-        schema
-            .references
-            .get("#%2F$defs%2Fwrapper")
-            .map(|node| &node.types),
-        Some(&Some(JsonTypes::One(JsonType::Object)))
-    );
-    // A `%` not followed by two hex digits is kept as written.
-    assert_eq!(
-        schema
-            .references
-            .get("#/$defs/100%")
-            .and_then(|node| string(node).max_length),
-        Some(3)
-    );
 }
 
 #[test]
@@ -473,133 +421,6 @@ fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
 }
 
 #[test]
-fn should_resolve_a_reference_through_the_schema_an_id_names() {
-    // The validator looks a reference's URL up among the schemas an `$id` names before it
-    // follows the pointer, and so does the builder
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-            "users": containing_reference("#/$defs/label"),
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(1)
-    );
-
-    // A property's `$ref` is refused, since the parser follows the pointer instead
-    let message = refusal(platform_value!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert!(
-        message.contains("the document type parser resolves"),
-        "{message}"
-    );
-}
-
-#[test]
-fn should_resolve_a_location_independent_reference_through_the_schema_its_id_names() {
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": { "labels": containing_reference("#label") },
-        "$defs": { "label": { "$id": "#label", "type": "string", "maxLength": 1 } },
-    }));
-    assert_eq!(string(&schema.references["#label"]).max_length, Some(1));
-}
-
-/// What the test above rests on: the existing validator resolves `#label` through the
-/// schema whose `$id` it is.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_location_independent_reference() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "labels": {
-                "type": "array",
-                "maxItems": 4,
-                "items": { "type": "string", "maxLength": 16 },
-                "contains": { "$ref": "#label" },
-            },
-        },
-        "$defs": { "label": { "$id": "#label", "type": "string", "maxLength": 1 } },
-    });
-    let validator_accepts = |labels: serde_json::Value| {
-        existing_validator_accepts(&schema, &serde_json::json!({ "labels": labels }))
-    };
-    assert!(validator_accepts(serde_json::json!(["long", "a"])));
-    assert!(!validator_accepts(serde_json::json!(["long"])));
-}
-
-#[test]
-fn should_not_index_an_id_below_a_member_named_enum_or_const() {
-    // The validator's resolver skips every member named `enum` or `const`, a property so
-    // named included, so its `$id` names nothing and the reference follows its pointer
-    for name in ["enum", "const"] {
-        let schema = build(platform_value!({
-            "type": "object",
-            "properties": {
-                name: { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-                "users": containing_reference("#/$defs/label"),
-            },
-            "$defs": { "label": { "type": "string", "maxLength": 10 } },
-        }));
-        assert_eq!(
-            string(&schema.references["#/$defs/label"]).max_length,
-            Some(10),
-            "{name}"
-        );
-    }
-}
-
-/// What the test above rests on: the existing validator does not index an `$id` below a
-/// property named `enum` or `const`.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_an_id_below_a_member_named_enum_or_const() {
-    for name in ["enum", "const"] {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                name: { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-                "users": {
-                    "type": "array",
-                    "maxItems": 4,
-                    "items": { "type": "string", "maxLength": 16 },
-                    "contains": { "$ref": "#/$defs/label" },
-                },
-            },
-            "$defs": { "label": { "type": "string", "maxLength": 10 } },
-        });
-        let accepted =
-            existing_validator_accepts(&schema, &serde_json::json!({ "users": ["hello"] }));
-        assert!(
-            accepted,
-            "{name}: the definition's maxLength of 10 holds, not the unindexed one of 1"
-        );
-    }
-}
-
-#[test]
-fn should_build_a_schema_that_names_a_subschema_but_reaches_no_reference() {
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#named", "type": "string", "maxLength": 1 },
-            "choice": { "type": "string", "enum": [{ "$id": "#not-a-schema" }] },
-        },
-    }));
-    assert_eq!(string(property(&schema.root, "named")).max_length, Some(1));
-}
-
-#[test]
 fn should_build_a_schema_whose_only_ids_are_outside_its_nodes_and_not_fragments() {
     // As in a contract on testnet: a reference's `where` condition matches a document by
     // its `$id`, which is not a schema `$id`.
@@ -610,65 +431,6 @@ fn should_build_a_schema_whose_only_ids_are_outside_its_nodes_and_not_fragments(
         "$defs": { "id": { "type": "string", "maxLength": 3 } },
     }));
     assert_eq!(string(&schema.references["#/$defs/id"]).max_length, Some(3));
-}
-
-#[test]
-fn should_refuse_a_property_reference_a_fragment_id_anywhere_names() {
-    // The validator's resolver indexes an `$id` in any map, a document type keyword's too,
-    // so the reference reaches the `where` map, where the parser follows the pointer
-    let message = refusal(platform_value!({
-        "type": "object",
-        "ownerRefersTo": { "where": { "$id": "#/$defs/id" } },
-        "properties": { "repoId": { "$ref": "#/$defs/id", "position": 0 } },
-        "$defs": { "id": { "type": "string" } },
-    }));
-    assert!(
-        message.contains("the document type parser resolves"),
-        "{message}"
-    );
-}
-
-#[test]
-fn should_resolve_a_reference_through_the_schema_an_absolute_id_names() {
-    // An `examples` value is searched for identifiers too, and an absolute `$id` resolving to
-    // the reference's URL names the schema the reference reaches.
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "note": {
-                "type": "string",
-                "maxLength": 8,
-                "examples": [{ "$id": "json-schema:///#/$defs/label", "maxLength": 1 }],
-            },
-            "users": containing_reference("#/$defs/label"),
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(1)
-    );
-}
-
-#[test]
-fn should_build_a_reference_no_id_names_or_rescopes() {
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#named", "type": "string" },
-            // A fragment `$id` above a reference leaves the URL it resolves to unchanged.
-            "scoped": {
-                "$id": "#scoped",
-                "type": "object",
-                "properties": { "user": { "$ref": "#/$defs/label" } },
-            },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(10)
-    );
 }
 
 #[test]
@@ -690,241 +452,6 @@ fn should_build_a_reference_below_a_relative_id() {
         string(&schema.references["#/$defs/label"]).max_length,
         Some(1)
     );
-}
-
-#[test]
-fn should_refuse_a_reference_an_absolute_id_above_it_rescopes() {
-    let message = refusal(platform_value!({
-        "type": "object",
-        "properties": {
-            "scoped": {
-                "$id": "https://example.com/scoped",
-                "type": "object",
-                "properties": { "user": { "$ref": "#/$defs/label" } },
-            },
-        },
-        "$defs": { "label": { "type": "string" } },
-    }));
-    assert!(
-        message.contains("given another URL by an `$id`"),
-        "{message}"
-    );
-}
-
-/// What the two tests above rest on: the existing validator resolves a reference below a
-/// relative `$id` from the root, and one below an absolute `$id` within the schema that
-/// `$id` names.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_in_scoping_a_reference_below_an_id() {
-    let valid = |schema: &serde_json::Value, user: &str| {
-        existing_validator_accepts(schema, &serde_json::json!({ "scoped": { "user": user } }))
-    };
-
-    let relative = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "scoped": {
-                "$id": "elsewhere",
-                "type": "object",
-                "properties": { "user": { "$ref": "#/$defs/label" } },
-            },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 1 } },
-    });
-    assert!(valid(&relative, "a"));
-    assert!(
-        !valid(&relative, "ab"),
-        "the root's label holds `user` to a maxLength of 1"
-    );
-
-    let absolute = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "scoped": {
-                "$id": "https://example.com/scoped",
-                "type": "object",
-                "properties": { "user": { "$ref": "#/$defs/label" } },
-                "$defs": { "label": { "type": "string", "maxLength": 1 } },
-            },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    });
-    assert!(valid(&absolute, "a"));
-    assert!(
-        !valid(&absolute, "ab"),
-        "the scoped schema's label holds `user`, not the root's"
-    );
-}
-
-/// What the tests resolving a reference through the schema an `$id` names rest on: the
-/// existing validator checks a `$ref` against the subschema an `$id` names, not the one its
-/// pointer reaches.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_in_resolving_a_reference_through_an_id() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    });
-    let accepted = existing_validator_accepts(&schema, &serde_json::json!({ "user": "hello" }));
-    assert!(
-        !accepted,
-        "the existing validator holds `user` to the named schema's maxLength of 1"
-    );
-    assert!(existing_validator_accepts(
-        &schema,
-        &serde_json::json!({ "user": "a" })
-    ));
-
-    let absolute_alias = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "note": {
-                "type": "string",
-                "examples": [{ "$id": "json-schema:///#/$defs/label", "maxLength": 1 }],
-            },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    });
-    let accepted =
-        existing_validator_accepts(&absolute_alias, &serde_json::json!({ "user": "hello" }));
-    assert!(
-        !accepted,
-        "the existing validator holds `user` to the schema the absolute `$id` names"
-    );
-    assert!(existing_validator_accepts(
-        &absolute_alias,
-        &serde_json::json!({ "user": "a" })
-    ));
-
-    // Where no `$id` names the reference's URL or rescopes it, the existing validator
-    // follows the pointer, as the validation schema does.
-    let unredirected = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#named", "type": "string" },
-            "scoped": {
-                "$id": "#scoped",
-                "type": "object",
-                "properties": { "user": { "$ref": "#/$defs/label" } },
-            },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    });
-    for (user, valid) in [("hello", true), ("hello world", false)] {
-        let accepted = existing_validator_accepts(
-            &unredirected,
-            &serde_json::json!({ "scoped": { "user": user } }),
-        );
-        assert_eq!(accepted, valid, "{user}");
-    }
-}
-
-#[test]
-fn should_resolve_a_reference_from_the_url_the_validator_parses_it_into() {
-    // The URL parse drops a tab and trims a trailing space, so both references reach `label`,
-    // not the keys written as they are.
-    let helper = platform_value!({
-        "type": "integer",
-        "examples": [{
-            "label": { "maximum": 1 },
-            "la\tbel": { "maximum": 10 },
-            "label ": { "maximum": 20 },
-        }],
-    });
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "tab": containing_reference("#/$defs/helper/examples/0/la\tbel"),
-            "trailingSpace": containing_reference("#/$defs/helper/examples/0/label "),
-            "absolute": containing_reference("json-schema:///#/$defs/helper/examples/0/label"),
-        },
-        "$defs": { "helper": helper.clone() },
-    }));
-    for reference in [
-        "#/$defs/helper/examples/0/la\tbel",
-        "#/$defs/helper/examples/0/label ",
-        "json-schema:///#/$defs/helper/examples/0/label",
-    ] {
-        assert_eq!(
-            number(&schema.references[reference])
-                .maximum
-                .as_ref()
-                .and_then(|maximum| maximum.as_integer::<i64>()),
-            Some(1),
-            "{reference:?}"
-        );
-    }
-
-    // An index with a sign or a leading zero, and a URL naming another document, do not
-    // resolve.
-    for reference in [
-        "#/$defs/helper/examples/+0/label",
-        "#/$defs/helper/examples/00/label",
-        "other#/$defs/helper",
-    ] {
-        let message = refusal(platform_value!({
-            "type": "object",
-            "properties": { "value": containing_reference(reference) },
-            "$defs": { "helper": helper.clone() },
-        }));
-        assert!(
-            message.contains("does not resolve"),
-            "{reference:?}: {message}"
-        );
-    }
-}
-
-/// What the test above rests on: the existing validator resolves a reference from the URL
-/// it parses it into.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_in_resolving_a_reference_from_its_url() {
-    let valid = |reference: &str, bytes: serde_json::Value| {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "bytes": {
-                    "type": "array",
-                    "byteArray": true,
-                    "maxItems": 4,
-                    "contains": { "$ref": reference },
-                },
-            },
-            "$defs": {
-                "helper": {
-                    "type": "integer",
-                    "examples": [{
-                        "label": { "maximum": 1 },
-                        "la\tbel": { "maximum": 10 },
-                        "label ": { "maximum": 20 },
-                    }],
-                },
-            },
-        });
-        existing_validator_accepts(&schema, &serde_json::json!({ "bytes": bytes }))
-    };
-    for reference in [
-        "#/$defs/helper/examples/0/la\tbel",
-        "#/$defs/helper/examples/0/label ",
-    ] {
-        assert!(valid(reference, serde_json::json!([0])), "{reference:?}");
-        assert!(
-            !valid(reference, serde_json::json!([5])),
-            "{reference:?}: the existing validator holds an element to `label`'s maximum of 1"
-        );
-    }
-    // A reference that does not resolve matches no element.
-    assert!(!valid(
-        "#/$defs/helper/examples/00/label",
-        serde_json::json!([0])
-    ));
 }
 
 #[test]
@@ -1456,194 +983,6 @@ fn should_match_the_existing_validator_on_an_applicator_at_the_root() {
 }
 
 #[test]
-fn should_resolve_references_against_an_absolute_id_at_the_root() {
-    for id in ["https://example.com/item", "json-schema:///item"] {
-        let schema = build(platform_value!({
-            "$id": id,
-            "type": "object",
-            "properties": { "label": { "$ref": "#/$defs/label" } },
-            "$defs": { "label": { "type": "string", "maxLength": 1 } },
-        }));
-        assert_eq!(
-            string(&schema.references["#/$defs/label"]).max_length,
-            Some(1),
-            "{id}"
-        );
-    }
-
-    let message = refusal(platform_value!({
-        "$id": "item",
-        "type": "object",
-        "properties": { "label": { "$ref": "#/$defs/label" } },
-        "$defs": { "label": { "type": "string" } },
-    }));
-    assert!(message.contains("is not an absolute URL"), "{message}");
-}
-
-/// What the test above rests on: the existing validator resolves the references of a
-/// document schema with an absolute `$id` to that schema.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_in_resolving_against_an_id_at_the_root() {
-    let schema = serde_json::json!({
-        "$id": "https://example.com/item",
-        "type": "object",
-        "properties": { "label": { "$ref": "#/$defs/label" } },
-        "$defs": { "label": { "type": "string", "maxLength": 1 } },
-    });
-    let validator_accepts =
-        |label: &str| existing_validator_accepts(&schema, &serde_json::json!({ "label": label }));
-    assert!(validator_accepts("a"));
-    assert!(!validator_accepts("ab"));
-}
-
-/// A document schema with an absolute `$id` whose `contains` reaches `helper` through the
-/// default URL written out: the validator compiles `helper`, and the `$ref` in it, against
-/// that URL, so the `$ref` reaches the definition `label`, not the `examples` entry an `$id`
-/// names under the document schema's own URL.
-fn a_reference_compiled_against_another_url() -> Value {
-    platform_value!({
-        "$id": "https://example.com/root",
-        "type": "object",
-        "properties": {
-            "note": {
-                "type": "string",
-                "maxLength": 8,
-                "examples": [{
-                    "$id": "https://example.com/root#/$defs/label",
-                    "type": "string",
-                    "maxLength": 1,
-                }],
-            },
-            "names": containing_reference("json-schema:///#/$defs/helper"),
-        },
-        "$defs": {
-            "helper": { "type": "string", "$ref": "#/$defs/label" },
-            "label": { "type": "string", "maxLength": 10 },
-        },
-    })
-}
-
-#[test]
-fn should_refuse_a_reference_whose_target_compiles_its_references_against_another_url() {
-    let message = refusal(a_reference_compiled_against_another_url());
-    assert!(
-        message.contains("may compile against another URL"),
-        "{message}"
-    );
-}
-
-/// What the test above rests on: the existing validator holds `helper` to the definition's
-/// maxLength of 10.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_reference_compiled_against_another_url() {
-    let schema = validating_json(&a_reference_compiled_against_another_url());
-    assert!(existing_validator_accepts(
-        &schema,
-        &serde_json::json!({ "names": ["hello"] })
-    ));
-    assert!(!existing_validator_accepts(
-        &schema,
-        &serde_json::json!({ "names": ["hello world!"] })
-    ));
-}
-
-#[test]
-fn should_build_a_reference_whose_uncompiled_copy_sits_below_an_absolute_id() {
-    // The validator never compiles `examples`, so the copy there names a schema but is
-    // resolved by nothing
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "note": {
-                "type": "string",
-                "maxLength": 8,
-                "examples": [{ "$id": "https://example.com/copy", "$ref": "#/$defs/label" }],
-            },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(10)
-    );
-}
-
-#[test]
-fn should_build_a_reference_to_a_schema_whose_id_names_its_own_pointer() {
-    // The validator finds the schema by its `$id` before it follows the pointer, and both
-    // reach the same schema
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": { "user": { "$ref": "#/$defs/label" } },
-        "$defs": {
-            "label": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-        },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(1)
-    );
-}
-
-/// What the test above rests on: the existing validator holds the reference to the schema
-/// both its `$id` and its pointer reach.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_schema_whose_id_names_its_own_pointer() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": { "user": { "$ref": "#/$defs/label" } },
-        "$defs": {
-            "label": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-        },
-    });
-    let validator_accepts =
-        |user: &str| existing_validator_accepts(&schema, &serde_json::json!({ "user": user }));
-    assert!(validator_accepts("a"));
-    assert!(!validator_accepts("ab"));
-}
-
-#[test]
-fn should_read_no_identifiers_from_enum_and_const_values_but_from_properties_so_named() {
-    // `enum` and `const` values are data: the validator indexes no `$id` in them and
-    // compiles no `$ref`
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "choice": {
-                "type": "object",
-                "enum": [{ "$id": "https://example.com/member", "$ref": "#/$defs/label" }],
-                "const": { "$id": "#/$defs/label" },
-            },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(10)
-    );
-
-    // but a property named `enum` is a schema, whose reference the validator compiles: one
-    // the parser resolves elsewhere is refused there as anywhere
-    let message = refusal(platform_value!({
-        "type": "object",
-        "properties": {
-            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
-            "enum": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert!(
-        message.contains("the document type parser resolves"),
-        "{message}"
-    );
-}
-
-#[test]
 fn should_refuse_a_platform_keyword_of_the_root_when_contains_reaches_the_root() {
     // Matched against an element inside `contains`, the root's `maxBytes` bounds nothing
     let message = refusal(platform_value!({
@@ -1771,17 +1110,6 @@ fn should_refuse_a_repeated_property_carrying_parser_keywords() {
 }
 
 #[test]
-fn should_refuse_a_reference_whose_fragment_is_not_utf8_though_an_id_names_it() {
-    // The validator decodes the fragment before it looks the URL up among the named schemas
-    let message = refusal(platform_value!({
-        "type": "object",
-        "properties": { "values": containing_reference("#%FF") },
-        "$defs": { "t": { "$id": "#%FF", "type": "string", "maxLength": 5 } },
-    }));
-    assert!(message.contains("does not resolve"), "{message}");
-}
-
-#[test]
 fn should_refuse_a_byte_array_keyword_written_false() {
     let message = refusal(with_value(
         platform_value!({ "type": "array", "byteArray": false, "maxItems": 4 }),
@@ -1887,118 +1215,6 @@ fn should_refuse_a_dependent_required_list_naming_a_property_twice() {
 }
 
 #[test]
-fn should_build_a_schema_whose_enum_or_const_data_holds_an_id_that_is_not_a_url() {
-    // The validator never reads an `$id` in `enum` or `const` data
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "note": { "type": "string", "maxLength": 5, "const": { "$id": "http://" } },
-            "choice": { "type": "object", "enum": [{ "$id": "http://[::1" }] },
-            "user": { "$ref": "#/$defs/label" },
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    }));
-    assert_eq!(
-        string(&schema.references["#/$defs/label"]).max_length,
-        Some(10)
-    );
-
-    // but a `$ref` reaching a schema in that data that carries such an `$id`, or sits below
-    // one, is refused
-    for root in references_into_data_below_an_id_that_is_not_a_url() {
-        let message = refusal(root);
-        assert!(message.contains("may fail to enter"), "{message}");
-    }
-}
-
-/// Document schemas whose property `label` refers to a schema in `const` data that carries
-/// an `$id` that is not a URL reference, or that sits below one with another `$id` above
-/// it on the pointer path.
-fn references_into_data_below_an_id_that_is_not_a_url() -> [Value; 2] {
-    [
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "maxLength": 8,
-                    "const": { "$id": "http://[::1", "type": "string", "maxLength": 8 },
-                },
-                "label": { "$ref": "#/properties/kind/const" },
-            },
-        }),
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "maxLength": 8,
-                    "const": {
-                        "$id": "a",
-                        "x": {
-                            "$id": "http://[::1",
-                            "inner": { "type": "string", "maxLength": 8 },
-                        },
-                    },
-                },
-                "label": { "$ref": "#/properties/kind/const/x/inner" },
-            },
-        }),
-    ]
-}
-
-/// What the test above rests on: the existing validator compiles both schemas but refuses
-/// every document carrying `label`.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_reference_into_data_below_an_id_that_is_not_a_url() {
-    for root in references_into_data_below_an_id_that_is_not_a_url() {
-        let schema = validating_json(&root);
-        assert!(existing_validator_accepts(&schema, &serde_json::json!({})));
-        assert!(!existing_validator_accepts(
-            &schema,
-            &serde_json::json!({ "label": "abc" })
-        ));
-    }
-}
-
-#[test]
-fn should_refuse_an_id_that_is_not_a_url_without_any_reference() {
-    // The validator's resolver reads every `$id` outside `enum` and `const` data whenever it
-    // compiles the schema, and compiles nothing when one is not a URL reference
-    for root in ids_that_are_not_urls_without_any_reference() {
-        let message = refusal(root);
-        assert!(message.contains("is not a URL reference"), "{message}");
-    }
-}
-
-/// Document schemas holding no `$ref` and an `$id` that is not a URL reference, in an
-/// `examples` entry and in a system property's schema.
-fn ids_that_are_not_urls_without_any_reference() -> [Value; 2] {
-    [
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "n": { "type": "integer", "examples": [{ "$id": "http://[::1" }] },
-            },
-        }),
-        platform_value!({
-            "type": "object",
-            "properties": { "$createdAt": { "$id": "http://[::1", "type": "integer" } },
-        }),
-    ]
-}
-
-/// What the test above rests on: the existing validator compiles neither schema.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_an_id_that_is_not_a_url_without_any_reference() {
-    for root in ids_that_are_not_urls_without_any_reference() {
-        assert!(!existing_validator_compiles(&validating_json(&root)));
-    }
-}
-
-#[test]
 fn should_skip_keys_the_validator_ignores_in_any_reference_target() {
     let schema = build(platform_value!({
         "type": "object",
@@ -2006,13 +1222,6 @@ fn should_skip_keys_the_validator_ignores_in_any_reference_target() {
             // A system property's schema, reached by a property's `$ref`
             "$createdAt": { "type": "integer", "minimum": 0, "default": 0 },
             "copy": { "$ref": "#/properties/$createdAt" },
-            // An `examples` entry an `$id` names, reached from `contains`
-            "notes": {
-                "type": "string",
-                "maxLength": 8,
-                "examples": [{ "$id": "#/$defs/id", "status": "active" }],
-            },
-            "ids": containing_reference("#/$defs/id"),
             // A `contains` schema
             "tags": containing(platform_value!({ "type": "string", "title": "a tag" })),
         },
@@ -2025,7 +1234,6 @@ fn should_skip_keys_the_validator_ignores_in_any_reference_target() {
             .and_then(|minimum| minimum.as_integer::<i64>()),
         Some(0)
     );
-    assert!(schema.references.contains_key("#/$defs/id"));
 
     // and so does a definition, whose other keys the meta-schemas refuse at registration
     let schema = build(platform_value!({
@@ -2060,43 +1268,6 @@ fn should_refuse_a_protocol_version_before_14_and_accept_14() {
         .data_contract_owned()
         .document_type_validation_schema(&name, platform_version)
         .expect("expected protocol version 14 to be accepted");
-}
-
-#[test]
-fn should_resolve_references_against_a_root_id_joined_to_itself() {
-    // `http:foo` parses to `http://foo/` but, joined to itself as the validator enters the
-    // schema, to `http://foo/foo`, the URL the schema's references resolve against
-    let schema = build(platform_value!({
-        "$id": "http:foo",
-        "type": "object",
-        "properties": { "label": { "$ref": "#/$defs/l" } },
-        "$defs": { "l": { "type": "string", "maxLength": 1 } },
-    }));
-    assert_eq!(string(&schema.references["#/$defs/l"]).max_length, Some(1));
-
-    let message = refusal(platform_value!({
-        "$id": "http:foo",
-        "type": "object",
-        "properties": { "labels": containing_reference("http://foo/#/$defs/l") },
-        "$defs": { "l": { "type": "string", "maxLength": 1 } },
-    }));
-    assert!(message.contains("does not resolve"), "{message}");
-}
-
-#[test]
-fn should_share_one_node_among_the_spellings_of_a_reference() {
-    let schema = build(platform_value!({
-        "type": "object",
-        "properties": {
-            "a": containing_reference("#/$defs/label"),
-            "b": containing_reference("#/$defs/%6Cabel"),
-        },
-        "$defs": { "label": { "type": "string", "maxLength": 3 } },
-    }));
-    assert!(Arc::ptr_eq(
-        &schema.references["#/$defs/label"],
-        &schema.references["#/$defs/%6Cabel"]
-    ));
 }
 
 #[test]
@@ -2694,49 +1865,6 @@ fn should_build_the_validation_schema_of_a_contract_document_type() {
     }
 }
 
-/// A `$ref` into `const` data through an `$id` that resolves to a URL with no base, then a
-/// relative `$id`: the validator joins the second onto the first and fails.
-fn a_reference_into_data_below_an_opaque_id() -> Value {
-    platform_value!({
-        "type": "object",
-        "properties": {
-            "kind": {
-                "type": "object",
-                "const": {
-                    "$id": "a",
-                    "x": {
-                        "$id": "json-schema:opaque",
-                        "y": {
-                            "$id": "b",
-                            "inner": { "type": "string", "maxLength": 8 },
-                        },
-                    },
-                },
-            },
-            "label": { "$ref": "#/properties/kind/const/x/y/inner" },
-        },
-    })
-}
-
-#[test]
-fn should_refuse_a_reference_into_data_below_an_id_with_no_base() {
-    let message = refusal(a_reference_into_data_below_an_opaque_id());
-    assert!(message.contains("may fail to enter"), "{message}");
-}
-
-/// What the test above rests on: the existing validator refuses every document carrying
-/// `label`.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_reference_into_data_below_an_id_with_no_base() {
-    let schema = validating_json(&a_reference_into_data_below_an_opaque_id());
-    assert!(existing_validator_accepts(&schema, &serde_json::json!({})));
-    assert!(!existing_validator_accepts(
-        &schema,
-        &serde_json::json!({ "label": "a" })
-    ));
-}
-
 #[test]
 fn should_refuse_a_required_repeated_with_other_names() {
     let repeated = |first: Value, last: Value| {
@@ -2764,8 +1892,17 @@ fn should_refuse_a_required_repeated_with_other_names() {
         );
     }
 
+    // Lists naming the same properties are read alike, in any order
     let schema = build(repeated(platform_value!(["a"]), platform_value!(["a"])));
     assert_eq!(object(&schema.root).required, Some(vec!["a".to_string()]));
+    let schema = build(repeated(
+        platform_value!(["a", "b"]),
+        platform_value!(["b", "a"]),
+    ));
+    assert_eq!(
+        object(&schema.root).required,
+        Some(vec!["b".to_string(), "a".to_string()])
+    );
 }
 
 #[test]
@@ -2904,72 +2041,6 @@ fn should_match_the_existing_validator_on_a_root_holding_bytes() {
     for root in roots_holding_bytes() {
         assert!(existing_validator_compiles(&validating_json(&root)));
     }
-}
-
-#[test]
-fn should_refuse_a_reference_an_id_may_rescope_before_resolving_it() {
-    for root in [
-        // The validator resolves `b` through the `$id` above it, to `a`'s own `c`
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "a": {
-                    "$id": "https://example.com/a",
-                    "type": "object",
-                    "properties": {
-                        "b": { "$ref": "#/properties/c" },
-                        "c": { "type": "string" },
-                    },
-                },
-            },
-        }),
-        // Under an absolute document schema `$id`, a relative `$id` gives a new URL
-        platform_value!({
-            "$id": "https://example.com/root",
-            "type": "object",
-            "properties": {
-                "p": {
-                    "$id": "sub/",
-                    "type": "object",
-                    "properties": { "u": { "$ref": "#/$defs/l" } },
-                },
-            },
-            "$defs": { "l": { "type": "string" } },
-        }),
-    ] {
-        let message = refusal(root);
-        assert!(
-            message.contains("may be given another URL by an `$id` above it"),
-            "{message}"
-        );
-    }
-}
-
-/// A property named `const` carrying an `$id` that is not a URL reference: the validator,
-/// compiling the property with the document schema, fails to enter it.
-fn a_property_named_const_with_an_id_that_is_not_a_url() -> Value {
-    platform_value!({
-        "type": "object",
-        "properties": {
-            "const": { "$id": "http://[::1", "type": "string", "maxLength": 8 },
-        },
-    })
-}
-
-#[test]
-fn should_refuse_a_property_named_const_with_an_id_that_is_not_a_url() {
-    let message = refusal(a_property_named_const_with_an_id_that_is_not_a_url());
-    assert!(message.contains("may fail to enter"), "{message}");
-    assert!(!message.contains("`$ref`"), "{message}");
-}
-
-/// What the test above rests on: the existing validator compiles nothing for it.
-#[cfg(feature = "validation")]
-#[test]
-fn should_match_the_existing_validator_on_a_property_named_const_with_an_id_that_is_not_a_url() {
-    assert!(!existing_validator_compiles(&validating_json(
-        &a_property_named_const_with_an_id_that_is_not_a_url()
-    )));
 }
 
 #[test]
@@ -3127,4 +2198,548 @@ fn should_refuse_every_root_the_existing_validator_compiles_nothing_for() {
         }
     }
     assert!(uncompiled > 0);
+}
+
+#[test]
+fn should_refuse_a_reference_that_is_not_a_json_pointer() {
+    // The validator parses a reference into a URL, which drops tabs and newlines, trims
+    // trailing spaces and encodes others, and percent-decodes its fragment; and resolves one
+    // naming an anchor or a URL elsewhere through the `$id`s
+    for reference in [
+        "#label",
+        "json-schema:///#/$defs/label",
+        "other#/$defs/label",
+        "/$defs/label",
+        "",
+        "#/$defs/%6Cabel",
+        "#%FF",
+        "#/$defs/la\tbel",
+        "#/$defs/label ",
+    ] {
+        let message = refusal(platform_value!({
+            "type": "object",
+            "properties": { "value": containing_reference(reference) },
+            "$defs": { "label": { "type": "string", "maxLength": 1 } },
+        }));
+        assert!(
+            message.contains("is not a JSON pointer into the document schema"),
+            "{reference:?}: {message}"
+        );
+    }
+}
+
+/// A definition `helper` whose `examples` hold a schema the tests below reach by an index.
+fn indexed_helper() -> Value {
+    platform_value!({ "type": "integer", "examples": [{ "label": { "maximum": 1 } }] })
+}
+
+#[test]
+fn should_resolve_an_array_index_as_the_validator_does() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "value": containing_reference("#/$defs/helper/examples/0/label"),
+        },
+        "$defs": { "helper": indexed_helper() },
+    }));
+    assert_eq!(
+        number(&schema.references["#/$defs/helper/examples/0/label"])
+            .maximum
+            .as_ref()
+            .and_then(|maximum| maximum.as_integer::<i64>()),
+        Some(1)
+    );
+
+    // An index with a sign or a leading zero does not resolve
+    for reference in [
+        "#/$defs/helper/examples/+0/label",
+        "#/$defs/helper/examples/00/label",
+    ] {
+        let message = refusal(platform_value!({
+            "type": "object",
+            "properties": { "value": containing_reference(reference) },
+            "$defs": { "helper": indexed_helper() },
+        }));
+        assert!(
+            message.contains("does not resolve"),
+            "{reference}: {message}"
+        );
+    }
+}
+
+/// What the test above rests on: the existing validator reaches no schema through an
+/// index with a sign or a leading zero, so the reference matches no element.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_an_array_index() {
+    let valid = |reference: &str, bytes: serde_json::Value| {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "array",
+                    "byteArray": true,
+                    "maxItems": 4,
+                    "contains": { "$ref": reference },
+                },
+            },
+            "$defs": { "helper": validating_json(&indexed_helper()) },
+        });
+        existing_validator_accepts(&schema, &serde_json::json!({ "bytes": bytes }))
+    };
+    let reference = "#/$defs/helper/examples/0/label";
+    assert!(valid(reference, serde_json::json!([0])));
+    assert!(!valid(reference, serde_json::json!([5])));
+    for reference in [
+        "#/$defs/helper/examples/+0/label",
+        "#/$defs/helper/examples/00/label",
+    ] {
+        assert!(!valid(reference, serde_json::json!([0])), "{reference}");
+    }
+}
+
+#[test]
+fn should_refuse_an_id_that_may_move_a_reference() {
+    // The document schema's own `$id`, absolute or relative
+    for id in ["https://example.com/root", "item"] {
+        let message = refusal(platform_value!({
+            "$id": id,
+            "type": "object",
+            "properties": { "a": { "type": "string" } },
+        }));
+        assert!(
+            message.contains("the document schema carries `$id`"),
+            "{id}: {message}"
+        );
+    }
+
+    // and any other that is not a plain name, wherever it is written
+    for (case, value) in [
+        (
+            "an absolute URL",
+            platform_value!({ "$id": "https://example.com/a", "type": "string" }),
+        ),
+        (
+            "a fragment in `examples`",
+            platform_value!({ "type": "string", "examples": [{ "$id": "#/$defs/label" }] }),
+        ),
+        (
+            "an opaque URL in `const` data",
+            platform_value!({ "type": "object", "const": { "x": { "$id": "json-schema:opaque" } } }),
+        ),
+        (
+            "a path",
+            platform_value!({ "$id": "sub/", "type": "string" }),
+        ),
+        (
+            "one that is not a URL reference",
+            platform_value!({ "$id": "http://[::1", "type": "string" }),
+        ),
+        (
+            "an empty one",
+            platform_value!({ "$id": "", "type": "string" }),
+        ),
+    ] {
+        let message = refusal(with_value(value));
+        assert!(message.contains("is not a plain name"), "{case}: {message}");
+    }
+}
+
+/// A document schema whose plain-name `$id`s sit above a reference, on the pointer path to
+/// a target holding one, and in a Platform keyword's data, with definitions those `$id`s
+/// would reach were they read as scopes.
+fn plain_name_ids() -> Value {
+    platform_value!({
+        "type": "object",
+        "ownerRefersTo": { "where": { "$id": "targetId" } },
+        "properties": {
+            "scoped": {
+                "$id": "elsewhere",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+                "$defs": { "label": { "type": "string", "maxLength": 10 } },
+            },
+            "nested": { "$ref": "#/$defs/a/$defs/b/$defs/t" },
+        },
+        "$defs": {
+            "label": { "type": "string", "maxLength": 1 },
+            "a": {
+                "$id": "a",
+                "$defs": {
+                    "b": {
+                        "$id": "b",
+                        "$defs": {
+                            "t": {
+                                "$id": "t",
+                                "type": "object",
+                                "properties": { "x": { "$ref": "#/$defs/label" } },
+                                "$defs": { "label": { "type": "string", "maxLength": 10 } },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    })
+}
+
+#[test]
+fn should_build_references_below_plain_name_ids_from_the_document_schema() {
+    let schema = build(plain_name_ids());
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(1)
+    );
+    assert!(schema.references.contains_key("#/$defs/a/$defs/b/$defs/t"));
+}
+
+/// What the test above rests on: the existing validator resolves every reference of that
+/// schema from the document schema, to the root's `label`.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_references_below_plain_name_ids() {
+    let schema = validating_json(&plain_name_ids());
+    assert!(existing_validator_accepts(
+        &schema,
+        &serde_json::json!({ "scoped": { "user": "a" }, "nested": { "x": "a" } })
+    ));
+    assert!(
+        !existing_validator_accepts(&schema, &serde_json::json!({ "scoped": { "user": "ab" } })),
+        "the root's label holds `user`"
+    );
+    assert!(
+        !existing_validator_accepts(&schema, &serde_json::json!({ "nested": { "x": "ab" } })),
+        "the root's label holds `x`"
+    );
+}
+
+/// A small deterministic generator, so that the generated cases are the same on every run.
+#[cfg(feature = "validation")]
+struct Cases(u64);
+
+#[cfg(feature = "validation")]
+impl Cases {
+    /// xorshift64*.
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn below(&mut self, bound: usize) -> usize {
+        (self.next() % bound as u64) as usize
+    }
+
+    fn chance(&mut self, percent: u64) -> bool {
+        self.next() % 100 < percent
+    }
+
+    fn pick(&mut self, values: &[serde_json::Value]) -> serde_json::Value {
+        values[self.below(values.len())].clone()
+    }
+}
+
+/// The values the generated schemas compare with and the generated documents carry.
+#[cfg(feature = "validation")]
+fn generated_values() -> Vec<serde_json::Value> {
+    use serde_json::json;
+    vec![
+        json!(null),
+        json!(true),
+        json!(false),
+        json!(0),
+        json!(1),
+        json!(-1),
+        json!(2),
+        json!(1.5),
+        json!(2.0),
+        json!(10),
+        json!(255),
+        json!(256),
+        json!(-0.5),
+        json!(""),
+        json!("a"),
+        json!("abc"),
+        json!("b1"),
+        json!("2026-10-20"),
+        json!("a@b.co"),
+        json!("10.0.0.1"),
+        json!("http://x"),
+        json!([]),
+        json!([1]),
+        json!([1, 1]),
+        json!([1, 2, 3]),
+        json!(["a", "b"]),
+        json!([0, 255]),
+        json!([256]),
+        json!({}),
+        json!({ "a": 1 }),
+        json!({ "a": "x", "b": 2 }),
+        json!({ "b": true }),
+        json!({ "a": [1], "c": null }),
+    ]
+}
+
+/// A schema of keywords the validation schema holds, with keys the validator ignores among
+/// them, `depth` levels deep, whose `$ref`s reach the first `definitions` of the generated
+/// definitions.
+#[cfg(feature = "validation")]
+fn generated_schema(
+    cases: &mut Cases,
+    values: &[serde_json::Value],
+    depth: usize,
+    definitions: usize,
+) -> serde_json::Value {
+    use serde_json::json;
+    let mut schema = serde_json::Map::new();
+    let mut insert = |key: &str, value: serde_json::Value| {
+        schema.insert(key.to_string(), value);
+    };
+    if definitions > 0 && cases.chance(15) {
+        insert(
+            "$ref",
+            json!(format!("#/$defs/d{}", cases.below(definitions))),
+        );
+    }
+    let types = [
+        json!("string"),
+        json!("integer"),
+        json!("number"),
+        json!("boolean"),
+        json!("object"),
+        json!("array"),
+        json!("null"),
+    ];
+    if cases.chance(60) {
+        let one = cases.pick(&types);
+        insert(
+            "type",
+            if cases.chance(80) {
+                one
+            } else {
+                json!([one, cases.pick(&types)])
+            },
+        );
+    }
+    if cases.chance(20) {
+        insert("minLength", json!(cases.below(4)));
+    }
+    if cases.chance(20) {
+        insert("maxLength", json!(cases.below(6)));
+    }
+    if cases.chance(12) {
+        let patterns = [
+            json!("^a"),
+            json!("b$"),
+            json!("^[a-z]+$"),
+            json!("\\d"),
+            json!("^\\w+$"),
+        ];
+        insert("pattern", cases.pick(&patterns));
+    }
+    if cases.chance(10) {
+        let formats = [
+            json!("date"),
+            json!("email"),
+            json!("ipv4"),
+            json!("uri"),
+            json!("time"),
+        ];
+        insert("format", cases.pick(&formats));
+    }
+    let bounds = [
+        json!(-1),
+        json!(0),
+        json!(1),
+        json!(1.5),
+        json!(10),
+        json!(255),
+    ];
+    for keyword in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"] {
+        if cases.chance(10) {
+            insert(keyword, cases.pick(&bounds));
+        }
+    }
+    if cases.chance(12) {
+        let divisors = [json!(1), json!(2), json!(2.0), json!(0.5), json!(3)];
+        insert("multipleOf", cases.pick(&divisors));
+    }
+    if cases.chance(10) {
+        insert("enum", json!([cases.pick(values), cases.pick(values)]));
+    }
+    if cases.chance(8) {
+        insert("const", cases.pick(values));
+    }
+    if depth > 0 && cases.chance(25) {
+        insert(
+            "items",
+            generated_schema(cases, values, depth - 1, definitions),
+        );
+    }
+    if depth > 0 && cases.chance(10) {
+        insert(
+            "contains",
+            generated_schema(cases, values, depth - 1, definitions),
+        );
+    }
+    if cases.chance(12) {
+        insert("minItems", json!(cases.below(3)));
+    }
+    if cases.chance(12) {
+        insert("maxItems", json!(cases.below(4)));
+    }
+    if cases.chance(10) {
+        insert("uniqueItems", json!(cases.chance(70)));
+    }
+    if cases.chance(6) {
+        insert("byteArray", json!(true));
+    }
+    if depth > 0 && cases.chance(25) {
+        let mut properties = serde_json::Map::new();
+        for name in ["a", "b"] {
+            if cases.chance(70) {
+                properties.insert(
+                    name.to_string(),
+                    generated_schema(cases, values, depth - 1, definitions),
+                );
+            }
+        }
+        insert("properties", serde_json::Value::Object(properties));
+    }
+    if cases.chance(15) {
+        let names = [json!("a"), json!("b"), json!("c")];
+        insert("required", json!([cases.pick(&names)]));
+    }
+    if cases.chance(10) {
+        insert("additionalProperties", json!(cases.chance(50)));
+    }
+    if cases.chance(8) {
+        insert("minProperties", json!(cases.below(3)));
+    }
+    if cases.chance(8) {
+        insert("maxProperties", json!(cases.below(3)));
+    }
+    if cases.chance(8) {
+        insert("dependentRequired", json!({ "a": ["b"] }));
+    }
+    // Keys the validator ignores, some of them only where they stand alone
+    if cases.chance(10) {
+        insert("title", json!("t"));
+    }
+    if cases.chance(10) {
+        insert("examples", json!([cases.pick(values)]));
+    }
+    if cases.chance(8) {
+        insert("default", cases.pick(values));
+    }
+    if cases.chance(8) {
+        insert("x-note", json!(1));
+    }
+    if cases.chance(6) {
+        insert("then", json!(false));
+    }
+    if cases.chance(6) {
+        insert("minContains", json!(2));
+    }
+    if cases.chance(6) {
+        insert("additionalItems", json!(false));
+    }
+    serde_json::Value::Object(schema)
+}
+
+/// Generated schemas against the existing validator: whenever it compiles nothing for one,
+/// the builder refuses it, and the validation schema of every other, written back as a
+/// schema, gets the validator's verdict on every generated document that the schema it was
+/// built from gets.
+#[cfg(feature = "validation")]
+#[test]
+fn should_validate_as_the_existing_validator_when_written_back() {
+    let platform_version = PlatformVersion::latest();
+    let values = generated_values();
+    let documents: Vec<serde_json::Value> = values
+        .iter()
+        .map(|value| serde_json::json!({ "value": value }))
+        .chain([serde_json::json!({})])
+        .collect();
+    let compiled = |schema: &serde_json::Value| {
+        let validator = JsonSchemaValidator::new();
+        validator
+            .compile(schema, platform_version)
+            .ok()
+            .map(|_| validator)
+    };
+    let verdicts = |validator: &JsonSchemaValidator| -> Vec<bool> {
+        documents
+            .iter()
+            .map(|document| {
+                validator
+                    .validate(document, platform_version)
+                    .expect("expected the validator to run")
+                    .is_valid()
+            })
+            .collect()
+    };
+
+    let mut cases = Cases(0x5eed_cafe_f00d_d00d);
+    let (mut held, mut refused) = (0, 0);
+    for case in 0..600 {
+        let definitions = cases.below(3);
+        let defs: serde_json::Map<String, serde_json::Value> = (0..definitions)
+            .map(|index| {
+                (
+                    format!("d{index}"),
+                    generated_schema(&mut cases, &values, 2, index),
+                )
+            })
+            .collect();
+        let mut root = serde_json::json!({
+            "type": "object",
+            "properties": { "value": generated_schema(&mut cases, &values, 2, definitions) },
+        });
+        if definitions > 0 {
+            root["$defs"] = serde_json::Value::Object(defs);
+        }
+
+        let built = ValidationSchema::try_from_root(&Value::from(root.clone()));
+        let Some(original) = compiled(&root) else {
+            assert!(
+                built.is_err(),
+                "case {case}: the existing validator compiles nothing for {root}, which the builder builds"
+            );
+            refused += 1;
+            continue;
+        };
+        let Ok(schema) = built else {
+            refused += 1;
+            continue;
+        };
+        let mut written = validating_json(&schema.root.to_value());
+        if !schema.references.is_empty() {
+            let defs: serde_json::Map<String, serde_json::Value> = schema
+                .references
+                .iter()
+                .map(|(reference, node)| {
+                    (
+                        reference.trim_start_matches("#/$defs/").to_string(),
+                        validating_json(&node.to_value()),
+                    )
+                })
+                .collect();
+            written["$defs"] = serde_json::Value::Object(defs);
+        }
+        let written_back = compiled(&written).unwrap_or_else(|| {
+            panic!("case {case}: the existing validator compiles nothing for {written}, the validation schema of {root}")
+        });
+        assert_eq!(
+            verdicts(&original),
+            verdicts(&written_back),
+            "case {case}: {root} written back as {written}"
+        );
+        held += 1;
+    }
+    assert!(
+        held >= 300,
+        "expected most generated schemas to build: {held} did, {refused} were refused"
+    );
 }

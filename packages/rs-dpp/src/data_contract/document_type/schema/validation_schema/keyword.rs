@@ -38,9 +38,8 @@ pub enum SchemaKeyword {
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum AnyKeyword {
-    /// `$ref`: a reference to a schema the value must also match, a URL the validator
-    /// resolves through the schemas an `$id` names first and then by its fragment as a JSON
-    /// pointer.
+    /// `$ref`: a reference to a schema the value must also match. The validation schema
+    /// holds only JSON pointers into the document schema (`#` or `#/...`).
     #[strum(serialize = "$ref")]
     Ref,
     /// `type`.
@@ -183,11 +182,10 @@ pub enum RelationshipKeyword {
 #[strum(serialize_all = "camelCase")]
 pub enum MetaKeyword {
     /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
-    /// schemas named this way before it follows the pointer, as the builder does. It resolves
-    /// a `$ref` below an absolute `$id`, or below a relative one under an absolute document
-    /// schema `$id`, against that `$id`, which the validation schema does not represent, so
-    /// the builder refuses a `$ref` an `$id` above it may rescope. It also refuses a document
-    /// schema `$id` that is not an absolute URL, and an `$id` that is not a URL reference.
+    /// schemas named this way before it follows the pointer, and against the `$id`s above
+    /// it, which the validation schema does not represent. The builder refuses a document
+    /// schema `$id`, and any other that is not a plain name (ASCII letters, digits, `_`, `-`
+    /// and `.`), which leaves every `$ref` resolving to the schema at its pointer.
     #[strum(serialize = "$id")]
     Id,
     /// `position`: the property's place in the stored document, whose values are written
