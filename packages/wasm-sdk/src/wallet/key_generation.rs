@@ -289,3 +289,31 @@ impl WasmSdk {
         Ok(to_object(&result)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1::{Message, SecretKey};
+
+    #[test]
+    fn should_preserve_message_signature_bytes_for_both_wif_encodings() {
+        let scalar = [1; 32];
+        let raw = SecretKey::from_secret_bytes(scalar).expect("valid scalar");
+        let mut private_key =
+            PrivateKey::from_byte_array(&scalar, Network::Testnet).expect("valid scalar");
+        for compressed in [true, false] {
+            private_key.compressed = compressed;
+            for i in 0..32 {
+                let message = format!("message {i}");
+                let digest = sha256::Hash::hash(message.as_bytes()).to_byte_array();
+                let expected = raw
+                    .sign_ecdsa(Message::from_digest(digest))
+                    .serialize_compact();
+                assert_eq!(
+                    WasmSdk::sign_message(&message, &private_key.to_wif()).expect("signature"),
+                    hex::encode(expected)
+                );
+            }
+        }
+    }
+}
