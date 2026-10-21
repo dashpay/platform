@@ -5,7 +5,8 @@ distribution. TestFlight uploads capture provenance and a synthetic SQLite
 fixture, but do not by themselves register a released schema. The accepted frozen V1 remains unchanged. Historical V2 is now reconstructed
 from `52e8d4ec68f0c772313fa1bbef223fb1eabbf1cc`; all 35 entity hashes and the
 model checksum match the observed App Store 9.0.2 database. Active models are
-V3. Other intermediate development shapes remain unsupported.
+V5. The V3 and merged V4 model graphs are frozen as `DashSchemaSnapshotV3`
+and `DashSchemaSnapshotV4`. Other intermediate development shapes remain unsupported.
 
 The old V2 fixture was generated from September 8 sources containing 13
 properties added on August 28, after the August 27 App Store release. The
@@ -15,25 +16,22 @@ separate from archive-captured releases. This identifies a matching model
 source, not the confirmed build commit of Apple's binary. V2 is reserved:
 automated release capture must not register another shape under that number.
 
-The main migration plan is historical V2 → V3. Accepted V1 has a separate
-V1 → V3 plan: V1 already contains the 13 properties missing from historical
+The main migration plan is historical V2 → V3 → V4 → V5. Accepted V1 has a separate
+V1 → V3 → V4 → V5 plan: V1 already contains the 13 properties missing from historical
 V2, so a V1 → V2 → V3 chain could discard values. Routing uses model metadata
 and runs after recovery; a version label alone never selects an unknown beta
 schema. The former live V2 is accepted only when its complete graph matches
-current V3 exactly, entity hashes and checksum alike. That alias therefore
-lasts only until the next live-graph change: after it, every store still
-labelled `2.0.0` with the former live shape becomes `unsupported-v2` and fails
-closed. Check internal devices still carrying that label before the next
-shape change and migrate or deliberately reset them then, rather than
-discovering them afterwards as failed opens.
+frozen V3 exactly, entity hashes and checksum alike. This alias remains
+supported when the live graph changes; other stores labelled `2.0.0` fail closed.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
-`accepted-v1-to-v3`, `historical-v2-to-v3`, `previous-live-v2-current-shape`,
-`unsupported-v2`, `labelled-current-v3`, `ordinary-current-plan` or, from the
+`accepted-v1-to-v5`, `historical-v2-to-v5`, `previous-live-v2-v3-shape`,
+`published-v3-to-v5`, `published-v4-to-v5`,
+`unsupported-v2`, `labelled-current-v5`, `ordinary-current-plan` or, from the
 bridge, `legacy-v1-bridge-to-v3`. Resolving a frozen schema's identity builds
 a temporary store, so it is memoized per process and consulted only where a
-label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0` label takes the
+label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0`, `4.0.0` or `5.0.0` label takes the
 default plan without any probe, and a probe failure on the undecidable labels
 refuses the open with the probe's own error while leaving the store untouched.
 
@@ -310,3 +308,7 @@ Without the explicit input it skips; normal CI uses only synthetic fixtures.
 Do not add a real wallet database to resources, XCTest attachments, commits or
 CI artifacts. If capturing another input, preserve committed WAL contents with
 a consistent SQLite backup rather than copying an active main file alone.
+
+V5 adds optional asset-lock operation revisions. Migrated nil revisions mean
+legacy generation zero; Rust owns compare-and-set acceptance before Swift
+persists a lifecycle update. V4 retains its exact base model graph.

@@ -2383,7 +2383,7 @@ class PlatformWalletPersistenceHandler(
             // InstantSendLocked (2) the network has locked the inputs, so
             // flip the linked TXOs here. Monotonic, and keyed strictly to
             // TXOs already linked to THIS lock's funding txid.
-            if (incomingStatus >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED) {
+            if (incomingStatus in ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED..6) {
                 val fundingTxid = outpointTxid(outPoint)
                 db.txoDao().markSpentBySpendingTxid(fundingTxid, now())
             }
@@ -3196,7 +3196,7 @@ class PlatformWalletPersistenceHandler(
     private suspend fun spendByFinalizedAssetLock(spendingTxid: ByteArray): Boolean {
         val status = database.assetLockDao()
             .maxStatusForTxid(spendingTxid.reversedArray().toHex())
-        return status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
+        return status != null && status in ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED..6
     }
 
     /**

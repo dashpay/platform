@@ -11,16 +11,17 @@ private final class BridgeFutureMarker {
     var value: String = "future"
     init() {}
 }
-private enum BridgeFutureV5: VersionedSchema {
-    static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
-    static var models: [any PersistentModel.Type] { DashSchemaV4.models + [BridgeFutureMarker.self] }
+private enum BridgeFutureV6: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(6, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV5.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, BridgeFutureV5.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self, BridgeFutureV6.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
          .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
-         .custom(fromVersion: DashSchemaV4.self, toVersion: BridgeFutureV5.self,
+         .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self),
+         .custom(fromVersion: DashSchemaV5.self, toVersion: BridgeFutureV6.self,
                  willMigrate: { context in
                      for wallet in try context.fetch(FetchDescriptor<PersistentWallet>()) {
                          wallet.name = "explicit future transformation"
@@ -771,7 +772,7 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
 
     func testSkippingV3UsesFixedBridgeThenRegisteredCustomFutureStage() throws {
         try withStore { url in
-            let schema = Schema(versionedSchema: BridgeFutureV5.self)
+            let schema = Schema(versionedSchema: BridgeFutureV6.self)
             var checkedV3 = false
             let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
             XCTAssertThrowsError(try DashLegacySchemaBridge.open(

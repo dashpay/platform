@@ -9,8 +9,9 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    LoadAssetLockOperationRevisionFn, LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockOperationsFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
@@ -289,6 +290,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_operations: slot!(
+            on_persist_asset_lock_operations_fn,
+            PersistAssetLockOperationsFn
+        ),
+        load_asset_lock_operation_revision: slot!(
+            on_load_asset_lock_operation_revision_fn,
+            LoadAssetLockOperationRevisionFn
         ),
     }
 }
@@ -858,6 +867,7 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset_lock_operation_persistence::AssetLockOperationEntryFFI;
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1361,6 +1371,45 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_ordered_asset_lock_callbacks() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AssetLockOperationEntryFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(_: *mut c_void, _: *const u8, _: *const u8, _: *mut u64) -> i32 {
+            0
+        }
+        let mut extension = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operations_fn: Some(persist),
+            on_load_asset_lock_operation_revision_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_some());
+        assert!(parsed.load_asset_lock_operation_revision.is_some());
+        extension.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_revision_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_some());
+        assert!(parsed.load_asset_lock_operation_revision.is_none());
+        extension.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operations_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&extension) };
+        assert!(parsed.persist_asset_lock_operations.is_none());
+        assert!(parsed.load_asset_lock_operation_revision.is_none());
     }
 
     #[test]
