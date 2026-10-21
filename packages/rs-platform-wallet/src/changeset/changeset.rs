@@ -46,7 +46,7 @@ use dpp::prelude::{Identifier, Revision};
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::wallet::asset_lock::tracked::AssetLockStatus;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, MAX_ASSET_LOCK_OPERATION_REVISION};
 
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
@@ -1487,6 +1487,13 @@ pub struct AssetLockEntry {
     /// Stable host operation identifier; legacy rows have no identifier.
     #[cfg_attr(feature = "serde", serde(default))]
     pub operation_id: Option<[u8; 16]>,
+    /// Conflict/recovery generation, stored separately from legacy lifecycle blobs.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_revision: u64,
+    /// Compare-and-set precondition for an explicit conflict or authenticated
+    /// same-outpoint recovery. Ordinary lifecycle snapshots leave this unset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub expected_operation_revision: Option<u64>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1514,6 +1521,62 @@ pub struct AssetLockEntry {
 }
 
 impl AssetLockEntry {
+    /// Whether this snapshot can replace the current operation generation.
+    /// Lifecycle updates within a generation cannot enter or leave conflict.
+    pub fn follows_operation(&self, revision: u64, status: &AssetLockStatus) -> bool {
+        if self.operation_revision > MAX_ASSET_LOCK_OPERATION_REVISION {
+            return false;
+        }
+        match self.expected_operation_revision {
+            Some(expected) => {
+                expected == revision
+                    && self.operation_revision > revision
+                    && self.operation_id.is_some()
+                    && (self.status == AssetLockStatus::Conflicted
+                        || (*status == AssetLockStatus::Conflicted
+                            || self.operation_revision.saturating_sub(revision) > 1)
+                            && self.status == AssetLockStatus::RecoveredFromChain
+                            && matches!(self.proof, Some(AssetLockProof::Chain(_)))
+                            && self.proof.as_ref().and_then(AssetLockProof::out_point)
+                                == Some(self.out_point))
+            }
+            None => {
+                self.operation_revision == revision
+                    && ((self.status == AssetLockStatus::Conflicted)
+                        == (*status == AssetLockStatus::Conflicted))
+            }
+        }
+    }
+
+    /// Accept an ordered snapshot or the exact re-delivery of a committed CAS.
+    /// Hosts call this owner predicate rather than duplicating field equality.
+    pub fn accepts_operation_snapshot(&self, previous: &Self) -> bool {
+        if self.follows_operation(previous.operation_revision, &previous.status) {
+            return true;
+        }
+        if self.expected_operation_revision.is_some()
+            && self.operation_revision == previous.operation_revision
+        {
+            let mut incoming = self.clone();
+            incoming.expected_operation_revision = None;
+            let mut stored = previous.clone();
+            stored.expected_operation_revision = None;
+            return incoming == stored;
+        }
+        false
+    }
+
+    /// Mark authenticated conflict/recovery evidence with a compare-and-set.
+    /// Saturation deliberately leaves an invalid transition: persistence rejects
+    /// it, faults the event round, and cannot publish a wrapped generation.
+    pub fn advance_operation_revision(&mut self) {
+        self.expected_operation_revision = Some(self.operation_revision);
+        self.operation_revision = self
+            .operation_revision
+            .saturating_add(1)
+            .min(MAX_ASSET_LOCK_OPERATION_REVISION);
+    }
+
     /// Preserve the immutable operation association when folding or replaying
     /// a possibly stale snapshot. Returns false for a conflicting UUID: the
     /// caller must discard the whole snapshot so its lifecycle cannot be
@@ -1539,22 +1602,14 @@ impl AssetLockEntry {
 
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins, with ONE lifecycle exception: `Consumed` is
-        // the terminal state, so a non-Consumed snapshot never replaces
-        // a Consumed one. Writers race here — the wallet-event
-        // adapter's batched drain can fold (or persist) a stale
-        // reconstruction/enrichment snapshot AFTER the live flow's
-        // synchronous consumption write — and every non-terminal
-        // transition is legitimately bidirectional (a live advance
-        // overwrites `RecoveredFromChain`, a defensive resume
-        // re-enters `Broadcast`), so terminality is the only ordering
-        // the merge can enforce without vetoing real transitions. The
-        // durable stores apply the same rule (sqlite upsert guard,
-        // swift-sdk `persistAssetLocks`), making the store order of
-        // racing snapshots immaterial.
+        // Operation generations fence delayed snapshots. Within a generation,
+        // ordinary lifecycle updates remain last-write-wins with consumption
+        // absorbing. Folded CAS transitions keep the earliest precondition.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry.preserve_recovery_metadata(existing.operation_id)
+                    || !entry.follows_operation(existing.operation_revision, &existing.status)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
@@ -1565,6 +1620,9 @@ impl Merge for AssetLockChangeSet {
                     existing.operation_id = entry.operation_id;
                     continue;
                 }
+                entry.expected_operation_revision = existing
+                    .expected_operation_revision
+                    .or(entry.expected_operation_revision);
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
             // for its outpoint, not just a Consumed one. Sweeps are a
@@ -1582,22 +1640,14 @@ impl Merge for AssetLockChangeSet {
             self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped — Consumed
-        // rows are deliberately retained for historical lookup (see the
-        // variant doc). Any other pending upsert is dropped WITH the
-        // tombstone landing: a removal is upstream's newer word for the
-        // outpoint (a lock tracked and then swept, or a Built row rejected
-        // at broadcast, inside one fold), and carrying the dead upsert
-        // alongside the tombstone would make every store's correctness
-        // depend on applying upserts before removals. Together with the
-        // retraction above this keeps the invariant every backend relies
-        // on: a merged changeset never carries both an upsert and a
-        // tombstone for the same outpoint.
+        // Stale removals cannot erase consumed, dispatched, or revised operation
+        // evidence. Ordinary unbound locks and known-unsent builds still remove.
         for out_point in other.removed {
-            let consumed = self
-                .asset_locks
-                .get(&out_point)
-                .is_some_and(|entry| entry.status.is_consumed());
+            let consumed = self.asset_locks.get(&out_point).is_some_and(|entry| {
+                !entry
+                    .status
+                    .permits_removal(entry.operation_id, entry.operation_revision)
+            });
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2630,6 +2680,8 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -3345,6 +3397,8 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            operation_revision: 0,
+                            expected_operation_revision: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

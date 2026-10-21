@@ -65,6 +65,7 @@ impl_persistable_blob!(AssetLockEntryWire);
 struct AssetLockRecoveryRow {
     operation_id: Option<Vec<u8>>,
     lifecycle_blob: Vec<u8>,
+    operation_revision: i64,
 }
 
 /// Encode an [`AssetLockEntry`] to its on-disk `lifecycle_blob` form via the
@@ -123,6 +124,8 @@ impl AssetLockEntryWire {
             status: self.status,
             proof,
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
         })
     }
 }
@@ -133,42 +136,32 @@ pub fn apply(
     cs: &AssetLockChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.asset_locks.is_empty() {
-        // The upsert's WHERE clause enforces the one terminal lifecycle
-        // rule: a stored `consumed` row is never overwritten by a
-        // non-consumed snapshot. Racing writers persist through
-        // different paths (the wallet-event adapter's batched drain vs
-        // the live flows' synchronous changeset queue), so a stale
-        // reconstruction/enrichment snapshot can land AFTER the
-        // consumption write — this guard makes that arrival order
-        // immaterial. Every other transition is deliberately
-        // last-write-wins: non-terminal statuses move both ways (live
-        // advances overwrite `recovered_from_chain`, defensive resumes
-        // re-enter `broadcast`), so terminality is the only ordering
-        // the store can enforce without vetoing legitimate writes.
-        // `AssetLockChangeSet::merge` applies the same rule when
-        // batches fold before reaching the store.
+        // Compare revisions before updating the row. SQL additionally retains
+        // consumed tombstones; the blob distinguishes DrainCompleted receipts.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
-                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, operation_revision) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
              ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
                 status = excluded.status, \
                 account_index = excluded.account_index, \
                 identity_index = excluded.identity_index, \
                 amount_duffs = excluded.amount_duffs, \
                 lifecycle_blob = excluded.lifecycle_blob, \
-                operation_id = COALESCE(excluded.operation_id, asset_locks.operation_id) \
+                operation_id = COALESCE(excluded.operation_id, asset_locks.operation_id), \
+                operation_revision = excluded.operation_revision \
              WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
             let existing: Option<AssetLockRecoveryRow> = tx.query_row(
-                "SELECT operation_id, lifecycle_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                "SELECT operation_id, lifecycle_blob, operation_revision FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
                 |row| Ok(AssetLockRecoveryRow {
                     operation_id: row.get(0)?,
                     lifecycle_blob: row.get(1)?,
+                    operation_revision: row.get(2)?,
                 }),
             ).optional()?;
             // The operation UUID is immutable once stored. Reject the whole
@@ -189,11 +182,37 @@ pub fn apply(
             // retains stronger proof-gated completion and must never regress.
             if let Some(stored) = &existing {
                 let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
-                if old.status == AssetLockStatus::DrainCompleted
+                let mut previous = old.into_entry()?;
+                previous.operation_revision = u64::try_from(stored.operation_revision)
+                    .map_err(|_| WalletStorageError::blob_decode("negative operation revision"))?;
+                previous.operation_id = stored
+                    .operation_id
+                    .as_ref()
+                    .map(|id| {
+                        id.as_slice()
+                            .try_into()
+                            .map_err(|_| WalletStorageError::blob_decode("invalid operation UUID"))
+                    })
+                    .transpose()?;
+                if !entry.accepts_operation_snapshot(&previous) {
+                    return Err(WalletStorageError::blob_decode(
+                        "stale asset lock operation revision",
+                    ));
+                }
+                if previous.status == AssetLockStatus::DrainCompleted
                     && entry.status != AssetLockStatus::DrainCompleted
                 {
                     continue;
                 }
+            }
+            if existing.is_none()
+                && (entry.operation_revision != 0
+                    || entry.expected_operation_revision.is_some()
+                    || entry.status == AssetLockStatus::Conflicted)
+            {
+                return Err(WalletStorageError::blob_decode(
+                    "operation transition has no durable predecessor",
+                ));
             }
             stmt.execute(params![
                 wallet_id.as_slice(),
@@ -207,30 +226,20 @@ pub fn apply(
                 )?,
                 lifecycle_blob,
                 entry.operation_id.as_ref().map(|id| id.as_slice()),
+                crate::sqlite::util::safe_cast::u64_to_i64(
+                    "asset_locks.operation_revision",
+                    entry.operation_revision
+                )?,
             ])?;
         }
     }
     if !cs.removed.is_empty() {
-        // Same terminal rule as the upsert guard: a stored `consumed`
-        // row is never deleted by a stale tombstone. Consumed rows are
-        // deliberately retained for historical lookup, and neither
-        // removal producer can legitimately name one — a Built row
-        // rejected at broadcast (`untrack_asset_lock`) never got that
-        // far, and the sweep-driven removal that arrives with the
-        // producer only tombstones entries still tracked, which a
-        // consumed lock no longer is — so a removal reaching a consumed
-        // row is by construction a stale write.
-        //
-        // Ordering note, scoped honestly: this applies upserts before
-        // removals. On this branch that is layout rather than a
-        // guarantee — the fold-level cancellation that would make an
-        // upsert and a tombstone for one outpoint impossible lands with
-        // the producer, and even there it does not cover every status.
-        // The `status != 'consumed'` predicate is what this statement
-        // actually relies on, and it holds regardless of the fold.
+        // Only unbound locks and known-unsent Built operation rows may be
+        // removed. Delayed cleanup cannot erase a dispatched or revised UUID.
+        // This mirrors AssetLockStatus::permits_removal in the owner.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM asset_locks \
-             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed' AND operation_revision = 0 AND (operation_id IS NULL OR status = 'built')",
         )?;
         for op in &cs.removed {
             let op_bytes = blob::encode_outpoint(op)?;
@@ -240,25 +249,31 @@ pub fn apply(
     Ok(())
 }
 
-/// Remove replay losers from the resumable lifecycle in the Core repair transaction.
+/// Block bound replay losers and remove unbound ones in the Core repair transaction.
 pub(crate) fn remove_swept(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     txids: &HashSet<Txid>,
 ) -> Result<(), WalletStorageError> {
     let mut changes = AssetLockChangeSet::default();
+    for mut lock in load_unconsumed(tx, wallet_id, &LoadCtx::strict())?
+        .into_values()
+        .flat_map(BTreeMap::into_values)
     {
-        let mut stmt = tx.prepare_cached(
-            "SELECT length(outpoint), outpoint FROM asset_locks WHERE wallet_id = ?1 AND status != 'consumed'",
-        )?;
-        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
-        while let Some(row) = rows.next()? {
-            blob::check_size(row.get(0)?)?;
-            let bytes: Vec<u8> = row.get(1)?;
-            let outpoint = blob::decode_outpoint(&bytes)?;
-            if txids.contains(&outpoint.txid) {
-                changes.removed.insert(outpoint);
-            }
+        if !txids.contains(&lock.out_point.txid)
+            || lock.status.is_consumed()
+            || lock.status == AssetLockStatus::Conflicted
+        {
+            continue;
+        }
+        if lock.operation_id.is_some() {
+            lock.status = AssetLockStatus::Conflicted;
+            lock.proof = None;
+            let mut entry = AssetLockEntry::from(&lock);
+            entry.advance_operation_revision();
+            changes.asset_locks.insert(lock.out_point, entry);
+        } else {
+            changes.removed.insert(lock.out_point);
         }
     }
     apply(tx, wallet_id, &changes)
@@ -278,8 +293,8 @@ pub(crate) fn remove_swept(
 /// because a generated-SQL change breaks that migration's Refinery
 /// checksum on every database that already applied it
 /// (`abort_divergent` default). `V001__initial.rs` carries the original
-/// five labels; `V004__asset_lock_recovered_status.rs` rebuilt the
-/// table with the current six.
+/// five labels; `V022__asset_lock_conflict_evidence.rs` rebuilt the
+/// table with the current seven.
 ///
 /// Two unit tests below keep the three copies honest:
 /// - `asset_lock_status_labels_match_enum` — this array ⇔ the writer's
@@ -296,6 +311,7 @@ pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "chain_locked",
     "consumed",
     "recovered_from_chain",
+    "conflicted",
 ];
 
 fn status_str(s: &AssetLockStatus) -> &'static str {
@@ -306,6 +322,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
         AssetLockStatus::ChainLocked => "chain_locked",
         AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted => "consumed",
         AssetLockStatus::RecoveredFromChain => "recovered_from_chain",
+        AssetLockStatus::Conflicted => "conflicted",
     }
 }
 
@@ -325,6 +342,7 @@ fn decode_row(
     blob_bytes: &[u8],
     typed_status: &str,
     operation_id: Option<Vec<u8>>,
+    operation_revision: i64,
     ctx: &LoadCtx,
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
     let outpoint = blob::decode_outpoint(op_bytes)?;
@@ -351,7 +369,24 @@ fn decode_row(
             blob_account_index: entry.account_index,
         });
     }
+    let operation_revision = u64::try_from(operation_revision)
+        .map_err(|_| WalletStorageError::blob_decode("negative operation revision"))?;
+    entry.operation_revision = operation_revision;
+    if (entry.status == AssetLockStatus::Conflicted || operation_revision > 0)
+        && (entry.operation_id.is_none() || operation_revision == 0)
+    {
+        return Err(WalletStorageError::blob_decode(
+            "conflict evidence lacks an operation binding or revision",
+        ));
+    }
     let blob_status = status_str(&entry.status);
+    if blob_status != typed_status
+        && (typed_status == "conflicted" || entry.status == AssetLockStatus::Conflicted)
+    {
+        return Err(WalletStorageError::blob_decode(
+            "asset lock conflict evidence disagrees with status column",
+        ));
+    }
     if blob_status != typed_status {
         let consumed = typed_status == "consumed" || entry.status.is_consumed();
         ctx.tolerate(
@@ -379,6 +414,7 @@ fn decode_row(
         status: entry.status,
         proof: entry.proof,
         operation_id: entry.operation_id,
+        operation_revision: entry.operation_revision,
     };
     Ok((account_index, outpoint, tracked))
 }
@@ -394,7 +430,7 @@ pub fn load_state(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, operation_revision \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -413,6 +449,7 @@ pub fn load_state(
             &blob_bytes,
             &status,
             operation_id,
+            row.get(7)?,
             ctx,
         )?;
         out.entry(acct).or_default().insert(outpoint, tracked);
@@ -433,7 +470,7 @@ pub fn load_unconsumed(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, operation_revision \
          FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL)",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -452,6 +489,7 @@ pub fn load_unconsumed(
             &blob_bytes,
             &status,
             operation_id,
+            row.get(7)?,
             ctx,
         )?;
         if tracked.status.is_consumed() && tracked.operation_id.is_none() {
@@ -518,6 +556,8 @@ mod tests {
             funding_type: AssetLockFundingType::IdentityRegistration,
             identity_index: 0,
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             amount_duffs: 1000,
             status,
             proof,
@@ -556,6 +596,8 @@ mod tests {
                 status: tracked.status,
                 proof: tracked.proof,
                 operation_id: tracked.operation_id,
+                operation_revision: tracked.operation_revision,
+                expected_operation_revision: None,
             })
             .expect("stored asset lock must load back")
     }
@@ -746,6 +788,8 @@ mod tests {
             funding_type: AssetLockFundingType::IdentityTopUp,
             identity_index: 0,
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,
@@ -798,6 +842,7 @@ mod tests {
             AssetLockStatus::ChainLocked,
             AssetLockStatus::Consumed,
             AssetLockStatus::RecoveredFromChain,
+            AssetLockStatus::Conflicted,
             AssetLockStatus::DrainCompleted,
         ];
         for v in &variants {
@@ -808,7 +853,8 @@ mod tests {
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::Consumed
                 | AssetLockStatus::RecoveredFromChain
-                | AssetLockStatus::DrainCompleted => {}
+                | AssetLockStatus::DrainCompleted
+                | AssetLockStatus::Conflicted => {}
             }
         }
         variants
@@ -829,7 +875,7 @@ mod tests {
     }
 
     /// Pins the live label set to the domain frozen in the LATEST
-    /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
+    /// asset-lock migration (`V022__asset_lock_conflict_evidence.rs`).
     /// Shipped migrations interpolate nothing — their generated SQL is
     /// checksummed by Refinery, so widening the domain means APPENDING
     /// a new table-rebuild migration (V018+) with the new frozen list
@@ -841,14 +887,15 @@ mod tests {
     /// CHECK, then update this pin to the new migration's list.
     #[test]
     fn asset_lock_status_labels_frozen_in_latest_migration() {
-        let frozen_in_v004 = [
+        let frozen_in_v022 = [
             "built",
             "broadcast",
             "is_locked",
             "chain_locked",
             "consumed",
             "recovered_from_chain",
+            "conflicted",
         ];
-        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v004);
+        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v022);
     }
 }

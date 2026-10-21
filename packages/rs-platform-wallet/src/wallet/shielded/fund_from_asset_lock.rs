@@ -1023,6 +1023,7 @@ pub(super) fn validate_shielded_recipients<T>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -1030,13 +1031,14 @@ mod tests {
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::{wallet::ManagedWalletInfo, Wallet};
     use key_wallet_manager::WalletManager;
     use tokio::sync::{Notify, RwLock};
 
     use super::*;
     use crate::changeset::{
-        ClientStartState, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
-        PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, ClientWalletStartState, PersistenceCapabilities, PersistenceError,
+        PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::manager::AssetLockManager;
@@ -1134,6 +1136,8 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingPersistence {
+        restored_wallet: Mutex<Option<(Wallet, ManagedWalletInfo)>>,
+        committed_locks: Mutex<BTreeMap<OutPoint, TrackedAssetLock>>,
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
         fail_next_store: AtomicBool,
         fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
@@ -1173,6 +1177,27 @@ mod tests {
                     "simulated asset-lock store failure",
                 ));
             }
+            if self.store_commits_inline() {
+                if let Some(locks) = &changeset.asset_locks {
+                    for entry in locks.asset_locks.values() {
+                        self.committed_locks.lock().unwrap().insert(
+                            entry.out_point,
+                            TrackedAssetLock {
+                                operation_id: entry.operation_id,
+                                operation_revision: entry.operation_revision,
+                                out_point: entry.out_point,
+                                transaction: entry.transaction.clone(),
+                                account_index: entry.account_index,
+                                funding_type: entry.funding_type,
+                                identity_index: entry.identity_index,
+                                amount: entry.amount_duffs,
+                                status: entry.status.clone(),
+                                proof: entry.proof.clone(),
+                            },
+                        );
+                    }
+                }
+            }
             self.stored
                 .lock()
                 .expect("recording persistence mutex")
@@ -1197,7 +1222,24 @@ mod tests {
         }
 
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
-            Ok(ClientStartState::default())
+            let mut state = ClientStartState::default();
+            if let Some((wallet, info)) = self.restored_wallet.lock().unwrap().as_ref() {
+                state.wallets.insert(
+                    wallet.compute_wallet_id(),
+                    ClientWalletStartState {
+                        dashpay_backfill: Default::default(),
+                        wallet: wallet.clone(),
+                        wallet_info: info.clone(),
+                        identity_manager: Default::default(),
+                        unused_asset_locks: BTreeMap::from([(
+                            0,
+                            self.committed_locks.lock().unwrap().clone(),
+                        )]),
+                        unconfirmed_outgoing_txs: vec![],
+                    },
+                );
+            }
+            Ok(state)
         }
     }
 
@@ -1258,6 +1300,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -1315,6 +1358,16 @@ mod tests {
             .get_mut(&ctx.out_point)
             .expect("tracked lock")
             .operation_id = Some(DRAIN_OPERATION_ID);
+        {
+            let manager = ctx.wallet_manager.read().await;
+            let (wallet, info) = manager.get_wallet_and_info(&ctx.wallet_id).unwrap();
+            *ctx.persistence.restored_wallet.lock().unwrap() =
+                Some((wallet.clone(), info.core_wallet.clone()));
+            ctx.persistence.committed_locks.lock().unwrap().insert(
+                ctx.out_point,
+                info.tracked_asset_locks[&ctx.out_point].clone(),
+            );
+        }
         let operation = Arc::new(AssetLockOperationContext::new(DRAIN_OPERATION_ID));
         operation.set(AssetLockOperationState::Pending, Some(ctx.out_point));
         let registration = ctx

@@ -24,12 +24,7 @@ use platform_wallet::{
 };
 #[cfg(feature = "shielded")]
 use platform_wallet::{
-    test_support::funded_wallet_manager,
-    wallet::{
-        asset_lock::{AssetLockFunding, AssetLockOperationContext},
-        shielded::CachedOrchardProver,
-    },
-    PlatformWalletError,
+    test_support::funded_wallet_manager, wallet::asset_lock::AssetLockOperationState,
 };
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
@@ -381,8 +376,8 @@ fn should_advertise_full_core_wallet_restore() {
 
 #[cfg(feature = "shielded")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn should_refuse_wallet_drain_without_durable_operation_evidence() {
-    let (source, wallet_id, _, signer) =
+async fn should_report_not_sent_from_a_restored_wallet_with_durable_operation_evidence() {
+    let (source, wallet_id, _, _signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let (persister, tmp, _) = common::fresh_persister();
     let snapshot = {
@@ -417,41 +412,15 @@ async fn should_refuse_wallet_drain_without_durable_operation_evidence() {
         .configure_shielded(tmp.path().join("shielded.db"))
         .await
         .unwrap();
-    let coordinator = manager.shielded_coordinator().await.unwrap();
     let wallet = manager.get_wallet(&wallet_id).await.unwrap();
     let changes_before = persister.lock_conn_for_test().total_changes();
-    let assert_missing_evidence = |error| {
-        assert!(
-            matches!(error, PlatformWalletError::Persistence(message) if message.contains("asset_lock_operation_ids"))
-        );
-    };
-    assert_missing_evidence(
-        wallet
-            .asset_locks()
-            .wallet_drain_operation_status([7; 16])
-            .await
-            .unwrap_err(),
-    );
-    assert_missing_evidence(
-        wallet
-            .shielded_fund_from_asset_lock(
-                &coordinator,
-                AssetLockFunding::DrainWalletBalance {
-                    account_index: 0,
-                    minimum_lock_duffs: None,
-                    operation: Arc::new(AssetLockOperationContext::new([7; 16])),
-                },
-                Vec::new(),
-                &signer,
-                &CachedOrchardProver::new(),
-                None,
-                0,
-                None,
-                None,
-            )
-            .await
-            .unwrap_err(),
-    );
+    let status = wallet
+        .asset_locks()
+        .wallet_drain_operation_status([7; 16])
+        .await
+        .unwrap();
+    assert_eq!(status.state, AssetLockOperationState::NotSent);
+    assert_eq!(status.out_point, None);
     assert_eq!(
         persister.lock_conn_for_test().total_changes(),
         changes_before

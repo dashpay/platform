@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 #[cfg(any(feature = "shielded", test))]
-use std::collections::BTreeSet;
-#[cfg(any(feature = "shielded", test))]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -24,6 +22,8 @@ pub enum AssetLockOperationState {
     NotSent,
     Pending,
     Completed,
+    /// Original funding conflicted; retry cannot create a replacement lock.
+    Conflicted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,7 +111,10 @@ impl Drop for AssetLockOperationRegistration {
         let snapshot = self.operation.snapshot();
         if last
             && (snapshot.out_point.is_none()
-                || snapshot.state == AssetLockOperationState::Completed)
+                || matches!(
+                    snapshot.state,
+                    AssetLockOperationState::Completed | AssetLockOperationState::Conflicted
+                ))
             && operations
                 .get(&self.operation.operation_id)
                 .is_some_and(|current| Arc::ptr_eq(current, &self.operation))
@@ -127,6 +130,8 @@ fn snapshot_for_lock(lock: &TrackedAssetLock) -> AssetLockOperationSnapshot {
     AssetLockOperationSnapshot {
         state: if lock.status == AssetLockStatus::DrainCompleted {
             AssetLockOperationState::Completed
+        } else if lock.status == AssetLockStatus::Conflicted {
+            AssetLockOperationState::Conflicted
         } else {
             AssetLockOperationState::Pending
         },
@@ -136,14 +141,19 @@ fn snapshot_for_lock(lock: &TrackedAssetLock) -> AssetLockOperationSnapshot {
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Keep queued/active callers' leases, but do not retain terminal contexts
-    /// for the manager's lifetime. Durable DrainCompleted remains authoritative.
-    fn publish_completed_operation(&self, operation_id: [u8; 16], out_point: OutPoint) {
+    /// for the manager's lifetime. The durable row remains authoritative.
+    fn publish_settled_operation(
+        &self,
+        operation_id: [u8; 16],
+        out_point: OutPoint,
+        state: AssetLockOperationState,
+    ) {
         let mut operations = self
             .drain_operations
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if let Some(context) = operations.get(&operation_id) {
-            context.set(AssetLockOperationState::Completed, Some(out_point));
+            context.set(state, Some(out_point));
             context.clear_checkpoint();
             if context.registrations.load(Ordering::SeqCst) == 0 {
                 operations.remove(&operation_id);
@@ -171,6 +181,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
                 .filter(|lock| lock.operation_id == Some(operation_id))
                 .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+            self.ensure_operation_evidence(lock)?;
             if lock.status != AssetLockStatus::DrainCompleted {
                 let mut candidate = lock.clone();
                 candidate.status = AssetLockStatus::DrainCompleted;
@@ -193,7 +204,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 lock.proof = None;
             }
         }
-        self.publish_completed_operation(operation_id, out_point);
+        self.publish_settled_operation(operation_id, out_point, AssetLockOperationState::Completed);
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -246,6 +257,50 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(())
     }
 
+    /// Generic exact-outpoint retries obey the same durable ordering as UUID
+    /// retries. A stale live snapshot cannot bypass a committed conflict.
+    pub(super) fn ensure_operation_evidence(
+        &self,
+        lock: &TrackedAssetLock,
+    ) -> Result<(), PlatformWalletError> {
+        if lock.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(lock.out_point));
+        }
+        let Some(operation_id) = lock.operation_id else {
+            return Ok(());
+        };
+        self.require_wallet_drain_persistence()?;
+        let persisted = self.persister.load().map_err(|error| {
+            PlatformWalletError::Persistence(format!("cannot read operation evidence: {error}"))
+        })?;
+        let durable = persisted
+            .wallets
+            .get(&self.wallet_id)
+            .and_then(|wallet| {
+                wallet
+                    .unused_asset_locks
+                    .values()
+                    .flat_map(|locks| locks.values())
+                    .find(|row| row.operation_id == Some(operation_id))
+            })
+            .ok_or_else(|| {
+                PlatformWalletError::Persistence(
+                    "operation evidence missing from durable snapshot".into(),
+                )
+            })?;
+        if durable.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(durable.out_point));
+        }
+        if durable.out_point != lock.out_point
+            || durable.operation_revision != lock.operation_revision
+        {
+            return Err(PlatformWalletError::Persistence(
+                "live operation evidence is stale".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Only a successful complete durable read can establish NotSent. A live
     /// context wins over an absent row, including during build and failed flush.
     pub async fn wallet_drain_operation_status(
@@ -273,13 +328,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 "cannot read drain operation: wallet missing from durable snapshot".into(),
             )
         })?;
-        let durable = persisted_wallet
+        let durable_lock = persisted_wallet
             .unused_asset_locks
             .values()
             .flat_map(|locks| locks.values())
-            .find(|lock| lock.operation_id == Some(operation_id))
-            .map(snapshot_for_lock);
-        let live = {
+            .find(|lock| lock.operation_id == Some(operation_id));
+        let durable = durable_lock.map(snapshot_for_lock);
+        let live_lock = {
             let manager = self.wallet_manager.read().await;
             let info = manager
                 .get_wallet_info(&self.wallet_id)
@@ -287,8 +342,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             info.tracked_asset_locks
                 .values()
                 .find(|lock| lock.operation_id == Some(operation_id))
-                .map(snapshot_for_lock)
+                .cloned()
         };
+        let live = live_lock.as_ref().map(snapshot_for_lock);
         let context = self
             .drain_operations
             .lock()
@@ -296,23 +352,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .get(&operation_id)
             .filter(|context| !ignore_context.is_some_and(|ignored| Arc::ptr_eq(context, ignored)))
             .map(|context| context.snapshot());
-        // Terminal evidence always wins, including a generic exact-outpoint
-        // resume completing while the original context still says Pending.
-        for snapshot in [live, durable, context].into_iter().flatten() {
-            if snapshot.state == AssetLockOperationState::Completed {
+        if let Some(snapshot) = durable {
+            if matches!(
+                snapshot.state,
+                AssetLockOperationState::Completed | AssetLockOperationState::Conflicted
+            ) {
                 if let Some(out_point) = snapshot.out_point {
-                    self.publish_completed_operation(operation_id, out_point);
+                    self.publish_settled_operation(operation_id, out_point, snapshot.state);
                 }
-                return Ok(snapshot);
             }
+            // A live conflict that has not committed blocks dispatch, but is
+            // not yet a durable outcome. Never publish it as such.
+            if snapshot.state == AssetLockOperationState::Pending
+                && live_lock.as_ref().is_some_and(|live| {
+                    live.status == AssetLockStatus::Conflicted
+                        && durable_lock.is_some_and(|durable| {
+                            live.operation_revision >= durable.operation_revision
+                        })
+                })
+            {
+                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                    "asset lock conflict evidence is awaiting persistence".into(),
+                ));
+            }
+            return Ok(snapshot);
         }
-        Ok(live
-            .or(durable)
-            .or(context)
-            .unwrap_or(AssetLockOperationSnapshot {
-                state: AssetLockOperationState::NotSent,
-                out_point: None,
-            }))
+        if live_lock.as_ref().is_some_and(|lock| {
+            lock.operation_revision > 0 || lock.status == AssetLockStatus::Conflicted
+        }) {
+            return Err(PlatformWalletError::Persistence(
+                "operation conflict evidence is missing from durable snapshot".into(),
+            ));
+        }
+        Ok(live.or(context).unwrap_or(AssetLockOperationSnapshot {
+            state: AssetLockOperationState::NotSent,
+            out_point: None,
+        }))
     }
 
     /// Register before queueing a worker, making status fail closed while
@@ -356,19 +431,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .unwrap_or_else(|e| e.into_inner())
             .get(&operation_id)
             .cloned();
-        {
-            let manager = self.wallet_manager.read().await;
-            if manager
-                .get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.tracked_asset_locks.get(&out_point))
-                .is_some_and(|lock| lock.operation_id == Some(operation_id))
-            {
-                if let Some(context) = &context {
-                    context.clear_checkpoint();
-                }
-                return Ok(());
-            }
-        }
         let persisted = self.persister.load().map_err(|error| {
             PlatformWalletError::Persistence(format!("cannot restore checkpointed drain: {error}"))
         })?;
@@ -407,12 +469,29 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             self.persist_drain_lock_snapshot(&candidate)?;
             candidate
         };
+        if candidate.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(out_point));
+        }
         let mut manager = self.wallet_manager.write().await;
         let info = manager
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        // A live advance wins over the loaded snapshot. In particular, never
-        // replace a newer proof or consumption state.
+        // A durable newer generation replaces stale live evidence. Within the
+        // same generation, preserve a live proof/consumption advance.
+        if let Some(live) = info.tracked_asset_locks.get(&out_point) {
+            if live.operation_revision > candidate.operation_revision
+                || (live.operation_revision == candidate.operation_revision
+                    && live.status == AssetLockStatus::Conflicted)
+            {
+                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                    "asset lock evidence is awaiting persistence".into(),
+                ));
+            }
+            if live.operation_revision < candidate.operation_revision {
+                info.tracked_asset_locks
+                    .insert(out_point, candidate.clone());
+            }
+        }
         let current = info
             .tracked_asset_locks
             .entry(out_point)
@@ -464,6 +543,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?;
                 return Ok(Some(out_point));
             }
+            AssetLockOperationState::Conflicted => {
+                operation.set(previous.state, previous.out_point);
+                return Err(PlatformWalletError::AssetLockConflicted(
+                    previous.out_point.ok_or_else(|| {
+                        PlatformWalletError::Persistence("conflicted drain has no outpoint".into())
+                    })?,
+                ));
+            }
             AssetLockOperationState::NotSent => {}
         }
         // A concurrent invocation may have registered the same UUID first and
@@ -496,25 +583,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .values()
             .flat_map(|locks| locks.values())
             .any(|lock| {
-                lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
+                lock.operation_id.is_some()
+                    && !matches!(
+                        lock.status,
+                        AssetLockStatus::DrainCompleted | AssetLockStatus::Conflicted
+                    )
             });
         let live_locks = self.list_tracked_locks().await;
+        let settled = persisted_wallet
+            .unused_asset_locks
+            .values()
+            .flat_map(|locks| locks.values())
+            .filter(|lock| {
+                matches!(
+                    lock.status,
+                    AssetLockStatus::DrainCompleted | AssetLockStatus::Conflicted
+                )
+            })
+            .filter_map(|lock| lock.operation_id.map(|id| (id, lock.operation_revision)))
+            .collect::<BTreeMap<_, _>>();
         let live_pending = live_locks.iter().any(|lock| {
-            lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
-        });
-        let completed = live_locks
-            .iter()
-            .chain(
-                persisted
-                    .wallets
-                    .get(&self.wallet_id)
-                    .into_iter()
-                    .flat_map(|wallet| wallet.unused_asset_locks.values())
-                    .flat_map(|locks| locks.values()),
+            lock.operation_id.is_some_and(|id| {
+                settled
+                    .get(&id)
+                    .is_none_or(|revision| *revision < lock.operation_revision)
+            }) && !matches!(
+                lock.status,
+                AssetLockStatus::DrainCompleted | AssetLockStatus::Conflicted
             )
-            .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
-            .filter_map(|lock| lock.operation_id)
-            .collect::<BTreeSet<_>>();
+        });
         let context_pending = self
             .drain_operations
             .lock()
@@ -522,7 +619,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .values()
             .any(|context| {
                 !Arc::ptr_eq(context, operation)
-                    && !completed.contains(&context.operation_id)
+                    && !settled.contains_key(&context.operation_id)
                     && context.snapshot().state == AssetLockOperationState::Pending
             });
         if durable_pending || live_pending || context_pending {

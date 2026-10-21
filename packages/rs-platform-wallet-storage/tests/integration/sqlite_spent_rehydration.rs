@@ -967,6 +967,8 @@ async fn assert_conflict_restart(case: ConflictCase) {
                 status,
                 proof: None,
                 operation_id: None,
+                operation_revision: 0,
+                expected_operation_revision: None,
             };
             (out_point, entry)
         };

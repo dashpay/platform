@@ -365,6 +365,8 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
             status,
             proof: None,
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
         };
         (out_point, entry)
     };

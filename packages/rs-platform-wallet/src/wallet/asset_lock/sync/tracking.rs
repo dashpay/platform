@@ -455,6 +455,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(*out_point));
+        }
         if entry.status.is_consumed() {
             tracing::warn!(
                 outpoint = %out_point,
@@ -525,6 +528,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(*out_point));
+        }
         if entry.status.is_consumed() {
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
         }
