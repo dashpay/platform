@@ -8,8 +8,15 @@ public final class PersistentDocumentType {
     public var contractId: Data
     public var name: String
 
-    // Schema stored as JSON
+    /// The whole document type dictionary as JSON, with its property type
+    /// shorthands (protocol version 14: `"type": "identifier"`, or
+    /// `"type": "bytes"` with a `size`) written in full as the byte arrays
+    /// they stand for, so every reader sees one form. `DataContractParser`
+    /// stores Rust's long-form view of the contract here; the contract as
+    /// sent is the parent's `PersistentDataContract.serializedContract` and
+    /// `binarySerialization`.
     public var schemaJSON: Data
+    /// The `properties` of `schemaJSON`, written the same way.
     public var propertiesJSON: Data
 
     // Document behavior settings
@@ -106,7 +113,8 @@ extension PersistentDocumentType {
     /// version 14), read off the persisted schema.
     ///
     /// Derived rather than stored in columns of its own: `schemaJSON` already
-    /// holds the whole document type dictionary as authored, so the keywords
+    /// holds the whole document type dictionary (property type shorthands
+    /// written in full, every other keyword as sent), so the keywords
     /// are persisted with every contract the parser writes, and a new stored
     /// property would move this model's entity hash. That costs a schema
     /// version and a fixture store (see `DashModelContainer.modelTypes` and
@@ -134,7 +142,9 @@ extension PersistentDocumentType {
     ///
     /// Derived from the persisted schema rather than stored, for the same
     /// reason as `immutability`: `schemaJSON` holds the whole document type
-    /// dictionary as authored, element schemas included, and a new stored
+    /// dictionary, element schemas included and an `items` property type
+    /// shorthand written in full (so an identifier element reads as
+    /// `.identifier`, a `bytes` one as `.byteArray`), and a new stored
     /// property on this model or on `PersistentProperty` would move an entity
     /// hash, which costs a schema version and a fixture store (see
     /// `DashModelContainer.modelTypes` and `DashModelMigrationTests`).
@@ -180,9 +190,10 @@ extension PersistentDocumentType {
     /// when it meets every rule judged: what
     /// `SDK.checkDocumentPropertyConstraints(serializedContract:documentType:propertiesJSON:ownerId:)`
     /// reports for the parent contract's stored platform serialization. As
-    /// there, the device clock stands in for the create's block time, and a
-    /// rule reading a block height or a `countOf` or `sumOf` total is not
-    /// judged.
+    /// there, the device clock stands in for the create's block time, a
+    /// stored time, height or revision read through `$old.` reads 0, and a
+    /// rule reading a block height the create records, a `countOf` or `sumOf`
+    /// total or a value of a referenced document is not judged.
     ///
     /// - Throws: `SDKError.invalidState` when the parent contract has no
     ///   stored serialization, or what the SDK call throws.

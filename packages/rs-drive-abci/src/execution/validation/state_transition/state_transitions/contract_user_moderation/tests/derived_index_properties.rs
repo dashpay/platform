@@ -6,6 +6,9 @@
 //! properties its removal record keeps (`moderatorAbilities.deleteKeepsFields`).
 
 use super::*;
+use drive::drive::RootTree;
+use drive::grovedb::query_result_type::QueryResultType;
+use drive::grovedb::{PathQuery, Query, SizedQuery};
 
 const REPLY: &str = "reply";
 
@@ -737,4 +740,289 @@ async fn should_page_with_a_cursor_only_where_the_query_fixes_the_derived_proper
         .query_documents(query, None, false, Some(&transaction), None)
         .expect_err("a cursor can not be placed by a derived value");
     assert!(error.to_string().contains("postId.$ownerId"), "got {error}");
+}
+
+/// Posts nobody changes, only the moderators take down, each removal record keeping the
+/// post's optional topic and its `meta` object whole. A reply may also quote a post, and the
+/// moderators may take replies down. `byTopic` files a reply by its post's topic and
+/// `byQuotedOwner` by the owner of the post it quotes, each skipping a reply whose value is
+/// absent; `byTag` keeps a reply whose post has no tag under null.
+async fn skipping_setup() -> Setup {
+    Setup::new_at_with(
+        Some(moderation(false, false, THE_MODERATOR)),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeleted": false,
+                    "documentsMutable": false,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                        "topic": { "type": "string", "maxLength": 20, "position": 1 },
+                        "meta": {
+                            "type": "object",
+                            "properties": {
+                                "tag": { "type": "string", "maxLength": 20, "position": 0 },
+                            },
+                            "additionalProperties": false,
+                            "position": 2,
+                        },
+                    },
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteKeepsFields": ["topic", "meta"],
+                    },
+                })),
+            );
+            add_document_type(
+                contract,
+                REPLY,
+                with_entries(
+                    reply_schema("moderatedDocument", "postId.topic"),
+                    platform_value!({
+                        "immutable": ["postId", "quoteId"],
+                        "indices": [
+                            {
+                                "name": "byTopic",
+                                "properties": [{ "postId.topic": "asc" }, { "$createdAt": "asc" }],
+                                "skipIfAbsent": ["postId.topic"],
+                            },
+                            {
+                                "name": "byQuotedOwner",
+                                "properties": [
+                                    { "quoteId.$ownerId": "asc" },
+                                    { "$createdAt": "asc" },
+                                ],
+                                "skipIfAbsent": ["quoteId.$ownerId"],
+                            },
+                            {
+                                "name": "byTag",
+                                "properties": [
+                                    { "postId.meta.tag": "asc" },
+                                    { "$createdAt": "asc" },
+                                ],
+                            },
+                        ],
+                        "properties": {
+                            "postId": identifier_property(
+                                0,
+                                platform_value!({ "type": "moderatedDocument", "documentType": POST }),
+                            ),
+                            "body": { "type": "string", "minLength": 1, "maxLength": 50, "position": 1 },
+                            "quoteId": identifier_property(
+                                2,
+                                platform_value!({ "type": "moderatedDocument", "documentType": POST }),
+                            ),
+                        },
+                        "moderatorAbilities": { "delete": true },
+                    }),
+                ),
+            );
+        },
+    )
+    .await
+}
+
+impl Setup {
+    /// A reply by `actor` to `post_id`, quoting `quote_id` when given
+    async fn quoting_reply_to(
+        &self,
+        actor: &Actor,
+        post_id: Identifier,
+        quote_id: Option<Identifier>,
+        body: &str,
+    ) -> (Document, StateTransition) {
+        self.create_document_of_type_with(actor, REPLY, |document| {
+            document.set("postId", id_value(post_id));
+            document.set("body", body.into());
+            // The builder fills every optional field
+            match quote_id {
+                Some(quote_id) => document.set("quoteId", id_value(quote_id)),
+                None => {
+                    document.remove("quoteId");
+                }
+            }
+        })
+        .await
+    }
+
+    /// The values the reply index level keyed by `property` holds: every key directly under
+    /// it, the empty key standing for null
+    fn reply_index_values(&self, property: &str, transaction: &Transaction) -> Vec<Vec<u8>> {
+        let path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract.id().to_vec(),
+            vec![1],
+            REPLY.as_bytes().to_vec(),
+            property.as_bytes().to_vec(),
+        ];
+        let mut query = Query::new();
+        query.insert_all();
+        let (elements, _) = self
+            .platform
+            .drive
+            .grove_get_raw_path_query(
+                &PathQuery::new(path, SizedQuery::new(query, None, None)),
+                Some(transaction),
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &PlatformVersion::latest().drive,
+            )
+            .expect("expected to read the index level");
+        elements.to_keys()
+    }
+}
+
+/// An index skipping on a derived property leaves out a reply whose value is absent: one
+/// whose post has no topic, and one quoting no post, while an index without the flag files
+/// them under null. The skipped reply is still edited, deleted, removed and restored, its
+/// value read from the removal record once the moderators remove its post.
+#[tokio::test]
+async fn should_skip_a_reply_whose_derived_value_is_absent() {
+    let setup = skipping_setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (topical, create_topical) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", "hello".into());
+            document.set("topic", "dash".into());
+            document.set("meta", platform_value!({ "tag": "privacy" }));
+        })
+        .await;
+    assert_success(&setup.process(&create_topical, &transaction));
+    let (bare, create_bare) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", "no topic".into());
+            // The builder fills every optional field: this post holds neither
+            document.remove("topic");
+            document.remove("meta");
+        })
+        .await;
+    assert_success(&setup.process(&create_bare, &transaction));
+
+    // On topic, quoting nothing
+    let (mut on_topic, create_on_topic) = setup
+        .quoting_reply_to(&setup.stranger, topical.id(), None, "on topic")
+        .await;
+    assert_success(&setup.process(&create_on_topic, &transaction));
+    // Off topic, quoting the topical post
+    let (quoting, create_quoting) = setup
+        .quoting_reply_to(&setup.stranger, bare.id(), Some(topical.id()), "quoting")
+        .await;
+    assert_success(&setup.process(&create_quoting, &transaction));
+    let stored_quoting = setup
+        .stored_document(REPLY, quoting.id(), Some(&transaction))
+        .expect("expected the reply to be stored");
+    // Off topic, quoting nothing: both skip indexes leave it out
+    let (mut neither, create_neither) = setup
+        .quoting_reply_to(&setup.stranger, bare.id(), None, "neither")
+        .await;
+    assert_success(&setup.process(&create_neither, &transaction));
+
+    let user = setup.user.id().to_vec();
+    let null = Vec::<u8>::new();
+    assert_eq!(
+        setup.reply_index_values("postId.topic", &transaction),
+        vec![b"dash".to_vec()],
+        "byTopic writes no null value for the replies to the post without a topic"
+    );
+    assert_eq!(
+        setup.reply_index_values("quoteId.$ownerId", &transaction),
+        vec![user.clone()],
+        "byQuotedOwner writes no null value for the replies quoting nothing"
+    );
+    assert!(
+        setup
+            .reply_index_values("postId.meta.tag", &transaction)
+            .contains(&null),
+        "byTag does not skip: the replies to the post without a tag are under null"
+    );
+
+    let by_topic = |topic: &str| platform_value!([["postId.topic", "==", topic]]);
+    let by_quoted_owner =
+        |owner: Identifier| platform_value!([["quoteId.$ownerId", "==", id_value(owner)]]);
+    assert_eq!(
+        setup.replies_found(by_topic("dash"), &transaction),
+        vec![on_topic.id()]
+    );
+    assert_eq!(
+        setup.replies_found(by_quoted_owner(setup.user.id()), &transaction),
+        vec![quoting.id()]
+    );
+
+    // An edit moves nothing, into an index or out of one
+    on_topic.set("body", "an edit".into());
+    let edit = setup
+        .reply_replacement(&setup.stranger, &mut on_topic)
+        .await;
+    assert_success(&setup.process(&edit, &transaction));
+    neither.set("body", "still neither".into());
+    let edit = setup.reply_replacement(&setup.stranger, &mut neither).await;
+    assert_success(&setup.process(&edit, &transaction));
+    assert_eq!(
+        setup.reply_index_values("postId.topic", &transaction),
+        vec![b"dash".to_vec()]
+    );
+    assert_eq!(
+        setup.reply_index_values("quoteId.$ownerId", &transaction),
+        vec![user.clone()]
+    );
+
+    // Once the moderators remove both posts, the records keep the topic and the owner, and
+    // keep no topic for the post that had none
+    for post_id in [topical.id(), bare.id()] {
+        let remove = setup
+            .moderate(&setup.moderator, delete_action(POST, post_id))
+            .await;
+        assert_success(&setup.process(&remove, &transaction));
+    }
+    on_topic.set("body", "a second edit".into());
+    let edit = setup
+        .reply_replacement(&setup.stranger, &mut on_topic)
+        .await;
+    assert_success(&setup.process(&edit, &transaction));
+    assert_eq!(
+        setup.replies_found(by_topic("dash"), &transaction),
+        vec![on_topic.id()]
+    );
+    // The skipped reply's deletion looks for nothing in either skip index
+    let delete = setup.reply_deletion(&setup.stranger, neither).await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // A moderator's removal of the quoting reply takes it out of the index it is in, and a
+    // restore puts it back, reading the quoted post's owner from its record
+    let remove_quoting = setup
+        .moderate(&setup.moderator, delete_action(REPLY, quoting.id()))
+        .await;
+    assert_success(&setup.process(&remove_quoting, &transaction));
+    assert!(setup
+        .reply_index_values("quoteId.$ownerId", &transaction)
+        .is_empty());
+    let restore_quoting = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(REPLY, setup.document_bytes(REPLY, &stored_quoting)),
+        )
+        .await;
+    assert_success(&setup.process(&restore_quoting, &transaction));
+    assert_eq!(
+        setup.replies_found(by_quoted_owner(setup.user.id()), &transaction),
+        vec![quoting.id()]
+    );
+    assert_eq!(
+        setup.reply_index_values("postId.topic", &transaction),
+        vec![b"dash".to_vec()]
+    );
+
+    // A verifier finds the same through a proof
+    setup.commit(transaction);
+    assert_eq!(
+        setup.replies_proved(by_topic("dash"), None),
+        vec![on_topic.id()]
+    );
+    assert_eq!(
+        setup.replies_proved(by_quoted_owner(setup.user.id()), None),
+        vec![quoting.id()]
+    );
 }

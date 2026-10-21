@@ -15,8 +15,10 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Usage](#usage)
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
+- [Querying the elements of a list (`contains`, `containsAny`)](#querying-the-elements-of-a-list-contains-containsany)
 - [Document references (`refersTo`)](#document-references-refersto)
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
+- [Action fees (`actionFeeAgreement`)](#action-fees-actionfeeagreement)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
 - [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
@@ -157,11 +159,61 @@ for (const entry of page.entries) {
 }
 ```
 
-Each pin is a `==`, except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all.
+A leading property that is a typed array (protocol version 14+) is pinned with `contains`, which names one element the way `==` names one value:
+
+```ts
+// The most liked posts tagged `dash`, from a ranked index on [tags, postId].
+const page = await sdk.documents.ranked({
+  dataContractId: SOCIAL,
+  documentTypeName: 'like',
+  groupBy: 'postId',
+  aggregate: { type: 'count' },
+  limit: 10,
+  where: [['tags', 'contains', 'dash']],
+});
+```
+
+Each pin is a `==` (or a `contains`), except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all, and neither can `containsAny`, which would count a document once per element it holds.
 
 A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
+
+## Querying the elements of a list (`contains`, `containsAny`)
+
+From protocol version 14, an index can name a typed array (a list property such as a post's `hashtags` or `mentions`). The platform enters the document once under each distinct element, and two operators read it:
+
+```ts
+// Posts tagged `dash`, newest first.
+const posts = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['hashtags', 'contains', 'dash']],
+  orderBy: [['$createdAt', 'desc']],
+  limit: 20,
+});
+
+// Posts that mention an identity (base58 or bytes).
+const mentions = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['mentions', 'contains', identityId]],
+});
+
+// Posts tagged `dash` or `news`: each post once, walked tag by tag.
+const either = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['hashtags', 'containsAny', ['dash', 'news']]],
+  orderBy: [['hashtags', 'asc'], ['$createdAt', 'desc']],
+});
+```
+
+- `contains` takes one value of the element type and pages like `==`, cursors included (the cursor's document must hold the element).
+- `containsAny` takes 1 to 100 values and needs an `orderBy` on the array, which sets the order the elements are walked in. A post holding several of them comes back once, where it first appears; the limit counts every entry walked, so a page can be short, and there is no `startAt` or `startAfter`.
+- No other operator may name a typed array, and an index naming one is read only with its elements bound.
+
+Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags, and one pinned with `contains` ranks within one element (see [Pinning a compound index](#pinning-a-compound-index)). A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
 
 ## Contracts the app already holds
 
@@ -206,6 +258,25 @@ for (const ref of contract.documentTypeReferences('note')) {
   // the writer's own `$ownerId`: a write gate such as
   // `{ '$ownerId': '$ownerId' }` lets only the referenced document's current
   // owner create or replace the referring document.
+  // Between two typed arrays, e.g. `where: { tags: 'tags' }`, the equality
+  // compares lists: the same elements in the same order, a list left out
+  // being the empty one.
+  // A value may instead be a condition object with one key, as the schema
+  // writes it: `{ const: v }`, `{ notEqual: b }`, `{ in: [v1, v2] }`, an
+  // ordering such as `{ lessThanOrEqual: 'amount' }` or
+  // `{ greaterThan: '$updatedAt' }` (a bound is a referring property,
+  // `'$ownerId'`, a time or height, or `{ const: v }`; an integer past
+  // Number.MAX_SAFE_INTEGER is a bigint), or, of a typed array,
+  // `{ contains: 'tag' }` (a referring property or `'$ownerId'` the list must
+  // hold) or `{ containsAll: 'tags' }` (a referring typed array whose every
+  // element the list must hold). Tell the two apart by type:
+  for (const [referenced, value] of Object.entries(ref.where ?? {})) {
+    if (typeof value === 'string') {
+      // an equality with the referring property `value`
+    } else {
+      // a condition, e.g. { in: ['open', 'extended'] }
+    }
+  }
   console.log(ref.path, ref.type);
 }
 
@@ -269,6 +340,29 @@ From protocol version 14 the id of a new document commits to the identity contra
 A document whose values fall under a contested index enters a contest, and its create must state the most it pays into the contest's fund: without it, or stating less than the fund to join, Platform refuses the create with error 40114 and still charges its fees. From protocol version 14 that fund doubles once the contest holds 250 contenders and again for every 50 more. `sdk.documents.create` states it itself. For a transition built by hand, `sdk.documents.contestFundToJoin(document)` reads the contest's contenders (one proved query per 100) and returns the `PrefundedVotingBalance` to pass, the contested index's name and the fund to join now, or `undefined` for a document that joins no contest. Without the SDK, pass the document's contract as `dataContract` to `new DocumentCreateTransition(...)`: a contested document then states the contest's fund on its contested index, what joining costs below 250 contenders, and `contestFund` replaces that amount.
 
 From protocol version 14 a create may state more, as headroom for contenders joining before it lands: `new PrefundedVotingBalance({ indexName: prefundedVotingBalance.indexName, credits: 2n * prefundedVotingBalance.credits })`. Platform charges only the fund to join, but the identity must hold what the create states. Before 14 the stated amount must be exactly the contest's fund, and a create stating more is refused.
+
+## Action fees (`actionFeeAgreement`)
+
+From protocol version 14 a document type may charge a fee for an action (its `actionFees`: an `owner` part paid to the contract owner and a `moderators` part paid to its moderators). The contract is read when the transition executes, not when it was signed, so every transition on an action that charges a fee carries an action fee agreement naming the fee its signer saw. Without one Platform refuses the transition with error 40132, with other amounts 40133, and when the executing epoch's fee multiplier is above what the agreement tolerates 40134. Each refusal still spends the identity contract nonce, and charges no action fee.
+
+`create`, `replace`, `delete`, `transfer`, `purchase` and `setPrice` take it as `actionFeeAgreement`, a `DocumentActionFeeAgreement`. `DocumentActionFeeAgreement.forDocumentTypeAction` builds it from a contract, or returns `undefined` when the document type charges nothing for the action. Pass it the contract you showed the user, never one fetched behind their back at signing time, so that a fee changed since is refused instead of paid. For the same reason `knownPermille` is the fee multiplier the fee you showed was priced with (the current epoch's is `(await sdk.epoch.current()).feeMultiplierPermille`), not one read at signing time:
+
+```ts
+import { DocumentActionFeeAgreement } from '@dashevo/evo-sdk';
+
+// `shownContract` and `shownFeeMultiplierPermille` are what the fee the user saw was priced from
+const actionFeeAgreement = DocumentActionFeeAgreement.forDocumentTypeAction(
+  shownContract,
+  'post',
+  'create', // or 'replace', 'delete', 'transfer', 'purchase', 'updatePrice'
+  // How far above the known multiplier (in percent) the multiplier of the epoch the transition
+  // executes in may be. Required unless the fee is fixed, which names none (one given is only checked).
+  { knownPermille: shownFeeMultiplierPermille, increaseTolerancePercent: 20 },
+);
+await sdk.documents.create({ document, identityKey, signer, actionFeeAgreement });
+```
+
+A fixed fee (`pricing: 'fixed'`) names no `feeMultiplier`, and a fee priced by the multiplier (any type without `pricing: 'fixed'`) must name one: getting that wrong is refused as 40133, and `forDocumentTypeAction` reads it off the contract. An agreement on an action that charges nothing is ignored. On a document type an elected contract moderates, `moderators` may name exactly the share of the declared part the contract's seated moderation charter takes (its `moderatorsShare`, in percent, rounded down to the credit); any other lower amount is refused (40139). A transition built by hand passes a `DocumentActionFeeAgreement` as `actionFeeAgreement` to `new DocumentCreateTransition(...)` and the other document transition constructors. The SDK refuses an agreement before it reserves a nonce when it runs a protocol version before 14.
 
 ## Encrypted properties (`encryptedFor`)
 
@@ -451,7 +545,7 @@ From protocol version 14 a document type can declare rules its documents' proper
 }
 ```
 
-The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. A string property (an enum, say) is compared with `{ "equal": ["status", { "const": "closed" }] }` or `notEqual`, with another string property (`{ "notEqual": ["fromCurrency", "toCurrency"] }`), or listed with `{ "in": ["status", ["open", "pending"]] }`; a constant must be one of the property's `enum` values, and a string the document leaves out equals none, unless `{ "ifAbsent": ["status", "open"] }` gives it a default. Identifier properties compare the same way, with base58 constants: `{ "equal": ["paymentToken", { "const": "<base58>" }] }`, `{ "notEqual": ["buyerId", "sellerId"] }`, or `{ "in": ["paymentToken", ["<base58>", "<base58>"]] }`. `$ownerId`, the document's owner, is an identifier operand as well (`{ "equal": ["authorId", "$ownerId"] }`), and a transfer or purchase that would break such a rule is refused. `{ "startsWith": ["url", { "const": "https://" }] }` and `endsWith` test a string property's start or end, byte for byte, against a constant or another string property. `{ "contains": ["participants", "$ownerId"] }` holds when a typed array property has an element equal to the value, looked for as the array's elements are (an integer expression, a string or an identifier), so `{ "not": { "contains": ["labels", { "const": "used" }] } }` refuses a label; the array is reported as a read of kind `elements`. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, `not` if its one condition does not, `{ "ifThen": [a, b] }` if `b` holds whenever `a` does (evaluating `b` only then), and `{ "ifThenElse": [a, b, c] }` if `b` holds when `a` does and `c` when it does not; `{ "notIn": [expression, [values]] }` is an `in` negated, and `min`, `max` (two or more operands) and `abs` (one) join the arithmetic; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0), or a size: `{ "length": path }` and `{ "byteLength": path }` give the characters and UTF-8 bytes of a string property, and `{ "count": path }` the items of an array or the bytes of a byte array, so `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit (a size read is reported with kind `length` or `count`). A type that lists `$createdAt`, `$updatedAt` or `$transferredAt` (or any of them with `BlockHeight` or `CoreBlockHeight` appended) in `required` may read it too: `{ "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000] }` keeps a listing to a week, and since a price update sets `$updatedAt` and a transfer or purchase `$transferredAt`, each is judged against the rules reading those. `{ "countOf": [type, filter] }` and `{ "sumOf": [type, property, filter] }` read a total from state, how many documents of a type of the same contract match the filter or what an integer property adds up to over them, as the type's count or sum trees keep it once the write is done: `{ "lessThanOrEqual": [{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }, 10] }` on `listing` keeps every owner at ten listings or fewer. The filter maps keys of the counted type (or `$ownerId`) to values read from the document being written, and may be left out for a whole-type total; the type needs `documentsCountable` or `documentsSummable` for a whole-type total, and an index whose properties are exactly the filter's keys (countable, or summing the property) otherwise. A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
+The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. A string property (an enum, say) is compared with `{ "equal": ["status", { "const": "closed" }] }` or `notEqual`, with another string property (`{ "notEqual": ["fromCurrency", "toCurrency"] }`), or listed with `{ "in": ["status", ["open", "pending"]] }`; a constant must be one of the property's `enum` values, and a string the document leaves out equals none, unless `{ "ifAbsent": ["status", "open"] }` gives it a default. Identifier properties compare the same way, with base58 constants: `{ "equal": ["paymentToken", { "const": "<base58>" }] }`, `{ "notEqual": ["buyerId", "sellerId"] }`, or `{ "in": ["paymentToken", ["<base58>", "<base58>"]] }`. `$ownerId`, the document's owner, is an identifier operand as well (`{ "equal": ["authorId", "$ownerId"] }`), and a transfer or purchase that would break such a rule is refused. `{ "startsWith": ["url", { "const": "https://" }] }` and `endsWith` test a string property's start or end, byte for byte, against a constant or another string property. `{ "contains": ["participants", "$ownerId"] }` holds when a typed array property has an element equal to the value, looked for as the array's elements are (an integer expression, a string or an identifier), so `{ "not": { "contains": ["labels", { "const": "used" }] } }` refuses a label; the array is reported as a read of kind `elements`. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, `not` if its one condition does not, `{ "ifThen": [a, b] }` if `b` holds whenever `a` does (evaluating `b` only then), and `{ "ifThenElse": [a, b, c] }` if `b` holds when `a` does and `c` when it does not; `{ "notIn": [expression, [values]] }` is an `in` negated, and `min`, `max` (two or more operands) and `abs` (one) join the arithmetic; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0), or a size: `{ "length": path }` and `{ "byteLength": path }` give the characters and UTF-8 bytes of a string property, and `{ "count": path }` the items of an array or the bytes of a byte array, so `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit (a size read is reported with kind `length` or `count`). `{ "countPresent": [path, path, ...] }` is how many of two or more properties the document holds, each as `present` tests it, so `{ "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }` asks for exactly one of them and `{ "in": [{ "countPresent": [...] }, [1, 2]] }` for one or two (each path is reported with kind `presence`). A type that lists `$createdAt`, `$updatedAt` or `$transferredAt` (or any of them with `BlockHeight` or `CoreBlockHeight` appended) in `required` may read it too: `{ "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000] }` keeps a listing to a week, and since a price update sets `$updatedAt` and a transfer or purchase `$transferredAt`, each is judged against the rules reading those. `{ "countOf": [type, filter] }` and `{ "sumOf": [type, property, filter] }` read a total from state, how many documents of a type of the same contract match the filter or what an integer property adds up to over them, as the type's count or sum trees keep it once the write is done: `{ "lessThanOrEqual": [{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }, 10] }` on `listing` keeps every owner at ten listings or fewer. The filter maps keys of the counted type (or `$ownerId`) to values read from the document being written, and may be left out for a whole-type total; the type needs `documentsCountable` or `documentsSummable` for a whole-type total, and an index whose properties are exactly the filter's keys (countable, or summing the property) otherwise. A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
 
 Consensus checks every rule on each create and replace, and rejects a document that breaks one, or whose rule overflows, divides by zero or raises to a negative power. The code reaches JS as `error.code`, and the message names the rule:
 
@@ -467,15 +561,17 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys):
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height the write records (every height on a create, the update's on a replace) is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`). The second argument says which write is checked. Given the stored document, a replace, `$ownerId`, `$revision` and the creation and transfer are what consensus judges, whatever the document holds: the stored document's owner, creation and transfer times and heights, and the revision after the stored one; a rule reading the stored version through `$old.` (`readsStored`) reads that document, its heights included. Given `null`, a create, `$ownerId` is the document's owner, `$revision` 1 and every time the device clock, and every `$old.` read is absent (a stored time, height or revision reads 0). Given `undefined`, the document's own owner, creation and transfer are read (the device clock for a time it lacks), and neither a rule reading `$old.` nor one reading `$revision`, which depends on the write, is judged:
 
 ```ts
 contract.documentTypePropertyConstraints('offer');
 // [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
 //    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
-//    readsOwner: false, readsSystem: [], readsTotals: [] }, ...]
+//    readsOwner: false, readsSystem: [], readsStored: false, readsTotals: [],
+//    readsReferenced: [] }, ...]
 
-const broken = contract.checkDocumentPropertyConstraints(document);
+// `null`: a create; pass the stored document to check a replace
+const broken = contract.checkDocumentPropertyConstraints(document, null);
 if (broken) {
   // { rule: 'discountBelowPrice', violation: 'NotMet', message: 'it does not hold' }
 }

@@ -321,7 +321,7 @@ struct PublicKeyStorageListView: View {
     /// name, then alias, then a short identity id — avoids the
     /// generic "Identity" placeholder except for truly empty rows.
     private func identityDisplayName(_ identity: PersistentIdentity) -> String {
-        if let name = identity.mainDpnsName, !name.isEmpty {
+        if let name = identity.ownedMainDpnsName, !name.isEmpty {
             return name
         }
         if let name = identity.dpnsName, !name.isEmpty {
@@ -1162,10 +1162,10 @@ struct TransactionStorageListView: View {
             // Direction.
             switch directionFilter {
             case .all: break
-            case .incoming where record.direction != CoreDirectionCode.incoming: return false
-            case .outgoing where record.direction != CoreDirectionCode.outgoing: return false
-            case .internalTx where record.direction != CoreDirectionCode.internalTransfer: return false
-            case .coinjoin where record.direction != CoreDirectionCode.coinJoin: return false
+            case .incoming where record.direction != 0: return false
+            case .outgoing where record.direction != 1: return false
+            case .internalTx where record.direction != 2: return false
+            case .coinjoin where record.direction != 3: return false
             default: break
             }
             // Type. Treat the legacy `"Standard"` placeholder (the

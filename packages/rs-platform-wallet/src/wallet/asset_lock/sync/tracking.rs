@@ -121,6 +121,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
     }
 
+    /// The wallet-drain operation a tracked lock belongs to, if any.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) async fn tracked_operation_id(&self, out_point: &OutPoint) -> Option<[u8; 16]> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.operation_id)
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///
@@ -268,7 +277,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let mut cs = AssetLockChangeSet::default();
             match info.tracked_asset_locks.get_mut(out_point) {
-                Some(entry) if entry.status != AssetLockStatus::Consumed => {
+                Some(entry) if entry.operation_id.is_some() => {
+                    return Err(PlatformWalletError::Persistence(
+                        "wallet drains require authenticated completion through drain reconciliation".into(),
+                    ));
+                }
+                Some(entry) if !entry.status.is_consumed() => {
                     entry.status = AssetLockStatus::Consumed;
                     entry.proof = None; // one-shot — never relevant after consumption
                     cs.asset_locks.insert(*out_point, (&*entry).into());
@@ -441,7 +455,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
-        if entry.status == AssetLockStatus::Consumed {
+        if entry.status.is_consumed() {
             tracing::warn!(
                 outpoint = %out_point,
                 attempted = ?new_status,
@@ -449,6 +463,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                  transition was in flight; keeping the tombstone"
             );
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if new_status == AssetLockStatus::DrainCompleted
+            || (entry.operation_id.is_some() && new_status == AssetLockStatus::Consumed)
+        {
+            return Err(PlatformWalletError::Persistence(
+                "wallet drains require authenticated completion through drain reconciliation"
+                    .into(),
+            ));
         }
         if !expected(&entry.status) {
             tracing::info!(
@@ -503,8 +525,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
-        if entry.status == AssetLockStatus::Consumed {
+        if entry.status.is_consumed() {
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if new_status == AssetLockStatus::DrainCompleted
+            || (entry.operation_id.is_some() && new_status == AssetLockStatus::Consumed)
+        {
+            return Err(PlatformWalletError::Persistence(
+                "wallet drains require authenticated completion through drain reconciliation"
+                    .into(),
+            ));
         }
         if !expected(&entry.status) {
             return Ok(None);

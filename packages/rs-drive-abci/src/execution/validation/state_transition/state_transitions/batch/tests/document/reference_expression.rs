@@ -21,6 +21,7 @@
 use super::*;
 
 mod reference_expression_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::super::reference_test_setup::{
         create_document, register_contract_at, replace_document,
     };
@@ -210,6 +211,7 @@ mod reference_expression_tests {
                 &self.founder.key,
                 nonce,
                 &self.founder.signer,
+                &BlockInfo::default(),
                 platform_version,
             )
             .await
@@ -728,6 +730,7 @@ mod reference_expression_tests {
                 founder,
                 // The resignation type records no creator ids
                 None,
+                &DocumentSystemValues::default(),
                 None,
                 // A create: there is no stored document
                 None,
@@ -735,6 +738,7 @@ mod reference_expression_tests {
                 &BlockInfo::default(),
                 &mut Vec::new(),
                 None,
+                &mut BTreeMap::new(),
                 None,
                 &mut execution_context,
                 platform_version,
@@ -896,12 +900,14 @@ mod reference_expression_tests {
                 &data,
                 Identifier::from([0x5D; 32]),
                 None,
+                &DocumentSystemValues::default(),
                 None,
                 None,
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),
                 None,
+                &mut BTreeMap::new(),
                 None,
                 &mut execution_context,
                 platform_version,

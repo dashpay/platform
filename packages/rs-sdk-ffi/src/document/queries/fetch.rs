@@ -31,7 +31,7 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     let contract_id_str = match CStr::from_ptr(contract_id).to_str() {
         Ok(s) => s,

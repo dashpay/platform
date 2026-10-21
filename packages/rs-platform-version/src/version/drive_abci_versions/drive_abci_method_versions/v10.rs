@@ -89,6 +89,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         verify_chain_lock_through_core: 0,
         make_sure_core_is_synced_to_chain_lock: 0,
         recent_block_count_amount: 2,
+        dkg_mining_schedules: None,
     },
     core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions {
         verify_recent_signature_locally: 0,
@@ -99,7 +100,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
         add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 1,
-        add_epoch_pool_to_proposers_payout_operations: 1, // changed: payouts are credited by the block's apply_drive_operations, which routes a repaid identity debt
+        add_epoch_pool_to_proposers_payout_operations: 1, // changed: payouts are credited by the block's apply_drive_operations, which routes repaid identity debt; valid shares are paid first and a missing proposer's remaining allocation, including its last-proposer rounding remainder, returns to the applying block's processing fee pool
         find_oldest_epoch_needing_payment: 0,
         fetch_reward_shares_list_for_masternode: 0,
     },

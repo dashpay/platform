@@ -75,7 +75,7 @@ final class DashModelMigrationTests: XCTestCase {
         SDKLogger.flush()
         let log = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
         XCTAssertTrue(log.contains("event=store_open_started"))
-        XCTAssertTrue(log.contains("route=\"historical-v2-to-v4\""))
+        XCTAssertTrue(log.contains("route=\"historical-v2-to-v3\""))
         XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
         XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
         XCTAssertTrue(log.contains("target_version=\"4.0.0\""))
@@ -513,7 +513,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = DashModelContainer.schema
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashKeyLimitsMigrationTest",
             schema: v2Schema,
@@ -590,7 +590,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = DashModelContainer.schema
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashContractBoundsKindMigrationTest",
             schema: v2Schema,
@@ -722,6 +722,7 @@ final class DashModelMigrationTests: XCTestCase {
     func testAcceptedV1PreservesAllThirteenFieldsMissingFromHistoricalV2() throws {
         let (directory, url) = try copyFixture(Self.fixtures[0])
         defer { try? FileManager.default.removeItem(at: directory) }
+        let before = directory.appendingPathComponent("before.store")
         try autoreleasepool {
             let schema = Schema(versionedSchema: DashSchemaV1.self)
             let container = try ModelContainer(for: schema, configurations: [
@@ -749,9 +750,12 @@ final class DashModelMigrationTests: XCTestCase {
             context.insert(type)
             context.insert(index)
             try context.save()
+            // Snapshot committed rows before releasing the writer: its teardown
+            // can checkpoint the WAL and contend with the backup's source read lock.
+            try withExtendedLifetime((container, context)) {
+                try DashLegacyStoreSQLite.copy(from: url, to: before)
+            }
         }
-        let before = directory.appendingPathComponent("before.store")
-        try DashLegacyStoreSQLite.copy(from: url, to: before)
         try autoreleasepool {
             let container = try DashModelContainer.create(url: url)
             let context = container.mainContext
