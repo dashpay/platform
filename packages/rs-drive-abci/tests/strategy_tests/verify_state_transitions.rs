@@ -970,11 +970,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     }
                 }
                 StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
-                    let vote: Vote = masternode_vote_action
-                        .vote_ref()
-                        .clone()
-                        .try_into()
-                        .expect("expected a vote");
+                    let vote: Vote = masternode_vote_action.vote_ref().clone().into();
 
                     // we expect to get a vote that matches the state transition
                     let (root_hash_vote, maybe_vote) = match masternode_vote_action.vote_ref() {
@@ -983,9 +979,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
                                     contested_document_resource_vote_poll,
                                 ) => contested_document_resource_vote_poll.contract.as_ref(),
-                                ResolvedVotePoll::YesNoVotePoll(_) => {
-                                    panic!("a resource vote cannot answer a yes/no vote poll")
-                                }
                             };
                             Drive::verify_masternode_vote(
                                 &response_proof.grovedb_proof,

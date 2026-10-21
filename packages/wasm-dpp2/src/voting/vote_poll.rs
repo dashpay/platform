@@ -38,13 +38,12 @@ export interface YesNoVotePollFieldsObject {
     supermajorityNumerator: number;
     supermajorityDenominator: number;
     minimumVotingPower:
-        | { absolute: number }
+        | { $type: "absolute"; votingPower: number }
         | {
-              fractionOfTotal: {
-                  numerator: number;
-                  denominator: number;
-                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
-              };
+              $type: "fractionOfTotal";
+              numerator: number;
+              denominator: number;
+              rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
           };
 }
 
@@ -56,13 +55,12 @@ export interface YesNoVotePollFieldsJSON {
     supermajorityNumerator: number;
     supermajorityDenominator: number;
     minimumVotingPower:
-        | { absolute: number }
+        | { $type: "absolute"; votingPower: number }
         | {
-              fractionOfTotal: {
-                  numerator: number;
-                  denominator: number;
-                  rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
-              };
+              $type: "fractionOfTotal";
+              numerator: number;
+              denominator: number;
+              rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
           };
 }
 

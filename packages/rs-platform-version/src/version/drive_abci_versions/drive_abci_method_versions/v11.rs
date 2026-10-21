@@ -103,10 +103,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   only safe together with this check.
 ///
 /// The yes/no vote polls of protocol v15 share the end date index with contested polls:
-/// - `voting.clean_up_after_vote_poll_end` is 1 rather than 0: it also cleans up finished yes/no
-///   polls, and removes every finished poll of either kind from the end date index itself.
-/// - `voting.clean_up_after_contested_resources_vote_poll_end` is 2 rather than 1: version 1
-///   without the end date index removal, which `clean_up_after_vote_poll_end` 1 does instead.
+/// `voting.clean_up_after_vote_poll_end` is 1 rather than 0, so the yes/no polls a block ends are
+/// cleaned up too. The contested ones still go to `clean_up_after_contested_resources_vote_poll_end`
+/// 1, and each clean-up removes its own polls from the end date index.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
@@ -116,7 +115,6 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     },
     voting: DriveAbciVotingMethodVersions {
         clean_up_after_vote_poll_end: 1,
-        clean_up_after_contested_resources_vote_poll_end: 2,
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10

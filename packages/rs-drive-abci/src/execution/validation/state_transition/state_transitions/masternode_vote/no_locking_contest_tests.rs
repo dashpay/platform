@@ -80,9 +80,20 @@ fn setup() -> (
     DataContract,
     StdRng,
 ) {
-    let platform_version = PlatformVersion::latest();
+    setup_at(PlatformVersion::latest())
+}
+
+/// [`setup`] on a chain born at `platform_version`.
+fn setup_at(
+    platform_version: &'static PlatformVersion,
+) -> (
+    TempPlatform<MockCoreRPCLike>,
+    &'static PlatformVersion,
+    DataContract,
+    StdRng,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let mut rng = StdRng::seed_from_u64(0x9010_C41A);
@@ -734,7 +745,24 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
 /// Both then end in the one block at the end of their vote window.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    keep_a_shared_join_window_end_date_until_its_last_contest_moves(PlatformVersion::latest())
+        .await;
+}
+
+/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+#[tokio::test]
+async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves_at_protocol_version_14(
+) {
+    keep_a_shared_join_window_end_date_until_its_last_contest_moves(
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    )
+    .await;
+}
+
+async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
+    platform_version: &'static PlatformVersion,
+) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, poll_duration) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -830,7 +858,20 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
 /// block; the block removes them first and ends the contest behind them.
 #[tokio::test]
 async fn should_end_a_contest_behind_end_dates_left_empty() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    end_a_contest_behind_end_dates_left_empty(PlatformVersion::latest()).await;
+}
+
+/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+#[tokio::test]
+async fn should_end_a_contest_behind_end_dates_left_empty_at_protocol_version_14() {
+    end_a_contest_behind_end_dates_left_empty(
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    )
+    .await;
+}
+
+async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static PlatformVersion) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, _) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let start = join(

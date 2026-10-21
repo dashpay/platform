@@ -51,13 +51,8 @@ impl ResolvedVote {
     }
 }
 
-impl TryFrom<ResolvedVote> for Vote {
-    type Error = ProtocolError;
-
-    /// The vote as it was cast. A resource vote resolves to the contested document resource
-    /// poll it carried, so a resolved resource vote holding a yes/no poll is a programming
-    /// error, not a vote.
-    fn try_from(value: ResolvedVote) -> Result<Self, Self::Error> {
+impl From<ResolvedVote> for Vote {
+    fn from(value: ResolvedVote) -> Self {
         match value {
             ResolvedVote::ResolvedResourceVote(resolved_resource_vote) => {
                 match resolved_resource_vote {
@@ -66,23 +61,17 @@ impl TryFrom<ResolvedVote> for Vote {
                         match v0.resolved_vote_poll {
                             ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
                                 contested_document_resource,
-                            ) => Ok(Self::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                            ) => Self::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
                                 vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
                                     contested_document_resource.into(),
                                 ),
                                 resource_vote_choice: vote_choice,
-                            }))),
-                            ResolvedVotePoll::YesNoVotePoll(_) => {
-                                Err(ProtocolError::CorruptedCodeExecution(
-                                    "a resolved resource vote cannot hold a yes/no vote poll"
-                                        .to_string(),
-                                ))
-                            }
+                            })),
                         }
                     }
                 }
             }
-            ResolvedVote::YesNoVote(yes_no_vote) => Ok(Self::YesNoVote(yes_no_vote.into())),
+            ResolvedVote::YesNoVote(yes_no_vote) => Self::YesNoVote(yes_no_vote.into()),
         }
     }
 }

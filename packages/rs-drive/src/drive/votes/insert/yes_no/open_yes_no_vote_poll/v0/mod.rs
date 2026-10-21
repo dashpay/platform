@@ -1,8 +1,12 @@
-use crate::drive::votes::paths::{vote_decisions_active_polls_tree_path_vec, YesNoVotePollPaths};
+use crate::drive::votes::paths::{
+    vote_decisions_active_polls_tree_path_vec, vote_decisions_tree_path_vec, YesNoVotePollPaths,
+    ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+};
 use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::{EphemeralGroveOperation, GroveOperation};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyInfo};
 use dpp::block::block_info::BlockInfo;
@@ -13,6 +17,8 @@ use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollS
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::ProtocolError;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
@@ -57,20 +63,51 @@ impl Drive {
         vote_poll.validate_parameters(platform_version)?;
         let poll_id = vote_poll.unique_id()?;
 
-        // The poll's own tree. A poll that already has one was opened before.
-        let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathKeyInfo::PathKey::<0>((
-                vote_decisions_active_polls_tree_path_vec(),
-                poll_id.to_vec(),
-            )),
-            TreeType::NormalTree,
-            None,
-            BatchInsertTreeApplyType::StatefulBatchInsertTree,
-            transaction,
-            previous_batch_operations,
-            batch_operations,
-            &platform_version.drive,
-        )?;
+        // The decisions trees, when the chain lacks them: genesis and the upgrade to protocol
+        // version 15 create them, but a chain that reached 15 before they existed did not. The
+        // same keys in the same order as `insert_vote_decisions_trees`.
+        for subtree_key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            self.batch_insert_empty_tree_if_not_exists(
+                PathKeyInfo::PathKey::<0>((
+                    vote_decisions_tree_path_vec(),
+                    vec![subtree_key as u8],
+                )),
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                transaction,
+                previous_batch_operations,
+                batch_operations,
+                &platform_version.drive,
+            )?;
+        }
+
+        // The poll's own tree. A poll that already has one was opened before, and so was one
+        // whose tree an earlier opening queued in this batch: opened twice, it would be listed
+        // under two end dates and the second would close a finished poll.
+        let active_polls_path = vote_decisions_active_polls_tree_path_vec();
+        let queued_in_this_batch = {
+            let path = KeyInfoPath::from_known_owned_path(active_polls_path.clone());
+            let key = KeyInfo::KnownKey(poll_id.to_vec());
+            batch_operations.iter().any(|operation| {
+                matches!(
+                    operation,
+                    GroveOperation(queued) | EphemeralGroveOperation(queued, _)
+                        if queued.path == path && queued.key.as_ref() == Some(&key)
+                )
+            })
+        };
+        let inserted = !queued_in_this_batch
+            && self.batch_insert_empty_tree_if_not_exists(
+                PathKeyInfo::PathKey::<0>((active_polls_path, poll_id.to_vec())),
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                transaction,
+                previous_batch_operations,
+                batch_operations,
+                &platform_version.drive,
+            )?;
         if !inserted {
             return Err(Error::Protocol(Box::new(ProtocolError::VoteError(
                 format!(

@@ -10,10 +10,10 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Removes finished polls of every kind from the end date index, and each end date's tree
-    /// once nothing is left under it. `vote_polls` holds every poll closed in this block with
-    /// its end date; whether an end date is left empty is read from the tree, since it can
-    /// still hold a poll of either kind the block did not reach.
+    /// Removes finished polls, given by unique id with their end date, from the end date index,
+    /// and each end date's tree once nothing is left under it. Whether an end date is left empty
+    /// is read from the tree, since it can still hold a poll of either kind that this batch does
+    /// not remove. The yes/no clean-up removes its polls with it.
     pub fn remove_vote_poll_end_date_query_operations(
         &self,
         vote_polls: &[(Identifier, TimestampMillis)],

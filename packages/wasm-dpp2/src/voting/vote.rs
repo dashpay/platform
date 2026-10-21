@@ -89,13 +89,11 @@ impl VoteWasm {
         #[wasm_bindgen(js_name = "votePoll")] vote_poll: &VotePollWasm,
         #[wasm_bindgen(js_name = "resourceVoteChoice")]
         resource_vote_choice: &ResourceVoteChoiceWasm,
-    ) -> WasmDppResult<Self> {
-        Ok(VoteWasm(Vote::ResourceVote(ResourceVote::V0(
-            ResourceVoteV0 {
-                vote_poll: contested_poll_for_resource_vote(vote_poll)?,
-                resource_vote_choice: resource_vote_choice.clone().into(),
-            },
-        ))))
+    ) -> Self {
+        VoteWasm(Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: vote_poll.clone().into(),
+            resource_vote_choice: resource_vote_choice.clone().into(),
+        })))
     }
 
     #[wasm_bindgen(getter = poll)]
@@ -134,7 +132,7 @@ impl VoteWasm {
     pub fn set_poll(&mut self, poll: &VotePollWasm) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
             Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-                vote_poll: contested_poll_for_resource_vote(poll)?,
+                vote_poll: poll.clone().into(),
                 resource_vote_choice: vote.resource_vote_choice(),
             })),
             Vote::YesNoVote(vote) => {
@@ -164,18 +162,6 @@ impl VoteWasm {
         };
 
         Ok(())
-    }
-}
-
-/// The poll of a resource vote: a contested document resource poll. Consensus refuses a resource
-/// vote that names a yes/no poll, so it is refused here as a yes/no vote refuses a contested poll.
-pub(crate) fn contested_poll_for_resource_vote(poll: &VotePollWasm) -> WasmDppResult<VotePoll> {
-    match poll.clone().into() {
-        VotePoll::YesNoVotePoll(_) => Err(WasmDppError::invalid_argument(
-            "a resource vote answers a contested document resource vote poll, not a yes/no vote poll"
-                .to_string(),
-        )),
-        vote_poll => Ok(vote_poll),
     }
 }
 

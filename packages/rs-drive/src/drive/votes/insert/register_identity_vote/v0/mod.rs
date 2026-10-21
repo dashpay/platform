@@ -40,15 +40,11 @@ impl Drive {
                         transaction,
                         platform_version,
                     ),
-                    // Unreachable: this v0 is selected up to protocol version 14, its vote
-                    // comes from a masternode vote action, and a masternode vote that names a
-                    // yes/no poll does not decode there (`StateTransition::active_version_range`).
-                    ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Drive(
-                        DriveError::CorruptedCodeExecution("yes/no vote polls need version 1"),
-                    )),
                 }
             }
-            // Unreachable for the same reason: no yes/no vote decodes before 15.
+            // Unreachable: this v0 is selected up to protocol version 14, its vote comes from a
+            // masternode vote action, and a yes/no vote does not decode there
+            // (`StateTransition::active_version_range`).
             ResolvedVote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "yes/no votes need version 1",
             ))),
@@ -79,15 +75,11 @@ impl Drive {
                         transaction,
                         platform_version,
                     ),
-                    // Unreachable: this v0 is selected up to protocol version 14, its vote
-                    // comes from a masternode vote action, and a masternode vote that names a
-                    // yes/no poll does not decode there (`StateTransition::active_version_range`).
-                    ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Drive(
-                        DriveError::CorruptedCodeExecution("yes/no vote polls need version 1"),
-                    )),
                 }
             }
-            // Unreachable for the same reason: no yes/no vote decodes before 15.
+            // Unreachable: this v0 is selected up to protocol version 14, its vote comes from a
+            // masternode vote action, and a yes/no vote does not decode there
+            // (`StateTransition::active_version_range`).
             ResolvedVote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "yes/no votes need version 1",
             ))),

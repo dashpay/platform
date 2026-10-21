@@ -6,9 +6,9 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 /// Introduced in protocol v15:
 ///
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
-///   `contested_resource_insert.register_identity_vote` to 1, which registers a vote of either
-///   poll kind, and `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the
-///   yes/no votes of a masternode that left the list.
+///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
+///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
+///   a masternode that left the list.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {

@@ -139,26 +139,23 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             Ok(_) => {}
             //todo make this more reliable
             Err(e) => {
-                return if e.to_string().contains("already exists") {
-                    match self {
-                        Vote::ResourceVote(_) => {
-                            let vote =
-                                Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id))
-                                    .await?;
-                            vote.ok_or(Error::Generic(
-                                "vote was proved to not exist but was said to exist".to_string(),
-                            ))
-                        }
-                        // `VoteQuery` reads the contested resource votes index only; no query
-                        // fetches a yes/no vote yet, so the existing vote cannot be returned.
-                        Vote::YesNoVote(_) => Err(Error::Generic(
-                            "the yes/no vote already exists; fetching yes/no votes is not supported yet"
-                                .to_string(),
-                        )),
+                if !e.to_string().contains("already exists") {
+                    return Err(e.into());
+                }
+                match self {
+                    Vote::ResourceVote(_) => {
+                        let vote =
+                            Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id))
+                                .await?;
+                        return vote.ok_or(Error::Generic(
+                            "vote was proved to not exist but was said to exist".to_string(),
+                        ));
                     }
-                } else {
-                    Err(e.into())
-                };
+                    // `VoteQuery` reads the contested resource votes index only, so no query
+                    // fetches a yes/no vote yet. The duplicate is this very transition, already
+                    // delivered: wait for it as for one just broadcast, which proves it executed.
+                    Vote::YesNoVote(_) => {}
+                }
             }
         }
         Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await

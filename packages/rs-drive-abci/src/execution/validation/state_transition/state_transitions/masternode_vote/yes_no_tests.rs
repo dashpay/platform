@@ -6,7 +6,7 @@ use crate::execution::validation::state_transition::state_transitions::tests::{
     take_down_masternode_identities,
 };
 use crate::platform_types::platform::PlatformRef;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
     InternalError, SuccessfulExecution, UnpaidConsensusError,
@@ -14,15 +14,16 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-use crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -43,8 +44,10 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
 use dpp::voting::votes::Vote;
+use drive::error::Error as DriveError;
+use drive::grovedb::Error as GroveError;
 use drive::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
-use drive::query::VotePollsByEndDateDriveQuery;
+use drive::util::test_helpers::vote_poll_end_dates;
 use simple_signer::signer::SimpleSigner;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -155,10 +158,12 @@ async fn perform_yes_no_vote(
     .await
 }
 
-/// Whether CheckTx admits the serialized transition on its first check. A transition CheckTx
-/// cannot take at all (one not active at the current protocol version fails to decode) is not
-/// admitted either.
-fn check_tx_admits(platform: &TempPlatform<MockCoreRPCLike>, serialized_transition: &[u8]) -> bool {
+/// CheckTx's verdicts on the serialized transition at both levels, taken before a block runs it:
+/// whether it admits the transition, or the error it failed with.
+fn check_tx_verdicts(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    serialized_transition: &[u8],
+) -> Vec<(CheckTxLevel, Result<bool, String>)> {
     let platform_state = platform.state.load();
     let platform_version = platform_state
         .current_platform_version()
@@ -169,21 +174,29 @@ fn check_tx_admits(platform: &TempPlatform<MockCoreRPCLike>, serialized_transiti
         config: &platform.config,
         core_rpc: &platform.core_rpc,
     };
-    platform
-        .check_tx(
-            serialized_transition,
-            CheckTxLevel::FirstTimeCheck,
-            &platform_ref,
-            platform_version,
-        )
-        .is_ok_and(|result| result.is_valid())
+    [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck]
+        .into_iter()
+        .map(|level| {
+            let verdict = platform
+                .check_tx(
+                    serialized_transition,
+                    level,
+                    &platform_ref,
+                    platform_version,
+                )
+                .map(|result| result.is_valid())
+                .map_err(|error| error.to_string());
+            (level, verdict)
+        })
+        .collect()
 }
 
 /// Processes one masternode vote transition in a block and reports how it went.
 ///
 /// Every vote first goes through CheckTx, which asserts under cfg(test) that it leaves committed
-/// state untouched (the devnet paloma height 788 class); a vote CheckTx admits must then pass at
-/// both levels, as the shared masternode vote helper requires of its valid votes.
+/// state untouched (the devnet paloma height 788 class). As the shared masternode vote helper
+/// requires, a vote the block accepts must pass CheckTx at both levels, and a vote the block
+/// refuses must be refused by CheckTx's first check, or its voter never learns why.
 async fn perform_vote_transition(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     vote: Vote,
@@ -207,9 +220,7 @@ async fn perform_vote_transition(
     let serialized_transition = masternode_vote_transition
         .serialize_to_bytes()
         .expect("expected to serialize the vote");
-    if check_tx_admits(platform, &serialized_transition) {
-        assert_check_tx_valid_at_all_levels(platform, &serialized_transition, "yes/no vote");
-    }
+    let check_tx_verdicts = check_tx_verdicts(platform, &serialized_transition);
     let platform_state = platform.state.load();
     let processing_result = process_test_state_transition(
         platform,
@@ -218,8 +229,34 @@ async fn perform_vote_transition(
         platform_version,
     );
     match processing_result.into_execution_results().remove(0) {
-        SuccessfulExecution { .. } => Ok(()),
-        other => Err(other),
+        SuccessfulExecution { .. } => {
+            for (level, verdict) in check_tx_verdicts {
+                assert_eq!(
+                    verdict,
+                    Ok(true),
+                    "check_tx {level:?} must admit a yes/no vote a block accepts"
+                );
+            }
+            Ok(())
+        }
+        other => {
+            // CheckTx does not run the prefunded balance pre-check, for votes on contested polls
+            // either, so a vote on a poll without a fund passes it.
+            let refused_for_its_fund = matches!(
+                &other,
+                UnpaidConsensusError(ConsensusError::StateError(
+                    StateError::PrefundedSpecializedBalanceNotFoundError(_)
+                        | StateError::PrefundedSpecializedBalanceInsufficientError(_)
+                ))
+            );
+            let (level, verdict) = &check_tx_verdicts[0];
+            assert!(
+                refused_for_its_fund || matches!(verdict, Ok(false) | Err(_)),
+                "check_tx {level:?} must refuse a yes/no vote a block refuses ({other:?}), got \
+                 {verdict:?}"
+            );
+            Err(other)
+        }
     }
 }
 
@@ -261,25 +298,40 @@ fn close_ended_polls(
     close_ended_polls_at(platform, END_DATE + 300_000, platform_version)
 }
 
-/// Moves the chain to `time_ms` and closes the polls that ended by then.
+/// Moves the chain to `time_ms`, one block after the last, and closes the polls that ended by
+/// then.
 fn close_ended_polls_at(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     time_ms: u64,
     platform_version: &PlatformVersion,
 ) {
-    fast_forward_to_block(platform, time_ms, 10000, 42, 0, false);
+    close_ended_polls_in_block(platform, time_ms, None, platform_version)
+}
+
+/// Like [`close_ended_polls_at`], with the closing block's own platform state when given: the
+/// last committed one stays the chain's.
+fn close_ended_polls_in_block(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    time_ms: u64,
+    block_platform_state: Option<PlatformState>,
+    platform_version: &PlatformVersion,
+) {
+    let height = platform.state.load().last_committed_block_height() + 1;
+    fast_forward_to_block(platform, time_ms, height, 42, 0, false);
     let block_info = BlockInfo {
         time_ms,
-        height: 10000,
+        height,
         core_height: 42,
         epoch: Default::default(),
     };
-    let platform_state = platform.state.load();
+    let last_committed_platform_state = platform.state.load();
+    let block_platform_state = block_platform_state
+        .unwrap_or_else(|| PlatformState::clone(&last_committed_platform_state));
     let transaction = platform.drive.grove.start_transaction();
     platform
         .check_for_ended_vote_polls(
-            &platform_state,
-            &platform_state,
+            &last_committed_platform_state,
+            &block_platform_state,
             &block_info,
             Some(&transaction),
             platform_version,
@@ -303,6 +355,25 @@ fn poll_state(
     }
     .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
     .expect("expected the poll state")
+}
+
+/// The processing credits epoch 0 will distribute; the item is written by the first credit, so
+/// before any it is missing, which is none.
+fn processing_credits(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    match platform
+        .drive
+        .get_epoch_processing_credits_for_distribution(
+            &Epoch::new(0).expect("epoch"),
+            None,
+            platform_version,
+        ) {
+        Ok(credits) => credits,
+        Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => 0,
+        Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
+    }
 }
 
 fn new_platform() -> TempPlatform<MockCoreRPCLike> {
@@ -473,30 +544,34 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         ..two_thirds_poll(purpose, 0)
     };
     let evonode_alone = half_rounded_up(b"evonode alone");
-    let evonode_and_one = half_rounded_up(b"evonode and one masternode");
+    let evonode_and_three = half_rounded_up(b"evonode and three masternodes");
     open_poll(&platform, &evonode_alone, FUND, platform_version);
-    open_poll(&platform, &evonode_and_one, FUND, platform_version);
+    open_poll(&platform, &evonode_and_three, FUND, platform_version);
 
-    // One evonode and five masternodes: a total of 9, so half rounded up is 5.
+    // One evonode and five masternodes: a total of 9 while the polls run.
     let evonode = setup_voter(&mut platform, 100, true, platform_version);
     let masternodes: Vec<_> = (101..106)
         .map(|seed| setup_voter(&mut platform, seed, false, platform_version))
         .collect();
-    let total: u32 = platform
-        .state
-        .load()
-        .full_masternode_list()
-        .values()
-        .map(|masternode| match masternode.node_type {
-            MasternodeType::Evo => 4,
-            MasternodeType::Regular => 1,
-        })
-        .sum();
-    assert_eq!(total, 9, "the list holds only the voters set up here");
+    let total_voting_power = |platform_state: &PlatformState| -> u32 {
+        platform_state
+            .full_masternode_list()
+            .values()
+            .map(|masternode| match masternode.node_type {
+                MasternodeType::Evo => 4,
+                MasternodeType::Regular => 1,
+            })
+            .sum()
+    };
+    assert_eq!(
+        total_voting_power(&platform.state.load()),
+        9,
+        "the list holds only the voters set up here"
+    );
     assert_eq!(masternodes.len(), 5);
 
     let (pro_tx_hash, signer, voting_key) = &evonode;
-    for (nonce, vote_poll) in [(1, &evonode_alone), (2, &evonode_and_one)] {
+    for (nonce, vote_poll) in [(1, &evonode_alone), (2, &evonode_and_three)] {
         perform_yes_no_vote(
             &mut platform,
             vote_poll,
@@ -510,21 +585,45 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         .await
         .expect("expected the evonode's vote to be accepted");
     }
-    let (pro_tx_hash, signer, voting_key) = &masternodes[0];
-    perform_yes_no_vote(
-        &mut platform,
-        &evonode_and_one,
-        YesNoAbstainVoteChoice::Yes,
-        signer,
-        *pro_tx_hash,
-        voting_key,
-        1,
-        platform_version,
-    )
-    .await
-    .expect("expected the masternode's vote to be accepted");
+    for (pro_tx_hash, signer, voting_key) in &masternodes[..3] {
+        perform_yes_no_vote(
+            &mut platform,
+            &evonode_and_three,
+            YesNoAbstainVoteChoice::Yes,
+            signer,
+            *pro_tx_hash,
+            voting_key,
+            1,
+            platform_version,
+        )
+        .await
+        .expect("expected the masternode's vote to be accepted");
+    }
 
-    close_ended_polls(&mut platform, platform_version);
+    // The closing block's list gains four masternodes the last committed one lacks: a total of
+    // 13, so half rounded up is 7. Judged against the last committed list (9), the bar would be
+    // 5 instead.
+    let mut closing_block_state = PlatformState::clone(&platform.state.load());
+    let template = closing_block_state
+        .full_masternode_list()
+        .values()
+        .find(|masternode| masternode.node_type == MasternodeType::Regular)
+        .expect("expected a masternode")
+        .clone();
+    for seed in 0..4u8 {
+        let mut masternode = template.clone();
+        masternode.pro_tx_hash = ProTxHash::from_byte_array([0xa0 + seed; 32]);
+        closing_block_state
+            .full_masternode_list_mut()
+            .insert(masternode.pro_tx_hash, masternode);
+    }
+    assert_eq!(total_voting_power(&closing_block_state), 13);
+    close_ended_polls_in_block(
+        &mut platform,
+        END_DATE + 300_000,
+        Some(closing_block_state),
+        platform_version,
+    );
 
     let result_of = |vote_poll: &YesNoVotePoll| {
         *poll_state(&platform, vote_poll, platform_version)
@@ -535,12 +634,12 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
     };
     let alone = result_of(&evonode_alone);
     assert_eq!(alone.yes_voting_power, 4);
-    assert_eq!(alone.required_voting_power, 5);
+    assert_eq!(alone.required_voting_power, 7);
     assert!(!alone.passed);
-    let with_one = result_of(&evonode_and_one);
-    assert_eq!(with_one.yes_voting_power, 5);
-    assert_eq!(with_one.required_voting_power, 5);
-    assert!(with_one.passed);
+    let with_three = result_of(&evonode_and_three);
+    assert_eq!(with_three.yes_voting_power, 7);
+    assert_eq!(with_three.required_voting_power, 7);
+    assert!(with_three.passed);
 }
 
 #[tokio::test]
@@ -644,16 +743,9 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
         .fetch_prefunded_specialized_balance(vote_poll_id.to_buffer(), None, platform_version)
         .expect("balance");
     assert_eq!(balance, Some(FUND - 4 * vote_cost));
-    let end_dates = VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates");
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert_eq!(end_dates.len(), 1);
+    let processing_credits_before = processing_credits(&platform, platform_version);
 
     close_ended_polls(&mut platform, platform_version);
 
@@ -694,20 +786,17 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
             None
         );
     }
+    // What the votes left of the fund goes to the processing pool, and the balance goes.
     let balance = platform
         .drive
         .fetch_prefunded_specialized_balance(vote_poll_id.to_buffer(), None, platform_version)
         .expect("balance");
-    assert!(balance.is_none() || balance == Some(0));
-    let end_dates = VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates");
+    assert_eq!(balance, None);
+    assert_eq!(
+        processing_credits(&platform, platform_version) - processing_credits_before,
+        FUND - 4 * vote_cost
+    );
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert!(end_dates.is_empty());
 
     // A finished poll takes no more votes, and cannot be opened again under the same id.
@@ -992,6 +1081,22 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
     );
     let state = poll_state(&platform, &vote_poll, platform_version);
     assert_eq!(state.yes_voting_power, 0);
+
+    // The poll still closes when its time comes: the clean-up finds no fund to drain and moves
+    // on, rather than failing the block.
+    let processing_credits_before = processing_credits(&platform, platform_version);
+    close_ended_polls(&mut platform, platform_version);
+    let result = *poll_state(&platform, &vote_poll, platform_version)
+        .stored_info
+        .expect("stored info")
+        .result()
+        .expect("expected the poll to be finished");
+    assert!(!result.passed);
+    assert_eq!(
+        processing_credits(&platform, platform_version),
+        processing_credits_before
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]
@@ -1091,13 +1196,16 @@ async fn should_remove_the_votes_of_masternodes_that_left_the_list() {
 
 #[tokio::test]
 async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_time() {
-    use crate::execution::validation::state_transition::state_transitions::tests::create_dpns_identity_name_contest;
+    use crate::execution::validation::state_transition::state_transitions::tests::{
+        create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states,
+    };
+    use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
 
     let platform_version = PlatformVersion::latest();
     let mut platform = new_platform();
     let platform_state = platform.state.load();
     // The DPNS contest ends two weeks after its creation at the genesis block time.
-    let (_contender_1, _contender_2, _dpns_contract) = create_dpns_identity_name_contest(
+    let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
         &mut platform,
         &platform_state,
         7,
@@ -1106,18 +1214,10 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
     )
     .await;
     // The yes/no poll ends at the very millisecond the contest does.
-    let contest_end_date = *VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates")
-    .keys()
-    .next()
-    .expect("expected the contest's end date");
+    let contest_end_date = *vote_poll_end_dates(&platform.drive, platform_version)
+        .keys()
+        .next()
+        .expect("expected the contest's end date");
     let vote_poll = two_thirds_poll(b"shared end date", 1);
     open_poll_ending_at(
         &platform,
@@ -1136,29 +1236,13 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
     )
     .await;
 
-    let end_dates = VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates");
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert_eq!(end_dates.len(), 1, "both polls end at the same time");
     assert_eq!(end_dates.values().next().expect("polls").len(), 2);
 
     close_ended_polls_at(&mut platform, contest_end_date + 300_000, platform_version);
 
-    let end_dates = VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates");
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert!(end_dates.is_empty());
     assert!(
         poll_state(&platform, &vote_poll, platform_version)
@@ -1167,6 +1251,36 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
             .result()
             .expect("finished")
             .passed
+    );
+
+    // The contest closed in the same block: it has a result, and its clean-up drained its
+    // fund.
+    let platform_state = platform.state.load();
+    let (_contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
+        &platform,
+        &platform_state,
+        &dpns_contract,
+        "quantum",
+        None,
+        true,
+        None,
+        ResultType::DocumentsAndVoteTally,
+        platform_version,
+    );
+    assert!(finished_vote_info.is_some(), "the contest must be finished");
+    let contest_fund_id = dpns_name_vote_poll(&dpns_contract, "quantum")
+        .specialized_balance_id()
+        .expect("expected the contest's fund id");
+    assert_eq!(
+        platform
+            .drive
+            .fetch_prefunded_specialized_balance(
+                contest_fund_id.to_buffer(),
+                None,
+                platform_version
+            )
+            .expect("balance"),
+        None
     );
 }
 
@@ -1193,15 +1307,7 @@ async fn should_keep_an_end_date_the_block_only_partly_closed() {
         );
     }
     let end_dates = |platform: &TempPlatform<MockCoreRPCLike>| {
-        VotePollsByEndDateDriveQuery {
-            start_time: None,
-            end_time: None,
-            limit: None,
-            offset: None,
-            order_ascending: true,
-        }
-        .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-        .expect("end dates")
+        vote_poll_end_dates(&platform.drive, platform_version)
     };
     let finished = |platform: &TempPlatform<MockCoreRPCLike>, vote_poll: &YesNoVotePoll| {
         poll_state(platform, vote_poll, platform_version)
@@ -1360,14 +1466,6 @@ async fn run_a_contest_and_strip_yes_no_polls(protocol_version: u32) {
         finished_vote_info.won_by_identity_id,
         Some(contender_1.id().to_vec())
     );
-    let end_dates = VotePollsByEndDateDriveQuery {
-        start_time: None,
-        end_time: None,
-        limit: None,
-        offset: None,
-        order_ascending: true,
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("end dates");
+    let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert!(end_dates.is_empty());
 }

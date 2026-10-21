@@ -81,7 +81,7 @@ mod json_convertible_tests_yes_no_vote {
                     "resourcePath": ["wcHBwQ=="],
                     "supermajorityNumerator": 2,
                     "supermajorityDenominator": 3,
-                    "minimumVotingPower": { "absolute": 400 },
+                    "minimumVotingPower": { "$type": "absolute", "votingPower": 400 },
                 },
                 "voteChoice": "yes",
             })
@@ -103,7 +103,7 @@ mod json_convertible_tests_yes_no_vote {
                     "resourcePath": [platform_value::Value::Bytes(vec![0xc1; 4])],
                     "supermajorityNumerator": 2u8,
                     "supermajorityDenominator": 3u8,
-                    "minimumVotingPower": { "absolute": 400u32 },
+                    "minimumVotingPower": { "$type": "absolute", "votingPower": 400u32 },
                 },
                 "voteChoice": "yes",
             })

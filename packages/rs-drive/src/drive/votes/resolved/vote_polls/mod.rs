@@ -16,16 +16,12 @@ pub mod contested_document_resource_vote_poll;
 pub mod resolve;
 
 /// Represents a resolved vote poll in the system.
-// The contested variant carries the resolved contract; a yes/no poll is a few bytes.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum ResolvedVotePoll {
     /// A resolved vote poll with contract information for a contested document resource.
     ContestedDocumentResourceVotePollWithContractInfo(
         ContestedDocumentResourceVotePollWithContractInfo,
     ),
-    /// A yes/no vote poll. It needs nothing from the state to be resolved.
-    YesNoVotePoll(YesNoVotePoll),
 }
 
 impl From<&ResolvedVotePoll> for VotePoll {
@@ -36,9 +32,6 @@ impl From<&ResolvedVotePoll> for VotePoll {
             ) => VotePoll::ContestedDocumentResourceVotePoll(
                 contested_document_resource_vote_poll.into(),
             ),
-            ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => {
-                VotePoll::YesNoVotePoll(yes_no_vote_poll.clone())
-            }
         }
     }
 }
@@ -79,9 +72,6 @@ impl ResolvedVotePoll {
             ) => Ok(Some(
                 contested_document_resource_vote_poll.specialized_balance_id()?,
             )),
-            ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => {
-                Ok(Some(yes_no_vote_poll.specialized_balance_id()?))
-            }
         }
     }
 
@@ -100,7 +90,6 @@ impl ResolvedVotePoll {
             ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
                 contested_document_resource_vote_poll,
             ) => contested_document_resource_vote_poll.unique_id(),
-            ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => yes_no_vote_poll.unique_id(),
         }
     }
 }

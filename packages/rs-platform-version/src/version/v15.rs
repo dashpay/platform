@@ -80,18 +80,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`create_initial_state_structure` 4 behind `>= 15`) and
 ///    `transition_to_version_15` create. Masternode vote `transform_into_action`
 ///    1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer,
-///    `clean_up_after_vote_poll_end` 1 and
-///    `clean_up_after_contested_resources_vote_poll_end` 2
-///    (`DRIVE_ABCI_METHOD_VERSIONS_V11`) clean finished polls of both kinds out
-///    of the shared end date index, and `DRIVE_VERSION_V10` registers and
-///    sweeps the votes. Nothing opens a yes/no poll yet, so at this version
+///    `clean_up_after_vote_poll_end` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V11`) cleans
+///    finished yes/no polls up beside contested ones, and `DRIVE_VERSION_V10`
+///    registers and sweeps the votes. Nothing opens a yes/no poll yet, so at this version
 ///    every yes/no vote is refused for want of a poll.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: vote method versions v4: register_identity_vote 1 registers a yes/no vote and remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; clean_up_after_vote_poll_end 1 and clean_up_after_contested_resources_vote_poll_end 2 close yes/no polls beside contested ones
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; clean_up_after_vote_poll_end 1 cleans up the yes/no polls a block ends beside the contested ones
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify; masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,

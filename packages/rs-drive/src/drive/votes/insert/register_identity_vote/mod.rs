@@ -55,7 +55,7 @@ impl Drive {
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .insert
             .register_identity_vote
         {
             0 => self.register_identity_vote_v0(
@@ -122,7 +122,7 @@ impl Drive {
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .insert
             .register_identity_vote
         {
             0 => self.register_identity_vote_operations_v0(

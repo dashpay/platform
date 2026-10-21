@@ -3,64 +3,35 @@ use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::BatchDeleteApplyType;
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
-use grovedb::{MaybeTree, TransactionArg};
-use std::collections::BTreeMap;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::{GroveOp, KeyInfoPath, QualifiedGroveDbOp, SubelementsDeletionBehavior};
+use grovedb::TreeType;
 
 impl Drive {
     pub(super) fn remove_yes_no_vote_poll_votes_operations_v0(
         &self,
-        vote_polls: &[(
-            &YesNoVotePoll,
-            &BTreeMap<YesNoAbstainVoteChoice, Vec<Identifier>>,
-        )],
+        vote_polls: &[&YesNoVotePoll],
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        for (vote_poll, voters_by_choice) in vote_polls {
-            let poll_path = vote_poll.poll_path_vec()?;
+        for vote_poll in vote_polls {
+            let poll_path = KeyInfoPath::from_known_owned_path(vote_poll.poll_path_vec()?);
             for vote_choice in YesNoAbstainVoteChoice::ALL {
-                let votes_path = vote_poll.choice_votes_path_vec(vote_choice)?;
-                // Every delete here names its element type, so GroveDB never reads the pending
-                // batch for it. Each is built against an empty one: handing `batch_operations`
-                // to `batch_delete` would copy every operation already queued on each call and
-                // make the clean-up quadratic in the number of voters.
-                if let Some(voters) = voters_by_choice.get(&vote_choice) {
-                    for voter in voters {
-                        let mut delete_operations = vec![];
-                        self.batch_delete(
-                            votes_path.as_slice().into(),
-                            voter.as_slice(),
-                            BatchDeleteApplyType::StatefulBatchDelete {
-                                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                            },
-                            transaction,
-                            &mut delete_operations,
-                            &platform_version.drive,
-                        )?;
-                        batch_operations.append(&mut delete_operations);
-                    }
-                }
-                // The sum tree itself, emptied by the deletes above. As for a contested poll's
-                // vote trees, it is not declared a tree: that would make GroveDB read every
-                // vote again to prove it empty.
-                let mut delete_operations = vec![];
-                self.batch_delete(
-                    poll_path.as_slice().into(),
-                    &[vote_choice.to_tree_key()],
-                    BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                    },
-                    transaction,
-                    &mut delete_operations,
-                    &platform_version.drive,
-                )?;
-                batch_operations.append(&mut delete_operations);
+                // Each choice's sum tree holds only the votes, one sum item per voter, and a
+                // finished poll is never opened again, so the tree is dropped whole without
+                // reading or deleting its votes one by one (GroveDB's flat drop, which the
+                // grove version of protocol version 15 accepts in a batch).
+                batch_operations.push(LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp {
+                    path: poll_path.clone(),
+                    key: Some(KeyInfo::KnownKey(vec![vote_choice.to_tree_key()])),
+                    op: GroveOp::DeleteTreeDontCheckForBackwardsReferences(
+                        TreeType::SumTree,
+                        SubelementsDeletionBehavior::DropFlat,
+                    ),
+                }));
             }
         }
         Ok(())

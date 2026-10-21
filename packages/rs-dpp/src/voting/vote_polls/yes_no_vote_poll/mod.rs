@@ -48,24 +48,118 @@ pub enum VotingPowerRounding {
 }
 
 /// The least yes plus no voting power a yes/no poll needs to pass.
+///
+/// Its JSON and Value shape is internally tagged, as every sum type's is:
+/// `{ "$type": "absolute", "votingPower": 400 }` or
+/// `{ "$type": "fractionOfTotal", "numerator": 1, "denominator": 3, "rounding": "up" }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
-#[cfg_attr(
-    feature = "serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
 pub enum YesNoMinimumVotingPower {
     /// A fixed voting power, at most `max_yes_no_vote_poll_minimum_voting_power`.
     Absolute(VotingPower),
     /// A share of the total voting power of the masternode list (masternode 1, evonode 4) in
     /// the block that closes the poll, rounded as asked, at most
     /// `max_yes_no_vote_poll_minimum_voting_power_percent_of_total` percent of it.
-    #[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
     FractionOfTotal {
         numerator: u8,
         denominator: u8,
         rounding: VotingPowerRounding,
     },
+}
+
+// `Absolute` wraps a bare number, which serde's internal tagging cannot carry, so both
+// directions are written out, as for `ResourceVoteChoice`.
+#[cfg(feature = "serde-conversion")]
+impl Serialize for YesNoMinimumVotingPower {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match self {
+            YesNoMinimumVotingPower::Absolute(voting_power) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("$type", "absolute")?;
+                map.serialize_entry("votingPower", voting_power)?;
+                map.end()
+            }
+            YesNoMinimumVotingPower::FractionOfTotal {
+                numerator,
+                denominator,
+                rounding,
+            } => {
+                let mut map = serializer.serialize_map(Some(4))?;
+                map.serialize_entry("$type", "fractionOfTotal")?;
+                map.serialize_entry("numerator", numerator)?;
+                map.serialize_entry("denominator", denominator)?;
+                map.serialize_entry("rounding", rounding)?;
+                map.end()
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for YesNoMinimumVotingPower {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, Visitor};
+
+        struct MinimumVisitor;
+
+        impl<'de> Visitor<'de> for MinimumVisitor {
+            type Value = YesNoMinimumVotingPower;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("YesNoMinimumVotingPower as a map with a `$type` discriminator")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut variant: Option<String> = None;
+                let mut voting_power: Option<VotingPower> = None;
+                let mut numerator: Option<u8> = None;
+                let mut denominator: Option<u8> = None;
+                let mut rounding: Option<VotingPowerRounding> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "$type" if variant.is_none() => variant = Some(map.next_value()?),
+                        "votingPower" if voting_power.is_none() => {
+                            voting_power = Some(map.next_value()?)
+                        }
+                        "numerator" if numerator.is_none() => numerator = Some(map.next_value()?),
+                        "denominator" if denominator.is_none() => {
+                            denominator = Some(map.next_value()?)
+                        }
+                        "rounding" if rounding.is_none() => rounding = Some(map.next_value()?),
+                        "$type" | "votingPower" | "numerator" | "denominator" | "rounding" => {
+                            return Err(de::Error::custom(format!("duplicate field `{key}`")));
+                        }
+                        _ => {
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                match variant
+                    .ok_or_else(|| de::Error::missing_field("$type"))?
+                    .as_str()
+                {
+                    "absolute" => Ok(YesNoMinimumVotingPower::Absolute(
+                        voting_power.ok_or_else(|| de::Error::missing_field("votingPower"))?,
+                    )),
+                    "fractionOfTotal" => Ok(YesNoMinimumVotingPower::FractionOfTotal {
+                        numerator: numerator
+                            .ok_or_else(|| de::Error::missing_field("numerator"))?,
+                        denominator: denominator
+                            .ok_or_else(|| de::Error::missing_field("denominator"))?,
+                        rounding: rounding.ok_or_else(|| de::Error::missing_field("rounding"))?,
+                    }),
+                    other => Err(de::Error::unknown_variant(
+                        other,
+                        &["absolute", "fractionOfTotal"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(MinimumVisitor)
+    }
 }
 
 impl YesNoMinimumVotingPower {
@@ -628,7 +722,7 @@ mod json_convertible_tests {
                 "resourcePath": ["wcHBwQ==", "Y2hhbGxlbmdl"],
                 "supermajorityNumerator": 2,
                 "supermajorityDenominator": 3,
-                "minimumVotingPower": { "absolute": 400 },
+                "minimumVotingPower": { "$type": "absolute", "votingPower": 400 },
             })
         );
         let recovered = YesNoVotePoll::from_json(json).expect("from_json");
@@ -649,7 +743,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json["minimumVotingPower"],
-            json!({ "fractionOfTotal": { "numerator": 1, "denominator": 3, "rounding": "up" } })
+            json!({ "$type": "fractionOfTotal", "numerator": 1, "denominator": 3, "rounding": "up" })
         );
         let recovered = YesNoVotePoll::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
@@ -673,10 +767,7 @@ mod json_convertible_tests {
                 ..fixture()
             };
             let json = original.to_json().expect("to_json");
-            assert_eq!(
-                json["minimumVotingPower"]["fractionOfTotal"]["rounding"],
-                json!(name)
-            );
+            assert_eq!(json["minimumVotingPower"]["rounding"], json!(name));
             assert_eq!(YesNoVotePoll::from_json(json).expect("from_json"), original);
         }
     }
@@ -695,7 +786,7 @@ mod json_convertible_tests {
                 ],
                 "supermajorityNumerator": 2u8,
                 "supermajorityDenominator": 3u8,
-                "minimumVotingPower": { "absolute": 400u32 },
+                "minimumVotingPower": { "$type": "absolute", "votingPower": 400u32 },
             })
         );
         let recovered = YesNoVotePoll::from_object(value).expect("from_object");

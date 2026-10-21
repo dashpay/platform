@@ -18,9 +18,10 @@ where
     C: CoreRPCLike,
 {
     /// Cleans up after the polls that ended in this block. Version 1 (protocol version 15)
-    /// handles both kinds. It removes every finished poll from the end date index itself,
-    /// so that an end date's tree is deleted only once nothing of either kind is left under
-    /// it, then cleans up the polls of each kind.
+    /// handles both kinds: the contested polls go to the contested clean-up and the yes/no
+    /// polls to the yes/no clean-up. Each removes its own polls from the shared end date index
+    /// and applies its own batch, and each deletes an end date's tree only once its read of
+    /// the tree finds nothing of either kind left, so the two can run one after the other.
     #[inline(always)]
     pub(super) fn clean_up_after_vote_polls_end_v1(
         &self,
@@ -37,42 +38,24 @@ where
             &TimestampMillis,
             &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
         )> = Vec::new();
+        #[allow(clippy::type_complexity)]
         let mut yes_no_polls: Vec<(
             &YesNoVotePoll,
+            &TimestampMillis,
             &BTreeMap<YesNoAbstainVoteChoice, Vec<Identifier>>,
         )> = Vec::new();
-        let mut end_date_entries: Vec<(Identifier, TimestampMillis)> = Vec::new();
 
         for (end_date, vote_polls_for_time) in vote_polls {
             for vote_poll in vote_polls_for_time {
                 match vote_poll {
                     ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(contested_poll, vote_info) => {
-                        end_date_entries.push((contested_poll.unique_id()?, *end_date));
                         contested_polls.push((contested_poll, end_date, vote_info));
                     }
                     ResolvedVotePollWithVotes::YesNoVotePollWithVotes(yes_no_poll, voters) => {
-                        end_date_entries.push((yes_no_poll.unique_id()?, *end_date));
-                        yes_no_polls.push((yes_no_poll, voters));
+                        yes_no_polls.push((yes_no_poll, end_date, voters));
                     }
                 }
             }
-        }
-
-        if !end_date_entries.is_empty() {
-            let mut operations = vec![];
-            self.drive.remove_vote_poll_end_date_query_operations(
-                end_date_entries.as_slice(),
-                &mut operations,
-                transaction,
-                platform_version,
-            )?;
-            self.drive.apply_batch_low_level_drive_operations(
-                None,
-                transaction,
-                operations,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
         }
 
         if !contested_polls.is_empty() {

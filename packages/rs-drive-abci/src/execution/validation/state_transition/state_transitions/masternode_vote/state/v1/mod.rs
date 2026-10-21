@@ -146,18 +146,6 @@ impl MasternodeVoteStateTransitionStateValidationV1 for MasternodeVoteTransition
                             }
                         }
                     }
-                    ResolvedVotePoll::YesNoVotePoll(_) => {
-                        // A resource vote choice answers no yes/no poll: no contested
-                        // document resource poll named by this vote exists. Reached from
-                        // protocol version 15 only: at 14, which also selects this generation,
-                        // a resource vote naming a yes/no poll is not active
-                        // (`StateTransition::active_version_range`) and never decodes.
-                        Ok(ConsensusValidationResult::new_with_error(
-                            ConsensusError::StateError(StateError::VotePollNotFoundError(
-                                VotePollNotFoundError::new(vote_poll.into()),
-                            )),
-                        ))
-                    }
                 }
             }
             // Reached from protocol version 15 only: at 14, which also selects this generation,
