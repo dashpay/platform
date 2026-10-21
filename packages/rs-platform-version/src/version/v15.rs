@@ -132,10 +132,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
 ///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
 ///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
-///    10281): contract create and update refuse it unpaid, and
-///    `token_config_update_transition_state_validation` 2
-///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the configuration an update proposes, charged.
-///    Protocol v14 and earlier keep `token_config_update_transition_state_validation` 1.
+///    10281): contract create and update refuse it unpaid, and the batch `advanced_structure` 2
+///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
+///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
+///    earlier keep the batch `advanced_structure` 1.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,

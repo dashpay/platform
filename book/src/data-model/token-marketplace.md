@@ -44,7 +44,7 @@ created tradeable becomes tradeable only if its issuer kept the right to change 
 | Rule | Refused with | Where |
 |---|---|---|
 | `Tradeable` before protocol version 15 | `StateTransitionNotActiveError` (10603), as `TokenTradeModeTradeable` on a contract and `TokenConfigUpdateMarketplaceTradeModeTradeable` on an update | Contract create and update, and the batch carrying the update, before anything is charged. Software older than protocol version 15 cannot decode the mode, so this is the refusal it gives too |
-| `Tradeable` on a [non-transferable token](non-transferable-tokens.md) | `NonTransferableTokenTradeableError` (10281) | Contract create and update before anything is charged, and the state validation of a `TokenConfigUpdate`, which charges the signer |
+| `Tradeable` on a [non-transferable token](non-transferable-tokens.md) | `NonTransferableTokenTradeableError` (10281) | Contract create and update before anything is charged, and the advanced structure validation of a `TokenConfigUpdate`, which charges the signer and runs in check_tx too, so the mempool refuses the update |
 
 A non-transferable token cannot be tradeable because filling a listing or an offer moves the token
 from the seller to the buyer, which is the transfer the token refuses. `transferable` is fixed
