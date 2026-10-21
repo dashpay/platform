@@ -321,6 +321,9 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 /// - When `disable_public_key_ids_count` is non-zero,
 ///   `disable_public_key_ids` must point at a valid, aligned
 ///   `[u32; disable_public_key_ids_count]` array.
+/// - Any of the three arrays that is null with a non-zero count is refused
+///   with `ErrorNullPointer` before anything is looked up or signed, never
+///   read as empty.
 /// - `signer_handle` must be a valid, non-destroyed `SignerHandle` from
 ///   rs-sdk-ffi's signer constructors (typically `KeychainSigner.handle`,
 ///   made by `dash_sdk_signer_create_with_ctx`). It is borrowed until the
@@ -458,6 +461,45 @@ fn guard_update(
     )
 }
 
+/// A null array with a non-zero count is refused rather than read as empty.
+/// Read as empty, it would drop part of what the caller asked for and still
+/// broadcast the rest: a null `disable_public_key_ids` turns "add a key and
+/// revoke a compromised one" into an add-only update, a null `add_public_keys`
+/// turns it into a revoke-only one, and a null `external_key_ids` stores the
+/// caller's external keys as derived.
+fn refuse_null_with_count(
+    is_null: bool,
+    count: usize,
+    name: &str,
+) -> Result<(), PlatformWalletFFIResult> {
+    if is_null && count != 0 {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            format!("{name} is null with a non-zero count"),
+        ));
+    }
+    Ok(())
+}
+
+/// Copies a caller's `[u32; count]` key-id array, under
+/// [`refuse_null_with_count`]. A zero count reads as empty whatever the
+/// pointer.
+///
+/// # Safety
+/// When `count` is non-zero and `ids` is non-null, `ids` must point at a
+/// valid, aligned `[u32; count]` array.
+unsafe fn read_key_ids(
+    ids: *const u32,
+    count: usize,
+    name: &str,
+) -> Result<Vec<u32>, PlatformWalletFFIResult> {
+    refuse_null_with_count(ids.is_null(), count, name)?;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(slice::from_raw_parts(ids, count).to_vec())
+}
+
 #[allow(clippy::too_many_arguments)]
 unsafe fn update_identity_with_signer_unguarded(
     wallet_handle: Handle,
@@ -475,70 +517,67 @@ unsafe fn update_identity_with_signer_unguarded(
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
 
-    let add_keys: Vec<IdentityPublicKey> =
-        if add_public_keys.is_null() || add_public_keys_count == 0 {
-            Vec::new()
-        } else {
-            let rows: &[IdentityPubkeyFFI] =
-                slice::from_raw_parts(add_public_keys, add_public_keys_count);
-            let mut keys: Vec<IdentityPublicKey> = Vec::with_capacity(rows.len());
-            for (i, row) in rows.iter().enumerate() {
-                let key_type = unwrap_result_or_return!(KeyType::try_from(row.key_type));
-                let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
-                let security_level =
-                    unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
-                if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-                    return PlatformWalletFFIResult::err(
-                        PlatformWalletFFIResultCode::ErrorNullPointer,
-                        format!("add_public_keys[{i}].pubkey_bytes is null or empty"),
-                    );
-                }
-                let pubkey_bytes: Vec<u8> =
-                    slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
+    // Every array is checked before any row is read, the wallet is looked up
+    // or the signer is consulted.
+    unwrap_result_or_return!(refuse_null_with_count(
+        add_public_keys.is_null(),
+        add_public_keys_count,
+        "add_public_keys"
+    ));
+    let external_ids = unwrap_result_or_return!(read_key_ids(
+        external_key_ids,
+        external_key_ids_count,
+        "external_key_ids"
+    ));
+    let disable_ids = unwrap_result_or_return!(read_key_ids(
+        disable_public_key_ids,
+        disable_public_key_ids_count,
+        "disable_public_key_ids"
+    ));
 
-                let contract_bounds = unwrap_result_or_return!(decode_contract_bounds(
-                    row,
-                    purpose,
-                    i,
-                    "add_public_keys"
-                ));
-
-                keys.push(key_with_row_limits(
-                    IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                        id: row.key_id,
-                        purpose,
-                        security_level,
-                        contract_bounds,
-                        key_type,
-                        read_only: row.read_only,
-                        data: BinaryData::new(pubkey_bytes),
-                        disabled_at: None,
-                    }),
-                    row,
-                ));
-            }
-            keys
-        };
-
-    // A null array with a count would silently store the caller's
-    // external keys as derived, so it is refused.
-    let external_ids: Vec<u32> = if external_key_ids_count == 0 {
+    let add_keys: Vec<IdentityPublicKey> = if add_public_keys_count == 0 {
         Vec::new()
-    } else if external_key_ids.is_null() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorNullPointer,
-            "external_key_ids is null with a non-zero count",
-        );
     } else {
-        slice::from_raw_parts(external_key_ids, external_key_ids_count).to_vec()
-    };
+        let rows: &[IdentityPubkeyFFI] =
+            slice::from_raw_parts(add_public_keys, add_public_keys_count);
+        let mut keys: Vec<IdentityPublicKey> = Vec::with_capacity(rows.len());
+        for (i, row) in rows.iter().enumerate() {
+            let key_type = unwrap_result_or_return!(KeyType::try_from(row.key_type));
+            let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
+            let security_level =
+                unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
+            if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!("add_public_keys[{i}].pubkey_bytes is null or empty"),
+                );
+            }
+            let pubkey_bytes: Vec<u8> =
+                slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
 
-    let disable_ids: Vec<u32> =
-        if disable_public_key_ids.is_null() || disable_public_key_ids_count == 0 {
-            Vec::new()
-        } else {
-            slice::from_raw_parts(disable_public_key_ids, disable_public_key_ids_count).to_vec()
-        };
+            let contract_bounds = unwrap_result_or_return!(decode_contract_bounds(
+                row,
+                purpose,
+                i,
+                "add_public_keys"
+            ));
+
+            keys.push(key_with_row_limits(
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: row.key_id,
+                    purpose,
+                    security_level,
+                    contract_bounds,
+                    key_type,
+                    read_only: row.read_only,
+                    data: BinaryData::new(pubkey_bytes),
+                    disabled_at: None,
+                }),
+                row,
+            ));
+        }
+        keys
+    };
 
     let signer_addr = signer_handle as usize;
 
@@ -567,13 +606,24 @@ unsafe fn update_identity_with_signer_unguarded(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::Identity;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::version::PlatformVersion;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use rs_sdk_ffi::{
+        dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, SignCompletionCallback,
+    };
+    use std::ffi::c_void;
     use std::ffi::CStr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::runtime::runtime;
 
     /// A panic in an update body comes back as `ErrorUnknown` with the
     /// ambiguous-outcome guidance, not as a definitive failure, and never
@@ -598,6 +648,281 @@ mod tests {
 
         let ok = guard_update(true, PlatformWalletFFIResult::ok);
         assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    /// Counts every call the update makes into a signer created through
+    /// `dash_sdk_signer_create_with_ctx`; `ctx` points at the counter.
+    unsafe extern "C" fn counting_sign_async(
+        ctx: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+        _data: *const u8,
+        _data_len: usize,
+        completion_ctx: *mut c_void,
+        completion: SignCompletionCallback,
+    ) {
+        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        let message = CString::new("counting signer").unwrap();
+        completion(completion_ctx, ptr::null(), 0, 0, message.as_ptr());
+    }
+
+    unsafe extern "C" fn counting_can_sign(
+        ctx: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+    ) -> bool {
+        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    /// A signer handle whose every callback bumps `calls`. Destroy it with
+    /// `dash_sdk_signer_destroy` before `calls` goes out of scope.
+    fn counting_signer(calls: &AtomicUsize) -> *mut SignerHandle {
+        unsafe {
+            dash_sdk_signer_create_with_ctx(
+                calls as *const AtomicUsize as *mut c_void,
+                counting_sign_async,
+                counting_can_sign,
+                None,
+            )
+        }
+    }
+
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(!result.message.is_null());
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// Which array is null with a non-zero count, for
+    /// [`call_update_with_null_array`].
+    #[derive(Clone, Copy, Debug)]
+    enum NullArray {
+        AddPublicKeys,
+        ExternalKeyIds,
+        DisablePublicKeyIds,
+    }
+
+    /// Calls one update export with the other two arrays well-formed and
+    /// non-empty and `null` as the named one, over a handle that names no
+    /// wallet: a refusal that came after the wallet lookup would surface as
+    /// `NotFound` instead.
+    fn call_update_with_null_array(
+        null: NullArray,
+        revision: Option<u64>,
+        signer: *mut SignerHandle,
+    ) -> PlatformWalletFFIResult {
+        let identity_id = [0x11u8; 32];
+        let pubkey = [0x02u8; 33];
+        let row = IdentityPubkeyFFI {
+            key_id: 9,
+            key_type: KeyType::ECDSA_SECP256K1 as u8,
+            purpose: Purpose::AUTHENTICATION as u8,
+            security_level: SecurityLevel::HIGH as u8,
+            pubkey_bytes: pubkey.as_ptr(),
+            pubkey_len: pubkey.len(),
+            read_only: false,
+            contract_bounds_kind: 0,
+            contract_bounds_id: ptr::null(),
+            contract_bounds_document_type: ptr::null(),
+            has_total_budget: false,
+            total_budget: 0,
+            has_expires_at: false,
+            expires_at: 0,
+        };
+        let external_ids = [9u32];
+        let disable_ids = [4u32];
+        let add_ptr = match null {
+            NullArray::AddPublicKeys => ptr::null(),
+            _ => &row as *const IdentityPubkeyFFI,
+        };
+        let external_ptr = match null {
+            NullArray::ExternalKeyIds => ptr::null(),
+            _ => external_ids.as_ptr(),
+        };
+        let disable_ptr = match null {
+            NullArray::DisablePublicKeyIds => ptr::null(),
+            _ => disable_ids.as_ptr(),
+        };
+        let unknown_handle = Handle::MAX;
+        unsafe {
+            match revision {
+                None => platform_wallet_update_identity_with_signer(
+                    unknown_handle,
+                    identity_id.as_ptr(),
+                    add_ptr,
+                    1,
+                    external_ptr,
+                    1,
+                    disable_ptr,
+                    1,
+                    signer,
+                ),
+                Some(revision) => platform_wallet_update_identity_with_signer_at_revision(
+                    unknown_handle,
+                    identity_id.as_ptr(),
+                    add_ptr,
+                    1,
+                    external_ptr,
+                    1,
+                    disable_ptr,
+                    1,
+                    revision,
+                    signer,
+                ),
+            }
+        }
+    }
+
+    /// Read as empty, a null array with a count would broadcast part of the
+    /// update (an add without the revoke the caller asked for, say), so each
+    /// of the three is refused, in both exports, before the wallet is looked
+    /// up or the signer consulted.
+    #[test]
+    fn should_refuse_a_null_array_with_a_count_before_the_wallet_or_the_signer() {
+        let calls = AtomicUsize::new(0);
+        let signer = counting_signer(&calls);
+        for (null, name) in [
+            (NullArray::AddPublicKeys, "add_public_keys"),
+            (NullArray::ExternalKeyIds, "external_key_ids"),
+            (NullArray::DisablePublicKeyIds, "disable_public_key_ids"),
+        ] {
+            for revision in [None, Some(5)] {
+                let result = call_update_with_null_array(null, revision, signer);
+                assert_eq!(
+                    result.code,
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    "{null:?} at {revision:?}: {}",
+                    message_of(&result)
+                );
+                assert_eq!(
+                    message_of(&result),
+                    format!("{name} is null with a non-zero count"),
+                    "{null:?} at {revision:?}"
+                );
+            }
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        unsafe { dash_sdk_signer_destroy(signer) };
+    }
+
+    /// A zero count still reads as empty whatever the pointer, so the
+    /// refusal is only for a null array that claims rows.
+    #[test]
+    fn should_read_a_zero_count_as_empty_whatever_the_pointer() {
+        assert!(refuse_null_with_count(true, 0, "add_public_keys").is_ok());
+        assert!(refuse_null_with_count(false, 3, "add_public_keys").is_ok());
+        let ids = [7u32, 8];
+        assert_eq!(
+            unsafe { read_key_ids(ptr::null(), 0, "disable_public_key_ids") }.ok(),
+            Some(vec![])
+        );
+        assert_eq!(
+            unsafe { read_key_ids(ids.as_ptr(), 0, "disable_public_key_ids") }.ok(),
+            Some(vec![])
+        );
+        assert_eq!(
+            unsafe { read_key_ids(ids.as_ptr(), 2, "disable_public_key_ids") }.ok(),
+            Some(vec![7, 8])
+        );
+    }
+
+    /// A wallet handle whose cached identity `identity_id` is at `revision`
+    /// and holds a signable MASTER key (id 0), so an update that got past
+    /// the revision check would consult the signer. The manager owns the
+    /// wallet and must outlive the handle.
+    fn wallet_handle_at_revision(identity_id: Identifier, revision: u64) -> (impl Sized, Handle) {
+        runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+            let mut identity =
+                Identity::default_versioned(PlatformVersion::latest()).expect("identity");
+            identity.set_id(identity_id);
+            identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    data: vec![0x02; KeyType::ECDSA_SECP256K1.default_size()].into(),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            identity.set_revision(revision);
+            {
+                let mut wm = wallet.wallet_manager().write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(identity, 0, wallet_id, wallet.persister())
+                    .expect("add identity");
+            }
+            let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+            (manager, handle)
+        })
+    }
+
+    /// The `_at_revision` export hands its revision to the wallet's guard: a
+    /// revision the cached identity would not give the transition comes back
+    /// as `ErrorIdentityRevisionMismatch` (62) before the signer is
+    /// consulted. The matching revision gets past the guard to the signer
+    /// (and then fails at the mock SDK), so the zero count comes from the
+    /// refusal, not from the fixture.
+    #[test]
+    fn should_forward_the_revision_to_the_guard_before_signing() {
+        let identity_id = Identifier::from([0x21; 32]);
+        let id_bytes = identity_id.to_buffer();
+        let disable_ids = [1u32];
+        let call = |handle: Handle, revision: u64, signer: *mut SignerHandle| unsafe {
+            platform_wallet_update_identity_with_signer_at_revision(
+                handle,
+                id_bytes.as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                disable_ids.as_ptr(),
+                disable_ids.len(),
+                revision,
+                signer,
+            )
+        };
+
+        // Cached at 5, so the transition would carry 6.
+        let (_manager, handle) = wallet_handle_at_revision(identity_id, 5);
+        for asked in [5, 7] {
+            let calls = AtomicUsize::new(0);
+            let signer = counting_signer(&calls);
+            let result = call(handle, asked, signer);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch,
+                "asked {asked}: {}",
+                message_of(&result)
+            );
+            assert_eq!(result.code as i32, 62);
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "asked {asked}");
+            unsafe { dash_sdk_signer_destroy(signer) };
+        }
+
+        let calls = AtomicUsize::new(0);
+        let signer = counting_signer(&calls);
+        let result = call(handle, 6, signer);
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch,
+            "{}",
+            message_of(&result)
+        );
+        assert!(calls.load(Ordering::SeqCst) > 0);
+        unsafe { dash_sdk_signer_destroy(signer) };
+
+        PLATFORM_WALLET_STORAGE.remove(handle);
     }
 
     const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(

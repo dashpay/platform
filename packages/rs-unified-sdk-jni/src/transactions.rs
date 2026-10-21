@@ -149,11 +149,13 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
                 throw_sdk_exception(env, 1, "keyIds could not be read");
                 return None;
             }
-            if buf.iter().any(|&i| i < 0) {
-                throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                return None;
+            match key_ids_from_ints(buf) {
+                Ok(ids) => Some(ids),
+                Err(message) => {
+                    throw_sdk_exception(env, 1, message);
+                    None
+                }
             }
-            Some(buf.into_iter().map(|i| i as u32).collect())
         }
         Err(_) => {
             let _ = env.exception_clear();
@@ -161,6 +163,29 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
             None
         }
     }
+}
+
+/// The key ids a JVM `int[]` carried, or the message to throw: a negative
+/// entry would bit-cast to a bogus huge key id, so it is refused rather than
+/// cast.
+fn key_ids_from_ints(ints: Vec<i32>) -> Result<Vec<u32>, &'static str> {
+    if ints.iter().any(|&i| i < 0) {
+        return Err("keyIds must be non-negative");
+    }
+    Ok(ints.into_iter().map(|i| i as u32).collect())
+}
+
+/// The revision `updateIdentity` pins, or the message to throw: `None`
+/// without `hasRevision` (whatever `revision` holds), and a negative
+/// `revision` with it is refused rather than bit-cast to a huge one.
+fn update_revision_arg(has_revision: bool, revision: i64) -> Result<Option<u64>, &'static str> {
+    if !has_revision {
+        return Ok(None);
+    }
+    if revision < 0 {
+        return Err("revision must be non-negative");
+    }
+    Ok(Some(revision as u64))
 }
 
 /// Add public keys and/or disable existing key ids on an identity, signing
@@ -268,12 +293,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         } else {
             disable_ids.as_ptr()
         };
-        if has_revision != 0 && revision < 0 {
-            throw_sdk_exception(env, 1, "revision must be non-negative");
-            return;
-        }
+        let revision = match update_revision_arg(has_revision != 0, revision) {
+            Ok(revision) => revision,
+            Err(message) => {
+                throw_sdk_exception(env, 1, message);
+                return;
+            }
+        };
         let result = unsafe {
-            if has_revision != 0 {
+            if let Some(revision) = revision {
                 platform_wallet_ffi::platform_wallet_update_identity_with_signer_at_revision(
                     wallet_handle as Handle,
                     id.as_ptr(),
@@ -283,7 +311,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                     external_ids.len(),
                     disable,
                     disable_ids.len(),
-                    revision as u64,
+                    revision,
                     signer_handle as *mut SignerHandle,
                 )
             } else {
@@ -995,4 +1023,44 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_take_non_negative_key_ids_and_refuse_a_negative_one() {
+        assert_eq!(key_ids_from_ints(vec![]), Ok(vec![]));
+        assert_eq!(
+            key_ids_from_ints(vec![0, 7, i32::MAX]),
+            Ok(vec![0, 7, i32::MAX as u32])
+        );
+        for ints in [vec![-1], vec![3, i32::MIN], vec![0, -7, 2]] {
+            assert_eq!(
+                key_ids_from_ints(ints.clone()),
+                Err("keyIds must be non-negative"),
+                "{ints:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_pin_a_revision_only_with_has_revision_and_refuse_a_negative_one() {
+        assert_eq!(update_revision_arg(false, 5), Ok(None));
+        // Without `hasRevision` the value is not read, negative or not.
+        assert_eq!(update_revision_arg(false, -1), Ok(None));
+        assert_eq!(update_revision_arg(true, 0), Ok(Some(0)));
+        assert_eq!(
+            update_revision_arg(true, i64::MAX),
+            Ok(Some(i64::MAX as u64))
+        );
+        for revision in [-1, i64::MIN] {
+            assert_eq!(
+                update_revision_arg(true, revision),
+                Err("revision must be non-negative"),
+                "{revision}"
+            );
+        }
+    }
 }
