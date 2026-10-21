@@ -4,11 +4,16 @@ use crate::error::Error;
 use crate::query::document_history_drive_query::{
     corrupt, invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
-use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
+use crate::verify::grovedb_proof_envelope::{
+    require_supported_grovedb_proof_envelope, MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION,
+};
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
+
+// Revision counts are authenticated only by GroveDB proof envelopes from version 1.
+const _: () = assert!(MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION >= 1);
 
 impl Drive {
     /// Verifies both proofs of the per-type history tree, their common root,
