@@ -78,9 +78,9 @@ pub enum VerifiedContextProviderError {
 ///   as invalid and never fetched.
 ///
 /// Fetches are shared per quorum, requests for at most two quorums are in
-/// flight at once, relays that cannot serve a quorum are left out of its fetch, failed
-/// quorums and failing relays cool down, and each fetch has a 70 s deadline.
-/// Freshness of responses is the SDK's concern, not the provider's.
+/// flight at once, relays that cannot serve a quorum are left out of its fetch,
+/// failed quorums and failing relays cool down, and each fetch has a 70 s
+/// deadline. Freshness of responses is the SDK's concern, not the provider's.
 ///
 /// Keys are proven for the Core height Platform reports. If Platform halts,
 /// that height stops while Core moves on, and a quorum not cached before the
@@ -436,8 +436,10 @@ mod tests {
     use dash_core_proof::{parse_commitment, rpc_hex, MAX_PROOF_BYTES};
     use futures::future::join_all;
     use serde_json::{json, Value};
+    use std::collections::VecDeque;
     use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -488,9 +490,9 @@ mod tests {
         Chunked { size: usize, chunks: usize },
         /// Read the request, then hold the connection open without answering.
         Hang(Duration),
-        /// Answer 200 with this body after a delay, without holding up
-        /// later connections.
-        Late(Duration, Vec<u8>),
+        /// Answer with this status and body after a delay, without holding
+        /// up later connections.
+        Late(Duration, u16, Vec<u8>),
     }
 
     fn reply(status: u16, body: Vec<u8>) -> Answer {
@@ -506,11 +508,44 @@ mod tests {
     /// connection comes for a while.
     struct MockRelay {
         url: String,
-        requests: Arc<Mutex<Vec<Value>>>,
+        requests: Arc<Mutex<Vec<(Instant, Value)>>>,
+        most_open: Arc<AtomicUsize>,
+    }
+
+    /// Counts a connection as open until dropped.
+    struct Open(Arc<AtomicUsize>);
+
+    impl Drop for Open {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, AtomicOrdering::SeqCst);
+        }
     }
 
     impl MockRelay {
+        /// Answer connections in the order they arrive.
         fn spawn(answers: Vec<Answer>) -> Self {
+            let count = answers.len();
+            let mut answers = answers.into_iter();
+            Self::serve(count, move |_| answers.next())
+        }
+
+        /// Answer each request from the queue of the quorum it names.
+        fn spawn_by_quorum(queues: Vec<([u8; 32], Vec<Answer>)>) -> Self {
+            let count = queues.iter().map(|(_, answers)| answers.len()).sum();
+            let mut queues: HashMap<String, VecDeque<Answer>> = queues
+                .into_iter()
+                .map(|(hash, answers)| (hex::encode(hash), answers.into()))
+                .collect();
+            Self::serve(count, move |request| {
+                let hash = request["quorumHash"].as_str()?;
+                queues.get_mut(hash)?.pop_front()
+            })
+        }
+
+        fn serve(
+            count: usize,
+            mut answer_for: impl FnMut(&Value) -> Option<Answer> + Send + 'static,
+        ) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock relay");
             listener
                 .set_nonblocking(true)
@@ -518,13 +553,23 @@ mod tests {
             let url = format!("http://{}", listener.local_addr().expect("relay address"));
             let requests = Arc::new(Mutex::new(Vec::new()));
             let recorded = Arc::clone(&requests);
+            let open = Arc::new(AtomicUsize::new(0));
+            let most_open = Arc::new(AtomicUsize::new(0));
+            let most = Arc::clone(&most_open);
             thread::spawn(move || {
-                for answer in answers {
+                for _ in 0..count {
                     let Some(mut stream) = accept(&listener) else {
                         return;
                     };
+                    let now_open = open.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                    most.fetch_max(now_open, AtomicOrdering::SeqCst);
+                    let guard = Open(Arc::clone(&open));
                     let body = read_request(&stream);
-                    lock(&recorded).push(body);
+                    let answer = answer_for(&body);
+                    lock(&recorded).push((Instant::now(), body));
+                    let Some(answer) = answer else {
+                        continue;
+                    };
                     match answer {
                         Answer::Reply {
                             status,
@@ -567,28 +612,52 @@ mod tests {
                             thread::spawn(move || {
                                 thread::sleep(duration);
                                 drop(stream);
+                                drop(guard);
                             });
                         }
-                        Answer::Late(delay, body) => {
+                        Answer::Late(delay, status, body) => {
                             thread::spawn(move || {
                                 thread::sleep(delay);
                                 let head = format!(
-                                    "HTTP/1.1 200 OK\r\nConnection: close\r\n\
+                                    "HTTP/1.1 {status} Mock\r\nConnection: close\r\n\
                                      Content-Length: {}\r\n\r\n",
                                     body.len()
                                 );
                                 let _ = stream.write_all(head.as_bytes());
                                 let _ = stream.write_all(&body);
+                                drop(stream);
+                                drop(guard);
                             });
                         }
                     }
                 }
             });
-            Self { url, requests }
+            Self {
+                url,
+                requests,
+                most_open,
+            }
         }
 
         fn requests(&self) -> Vec<Value> {
-            lock(&self.requests).clone()
+            lock(&self.requests)
+                .iter()
+                .map(|(_, body)| body.clone())
+                .collect()
+        }
+
+        /// When each request for `quorum_hash` arrived.
+        fn arrivals(&self, quorum_hash: [u8; 32]) -> Vec<Instant> {
+            let hash = hex::encode(quorum_hash);
+            lock(&self.requests)
+                .iter()
+                .filter(|(_, body)| body["quorumHash"] == hash.as_str())
+                .map(|(at, _)| *at)
+                .collect()
+        }
+
+        fn most_open(&self) -> usize {
+            self.most_open.load(AtomicOrdering::SeqCst)
         }
     }
 
@@ -939,6 +1008,7 @@ mod tests {
         let lagging = MockRelay::spawn(vec![reply(502, Vec::new()), reply(200, behind)]);
         let proving = MockRelay::spawn(vec![Answer::Late(
             Duration::from_millis(500),
+            200,
             f.bootstrap.clone(),
         )]);
         let timing = Timing {
@@ -977,7 +1047,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_cool_down_a_hedged_source_that_refuses_near_the_deadline() {
+    async fn should_wait_for_a_place_before_asking_again_after_a_backoff() {
+        let f = fixture(Network::Testnet);
+        let (b, c) = ([0x21; 32], [0x22; 32]);
+        let slow_gateway = || {
+            vec![
+                Answer::Late(Duration::from_millis(1500), 502, Vec::new()),
+                reply(502, Vec::new()),
+            ]
+        };
+        let relay = MockRelay::spawn_by_quorum(vec![
+            (
+                f.quorum_hash,
+                vec![reply(503, Vec::new()), reply(200, f.bootstrap.clone())],
+            ),
+            (b, slow_gateway()),
+            (c, slow_gateway()),
+        ]);
+        let timing = Timing {
+            first_retry: Duration::from_millis(300),
+            deadline: Duration::from_secs(10),
+            ..Timing::default()
+        };
+        let provider = provider_for(&f, vec![relay.url.clone()], timing);
+        let height = f.target.height;
+        let first = fetch(&provider, f.quorum_type, f.quorum_hash, height);
+        let later = async {
+            // B and C start while the first quorum waits out the 503.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            futures::join!(
+                fetch(&provider, f.quorum_type, b, height),
+                fetch(&provider, f.quorum_type, c, height)
+            )
+        };
+        let (key, (b_result, c_result)) = futures::join!(first, later);
+        assert_eq!(key.expect("proven once a place is free"), Some(f.key));
+        assert!(b_result.is_err() && c_result.is_err());
+
+        let first_asked = relay.arrivals(f.quorum_hash);
+        let b_asked = relay.arrivals(b);
+        assert_eq!(first_asked.len(), 2);
+        // Without the limit the retry would follow the 503 after 300 ms; it
+        // came only once B and C had their answers, 1.5 s after asking.
+        assert!(
+            first_asked[1] >= b_asked[0] + Duration::from_millis(1400),
+            "asked again too early"
+        );
+        assert!(
+            relay.most_open() <= 2,
+            "{} requests open at once",
+            relay.most_open()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_cool_down_a_source_that_fails_early_on_a_request_the_deadline_shortened() {
         let f = fixture(Network::Testnet);
         let hung = MockRelay::spawn(vec![Answer::Hang(Duration::from_secs(20))]);
         let closed = TcpListener::bind("127.0.0.1:0").expect("bind");

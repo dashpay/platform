@@ -412,12 +412,8 @@ impl ProofFetches {
         let forgotten_after = self.timing.max_quorum_cooldown.saturating_mul(2);
         let mut proven = self.lock();
         proven.fetches.retain(|_, slot| match slot {
-            // A native fetch every waiter dropped no longer runs, so it is
-            // replaced rather than joined or counted. A browser fetch runs on
-            // the local executor until it frees its own slot.
-            Slot::Running { fetch, .. } => {
-                cfg!(target_arch = "wasm32") || fetch.strong_count() != Some(1)
-            }
+            // A fetch that no longer runs is replaced, not joined.
+            Slot::Running { fetch, .. } => !abandoned(fetch),
             Slot::Failed { at, .. } => now.saturating_duration_since(*at) < forgotten_after,
         });
         // A fetch that finished since the caller's lookup has nothing to add.
@@ -582,7 +578,8 @@ impl ProofFetches {
 
     /// Ask the sources for a proof of a quorum until one verifies, the
     /// request budget is spent, every source is out or the deadline passes.
-    /// Also returns whether any request was sent.
+    /// Also returns whether the failure counts against the quorum: whether
+    /// any request was sent, and the fetch did not end waiting for a place.
     async fn prove(&self, attempt: &Attempt) -> (Result<(), String>, bool) {
         let (quorum, height) = (attempt.quorum, attempt.height);
         let started = Instant::now();
@@ -593,6 +590,7 @@ impl ProofFetches {
         let mut hedge_at = started;
         let mut failures = Vec::new();
         let mut waited_for_place = false;
+        let mut waiting_for_place = false;
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -606,6 +604,7 @@ impl ProofFetches {
                 } else {
                     match self.pick_source(now, &sources) {
                         Pick::Ready(_) if !self.take_place(attempt) => {
+                            waiting_for_place = true;
                             if !waited_for_place {
                                 waited_for_place = true;
                                 failures.push("waited for other quorums' proofs".to_string());
@@ -626,6 +625,7 @@ impl ProofFetches {
                             let body = request_body(&ask, quorum);
                             let remaining = deadline.saturating_duration_since(now);
                             let timeout = self.timing.request_timeout.min(remaining);
+                            waiting_for_place = false;
                             sources[source].asked += 1;
                             sources[source].in_flight = true;
                             sent += 1;
@@ -735,7 +735,9 @@ impl ProofFetches {
             failures.join("; ")
         );
         tracing::warn!(%reason, "quorum proof fetch failed");
-        (Err(reason), sent > 0)
+        // Running out of time while other quorums held the places says
+        // nothing about this one.
+        (Err(reason), sent > 0 && !waiting_for_place)
     }
 
     /// Judge a relay's answer, publishing the key if it proves one.
@@ -937,10 +939,20 @@ fn places_taken(proven: &Proven) -> usize {
     proven
         .fetches
         .values()
-        .filter(
-            |slot| matches!(slot, Slot::Running { holding, .. } if holding.load(Ordering::Relaxed)),
-        )
+        .filter(|slot| match slot {
+            Slot::Running { holding, fetch, .. } => {
+                holding.load(Ordering::Relaxed) && !abandoned(fetch)
+            }
+            Slot::Failed { .. } => false,
+        })
         .count()
+}
+
+/// Whether every waiter of a fetch has gone, so that it no longer runs. A
+/// native fetch runs only while polled; a browser fetch runs on the local
+/// executor until it frees its own slot.
+fn abandoned(fetch: &SharedFetch) -> bool {
+    !cfg!(target_arch = "wasm32") && fetch.strong_count() == Some(1)
 }
 
 /// Whether a commitment's leading bytes (version, type, hash) name `quorum`.
@@ -962,6 +974,19 @@ fn request_body(ask: &Ask, (quorum_type, quorum_hash): QuorumId) -> String {
     .to_string()
 }
 
+/// Invisible formatting characters, such as bidirectional overrides, that
+/// could make a logged reason read differently from what it says.
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
+}
+
 /// The start of a plain-text error body, for the failure reason. Markup,
 /// such as a CDN's error page, is left out.
 fn body_excerpt(body: &[u8]) -> String {
@@ -970,7 +995,7 @@ fn body_excerpt(body: &[u8]) -> String {
     }
     let text: String = String::from_utf8_lossy(body)
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_invisible_format(*c))
         .take(MAX_REASON_BODY_CHARS)
         .collect();
     if text.is_empty() {
@@ -1203,6 +1228,64 @@ mod tests {
             .expect("running")
             .store(false, Ordering::Relaxed);
         assert!(fetches.take_place(&attempt));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn should_not_count_a_fetch_every_waiter_dropped_against_the_places() {
+        let fetches = Arc::new(fetches());
+        let first = fetches.join_or_start(6, [1; 32], 150).expect("first");
+        let _second = fetches.join_or_start(6, [2; 32], 150).expect("second");
+        drop(first);
+        let second = match fetches.lock().fetches.get(&(6, [2; 32])) {
+            Some(Slot::Running { holding, id, .. }) => Attempt {
+                quorum: (6, [2; 32]),
+                height: 150,
+                id: *id,
+                failures: 0,
+                failed_at: None,
+                holding: Arc::clone(holding),
+            },
+            _ => panic!("the second fetch is running"),
+        };
+        // The second waited out a backoff and wants to send again.
+        second.holding.store(false, Ordering::Relaxed);
+        assert!(fetches.take_place(&second));
+    }
+
+    #[test]
+    fn should_keep_earlier_failures_when_a_fetch_sent_nothing() {
+        let fetches = Arc::new(fetches());
+        let quorum = (6, [1; 32]);
+        let at = Instant::now();
+        let _fetch = fetches.join_or_start(6, [1; 32], 150).expect("starts");
+        let id = running_id(&fetches, quorum).expect("running");
+        let attempt = Attempt {
+            quorum,
+            height: 150,
+            id,
+            failures: 3,
+            failed_at: Some(at),
+            holding: Arc::new(AtomicBool::new(true)),
+        };
+        fetches.finish(&attempt, &Err("nothing sent".to_string()), false);
+        match fetches.lock().fetches.get(&quorum) {
+            Some(Slot::Failed {
+                at: kept,
+                failures: 3,
+                ..
+            }) => assert_eq!(*kept, at),
+            _ => panic!("the earlier failures are kept"),
+        };
+    }
+
+    #[test]
+    fn should_leave_markup_and_invisible_characters_out_of_reasons() {
+        assert_eq!(body_excerpt(b"<html>403</html>"), "");
+        assert_eq!(
+            body_excerpt("busy\u{202E}yrt\u{200B}\n".as_bytes()),
+            ": busyyrt"
+        );
     }
 
     #[test]
