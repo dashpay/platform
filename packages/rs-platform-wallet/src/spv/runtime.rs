@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::pin::pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -77,6 +78,12 @@ pub struct SpvRuntime {
     /// Teardown state. Held across client construction, run-loop spawning and
     /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
+    /// Set once by [`release_owner`](Self::release_owner) when the object
+    /// that owns this runtime is going away. Read by the owner check of
+    /// [`start_and_spawn`](Self::start_and_spawn) instead of any shared
+    /// registry: that check runs under the `shutdown` lock, and a lookup in
+    /// a lock other callers hold while they wait for `shutdown` would cycle.
+    owner_released: AtomicBool,
     peer_tracker: Arc<PeerTracker>,
     /// Woken (`notify_waiters`) on every transition that can make
     /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
@@ -123,6 +130,7 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
+            owner_released: AtomicBool::new(false),
             peer_tracker: Arc::new(PeerTracker::new(Arc::clone(&readiness_changed))),
             readiness_changed,
         }
@@ -151,12 +159,17 @@ impl SpvRuntime {
     /// loop and tears it down with the client.
     ///
     /// `publish` runs between construction and publication, still under the
-    /// lock, and says whether the caller still owns the client (an FFI host
-    /// checks its handle registry there). `false` means the owner went away
-    /// during the start: the client just built is stopped under the same lock
-    /// and `Ok(false)` is returned, so no run loop ever runs for an unowned
-    /// client. A stop that does not complete is logged, not returned: the
-    /// caller has no owner left to retry it through.
+    /// lock, and says whether the caller still owns the client — typically
+    /// `!owner_released()`, see [`release_owner`](Self::release_owner). It
+    /// must not take a lock that another caller may hold while waiting for
+    /// `shutdown` (a stop issued through a handle registry holds that
+    /// registry's read guard while it waits): with a writer queued on such a
+    /// lock, the check would wait on the writer, the writer on the stop's
+    /// guard, and the stop on this `shutdown`. `false` means the owner went
+    /// away during the start: the client just built is stopped under the same
+    /// lock and `Ok(false)` is returned, so no run loop ever runs for an
+    /// unowned client. A stop that does not complete is logged, not returned:
+    /// the caller has no owner left to retry it through.
     pub async fn start_and_spawn<F>(
         self: &Arc<Self>,
         config: ClientConfig,
@@ -187,6 +200,19 @@ impl SpvRuntime {
 
         self.spawn_run_loop_locked();
         Ok(true)
+    }
+
+    /// Record that the object owning this runtime is going away, before its
+    /// teardown stops SPV. A start whose owner check (`publish` in
+    /// [`start_and_spawn`](Self::start_and_spawn)) runs after this never
+    /// publishes a run loop: with the owner gone, nothing could stop it.
+    pub fn release_owner(&self) {
+        self.owner_released.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether [`release_owner`](Self::release_owner) has been called.
+    pub fn owner_released(&self) -> bool {
+        self.owner_released.load(Ordering::SeqCst)
     }
 
     /// The construction half of [`start`](Self::start): the caller holds the
@@ -1512,9 +1538,15 @@ mod tests {
     async fn should_stop_the_built_client_when_its_owner_is_gone_at_publication() {
         let storage = tempfile::tempdir().unwrap();
         let runtime = Arc::new(unstarted_runtime());
+        assert!(!runtime.owner_released());
 
+        let owner = Arc::clone(&runtime);
         let published = runtime
-            .start_and_spawn(offline_config(&storage), || false)
+            .start_and_spawn(offline_config(&storage), move || {
+                // The owner's teardown beginning while the start held the lock.
+                owner.release_owner();
+                !owner.owner_released()
+            })
             .await
             .expect("the start itself succeeds");
 

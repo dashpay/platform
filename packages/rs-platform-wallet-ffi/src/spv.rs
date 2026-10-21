@@ -571,15 +571,21 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
 /// again on the first other manager it configures.
 ///
 /// With the guard dropped during the start, `platform_wallet_manager_destroy`
-/// may have removed the handle, joined the workers and fired the host's
-/// `release_fn` meanwhile, and a run loop published then would deliver block
-/// events into released host contexts. So `run_start` receives `still_owned`,
-/// a registry check it must run between the client's construction and the run
-/// loop's publication — `SpvRuntime::start_and_spawn` runs it under its
-/// shutdown lock, which also keeps a concurrent native stop from slipping in
-/// between the two — and reports `Ok(false)` when the owner is gone: the
-/// runtime stopped the client it had built, and the call fails with
-/// `ErrorInvalidHandle`.
+/// may have removed the handle and torn the manager down meanwhile, and a run
+/// loop published then would run for a client nothing can stop any more. So
+/// `run_start` receives `still_owned`, an owner check it must run between the
+/// client's construction and the run loop's publication —
+/// `SpvRuntime::start_and_spawn` runs it under its shutdown lock, which also
+/// keeps a concurrent native stop from slipping in between the two — and
+/// reports `Ok(false)` when the owner is gone: the runtime stopped the client
+/// it had built, and the call fails with `ErrorInvalidHandle`.
+///
+/// `still_owned` reads the runtime's owner flag (`destroy` sets it before the
+/// teardown's SPV stop), never the registry: a registry read under the
+/// shutdown lock would cycle with a native stop that holds the registry's
+/// read guard while it waits for that lock, once a registry writer (a manager
+/// create or destroy) is queued and parking_lot makes every new reader wait
+/// behind it.
 ///
 /// `run_start` is the native start for the FFI entry point; the tests inject
 /// a gated one so the registry release and the destroyed-handle branch are
@@ -593,11 +599,8 @@ where
 {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
     let spv = unwrap_option_or_return!(option);
-    let still_owned: Box<dyn FnOnce() -> bool + Send> = Box::new(move || {
-        PLATFORM_WALLET_MANAGER_STORAGE
-            .with_item(handle, |_| ())
-            .is_some()
-    });
+    let owner = Arc::clone(&spv);
+    let still_owned: Box<dyn FnOnce() -> bool + Send> = Box::new(move || !owner.owner_released());
 
     match run_start(spv, still_owned) {
         Ok(true) => PlatformWalletFFIResult::ok(),
@@ -721,12 +724,12 @@ mod spv_start_registry_tests {
         drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
     }
 
-    /// The new lifetime boundary: a handle destroyed while its start was
+    /// The new lifetime boundary: a manager destroyed while its start was
     /// suspended has no owner for the started client, so the start fails
     /// with `ErrorInvalidHandle` and the client that the native start really
     /// did bring up (an offline testnet client on a scratch store, as the
     /// runtime's own tests start one) is stopped instead of being published
-    /// into released host contexts.
+    /// for nobody to stop.
     #[test]
     fn a_handle_destroyed_during_the_start_fails_it_and_stops_the_started_client() {
         let storage = std::env::temp_dir().join(format!(
@@ -756,8 +759,13 @@ mod spv_start_registry_tests {
                             observed.is_started(),
                             "the native start brought a client up"
                         );
-                        // `platform_wallet_manager_destroy`'s registry step, racing the start.
-                        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
+                        // `platform_wallet_manager_destroy`'s first two steps,
+                        // racing the start: the manager leaves the registry and
+                        // releases its runtime.
+                        let manager = PLATFORM_WALLET_MANAGER_STORAGE
+                            .remove(handle)
+                            .expect("the manager was registered");
+                        manager.spv().release_owner();
                         still_owned()
                     })
                     .await
@@ -779,6 +787,89 @@ mod spv_start_registry_tests {
             !spv.is_started(),
             "the orphaned client must be stopped, not published"
         );
+        let _ = std::fs::remove_dir_all(&storage);
+    }
+
+    /// The lock cycle the owner check must not form: the start holds the
+    /// runtime's shutdown lock while it checks its owner; a native stop
+    /// holds the registry's read guard while it waits for that lock; a
+    /// registry writer queued behind the stop makes parking_lot hold every
+    /// new reader back. An owner check that read the registry would wait on
+    /// the writer, the writer on the stop, the stop on the start. The check
+    /// reads the owner flag instead, so the start completes, the stop runs
+    /// after it and the writer gets in.
+    #[test]
+    fn a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop() {
+        let storage = std::env::temp_dir().join(format!(
+            "spv-start-registry-{}-{}",
+            std::process::id(),
+            next_handle()
+        ));
+        std::fs::create_dir_all(&storage).expect("scratch store");
+        let config = ClientConfig::testnet()
+            .with_storage_path(&storage)
+            .with_restrict_to_configured_peers(true);
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let (threads_tx, threads_rx) = mpsc::channel::<(
+            std::thread::JoinHandle<(PlatformWalletFFIResultCode, String)>,
+            std::thread::JoinHandle<Handle>,
+        )>();
+
+        let (result_tx, result_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let result =
+                code_and_message(start_spv_outside_registry(handle, |spv, still_owned| {
+                    block_on_worker(async move {
+                        spv.start_and_spawn(config, move || {
+                            // Under the shutdown lock. The native stop takes the
+                            // registry's read guard and blocks on that lock.
+                            let stop = std::thread::spawn(move || {
+                                code_and_message(unsafe {
+                                    platform_wallet_manager_spv_stop(handle)
+                                })
+                            });
+                            let deadline = std::time::Instant::now() + WAIT;
+                            while !PLATFORM_WALLET_MANAGER_STORAGE.is_read_locked() {
+                                assert!(
+                                    std::time::Instant::now() < deadline,
+                                    "the stop never took the registry"
+                                );
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                            // A registry writer queued behind that guard; from now
+                            // on parking_lot parks every new reader behind it.
+                            let writer = std::thread::spawn(|| {
+                                PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager())
+                            });
+                            std::thread::sleep(Duration::from_millis(100));
+                            threads_tx
+                                .send((stop, writer))
+                                .expect("test collects the threads");
+                            still_owned()
+                        })
+                        .await
+                    })
+                }));
+            result_tx.send(result).expect("test observes the start");
+        });
+
+        let (code, message) = result_rx
+            .recv_timeout(WAIT)
+            .expect("the start must complete: its owner check must not wait on the registry");
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+
+        let (stop, writer) = threads_rx.recv_timeout(WAIT).expect("the owner check ran");
+        let (stop_code, stop_message) = stop.join().expect("stop thread");
+        assert_eq!(
+            stop_code,
+            PlatformWalletFFIResultCode::Success,
+            "{stop_message}"
+        );
+        let other = writer.join().expect("writer thread");
+
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(other));
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
         let _ = std::fs::remove_dir_all(&storage);
     }
 

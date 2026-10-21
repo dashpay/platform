@@ -63,6 +63,13 @@ impl<T> HandleStorage<T> {
         self.items.write().remove(&handle)
     }
 
+    /// Test probe: whether readers currently hold the registry (and no
+    /// writer does), e.g. an FFI call blocking on async work under its guard.
+    #[cfg(test)]
+    pub(crate) fn is_read_locked(&self) -> bool {
+        self.items.is_locked() && !self.items.is_locked_exclusive()
+    }
+
     pub fn with_item<F, R>(&self, handle: Handle, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,

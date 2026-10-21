@@ -743,6 +743,12 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
+        // Before the teardown's SPV stop: an SPV start that is still
+        // constructing its client checks this under the runtime's shutdown
+        // lock and, finding its owner gone, stops that client instead of
+        // publishing a run loop nothing could stop (see
+        // `platform_wallet_manager_spv_start`).
+        manager.spv().release_owner();
         // Run the full lifecycle shutdown to completion, not just the
         // platform-address sync. `shutdown()` is idempotent, so this is
         // safe even if the host already stopped some sync managers
