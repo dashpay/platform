@@ -822,9 +822,9 @@ public class PlatformWalletManager: ObservableObject {
     /// abort grace, about 32 s in all, after any SPV broadcast still waiting
     /// for acceptance. So both must park a plain GCD thread: never the main
     /// thread, and never a Swift Concurrency cooperative-pool thread. One
-    /// serial queue for both so the native start and stop never run at the
-    /// same time (the FFI serializes them on its registry guard anyway; here
-    /// an async stop issued during a slow start simply runs after it).
+    /// serial queue for both so this manager's async start and stop never
+    /// overlap: an async stop issued during a slow start simply runs after
+    /// it, and stops the client that start brought up.
     /// Per-manager, not [`destroyQueue`]: a slow SPV start or stop must not
     /// hold up other managers' creates, loads and teardowns on that
     /// process-wide queue. Internal so the SPV extension can dispatch to it.

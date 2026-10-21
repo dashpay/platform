@@ -375,8 +375,8 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// that stop is already tearing the client down, and this blocking one
     /// would wait on the same teardown on the calling thread. Throws the same
-    /// while an async [`startSpv(config:)`] is in flight: the native stop
-    /// would park the calling thread behind that start.
+    /// while an async [`startSpv(config:)`] is in flight: a stop that ran
+    /// before the client exists would leave the started client running.
     ///
     /// Throws `shutdownIncomplete` when teardown is still running (stop
     /// again) and `spvProcessRestartRequired` when the app must restart.
@@ -456,8 +456,10 @@ extension PlatformWalletManager {
 
     /// Throws `walletOperation` while an async [`startSpv(config:)`] is in
     /// flight. The main actor is free during that start, so a second start
-    /// or a blocking SPV call issued meanwhile would otherwise park behind it
-    /// on the FFI's registry guard.
+    /// or a blocking SPV call issued meanwhile would otherwise overlap the
+    /// native lifecycle operation still constructing the client: a blocking
+    /// stop would find no client yet and leave the one the start brings up
+    /// running, and a second start would only fail as "already running".
     func ensureNoSpvStartInFlight(before operation: String) throws {
         guard spvStartsInFlight == 0 else {
             throw PlatformWalletError.walletOperation(

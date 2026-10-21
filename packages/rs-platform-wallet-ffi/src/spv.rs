@@ -593,7 +593,11 @@ where
         spv.spawn_run_loop();
     });
     if spawned.is_none() {
-        let _ = block_on_worker(async move { spv.stop().await });
+        // The manager is gone, so nothing can stop this client again through
+        // the registry: a stop that did not complete is only diagnosable here.
+        if let Err(error) = block_on_worker(async move { spv.stop().await }) {
+            tracing::warn!(%error, "orphaned SPV client stop failed after manager was destroyed");
+        }
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
             "manager was destroyed while SPV was starting",
@@ -712,16 +716,32 @@ mod spv_start_registry_tests {
 
     /// The new lifetime boundary: a handle destroyed while its start was
     /// suspended has no owner for the started client, so the start fails
-    /// with `ErrorInvalidHandle` and leaves no started client behind
-    /// instead of publishing a run loop into released host contexts.
+    /// with `ErrorInvalidHandle` and the client that the native start really
+    /// did bring up (an offline testnet client on a scratch store, as the
+    /// runtime's own tests start one) is stopped instead of being published
+    /// into released host contexts.
     #[test]
-    fn a_handle_destroyed_during_the_start_fails_it_and_leaves_no_client() {
+    fn a_handle_destroyed_during_the_start_fails_it_and_stops_the_started_client() {
+        let storage = std::env::temp_dir().join(format!(
+            "spv-start-registry-{}-{}",
+            std::process::id(),
+            next_handle()
+        ));
+        std::fs::create_dir_all(&storage).expect("scratch store");
+        let config = ClientConfig::testnet()
+            .with_storage_path(&storage)
+            .with_restrict_to_configured_peers(true);
+
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
         let spv = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |manager| manager.spv_arc())
             .expect("manager registered");
 
-        let (code, message) = code_and_message(start_spv_outside_registry(handle, |_spv| {
+        let (code, message) = code_and_message(start_spv_outside_registry(handle, |spv| {
+            // The real native step, with the registry released.
+            let starting = Arc::clone(&spv);
+            block_on_worker(async move { starting.start(config).await })?;
+            assert!(spv.is_started(), "the native start brought a client up");
             // `platform_wallet_manager_destroy`'s registry step, racing the start.
             drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
             Ok(())
@@ -740,8 +760,9 @@ mod spv_start_registry_tests {
         );
         assert!(
             !spv.is_started(),
-            "no started client may outlive its destroyed manager"
+            "the orphaned client must be stopped, not published"
         );
+        let _ = std::fs::remove_dir_all(&storage);
     }
 
     /// A start whose native step fails never reaches the registry again and
