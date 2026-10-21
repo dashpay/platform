@@ -269,26 +269,24 @@ describe('Platform', () => {
         expect(apps.get('dpns').contract).to.equal(storedContract);
       });
 
-      it('should refuse records.identity other than the registering identity under DPNS v3', async () => {
+      it('should leave the records.identity rule to the platform under DPNS v3', async () => {
         // Fixed ids: `crypto.randomBytes` is mocked to zeros here, so two random
         // identifiers would be the same
         identityMock.getId.returns(Identifier.from(Buffer.alloc(32, 1)));
         platformMock.contracts.get.resolves({
           getDocumentSchema: dpnsV3DomainSchema,
         });
+        const other = Identifier.from(Buffer.alloc(32, 2));
 
-        let error;
-        try {
-          await register.call(platformMock, 'User.dash', {
-            identity: Identifier.from(Buffer.alloc(32, 2)),
-          }, identityMock);
-        } catch (e: any) {
-          error = e;
-        }
+        await register.call(platformMock, 'User.dash', {
+          identity: other,
+        }, identityMock);
 
-        expect(error.message).to.equal('records.identity must be the identity registering the name.');
-        expect(platformMock.documents.create.called).to.equal(false);
-        expect(platformMock.documents.broadcast.called).to.equal(false);
+        // The contract's recordsIdentityIsOwner rule is judged by DPP when the domain
+        // is created, not copied here: the domain carries the record as given
+        expect(platformMock.documents.create.getCall(1).args[0]).to.equal('dpns.domain');
+        expect(platformMock.documents.create.getCall(1).args[2].records.identity.equals(other))
+          .to.equal(true);
       });
 
       it('should refuse a creator reference without the chooseFirst hash before preordering', async () => {

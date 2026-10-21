@@ -92,21 +92,13 @@ export async function register(
     entries ?? {},
   ).find(([, source]: [string, any]) => Array.isArray(source?.params)) ?? [];
   const [hashProperty, hashFunction] = functionOf(creatorRefersTo?.findBy);
-  const hashParams: any[] | undefined = (hashFunction as any)?.params;
+  const hashParams: any[] | undefined = hashFunction?.params;
   const [validWhenProperty, validWhenFunction] = functionOf(
     creatorRefersTo?.constraints?.chooseFirst?.validWhen,
   );
-  const validWhenParams: any[] | undefined = (validWhenFunction as any)?.params;
+  const validWhenParams: any[] | undefined = validWhenFunction?.params;
   if (Array.isArray(hashParams) && !Array.isArray(validWhenParams)) {
     throw new Error('The DPNS domain\'s creatorRefersTo declares no chooseFirst validWhen function.');
-  }
-
-  // From DPNS v3 a new name's records.identity must be its owner
-  // (recordsIdentityIsOwner): refuse another before the preorder is paid
-  if (domainSchema?.propertyConstraints?.recordsIdentityIsOwner
-    && records.identity
-    && !Identifier.from(records.identity).equals(identity.getId())) {
-    throw new Error('records.identity must be the identity registering the name.');
   }
 
   const paramBytes = (param: any): Buffer => {
