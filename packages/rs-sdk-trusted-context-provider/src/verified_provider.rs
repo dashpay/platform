@@ -429,7 +429,7 @@ impl ContextProvider for VerifiedHttpContextProvider {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use dash_core_proof::bootstrap;
@@ -944,6 +944,58 @@ mod tests {
         assert_eq!(key.expect("the honest height is proven"), Some(f.key));
         let heights = relay.heights();
         assert_eq!(heights, [json!(bogus), json!(0), json!(honest)]);
+    }
+
+    #[tokio::test]
+    async fn should_prove_an_honest_height_while_a_bogus_one_is_in_flight() {
+        let f = fixture(Network::Testnet);
+        let bogus = i32::MAX as u32;
+        let bootstrap = f.bootstrap.clone();
+        let relay = MockRelay::serve(2, move |request| {
+            Some(if request["height"] == bogus {
+                Answer::Hang(Duration::from_secs(20))
+            } else {
+                reply(200, bootstrap.clone())
+            })
+        });
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let stuck = provider
+            .fetch_quorum_public_key(f.quorum_type, f.quorum_hash, bogus)
+            .expect("a Platform quorum is fetched");
+        let stuck = tokio::spawn(stuck);
+        let asked = Instant::now();
+        while relay.requests().is_empty() && asked.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(relay.heights(), [json!(bogus)]);
+
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await;
+        assert_eq!(key.expect("the honest height is proven"), Some(f.key));
+        assert!(!stuck.is_finished(), "the bogus fetch is still waiting");
+        stuck.abort();
+    }
+
+    #[tokio::test]
+    async fn should_release_the_provider_when_every_caller_of_a_pending_fetch_leaves() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![Answer::Hang(Duration::from_secs(20))]);
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let inner = Arc::downgrade(&provider.inner);
+        let fetches = Arc::downgrade(&provider.inner.fetches);
+        let mut pending = provider
+            .fetch_quorum_public_key(f.quorum_type, f.quorum_hash, f.target.height)
+            .expect("a Platform quorum is fetched");
+        let asked = Instant::now();
+        while relay.requests().is_empty() && asked.elapsed() < Duration::from_secs(10) {
+            let polled = tokio::time::timeout(Duration::from_millis(20), &mut pending).await;
+            assert!(polled.is_err(), "the relay hangs");
+        }
+        assert_eq!(relay.requests().len(), 1, "the request is in flight");
+
+        drop(pending);
+        drop(provider);
+        assert!(fetches.upgrade().is_none(), "the fetch state is released");
+        assert!(inner.upgrade().is_none(), "the provider is released");
     }
 
     #[tokio::test]

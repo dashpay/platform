@@ -1,4 +1,4 @@
-use crate::error::TrustedContextProviderError;
+use crate::error::{with_causes, TrustedContextProviderError};
 use crate::get_quorum_base_url;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
@@ -84,18 +84,6 @@ pub struct TrustedHttpContextProvider {
     /// The latest refresh of the quorum lists, shared by clones so that misses
     /// on any of them share it.
     quorum_refreshes: Arc<QuorumRefreshes>,
-}
-
-/// An error with every cause it carries, which `Display` alone leaves out.
-fn with_causes(error: &dyn StdError) -> String {
-    let mut message = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        message.push_str(": ");
-        message.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    message
 }
 
 #[derive(Debug, Deserialize)]
@@ -1064,7 +1052,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
