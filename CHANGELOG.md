@@ -12,18 +12,17 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
-- **platform-wallet-storage:** the V021 migration rebuilds Core history by
-  rescanning it instead of repairing stored records in place: it deletes every
-  wallet's Core transactions, UTXOs and instant locks and rewinds the filter
-  checkpoint to just below the wallet's birth height, so the next SPV start
-  records the history again with correct input details, net amounts and
-  directions. Asset locks, address pools, identities, DashPay and metadata are
-  kept; unconfirmed transactions return only if the network relays them again.
+- **platform-wallet (breaking):** `SpvRuntime::get_quorum_public_key`, the
+  quorum-key source for Platform proof verification, returns only keys dash-spv
+  verified. A quorum dash-spv holds unverified (`Unknown` or `Skipped`) fails with
+  the new `PlatformWalletError::QuorumNotVerified`, and
+  `PlatformWalletError::quorum_lookup_context_error` maps it to the SDK's non-ban
+  `ContextProviderError::QuorumSourceUnavailable`.
+  `get_quorum_public_key_with_status` still returns the key with its status.
 
 ### Changed
 
-- **Rust dependencies:** rust-dashcore `dev` at `626c91d1` (included in the pin
-  below) brings
+- **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
   written before the new payload types decode again;
@@ -38,30 +37,31 @@
   private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
-  handling to the version-3 ProRegTx / ProUpServTx types.
-- **Rust dependencies:** pin rust-dashcore to the head of the reworked
-  [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
-  (`214f7d3e`, with `dev` merged in): restored spend claims are held once per
-  wallet and guard every funding account, including one registered after the
-  wallet is loaded, and a claimed coin stays claimed across a fork. It also
-  brings
-  [rust-dashcore#1106](https://github.com/dashpay/rust-dashcore/pull/1106)
-  (late inputs found during an InstantSend backfill rebuild the owning
-  account's record),
+  handling to the version-3 ProRegTx / ProUpServTx types. It also includes
+  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179):
+  masternode list diffs carry operator payout changes and keep the PoSe revived
+  height, which the masternode list updates of protocol versions 1 to 15 drop
+  and clear as before ([#5455](https://github.com/dashpay/platform/pull/5455));
+  [rust-dashcore#1187](https://github.com/dashpay/rust-dashcore/pull/1187):
+  the LLMQ parameters of the test and devnet quorum types match Dash Core's,
+  which changes how dash-spv tracks Platform quorums on local networks and
+  devnets; and dash-spv API changes:
+  [rust-dashcore#1176](https://github.com/dashpay/rust-dashcore/pull/1176)
+  makes its storage private (`DashSpvClient` opens its own storage and answers
+  header queries, which breaks code using `dash_spv::storage` through the
+  `dpp`/`dash-sdk` re-export),
   [rust-dashcore#1177](https://github.com/dashpay/rust-dashcore/pull/1177)
-  (`DashSpvClient::is_running` is synchronous, so `SpvRuntime::is_running`
-  reads it directly instead of polling the future once) and
-  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179)
-  (masternode list diffs decode `operatorPayoutAddress` and keep
-  `PoSeRevivedHeight`).
-- **platform-wallet-storage (breaking Rust API):** `WalletStorageError` is
-  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
-  arm. New variants: `TransactionBodyConflict`, `UnknownWalletNetwork` and
-  `NetAmountOverflow`.
+  makes `DashSpvClient::is_running` synchronous, and
+  [rust-dashcore#1183](https://github.com/dashpay/rust-dashcore/pull/1183)
+  runs the storage writer only between start and stop.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
+- **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
+  wakes when the client starts or dash-spv reports a peer update, instead of
+  re-checking every 250 ms, so a broadcast held for readiness goes out as soon
+  as the first peer connects.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 - **Breaking (C API):** the unified FFI no longer exports
@@ -75,6 +75,28 @@
   `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
   `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
   Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+
+## [5.0.0-rc.4](https://github.com/dashpay/platform/compare/v5.0.0-rc.3...v5.0.0-rc.4) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive-abci:** keep the operator identity when Core re-encodes the same operator key (#5461)
+* **dpp:** refuse hash key data that is not 20 bytes at protocol version 14 (#5463)
+
+### Bug Fixes
+
+* **dashmate:** show platform status on Dash Core v24 ([#5458](https://github.com/dashpay/platform/issues/5458))
+* **dpp:** refuse hash key data that is not 20 bytes at protocol version 14 ([#5463](https://github.com/dashpay/platform/issues/5463))
+* **drive-abci:** keep the operator identity when Core re-encodes the same operator key ([#5461](https://github.com/dashpay/platform/issues/5461))
+* **drive:** add masternode identity keys through a dedicated operation ([#5456](https://github.com/dashpay/platform/issues/5456))
+* **platform-wallet:** find a masternode's operator identity after Core re-encodes its operator key ([#5462](https://github.com/dashpay/platform/issues/5462))
+
+
+### Continuous Integration
+
+* fall back to GitHub-hosted runners when DASH_LIGHT_RUNNER is unset ([#5469](https://github.com/dashpay/platform/issues/5469))
+* run short PR jobs on self-hosted light runners ([#5468](https://github.com/dashpay/platform/issues/5468))
 
 ## [5.0.0-rc.3](https://github.com/dashpay/platform/compare/v5.0.0-rc.2...v5.0.0-rc.3) (2026-10-15)
 

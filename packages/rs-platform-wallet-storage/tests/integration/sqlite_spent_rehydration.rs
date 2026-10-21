@@ -843,6 +843,7 @@ async fn assert_conflict_restart(case: ConflictCase) {
                 amount_duffs: 1000,
                 status,
                 proof: None,
+                operation_id: None,
             };
             (out_point, entry)
         };

@@ -515,8 +515,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
-        use dashcore::secp256k1::rand::{rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::secp256k1::rand::{rng, RngCore};
 
         // Build the decrypted-payload struct once: it is both the local
         // metadata applied to the contact AND (on publish) the plaintext the

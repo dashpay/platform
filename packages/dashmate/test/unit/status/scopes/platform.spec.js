@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import ContainerIsNotPresentError
   from '../../../../src/docker/errors/ContainerIsNotPresentError.js';
 import DockerComposeError from '../../../../src/docker/errors/DockerComposeError.js';
@@ -33,6 +36,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient = {
         mnsync: this.sinon.stub(),
         getBlockchainInfo: this.sinon.stub(),
+        getDeploymentInfo: this.sinon.stub(),
         masternode: this.sinon.stub(),
       };
       mockDockerCompose = {
@@ -745,6 +749,114 @@ describe('getPlatformScopeFactory', () => {
 
       const scope = await getPlatformScope(config);
       expect(scope).to.deep.equal(expectedScope);
+    });
+
+    describe('platform activation', () => {
+      /**
+       * Read a Core RPC answer recorded from an official Dash Core build on regtest with
+       * testactivationheight=mn_rr@1000 and without -deprecatedrpc=softforks, at height 512
+       * (before mn_rr) or 1112 (after it). Every call parses the file again, so a test may
+       * change the answer it gets.
+       *
+       * @param {string} coreVersion
+       * @param {string} name
+       * @returns {{result: Object}}
+       */
+      function readCoreAnswer(coreVersion, name) {
+        const file = path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc', coreVersion, `${name}.json`);
+
+        return { result: JSON.parse(fs.readFileSync(file, 'utf8')) };
+      }
+
+      beforeEach(() => {
+        mockDockerCompose.isServiceRunning.withArgs(config, 'drive_tenderdash').returns(false);
+        mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
+          .returns(DockerStatusEnum.running);
+        mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+        mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
+      });
+
+      [
+        {
+          height: 1112,
+          platformActivation: 'Activated (at height 1000)',
+          driveServiceStatus: ServiceStatusEnum.up,
+        },
+        {
+          height: 512,
+          platformActivation: 'Waiting for activation on height 1000',
+          driveServiceStatus: ServiceStatusEnum.wait_for_activation,
+        },
+      ].forEach(({ height, platformActivation, driveServiceStatus }) => {
+        it(`should report platform activation and status at height ${height} on Core v24, which by default no longer reports softforks in getblockchaininfo`, async () => {
+          mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer('24.0.0-rc.3', 'mnsync-status'));
+          mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('24.0.0-rc.3', `getblockchaininfo-${height}`));
+          mockRpcClient.getDeploymentInfo.returns(readCoreAnswer('24.0.0-rc.3', `getdeploymentinfo-${height}`));
+
+          const scope = await getPlatformScope(config);
+
+          expect(scope.platformActivation).to.equal(platformActivation);
+          expect(scope.coreIsSynced).to.be.true();
+          expect(scope.tenderdash.serviceStatus).to.equal(ServiceStatusEnum.stopped);
+          expect(scope.drive).to.deep.equal({
+            dockerStatus: DockerStatusEnum.running,
+            serviceStatus: driveServiceStatus,
+            version: '1.4.1',
+          });
+        });
+      });
+
+      it('should read platform activation from getblockchaininfo softforks on Core v23 without calling getdeploymentinfo', async () => {
+        // Core v23 has no getdeploymentinfo and reports deployments only in getblockchaininfo softforks
+        mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer('23.1.8', 'mnsync-status'));
+        mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('23.1.8', 'getblockchaininfo-1112'));
+
+        const scope = await getPlatformScope(config);
+
+        expect(scope.platformActivation).to.equal('Activated (at height 1000)');
+        expect(scope.coreIsSynced).to.be.true();
+        expect(scope.drive.serviceStatus).to.equal(ServiceStatusEnum.up);
+        expect(mockRpcClient.getDeploymentInfo).to.not.have.been.called();
+      });
+
+      [
+        {
+          coreVersion: '23.1.8',
+          getDeploymentInfoCalls: 0,
+          mockDeployments: () => {
+            const blockchainInfo = readCoreAnswer('23.1.8', 'getblockchaininfo-1112');
+            delete blockchainInfo.result.softforks.mn_rr;
+            mockRpcClient.getBlockchainInfo.returns(blockchainInfo);
+          },
+        },
+        {
+          coreVersion: '24.0.0-rc.3',
+          getDeploymentInfoCalls: 1,
+          mockDeployments: () => {
+            const deploymentInfo = readCoreAnswer('24.0.0-rc.3', 'getdeploymentinfo-1112');
+            delete deploymentInfo.result.deployments.mn_rr;
+            mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('24.0.0-rc.3', 'getblockchaininfo-1112'));
+            mockRpcClient.getDeploymentInfo.returns(deploymentInfo);
+          },
+        },
+      ].forEach(({ coreVersion, getDeploymentInfoCalls, mockDeployments }) => {
+        it(`should return the empty platform scope instead of failing when Core ${coreVersion} reports no mn_rr deployment`, async () => {
+          mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer(coreVersion, 'mnsync-status'));
+          mockDeployments();
+
+          const scope = await getPlatformScope(config);
+
+          expect(scope.platformActivation).to.be.null();
+          expect(scope.coreIsSynced).to.be.null();
+          expect(scope.tenderdash.serviceStatus).to.be.null();
+          expect(scope.drive).to.deep.equal({
+            dockerStatus: null,
+            serviceStatus: null,
+            version: null,
+          });
+          expect(mockRpcClient.getDeploymentInfo.callCount).to.equal(getDeploymentInfoCalls);
+        });
+      });
     });
   });
 });
