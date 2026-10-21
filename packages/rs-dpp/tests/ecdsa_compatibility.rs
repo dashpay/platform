@@ -262,7 +262,7 @@ fn should_preserve_identity_public_key_hash_errors_and_encoding() {
             .public_key_hash()
             .unwrap_err()
             .to_string(),
-        "Generic Error: unable to create pub key - key secp256k1 error"
+        "unable to create pub key - key secp256k1 error"
     );
     let mut hybrid = parsed.serialize_uncompressed().to_vec();
     hybrid[0] = 6;
@@ -271,6 +271,6 @@ fn should_preserve_identity_public_key_hash_errors_and_encoding() {
             .public_key_hash()
             .unwrap_err()
             .to_string(),
-        "Generic Error: unable to create pub key - key prefix invalid: 6"
+        "unable to create pub key - key prefix invalid: 6"
     );
 }
