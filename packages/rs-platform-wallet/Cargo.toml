@@ -17,14 +17,7 @@ key-wallet = { workspace = true }
 key-wallet-manager = { workspace = true, features = [] }
 dash-spv = { workspace = true }
 
-# Core dependencies.
-#
-# `base64` is NOT among dashcore's default features (those are `secp-recovery`
-# and `bincode`), but `MessageSignature::to_base64` / `from_base64` are gated on
-# it — and base64 is the only wire form a classic Dash signed message has, the
-# one CrowdNode and Dash Core's `verifymessage` RPC accept. `secp-recovery`
-# arrives by default and carries `secp256k1/recovery`, which
-# `RecoverableSignature` / `recover_ecdsa` need. See `wallet::core::sign_message`.
+# Core dependencies. Classic Dash signed messages use the optional base64 encoding.
 dashcore = { workspace = true, features = ["base64"] }
 
 # Standard dependencies
@@ -93,6 +86,8 @@ required-features = ["shielded"]
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# `tests::fixtures` for the state transition summary tests.
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 # In-process Signer<IdentityPublicKey> for the manual testnet
 # verification example (`examples/dpns_marketplace_testnet.rs`).
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
@@ -117,8 +112,8 @@ rusqlite = "0.38"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
-# so the time-driven retry logic in `submit_with_cl_height_retry` can be
-# tested deterministically without sleeping wall-clock seconds.
+# so time-driven manager, startup and SPV runtime logic can be tested
+# deterministically without sleeping wall-clock seconds.
 tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.

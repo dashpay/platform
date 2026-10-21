@@ -9376,13 +9376,13 @@ mod tests {
     mod actual_signature_verification {
         use super::*;
         use dpp::dashcore::hashes::Hash;
-        use dpp::dashcore::secp256k1::PublicKey as RawSecp256k1PublicKey;
+        use dpp::secp256k1::PublicKey as RawSecp256k1PublicKey;
         use dpp::serialization::Signable;
 
         /// Helper to create a properly signed P2PKH witness
         /// Note: Creates a recoverable signature for P2PKH (65 bytes)
         fn create_real_p2pkh_witness(
-            secret_key: &dpp::dashcore::secp256k1::SecretKey,
+            secret_key: &dpp::secp256k1::SecretKey,
             signable_bytes: &[u8],
         ) -> (PlatformAddress, AddressWitness) {
             let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(secret_key);
@@ -9410,7 +9410,7 @@ mod tests {
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             // Create a real secret key
-            let secret_key = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([
+            let secret_key = dpp::secp256k1::SecretKey::from_secret_bytes([
                 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
                 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
                 0x1d, 0x1e, 0x1f, 0x20,
@@ -9486,8 +9486,8 @@ mod tests {
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             // Create address from one key
-            let correct_secret = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([1u8; 32])
-                .expect("valid secret key");
+            let correct_secret =
+                dpp::secp256k1::SecretKey::from_secret_bytes([1u8; 32]).expect("valid secret key");
             let raw_correct_pubkey = RawSecp256k1PublicKey::from_secret_key(&correct_secret);
             let correct_pubkey = PublicKey::new(raw_correct_pubkey);
             let pubkey_hash =
@@ -9495,8 +9495,8 @@ mod tests {
             let address = PlatformAddress::P2pkh(pubkey_hash.to_byte_array());
 
             // But sign with different key
-            let wrong_secret = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([2u8; 32])
-                .expect("valid secret key");
+            let wrong_secret =
+                dpp::secp256k1::SecretKey::from_secret_bytes([2u8; 32]).expect("valid secret key");
 
             let mut inputs = BTreeMap::new();
             inputs.insert(address.clone(), (1 as AddressNonce, dash_to_credits!(1.0)));
@@ -9557,8 +9557,7 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i;
-                    dpp::dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
-                        .expect("valid")
+                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
                 })
                 .collect();
 
@@ -9646,8 +9645,7 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i + 10;
-                    dpp::dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
-                        .expect("valid")
+                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
                 })
                 .collect();
 
@@ -11822,6 +11820,8 @@ mod tests {
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::fee::fee_result::FeeResult;
+        use dpp::identity::accessors::IdentitySettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::prelude::UserFeeIncrease;
         use dpp::state_transition::public_key_in_creation::accessors::{
             IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
@@ -12258,6 +12258,169 @@ mod tests {
                         .validation_and_processing
                         .penalties
                         .validation_of_added_keys_structure_failure,
+                );
+            }
+        }
+
+        /// A transition spending `INPUT_AMOUNT` from `address` that registers, besides a master
+        /// and a critical key, a hash key whose data has `data_len` bytes.
+        async fn transition_with_a_hash_key_of_size(
+            address_signer: &TestAddressSigner,
+            address: PlatformAddress,
+            data_len: usize,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            let (mut identity, identity_signer) =
+                create_identity_with_keys([93u8; 32], rng, platform_version);
+            identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: 2,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_HASH160,
+                    read_only: false,
+                    data: BinaryData::new(vec![0x5a; data_len]),
+                    disabled_at: None,
+                }
+                .into(),
+            );
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1 as AddressNonce, INPUT_AMOUNT));
+            IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
+                &identity,
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                &identity_signer,
+                address_signer,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("should create transition")
+        }
+
+        /// A hash key's data is the hash itself, so from protocol version 14 data that is not 20
+        /// bytes fails the key structure check: check_tx refuses it with a consensus error, and
+        /// a block charges the inputs like any other key structure failure, as the address
+        /// witnesses sign the keys.
+        #[tokio::test]
+        async fn should_charge_the_inputs_for_a_hash_key_of_the_wrong_size() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform(platform_version);
+            let mut rng = StdRng::seed_from_u64(9700);
+            let mut address_signer = TestAddressSigner::new();
+            let address = address_signer.add_p2pkh([99u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                address,
+                0,
+                INITIAL_BALANCE,
+            );
+
+            let transition = transition_with_a_hash_key_of_size(
+                &address_signer,
+                address,
+                19,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            let raw_transition = transition.serialize_to_bytes().expect("should serialize");
+            let check_tx_result = run_check_tx(&platform, &raw_transition, platform_version);
+            assert_matches!(
+                check_tx_result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidIdentityPublicKeyDataError(error)
+                )] if error.public_key_id() == 2
+            );
+
+            let (error, fees) = process_failing_transition(&platform, transition);
+            assert_matches!(
+                error,
+                ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(_))
+            );
+            assert_input_paid_the_fee_and_penalty(
+                &platform,
+                address,
+                INITIAL_BALANCE,
+                &fees,
+                platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .penalties
+                    .validation_of_added_keys_structure_failure,
+            );
+        }
+
+        /// Protocol version 13 does not check the size of a hash key's data, so such a key fails
+        /// once its hash is taken, as an internal error that keeps the transition out of every
+        /// block; that history replays unchanged.
+        #[tokio::test]
+        async fn should_fail_a_hash_key_of_the_wrong_size_internally_at_protocol_version_13() {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let mut platform = setup_platform(platform_version);
+            let mut rng = StdRng::seed_from_u64(9800);
+            let mut address_signer = TestAddressSigner::new();
+            let address = address_signer.add_p2pkh([100u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                address,
+                0,
+                INITIAL_BALANCE,
+            );
+
+            let transition = transition_with_a_hash_key_of_size(
+                &address_signer,
+                address,
+                19,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            assert_matches!(
+                process_block(&platform, transition).as_slice(),
+                [StateTransitionExecutionResult::InternalError(_)]
+            );
+        }
+
+        /// The same transition with 20 bytes of hash key data creates the identity, so the
+        /// failures above come from the key data alone.
+        #[tokio::test]
+        async fn should_create_an_identity_with_a_hash_key_of_20_bytes_at_protocol_versions_13_and_14(
+        ) {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9900);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([101u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_a_hash_key_of_size(
+                    &address_signer,
+                    address,
+                    20,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+
+                assert_matches!(
+                    process_block(&platform, transition).as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "at protocol version {}",
+                    platform_version.protocol_version
                 );
             }
         }

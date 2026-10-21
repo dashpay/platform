@@ -1259,7 +1259,7 @@ impl SqlitePersister {
     /// every subsequent `store()` call on this persister until overwritten
     /// or cleared. A test that wants it to fire exactly once (the common
     /// case) needs its own latch — see `release_at_store_seam` in
-    /// `tests/common` for the pattern.
+    /// `tests/integration/common` for the pattern.
     #[doc(hidden)]
     #[cfg(any(test, feature = "__test-helpers"))]
     pub fn set_store_flush_seam_for_test(&self, seam: Arc<dyn Fn() + Send + Sync>) {
@@ -1356,6 +1356,7 @@ impl PlatformWalletPersistence for SqlitePersister {
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1363,6 +1364,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
@@ -1960,6 +1962,8 @@ fn load_wallet_snapshot(
             // replay inert here, which is the behaviour this path had before the
             // field existed.
             unconfirmed_outgoing_txs: Vec::new(),
+            // This backend does not persist backfill coverage; rescan on each launch.
+            dashpay_backfill: Default::default(),
         },
         sweeps,
     ))

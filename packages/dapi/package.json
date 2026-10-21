@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "5.0.0-beta.6",
+  "version": "5.0.0-rc.4",
   "description": "A decentralized API for the Dash network",
   "engines": {
     "node": ">=22"
@@ -39,7 +39,7 @@
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.22.0",
-    "@dashevo/dashd-rpc": "^19.0.0",
+    "@dashevo/dashd-rpc": "^19.1.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "^1.14.3",

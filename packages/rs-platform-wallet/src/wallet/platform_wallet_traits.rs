@@ -3,7 +3,7 @@
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
 //! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -42,6 +42,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -56,6 +58,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -148,6 +152,26 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.last_processed_height()
     }
 
+    /// Forwarded, plus the receival accounts platform inserts itself: the
+    /// filter pipeline snapshots this per batch and refuses to certify a
+    /// batch whose snapshot predates an account add, because the scan never
+    /// tested that account's scripts (dashpay/rust-dashcore#649). The trait
+    /// default is a constant `0`, which turned the guard off for every
+    /// platform wallet — so a batch in flight across a contact-account
+    /// registration could certify coverage the DashPay backfill record then
+    /// vouched for (dashpay/platform#4302 review).
+    ///
+    /// Also offset past a removed same-id predecessor's final generation
+    /// (see `RewindBarrier::inherit`): both counters restart with the wallet,
+    /// so without the offset a batch reconciled against the predecessor's
+    /// account set could match this wallet's generation and be certified.
+    fn account_generation(&self) -> u64 {
+        self.core_wallet
+            .account_generation()
+            .wrapping_add(self.rewind_barrier.account_registrations())
+            .wrapping_add(self.rewind_barrier.generation_base())
+    }
+
     fn synced_height(&self) -> CoreBlockHeight {
         self.core_wallet.synced_height()
     }
@@ -157,11 +181,22 @@ impl WalletInfoInterface for PlatformWalletInfo {
             .update_last_processed_height(current_height);
     }
 
+    /// The engine's only caller is `update_wallet_synced_height`, which emits
+    /// a `SyncHeightAdvanced` straight after this returns, under the same
+    /// manager write lock — so this is where emissions are counted for the
+    /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier).
+    /// Platform code that moves the cursor calls `core_wallet` directly and
+    /// emits nothing.
     fn update_synced_height(&mut self, current_height: u32) {
+        self.rewind_barrier.note_emitted();
         self.core_wallet.update_synced_height(current_height);
     }
 
+    /// Fence restored coins and note a lowered cursor's rewind epoch before
+    /// the truncation and its checkpoint reach the persister.
+    /// A refused truncation changes nothing and notes nothing.
     fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        let before = self.core_wallet.metadata.synced_height;
         let truncation = self.core_wallet.truncate_above(height)?;
         // Fenced here, not on the `ChainTruncated` event: the caller holds
         // the wallet-manager write lock, so no build can select a restored
@@ -171,6 +206,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         // nothing holds while it takes another lock.
         self.generation
             .fence_restored(truncation.restored_outpoints.iter().copied());
+        self.note_in_memory_rewind(before);
         Ok(truncation)
     }
 
@@ -184,7 +220,42 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        self.core_wallet.mark_instant_send_utxos(txid, lock)
+        // key-wallet at the pinned revision rewrites the record's context to
+        // `InstantSend` even when the transaction is already in a block. That
+        // context carries no block, so a chain lock no longer promotes the
+        // record and the persister would store a mined send as unconfirmed.
+        // A lock can reach a mined transaction: dash-spv applies one for as
+        // long as its mempool manager tracks the transaction, which ends
+        // only when that manager handles the block's event. Keep each
+        // confirmed slice's own context across the call: the slices of one
+        // transaction share the block but not always the finality, so one
+        // slice's context must not stand in for another's. As upstream, the
+        // mined record then does not carry the lock: an asset lock mined
+        // before its lock is proven by the chain lock, not by the
+        // InstantSend lock. Fixed upstream in dashpay/rust-dashcore#1037;
+        // drop this once the pin carries it (tracked in #5430).
+        let confirmed: BTreeMap<_, _> = self
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .filter(|record| record.is_confirmed())
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect();
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if confirmed.is_empty() {
+            return changed;
+        }
+        for mut account in self.core_wallet.accounts.all_accounts_mut() {
+            let Some(record) = account.transactions_mut().get_mut(txid) else {
+                continue;
+            };
+            if let Some(context) = confirmed.get(&record.account_type) {
+                record.update_context(context.clone());
+            }
+        }
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {
@@ -258,7 +329,10 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet.add_managed_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self.core_wallet.add_managed_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     fn add_managed_account_from_xpub(
@@ -266,8 +340,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         account_xpub: ExtendedPubKey,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_account_from_xpub(account_type, account_xpub)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_account_from_xpub(account_type, account_xpub);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "bls")]
@@ -276,8 +354,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_bls_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_bls_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "bls")]
@@ -286,8 +368,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         bls_public_key: [u8; 48],
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_bls_account_from_public_key(account_type, bls_public_key)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_bls_account_from_public_key(account_type, bls_public_key);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "eddsa")]
@@ -296,8 +382,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_eddsa_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_eddsa_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "eddsa")]
@@ -306,8 +396,29 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         ed25519_public_key: [u8; 32],
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key);
+        self.note_in_memory_rewind(before);
+        added
+    }
+}
+
+impl PlatformWalletInfo {
+    /// key-wallet lowers the scan cursor on its own: an account add rewinds
+    /// it to just below wallet birth (the new account has no filter
+    /// coverage), a chain truncation to the fork height. Advances emitted
+    /// before either rewind must not be stored afterwards. The DashPay
+    /// backfill record also owes the host the lowered cursor, so coverage
+    /// cannot be stored beside a cursor that never came down.
+    fn note_in_memory_rewind(&mut self, before: u32) {
+        let after = self.core_wallet.metadata.synced_height;
+        if after < before {
+            self.rewind_barrier.arm();
+            let epoch = self.rewind_barrier.epoch();
+            self.dashpay_backfill.owe_cursor(after, epoch);
+        }
     }
 }
 
@@ -380,5 +491,31 @@ mod tests {
             observed.contains_key(&open_spend),
             "a spend at height 150 is above synced height 100"
         );
+    }
+
+    /// Following a fork can lower the scan cursor in memory, and only a
+    /// truncation that lowered it is a rewind to account for: it arms the
+    /// barrier and owes the host the fork height. A truncation refused below
+    /// the chain lock, or one above the cursor, leaves both untouched.
+    #[test]
+    fn should_note_a_truncation_only_when_it_lowers_the_scan_cursor() {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        info.core_wallet.metadata.last_processed_height = 1_000;
+        info.core_wallet.update_synced_height(1_000);
+        info.apply_chain_lock(ChainLock::dummy(950));
+
+        assert!(info.truncate_above(949).is_err(), "below the chain lock");
+        info.truncate_above(1_000).expect("a fork at the cursor");
+        assert_eq!(info.synced_height(), 1_000);
+        assert_eq!(info.rewind_barrier.epoch(), 0);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, None);
+
+        info.truncate_above(960).expect("a fork below the cursor");
+        assert_eq!(info.synced_height(), 960);
+        assert_eq!(info.rewind_barrier.epoch(), 1);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(960));
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor_epoch, Some(1));
     }
 }

@@ -326,44 +326,25 @@ fn repair_record(
 
 #[cfg(test)]
 mod tests {
-    use dashcore::address::Payload;
-    use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
+    use dashcore::TxOut;
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
     use key_wallet::transaction_checking::{BlockInfo, TransactionType};
     use platform_wallet::changeset::wallet_direction;
+    use platform_wallet::test_support::core_fixtures::{
+        foreign_address as address, outside, pay, spend_of,
+    };
     use platform_wallet::test_support::fold_wallet_records;
 
     use super::*;
+    use crate::sqlite::migrations::oversize_script_db;
 
     const WALLET_ID: WalletId = [0x5Au8; 32];
 
     #[test]
     fn should_reject_oversize_owned_output_script_before_reading_it() {
         const WALLET: WalletId = WALLET_ID;
-        let mut conn = wallet_db("testnet");
-
-        use rusqlite::limits::Limit;
-
-        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
-
-        let outpoint = OutPoint::new(Txid::from_byte_array([0x42; 32]), 0);
-        // Over the connection's length cap, so reading the column itself
-        // fails: only a length-only pre-read reports it as oversize.
-        let script = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
-        conn.execute(
-            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
-             VALUES (?1, ?2, 0, ?3, 0)",
-            params![
-                &WALLET[..],
-                blob::encode_outpoint(&outpoint).unwrap(),
-                script
-            ],
-        )
-        .unwrap();
-        drop(script);
-        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
-            .unwrap();
+        let (mut conn, outpoint) = oversize_script_db(&WALLET);
         let tx = conn.transaction().unwrap();
 
         let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
@@ -389,24 +370,8 @@ mod tests {
     }
 
     fn record(output_values: &[u64], received: &[u64]) -> TransactionRecord {
-        let script = Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([7; 20])),
-        )
-        .script_pubkey();
-        let body = CoreTransaction {
-            version: 1,
-            lock_time: 0,
-            input: Vec::new(),
-            output: output_values
-                .iter()
-                .map(|&value| TxOut {
-                    value,
-                    script_pubkey: script.clone(),
-                })
-                .collect(),
-            special_transaction_payload: None,
-        };
+        let owner = address(7);
+        let body = spend_of(&[], output_values.iter().map(|&v| pay(v, &owner)).collect());
         let details = received
             .iter()
             .enumerate()
@@ -588,13 +553,6 @@ mod tests {
     const LOCK_CREDIT: u64 = 60_000_000;
     const LOCK_FEE: u64 = 1_000;
 
-    fn address(byte: u8) -> Address {
-        Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([byte; 20])),
-        )
-    }
-
     fn bip44() -> AccountType {
         AccountType::Standard {
             index: 0,
@@ -609,25 +567,12 @@ mod tests {
         kind: TransactionType,
         outputs: &[(ScriptBuf, u64, OutputRole)],
     ) -> TransactionRecord {
-        let body = CoreTransaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![dashcore::TxIn {
-                previous_output: OutPoint {
-                    txid: Txid::from_byte_array([0x11; 32]),
-                    vout: 0,
-                },
-                ..Default::default()
-            }],
-            output: outputs
-                .iter()
-                .map(|(script, value, _)| TxOut {
-                    value: *value,
-                    script_pubkey: script.clone(),
-                })
-                .collect(),
-            special_transaction_payload: None,
-        };
+        let outputs_of = outputs.iter().map(|(script, value, _)| TxOut {
+            value: *value,
+            script_pubkey: script.clone(),
+        });
+        let mut body = spend_of(&[outside(0x11)], outputs_of.collect());
+        body.version = 3;
         let details: Vec<OutputDetail> = outputs
             .iter()
             .enumerate()

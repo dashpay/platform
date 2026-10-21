@@ -403,8 +403,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     // which has no `Drop` of its own — is scrubbed when the function
     // returns. `derived` self-wipes separately: `ExtendedPrivKey`
     // zeroizes on `Drop`.
-    let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
-        zeroize::Zeroizing::new(derived.private_key.to_secret_bytes());
+    let secret_bytes: zeroize::Zeroizing<[u8; 32]> = derived.private_key.to_bytes();
 
     // ---- Sign ---------------------------------------------------------------
     // `dashcore::signer::sign` returns a 65-byte compact recoverable

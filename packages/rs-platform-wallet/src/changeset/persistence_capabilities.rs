@@ -143,8 +143,12 @@ impl PersistenceCapabilities {
     /// this bit therefore obliges such a backend to keep that truncation
     /// until it has applied it, including when it discards the rest of what
     /// it held.
-    // Bit 13 is reserved for `CORE_HISTORY_RESTORE` (dashpay/platform#5220).
-    pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 14);
+    pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 15);
+
+    /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
+    /// Missing or malformed persistence data fails load rather than becoming an
+    /// empty result. Required before a wallet drain can treat absence as not sent.
+    pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
@@ -152,7 +156,7 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 14;
+    const HIGHEST_DECLARED_BIT: u32 = 15;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -170,6 +174,13 @@ impl PersistenceCapabilities {
     /// restore that exact row after process restart.
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+
+    /// Durable correlation and funding-key indices required for wallet drain.
+    pub const WALLET_DRAIN: Self = Self(
+        Self::ASSET_LOCK_RECONCILIATION.0
+            | Self::ASSET_LOCK_FUNDING_INDICES.0
+            | Self::ASSET_LOCK_OPERATION_IDS.0,
+    );
 
     pub const fn from_bits_retain(bits: u64) -> Self {
         Self(bits)
@@ -246,6 +257,10 @@ impl PersistenceCapabilities {
                 "dashpay_payments",
             ),
             (
+                PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS,
+                "asset_lock_operation_ids",
+            ),
+            (
                 PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
                 "core_chain_truncation",
             ),
@@ -295,8 +310,13 @@ mod tests {
         assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x800);
         assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
+            0x2000
+        );
+        assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
+        assert_eq!(
             PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits(),
-            0x4000
+            0x8000
         );
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
@@ -331,10 +351,9 @@ mod tests {
         // to prevent. Walking the whole width cannot go stale.
         for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
             let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
-            // Reserved, not declared — see `CORE_CHAIN_TRUNCATION`. Naming
-            // it is what retires this exception.
-            if shift == 13 {
-                assert!(bit.names().is_empty(), "bit 13 is declared; drop this skip");
+            // Reserved for CORE_HISTORY_RESTORE (dashpay/platform#5220).
+            if shift == 14 {
+                assert!(bit.names().is_empty(), "bit 14 is declared; drop this skip");
                 continue;
             }
             assert_eq!(
