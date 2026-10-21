@@ -180,7 +180,7 @@ impl QuorumProofChain {
     /// checkpoint.
     pub fn verify(&self, trusted: &State) -> Result<State> {
         if &self.anchor != trusted {
-            return Err(Error("untrusted snapshot"));
+            return Err(Error::UNTRUSTED_CHECKPOINT);
         }
         trusted.validate()?;
         if self.links.len() >= MAX_PROOF_CERTIFICATES {
@@ -280,6 +280,9 @@ impl QuorumProofChain {
         if self.links.len() >= MAX_PROOF_CERTIFICATES {
             return Err(Error("certificate limit"));
         }
+        if self.seed.len() > MAX_COMMITMENT_BYTES {
+            return Err(Error("proof blob length"));
+        }
         let mut out = PROOF_MAGIC.to_vec();
         self.anchor.encode(&mut out);
         write_blob(&mut out, &self.seed)?;
@@ -295,6 +298,10 @@ impl QuorumProofChain {
             out.extend((link.ancestors.len() as u16).to_le_bytes());
             for header in &link.ancestors {
                 out.extend(header);
+            }
+            // Checked per link, as in Core, so a huge chain fails early.
+            if out.len() > MAX_PROOF_BYTES {
+                return Err(Error("proof size limit"));
             }
         }
         self.target.encode(&mut out);

@@ -21,9 +21,11 @@ pub(crate) fn public_key(key: &[u8; 48]) -> Result<PublicKey> {
 /// point at infinity, which Core resets and then rejects as malleable.
 ///
 /// Core also accepts, as null, bytes that are invalid in the Basic scheme but
-/// valid in the legacy one. No block can carry those where this is used (Core
-/// checks mined commitments' signatures, and a coinbase may not drop a
-/// ChainLock its predecessor carried), so they are rejected here.
+/// valid in the legacy one; they are rejected here. In a mined commitment they
+/// cannot occur, because Core verifies its signatures. In a coinbase's best
+/// ChainLock signature they are consensus-valid only while no earlier coinbase
+/// carries a ChainLock; a proof ending at such a block is refused, which costs
+/// availability for that one target but never accepts anything Core rejects.
 pub(crate) fn check_signature_encoding(signature: &[u8; 96]) -> Result<()> {
     if signature.iter().all(|byte| *byte == 0) {
         return Ok(());

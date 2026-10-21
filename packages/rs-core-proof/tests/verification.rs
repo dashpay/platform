@@ -75,12 +75,14 @@ fn should_open_the_requested_mainnet_quorum() {
 fn should_reject_a_stale_target_or_another_checkpoint() {
     let f = testnet();
     let stale = bootstrap::verify(&f.bootstrap, &f.checkpoint, f.target.height + 1);
-    assert_eq!(stale.unwrap_err().0, "stale target");
+    assert_eq!(stale.unwrap_err().message(), "stale target");
 
     let mut other = f.checkpoint.clone();
     other.quorum_root[0] ^= 1;
     assert_eq!(
-        bootstrap::verify(&f.bootstrap, &other, 0).unwrap_err().0,
+        bootstrap::verify(&f.bootstrap, &other, 0)
+            .unwrap_err()
+            .message(),
         "untrusted snapshot"
     );
     // A checkpoint on another network never matches either.
@@ -135,7 +137,7 @@ fn should_reject_tampered_links() {
     let rejects = |mutate: &dyn Fn(&mut QuorumProofChain)| {
         let mut bad = chain.clone();
         mutate(&mut bad);
-        bad.verify(&f.checkpoint).unwrap_err().0
+        bad.verify(&f.checkpoint).unwrap_err().message()
     };
 
     assert_eq!(rejects(&|c| c.target.signature[5] ^= 1), "BLS signature");
@@ -198,7 +200,7 @@ fn should_reject_chains_over_the_header_budget() {
     chain.links[0].ancestors = vec![header; MAX_PROOF_HEADERS + 1];
     assert!(chain.encode().is_err());
     assert_eq!(
-        chain.verify(&f.checkpoint).unwrap_err().0,
+        chain.verify(&f.checkpoint).unwrap_err().message(),
         "ancestor budget/height"
     );
 }

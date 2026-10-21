@@ -3,8 +3,8 @@
 //! coinbase from end to end, and each envelope and commitment limit.
 use blst::min_pk::SecretKey;
 use dash_core_proof::{
-    bootstrap, coinbase_roots, header_hash, parse_commitment, sha256d, Certificate, Hash, Link,
-    MerklePath, ProofNetwork, ProofTransaction, QuorumProofChain, State,
+    bootstrap, coinbase_roots, header_hash, parse_commitment, sha256d, Certificate, ErrorKind,
+    Hash, Link, MerklePath, ProofNetwork, ProofTransaction, QuorumProofChain, State,
 };
 
 const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
@@ -306,7 +306,7 @@ fn should_reject_a_link_that_mines_its_own_signer() {
     let mut built = build(&a, &[&b], 3);
     built.chain.links[0] = link(&a, &a.commitment(), CHECKPOINT_HEIGHT + 24);
     assert_eq!(
-        built.chain.verify(&built.checkpoint).unwrap_err().0,
+        built.chain.verify(&built.checkpoint).unwrap_err().message(),
         "redundant signer"
     );
 }
@@ -316,14 +316,14 @@ fn should_reject_signers_that_are_not_chainlock_quorums() {
     let platform = Quorum::new(9, 6);
     let built = build(&platform, &[], 3);
     assert_eq!(
-        built.chain.verify(&built.checkpoint).unwrap_err().0,
+        built.chain.verify(&built.checkpoint).unwrap_err().message(),
         "unexpected quorum type"
     );
 
     let a = Quorum::new(1, CHAINLOCK);
     let built = build(&a, &[&platform], 3);
     assert_eq!(
-        built.chain.verify(&built.checkpoint).unwrap_err().0,
+        built.chain.verify(&built.checkpoint).unwrap_err().message(),
         "unexpected quorum type"
     );
 
@@ -333,7 +333,7 @@ fn should_reject_signers_that_are_not_chainlock_quorums() {
     built.checkpoint.height = 2_000_000;
     built.chain.anchor = built.checkpoint.clone();
     assert_eq!(
-        built.chain.verify(&built.checkpoint).unwrap_err().0,
+        built.chain.verify(&built.checkpoint).unwrap_err().message(),
         "unexpected quorum type"
     );
 }
@@ -349,7 +349,7 @@ fn should_reject_envelope_record_limits() {
             0,
         )
         .map(|_| ())
-        .map_err(|e| e.0)
+        .map_err(|e| e.message())
     };
     assert_eq!(ok(1, &[(0, &built.record)]), Ok(()));
     assert_eq!(ok(0, &[]), Err("projection count"));
@@ -360,10 +360,104 @@ fn should_reject_envelope_record_limits() {
     assert_eq!(ok(1, &[(0, &[5; 4097])]), Err("blob limit"));
     // The record must open under the right root.
     assert_eq!(ok(1, &[(1, &built.record)]), Err("Merkle root/path"));
-    // A stale target is refused before any signature is checked.
-    let bytes = envelope(&built.chain, 1, &[(0, &built.record)]);
-    let stale = bootstrap::verify(&bytes, &built.checkpoint, built.chain.target.height + 1);
-    assert_eq!(stale.unwrap_err().0, "stale target");
+    // A stale target is refused before any signature is checked: with a
+    // broken signature it is still reported stale, and only a reachable
+    // minimum height gets as far as the signature.
+    let mut broken = built.chain.clone();
+    broken.target.signature = [0; 96];
+    let bytes = envelope(&broken, 1, &[(0, &built.record)]);
+    let height = broken.target.height;
+    let stale = bootstrap::verify(&bytes, &built.checkpoint, height + 1).unwrap_err();
+    assert_eq!(stale.message(), "stale target");
+    assert_eq!(stale.kind(), ErrorKind::StaleTarget);
+    let reached = bootstrap::verify(&bytes, &built.checkpoint, height).unwrap_err();
+    assert_eq!(reached.message(), "BLS signature");
+    assert_eq!(reached.kind(), ErrorKind::Invalid);
+}
+
+/// A link whose certified block is `ancestors` blocks above the block that
+/// mined `next`; the ancestor headers are linked by their hashes.
+fn link_through_ancestors(
+    signer: &Quorum,
+    next_commitment: &[u8],
+    height: u32,
+    ancestors: u32,
+) -> Link {
+    let mined = link(signer, next_commitment, height - ancestors);
+    let mut headers = vec![mined.certificate.header];
+    for _ in 1..ancestors {
+        let parent = header_hash(headers.last().unwrap());
+        headers.push(header(parent, [0x33; 32]));
+    }
+    let certified = header(header_hash(headers.last().unwrap()), [0x44; 32]);
+    Link {
+        certificate: signer.certify(height, certified),
+        mining: mined.mining,
+        ancestors: headers,
+    }
+}
+
+#[test]
+fn should_accept_a_signer_mined_before_the_checkpoint_through_ancestors() {
+    // The trust model covers this: an honest checkpoint quorum certifies a
+    // block just after the checkpoint, and ancestor headers reach a quorum
+    // mined 10 blocks before it, which then signs the target. Its key is
+    // trusted although it was never in the checkpoint's quorum root.
+    let (a, old) = (Quorum::new(1, CHAINLOCK), Quorum::new(7, CHAINLOCK));
+    let mut built = build(&a, &[&old], 3);
+    built.chain.links[0] = link_through_ancestors(&a, &old.commitment(), CHECKPOINT_HEIGHT + 1, 11);
+    assert_eq!(
+        built.chain.links[0].certificate.height - 11,
+        CHECKPOINT_HEIGHT - 10
+    );
+    // The target was signed by `old` for a height above the link, so it
+    // still verifies.
+    built.chain.target = old.certify(built.chain.target.height, built.chain.target.header);
+    assert!(built.chain.verify(&built.checkpoint).is_ok());
+
+    // Breaking one ancestor link breaks the handoff.
+    built.chain.links[0].ancestors[3][0] ^= 1;
+    assert_eq!(
+        built.chain.verify(&built.checkpoint).unwrap_err().message(),
+        "ancestor continuity"
+    );
+}
+
+#[test]
+fn should_refuse_to_encode_chains_core_would_not_decode() {
+    let a = Quorum::new(1, CHAINLOCK);
+    let mut built = build(&a, &[], 3);
+    built.chain.seed.resize(1025, 0);
+    assert_eq!(
+        built.chain.encode().unwrap_err().message(),
+        "proof blob length"
+    );
+
+    // Full-size links fail at the first one past the 1 MiB budget.
+    let mut built = build(&a, &[], 3);
+    let mut big = link(
+        &a,
+        &Quorum::new(2, CHAINLOCK).commitment(),
+        CHECKPOINT_HEIGHT + 1,
+    );
+    big.mining.transaction.resize(100_000, 0);
+    built.chain.links = vec![big; 12];
+    assert_eq!(
+        built.chain.encode().unwrap_err().message(),
+        "proof size limit"
+    );
+}
+
+#[test]
+fn should_classify_an_untrusted_checkpoint() {
+    let a = Quorum::new(1, CHAINLOCK);
+    let built = build(&a, &[], 3);
+    let mut other = built.checkpoint.clone();
+    other.height += 1;
+    assert_eq!(
+        built.chain.verify(&other).unwrap_err().kind(),
+        ErrorKind::UntrustedCheckpoint
+    );
 }
 
 #[test]
@@ -376,19 +470,19 @@ fn should_reject_coinbase_chainlock_diff_reaching_the_block() {
     assert_eq!(
         coinbase_roots(&coinbase(3, 200, roots, 200), 200)
             .unwrap_err()
-            .0,
+            .message(),
         "coinbase ChainLock height"
     );
     assert_eq!(
         coinbase_roots(&coinbase(3, 200, ([3; 32], [0; 32]), 0), 200)
             .unwrap_err()
-            .0,
+            .message(),
         "coinbase quorum root"
     );
     assert_eq!(
         coinbase_roots(&coinbase(2, 200, roots, 0), 200)
             .unwrap_err()
-            .0,
+            .message(),
         "coinbase payload version/height"
     );
 }
@@ -399,7 +493,7 @@ fn should_reject_commitments_core_rejects() {
         .unwrap()
         .sk_to_pk()
         .compress();
-    let rejects = |spec: CommitmentSpec| parse_commitment(&spec.encode()).unwrap_err().0;
+    let rejects = |spec: CommitmentSpec| parse_commitment(&spec.encode()).unwrap_err().message();
     let platform = CommitmentSpec::new(6, [5; 32], key);
     let rotated = CommitmentSpec::new(5, [5; 32], key);
     assert!(parse_commitment(&platform.encode()).is_ok());

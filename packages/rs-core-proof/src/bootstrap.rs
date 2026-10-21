@@ -67,7 +67,7 @@ pub fn verify<'a>(
     let chain = QuorumProofChain::decode(r.blob(MAX_PROOF_BYTES)?)?;
     // Decided before any signature work: the height alone makes it useless.
     if chain.target.height < minimum_height {
-        return Err(Error("stale target"));
+        return Err(Error::STALE_TARGET);
     }
     let state = chain.verify(trusted)?;
     let count = r.u8()?;

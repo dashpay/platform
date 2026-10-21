@@ -1,9 +1,8 @@
 //! The transactions and payloads a proof carries: quorum commitments, the
 //! special transactions that mine them, and coinbases. Each parser rejects
 //! everything Core's proof verifier rejects, and trailing data. It is stricter
-//! than Core only for BLS signature bytes Core would read as null, which no
-//! block can carry where they are checked here (see
-//! `check_signature_encoding`).
+//! than Core only for legacy-scheme BLS signature bytes Core would read as
+//! null (see `check_signature_encoding`).
 use crate::bls::{check_signature_encoding, public_key};
 use crate::wire::{Hash, Reader, Result};
 use crate::Error;
