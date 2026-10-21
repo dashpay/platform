@@ -4011,7 +4011,7 @@ mod tests {
 
         let new_key_pair = Keypair::new(&mut rng);
 
-        let new_key = IdentityPublicKeyInCreationV0 {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -4025,10 +4025,6 @@ mod tests {
             }),
         };
 
-        let _signable_bytes = new_key
-            .signable_bytes()
-            .expect("expected to get signable bytes");
-
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
             revision: 1,
@@ -4041,11 +4037,33 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
+        // The added key proves possession by signing the transition's signable bytes, which
+        // leave the key signatures out
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
+        let secret = new_key_pair.secret_key();
+        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())

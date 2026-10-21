@@ -114,14 +114,16 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 60** — 27–59 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 61** — 27–60 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
 operation × kind block); 55–57 proposed by #4715 for pending identity-funded
 shield debits and durable recovery errors; 58 proposed by #4799 for an unavailable
 identity balance response; 59 proposed by #5322 for an SPV
-teardown that needs a process restart; 28, 30,
+teardown that needs a process restart; 60 proposed by the pooled Core-to-shielded
+wallet drain for `ErrorAssetLockTooManyInputs` (Rust, Swift and Kotlin mirrors —
+renumbered from 59 when #5322 took that number on `v5.1-dev`); 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -174,6 +176,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
 | 59 | `ErrorSpvProcessRestartRequired` | #5322 | Proposed — SPV startup or teardown panicked; restart the host process. Not retryable, unlike 27, which SPV start, stop and storage clear now return while an SPV teardown is still running. Typed in Rust, Swift and Kotlin (the PR also types 27 on Kotlin) |
+| 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — the full drain needs more inputs than an asset lock may carry (100 on Dash Core relay policy and Platform consensus); no partial drain was broadcast. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

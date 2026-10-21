@@ -7395,6 +7395,199 @@ mod tests {
         assert!(core.synced_height_is_rewind);
     }
 
+    /// A fork replaces the chain above the last chain lock at 999 after the
+    /// wallet scanned to 1000 and the host accepted that advance. The engine
+    /// truncates the wallet to 999 in memory; the host keeps 1000, since a
+    /// truncation is not mirrored to the persister. A contact registered at
+    /// the fork height is then forward-covered at the lowered cursor, so its
+    /// round rewinds nothing — yet that round must still carry the lowered
+    /// cursor. Stored beside the host's 1000, the contact's coverage lets the
+    /// next launch resume past the new branch's block 1000, which no scan
+    /// ever tested with the contact's addresses watched.
+    #[tokio::test]
+    async fn should_rescan_a_new_contacts_blocks_after_a_restart_that_follows_a_chain_truncation() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        follow_fork_after_the_host_accepted(&manager, wallet_id, 1_000, 999).await;
+        assert_eq!(synced_height(&manager, wallet_id).await, 999);
+
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 999, 999).await;
+        persister.stores.lock().unwrap().clear();
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None,
+            "forward-covered at the truncated cursor"
+        );
+        let round = {
+            let stores = persister.stores.lock().unwrap();
+            last_stored_record(&stores)
+                .expect("the contact's coverage is stored")
+                .clone()
+        };
+        let record = round.dashpay_backfill.clone().expect("record");
+        assert_eq!(record.covered_from(&owner, &contact, 0), Some(999));
+
+        // The process dies before the new branch's block 1000 is scanned: the
+        // relaunch restores the cursor the host holds and the record it
+        // stored — the only two things that decide where its scan resumes.
+        let host_cursor = manager.durable_cursors.lock().await[&wallet_id].height;
+        let snapshot = reload_snapshot(&manager, wallet_id, owner, host_cursor, Some(record)).await;
+        let (restarted, _, _) = reload(snapshot).await;
+        restarted
+            .get_wallet(&wallet_id)
+            .await
+            .expect("restored wallet")
+            .identity()
+            .dashpay()
+            .reconcile_dashpay_rescan()
+            .await
+            .expect("pass after the relaunch");
+        assert_eq!(
+            synced_height_of(&restarted, wallet_id).await,
+            999,
+            "the relaunched scan must test the new branch's block 1000 with the contact watched"
+        );
+
+        let core = round
+            .core
+            .as_ref()
+            .expect("the truncated cursor rides the round that stores the coverage");
+        assert_eq!(core.synced_height, Some(999));
+        assert!(core.synced_height_is_rewind);
+    }
+
+    /// The more common shape after a fork: no new contact, only coverage
+    /// recorded before it, now beside the replaced branch's cursor on the
+    /// host. The truncation's cursor is owed on its own, so the next sweep
+    /// runs a record-only round that brings the host down to the fork.
+    #[tokio::test]
+    async fn a_chain_truncation_alone_is_owed_to_the_next_record_round() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        set_synced_height(&manager, wallet_id, 400).await;
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 500, 500).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let dashpay = wallet.identity().dashpay();
+        assert_eq!(
+            dashpay.reconcile_dashpay_rescan().await.expect("reconcile"),
+            None,
+            "forward-covered from 500"
+        );
+        follow_fork_after_the_host_accepted(&manager, wallet_id, 1_000, 999).await;
+        persister.stores.lock().unwrap().clear();
+
+        assert_eq!(
+            dashpay
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sweep after the fork"),
+            None
+        );
+        let stores = persister.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the owed cursor alone runs a round");
+        let core = round.core.as_ref().expect("the truncated cursor rides it");
+        assert_eq!(core.synced_height, Some(999));
+        assert!(core.synced_height_is_rewind);
+        assert_eq!(
+            round
+                .dashpay_backfill
+                .as_ref()
+                .unwrap()
+                .covered_from(&owner, &contact, 0),
+            Some(500),
+            "the coverage recorded before the fork is kept"
+        );
+    }
+
+    /// The other side: once the host accepts an advance of the new branch it
+    /// tracks the scan that restarted at the fork, so the truncation's debt is
+    /// paid, and a later round must not drag the host back down to the fork.
+    #[tokio::test]
+    async fn a_new_branch_advance_the_host_accepted_pays_a_chain_truncations_debt() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        follow_fork_after_the_host_accepted(&manager, wallet_id, 1_000, 999).await;
+        let epoch = rewind_epoch(&manager, wallet_id).await;
+        {
+            let mut durable = manager.durable_cursors.lock().await;
+            let mut wm = manager.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .update_synced_height(1_002);
+            durable.insert(
+                wallet_id,
+                crate::changeset::DurableCursor {
+                    height: 1_002,
+                    advance_epoch: Some(epoch),
+                },
+            );
+        }
+
+        establish_receival_contact(
+            &manager, &persister, wallet_id, owner, contact, 1_100, 1_100,
+        )
+        .await;
+        persister.stores.lock().unwrap().clear();
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None
+        );
+        let stores = persister.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the contact is recorded");
+        assert!(
+            round.core.is_none(),
+            "no paid truncation cursor rides the round: {:?}",
+            round.core.as_ref().and_then(|core| core.synced_height)
+        );
+    }
+
+    /// The scan reaches `tip` and the adapter commits that advance; then a
+    /// fork replaces the chain above `fork`, the last chain lock, and the
+    /// engine truncates the wallet to it. The truncation is not mirrored to
+    /// the persister, so the host keeps `tip`.
+    async fn follow_fork_after_the_host_accepted(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        tip: u32,
+        fork: u32,
+    ) {
+        use dashcore::ephemerealdata::chain_lock::ChainLock;
+        use key_wallet_manager::WalletInterface;
+        {
+            let mut durable = manager.durable_cursors.lock().await;
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.metadata.last_processed_height = tip;
+            info.core_wallet.update_synced_height(tip);
+            info.apply_chain_lock(ChainLock::dummy(fork));
+            durable.insert(
+                wallet_id,
+                crate::changeset::DurableCursor {
+                    height: tip,
+                    advance_epoch: Some(info.rewind_barrier.epoch()),
+                },
+            );
+        }
+        WalletInterface::truncate_above(&mut *manager.wallet_manager.write().await, fork)
+            .expect("a fork at the chain lock is followed");
+    }
+
     async fn synced_height_of(
         manager: &Arc<PlatformWalletManager<ReloadPersister>>,
         wallet_id: WalletId,
