@@ -73,6 +73,8 @@ mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
     use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult;
+    use dapi_grpc::Message;
     use dpp::dashcore::Network;
 
     #[test]
@@ -113,5 +115,42 @@ mod tests {
 
         let response = result.data.expect("expected response data");
         assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
+    }
+    #[test]
+    fn should_preserve_current_server_response_wire_at_supported_protocols() {
+        for protocol in [13, PlatformVersion::latest().protocol_version] {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, Some(protocol));
+            for prove in [false, true] {
+                let request = GetIdentityByNonUniquePublicKeyHashRequest {
+                    version: Some(RequestVersion::V0(
+                        GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                            public_key_hash: vec![0; 20],
+                            start_after: None,
+                            prove,
+                        },
+                    )),
+                };
+                let result = platform
+                    .query_identity_by_non_unique_public_key_hash(request, &state, version)
+                    .unwrap();
+                assert!(result.is_valid());
+                let response = result.data.unwrap();
+                let encoded = response.encode_to_vec();
+                let decoded =
+                    GetIdentityByNonUniquePublicKeyHashResponse::decode(encoded.as_slice())
+                        .unwrap();
+                let Some(ResponseVersion::V0(v0)) = decoded.version else {
+                    panic!("the server must preserve response version zero")
+                };
+                assert_eq!(v0.metadata.unwrap().protocol_version, protocol);
+                match (prove, v0.result) {
+                    (true, Some(LookupResult::Proof(_))) => {}
+                    (false, Some(LookupResult::Identity(identity))) => {
+                        assert!(identity.identity.is_none())
+                    }
+                    _ => panic!("the server must preserve its current proof and identity variants"),
+                }
+            }
+        }
     }
 }

@@ -243,6 +243,13 @@ for a proof made at an earlier version or a transition without an owner);
 `put_to_platform_and_wait_for_response_with_owner_balance` return it next to
 the document. The balance is a snapshot at the proof's block: it may already
 include later transitions of the same identity.
+
+The signed producer version selects the execution-proof query layout. A client
+retaining protocol 14 verifier rules can therefore authenticate a protocol 13
+outcome without inventing a balance. A protocol 14 outcome must still prove the
+balance; verification never retries a malformed current proof as an older layout.
+Signature and freshness checks run before the SDK learns the producer version.
+
 `put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also
 returns the verified response metadata, whose `height` is that block, so a
 wallet keeping the balance can order it against balances it read elsewhere; it

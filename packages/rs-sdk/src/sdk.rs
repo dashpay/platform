@@ -48,6 +48,8 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+#[cfg(all(test, feature = "mocks"))]
+mod identity_discovery_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;

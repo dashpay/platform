@@ -262,6 +262,7 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
@@ -7393,6 +7394,7 @@ void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdenti
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_LegacyProof = 2,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Metadata = 3,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 4,
 };
@@ -7400,6 +7402,7 @@ typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUni
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_LegacyProof = 2,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 4,
 };
 
@@ -7408,6 +7411,8 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNo
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *legacyProof;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
@@ -7434,6 +7439,28 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNo
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 /** Test to see if @c identity has been set. */
 @property(nonatomic, readwrite) BOOL hasIdentity;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes = 2,
+};
+
+/**
+ * Compatibility with nodes serving separate index and identity proofs.
+ **/
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *grovedbIdentityPublicKeyHashProof;
+/** Test to see if @c grovedbIdentityPublicKeyHashProof has been set. */
+@property(nonatomic, readwrite) BOOL hasGrovedbIdentityPublicKeyHashProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityProofBytes;
+/** Test to see if @c identityProofBytes has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentityProofBytes;
 
 @end
 

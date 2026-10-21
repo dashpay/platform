@@ -57,6 +57,10 @@ use crate::verify::{
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
+    get_identity_by_non_unique_public_key_hash_response_v0::Result as NonUniqueLookupResult,
+    Version as NonUniqueLookupVersion,
+};
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
@@ -396,6 +400,28 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
+// Query construction follows the producer, while security checks keep the caller's
+// verifier version. Metadata is untrusted until the signature binds it to the root;
+// exclude unsupported and reserved mock versions before looking up their tables.
+fn proof_query_platform_version(
+    metadata: &ResponseMetadata,
+) -> Result<&'static PlatformVersion, Error> {
+    if metadata.protocol_version > LATEST_VERSION {
+        return Err(Error::ResponseDecodeError {
+            error: format!(
+                "unsupported proof query protocol version {}",
+                metadata.protocol_version
+            ),
+        });
+    }
+    PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
+        error: format!(
+            "unsupported proof query protocol version {}",
+            metadata.protocol_version
+        ),
+    })
+}
+
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
     type Request = platform::GetIdentityByNonUniquePublicKeyHashRequest;
     type Response = platform::GetIdentityByNonUniquePublicKeyHashResponse;
@@ -411,7 +437,20 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
     {
         let request = request.into();
         let response = response.into();
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let (proof, legacy_identity_proof) = match &response.version {
+            Some(NonUniqueLookupVersion::V0(v0)) => match &v0.result {
+                Some(NonUniqueLookupResult::Proof(proof)) => (proof, None),
+                Some(NonUniqueLookupResult::LegacyProof(legacy)) => (
+                    legacy
+                        .grovedb_identity_public_key_hash_proof
+                        .as_ref()
+                        .ok_or(Error::NoProofInResult)?,
+                    Some(legacy.identity_proof_bytes.as_deref()),
+                ),
+                _ => return Err(Error::NoProofInResult),
+            },
+            None => return Err(Error::NoProofInResult),
+        };
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
         let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
@@ -434,33 +473,27 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
             }
         };
 
-        // Metadata is untrusted until the signature succeeds. Bound lookup to real
-        // production tables, excluding reserved mock versions that may panic on lookup.
-        if mtd.protocol_version > LATEST_VERSION {
-            return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
-            });
-        }
-        let query_platform_version =
-            PlatformVersion::get(mtd.protocol_version).map_err(|_| Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
-            })?;
+        let query_platform_version = proof_query_platform_version(mtd)?;
 
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_non_unique_public_key_hash(
-                supported_grovedb_proof_bytes(proof)?,
+        let bytes = supported_grovedb_proof_bytes(proof)?;
+        let verified = match legacy_identity_proof {
+            Some(identity_proof) => Drive::verify_legacy_identity_by_non_unique_public_key_hash(
+                bytes,
+                identity_proof,
                 public_key_hash,
                 after_identity,
                 query_platform_version,
                 platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+            ),
+            None => Drive::verify_full_identity_by_non_unique_public_key_hash(
+                bytes,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            ),
+        };
+        let (root_hash, maybe_identity) = verified.map_drive_error(proof, mtd)?;
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -1495,6 +1528,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: Default::default(),
         };
 
+        let query_platform_version = proof_query_platform_version(mtd)?;
+
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
         // Transition families whose proof cannot be bound to execution
@@ -1505,14 +1540,16 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // preserved here so SDK callers can enforce their required
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            supported_grovedb_proof_bytes(proof)?,
-            &contracts_provider_fn,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, outcome) =
+            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                &state_transition,
+                &block_info,
+                supported_grovedb_proof_bytes(proof)?,
+                &contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3798,15 +3835,14 @@ mod tests {
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_retired_wire_tag() {
+    fn identity_by_non_unique_public_key_hash_rejects_malformed_legacy_proof() {
         use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use dapi_grpc::Message;
-        // Outer V0 contains the retired result tag 2, including an old nested Proof.
-        // Protobuf discards reserved fields, so the standard response has no result.
+        // Legacy field 2 is decoded, but missing metadata must be rejected.
         let response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
             &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
         )
-        .expect("unknown retired fields decode");
+        .expect("legacy fields decode");
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
             GetIdentityByNonUniquePublicKeyHashRequestV0 {
                 public_key_hash: vec![0; 20],
@@ -3817,7 +3853,7 @@ mod tests {
         let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
         ).unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult));
+        assert!(matches!(err, Error::EmptyResponseMetadata));
     }
 
     #[test]

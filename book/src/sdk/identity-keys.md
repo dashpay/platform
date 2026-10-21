@@ -444,7 +444,7 @@ let identity_ids = drive.fetch_identity_ids_by_non_unique_public_key_hash(
 
 `getIdentityByNonUniquePublicKeyHash` returns the first matching identity in
 lexicographic identity-ID byte order. `start_after` is exclusive; use the returned
-ID to fetch the next match. A proved response contains one standard `Proof`
+ID to fetch the next match. Current nodes return one standard `Proof`
 (result field 4). It proves the complete index prefix through that identity and
 all its keys, balance and revision at the same signed root. An absent hash or
 exhausted cursor proves the entire remaining range is empty. A missing identity
@@ -457,12 +457,17 @@ versions require an SDK update and fail closed. The Rust SDK still returns
 shape. The direct WASM verifier takes one proof blob and returns a root that the
 caller must authenticate independently.
 
-The nested double-proof response (retired field 2) has been removed with no
-fallback. Stable v4.1.1 clients and nodes use that old format and are incompatible
-with this proved endpoint during a mixed rollout. Update clients and nodes
-together; mismatched or unsupported-future-version responses can trigger the
-existing SDK retry and node-ban behavior. Unproved response field 1 and the
-request fields remain unchanged.
+The SDK also accepts the legacy nested response at field 2. It strictly verifies
+its first-after index proof and complete identity proof, requires equal roots,
+and authenticates that root with the trusted quorum key and signed metadata.
+Only proved index absence permits an omitted identity proof. Both formats require
+GroveDB V1 or newer; failed current-format proofs are never retried as legacy.
+The response field selects the format, independently of protocol version: current
+proofs can also be produced at protocol 13. Freshness checks and authenticated
+version learning apply after successful verification. Existing nodes continue
+emitting field 4; unproved response field 1 and request fields are unchanged.
+For a legacy response, `fetch_with_metadata_and_proof` returns the signed index
+`Proof`; independent replay of the full verification needs both original blobs.
 
 **Fetch all keys for an identity:**
 ```rust

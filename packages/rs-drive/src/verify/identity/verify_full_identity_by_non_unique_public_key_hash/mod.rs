@@ -1,3 +1,4 @@
+mod legacy_v0;
 mod v0;
 
 use crate::drive::Drive;
@@ -72,6 +73,41 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_full_identity_by_non_unique_public_key_hash".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Verify legacy separate index and identity proofs against one authenticated root.
+    ///
+    /// Both wire formats use the same verifier generation and security floor;
+    /// this compatibility path does not select a generation from producer metadata.
+    pub fn verify_legacy_identity_by_non_unique_public_key_hash(
+        index_proof: &[u8],
+        identity_proof: Option<&[u8]>,
+        public_key_hash: [u8; 20],
+        after: Option<[u8; 32]>,
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<Identity>), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_full_identity_by_non_unique_public_key_hash
+        {
+            0 => Self::verify_legacy_identity_by_non_unique_public_key_hash_v0(
+                index_proof,
+                identity_proof,
+                public_key_hash,
+                after,
+                query_platform_version,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_legacy_identity_by_non_unique_public_key_hash".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

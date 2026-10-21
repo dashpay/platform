@@ -7,7 +7,7 @@ const driveMessages = require('../../clients/drive/v0/nodejs/drive_pbjs');
 const name = 'GetIdentityByNonUniquePublicKeyHashResponse';
 const innerName = `${name}V0`;
 const singleWire = Buffer.from([0x0a, 0x06, 0x22, 0x04, 0x0a, 0x02, 1, 2]);
-const retiredWire = Buffer.from([0x0a, 0x08, 0x12, 0x06, 0x0a, 0x04, 0x0a, 0x02, 1, 2]);
+const legacyWire = Buffer.from([0x0a, 0x08, 0x12, 0x06, 0x0a, 0x04, 0x0a, 0x02, 1, 2]);
 
 describe('non-unique identity complete proof wire format', () => {
   it('should round trip a standard Proof at field 4 across all published JS clients', () => {
@@ -28,15 +28,16 @@ describe('non-unique identity complete proof wire format', () => {
     });
   });
 
-  it('should discard retired field 2 without treating it as a supported proof', () => {
+  it('should preserve legacy field 2 separately from the current proof', () => {
     [nodeMessages, webMessages].forEach((messages) => {
-      assert.equal(messages[name].deserializeBinary(retiredWire).getV0().hasProof(), false);
-      assert.equal(messages[name][innerName].IdentityProvedResponse, undefined);
+      assert.equal(messages[name].deserializeBinary(legacyWire).getV0().hasProof(), false);
+      assert.deepEqual(Buffer.from(messages[name].deserializeBinary(legacyWire).serializeBinary()), legacyWire,);
     });
     [protobufMessages, driveMessages].forEach((messages) => {
       const Response = messages.org.dash.platform.dapi.v0[name];
-      assert.equal(Response.decode(retiredWire).v0.proof, null);
-      assert.equal(Response[innerName].IdentityProvedResponse, undefined);
+      assert.equal(Response.decode(legacyWire).v0.proof, null);
+      assert.deepEqual(Buffer.from(Response.decode(legacyWire).v0.legacyProof
+          .grovedbIdentityPublicKeyHashProof.grovedbProof), Buffer.from([1, 2]),);
     });
   });
 });

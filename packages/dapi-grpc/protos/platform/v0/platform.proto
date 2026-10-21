@@ -2551,9 +2551,14 @@ message GetIdentityByNonUniquePublicKeyHashResponse {
   message GetIdentityByNonUniquePublicKeyHashResponseV0 {
     message IdentityResponse { optional bytes identity = 1; }
 
-    reserved 2;
+    // Compatibility with nodes serving separate index and identity proofs.
+    message IdentityProvedResponse {
+      Proof grovedb_identity_public_key_hash_proof = 1;
+      optional bytes identity_proof_bytes = 2;
+    }
     oneof result {
       IdentityResponse identity = 1;
+      IdentityProvedResponse legacy_proof = 2;
       Proof proof = 4;
     }
 

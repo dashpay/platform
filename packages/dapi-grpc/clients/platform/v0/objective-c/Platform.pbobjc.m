@@ -344,6 +344,7 @@ GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashRequest);
 GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0);
 GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashResponse);
 GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0);
+GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse);
 GPBObjCClassDeclaration(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse);
 GPBObjCClassDeclaration(GetIdentityByPublicKeyHashRequest);
 GPBObjCClassDeclaration(GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0);
@@ -15050,12 +15051,14 @@ void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdenti
 
 @dynamic resultOneOfCase;
 @dynamic identity;
+@dynamic legacyProof;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
 
 typedef struct GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0__storage_ {
   uint32_t _has_storage_[2];
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *legacyProof;
   ResponseMetadata *metadata;
   Proof *proof;
 } GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0__storage_;
@@ -15072,6 +15075,15 @@ typedef struct GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniqu
         .number = GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0__storage_, identity),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "legacyProof",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse),
+        .number = GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_LegacyProof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0__storage_, legacyProof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -15158,6 +15170,63 @@ typedef struct GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniqu
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+@implementation GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+@dynamic hasGrovedbIdentityPublicKeyHashProof, grovedbIdentityPublicKeyHashProof;
+@dynamic hasIdentityProofBytes, identityProofBytes;
+
+typedef struct GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse__storage_ {
+  uint32_t _has_storage_[1];
+  Proof *grovedbIdentityPublicKeyHashProof;
+  NSData *identityProofBytes;
+} GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "grovedbIdentityPublicKeyHashProof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse__storage_, grovedbIdentityPublicKeyHashProof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "identityProofBytes",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse__storage_, identityProofBytes),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0)];
     #if defined(DEBUG) && DEBUG
