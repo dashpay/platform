@@ -15,6 +15,11 @@ impl Drive {
     /// `order_id`, creating the token's escrow tree with its first listing. The caller removes
     /// the amount from the seller's balance in the same batch: escrow moves tokens, it does not
     /// create them, and the token conservation check counts the escrow.
+    ///
+    /// `previous_batch_operations` are the operations already queued for the same batch: a
+    /// caller placing several listings of a token in one batch passes them, so the token's escrow
+    /// tree is inserted once, by the first.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_order_escrow_operations(
         &self,
         token_id: [u8; 32],
@@ -24,6 +29,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version.drive.methods.token.order_escrow.add_tokens {
@@ -33,6 +39,7 @@ impl Drive {
                 amount,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                previous_batch_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
