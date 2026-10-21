@@ -2185,10 +2185,10 @@ impl StateTransition {
     ///
     /// 1. `digest = double_sha256(self.signable_bytes()?)`
     /// 2. `signer.sign_ecdsa(path, digest).await` → non-recoverable
-    ///    `(secp256k1::ecdsa::Signature, secp256k1::PublicKey)`.
+    ///    `(EcdsaSignature, EcdsaPublicKey)`.
     /// 3. Recover the recovery id by trying all four candidates against the
-    ///    returned public key (libsecp256k1 normalises both signing paths to
-    ///    low-s form so the 64-byte `r||s` payload is bit-identical).
+    ///    returned public key. Byte parity requires a signer that uses the
+    ///    same deterministic nonce without low-R grinding.
     /// 4. Serialise as a 65-byte compact recoverable signature with the
     ///    `compressed` prefix convention used by Core signatures — i.e.
     ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.

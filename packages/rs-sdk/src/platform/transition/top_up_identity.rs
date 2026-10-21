@@ -81,7 +81,7 @@ impl TopUpIdentity for Identity {
         let state_transition = IdentityTopUpTransition::try_from_identity_with_private_key(
             self,
             asset_lock_proof,
-            &asset_lock_proof_private_key.inner.to_bytes(),
+            &asset_lock_proof_private_key.inner.to_bytes()[..],
             user_fee_increase,
             sdk.version(),
             None,

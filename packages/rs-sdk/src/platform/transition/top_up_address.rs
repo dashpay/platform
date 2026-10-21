@@ -159,7 +159,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
 
         let state_transition = create_address_funding_from_asset_lock_transition(
             asset_lock_proof,
-            &asset_lock_private_key.inner.to_bytes(),
+            &asset_lock_private_key.inner.to_bytes()[..],
             BTreeMap::new(),
             self.clone(),
             fee_strategy,

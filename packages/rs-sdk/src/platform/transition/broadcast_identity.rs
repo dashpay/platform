@@ -154,7 +154,7 @@ impl<S: Signer<IdentityPublicKey>>
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 self,
                 asset_lock_proof,
-                &asset_lock_proof_private_key.inner.to_bytes(),
+                &asset_lock_proof_private_key.inner.to_bytes()[..],
                 signer,
                 &NativeBlsModule,
                 user_fee_increase,
