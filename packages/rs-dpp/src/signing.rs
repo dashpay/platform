@@ -2,7 +2,6 @@
 use crate::bls::{self, Signature};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
-use crate::util::ecdsa as signer;
 #[cfg(feature = "message-signature-verification")]
 use crate::{
     consensus::signature::{
@@ -12,6 +11,7 @@ use crate::{
 };
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
+use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]

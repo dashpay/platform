@@ -5,18 +5,18 @@ use crate::prelude::AddressNonce;
 use crate::serialization::JsonConvertible;
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 use crate::serialization::ValueConvertible;
-use crate::util::ecdsa;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::{sha256d, Hash};
-use dashcore::{Address, Network, PrivateKey, PubkeyHash, ScriptHash};
+use dashcore::{
+    sign_message, signer, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash,
+};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
-use secp256k1::Message;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -491,7 +491,7 @@ impl PlatformAddress {
                 // This saves 33 bytes per witness (no need to include pubkey)
                 // at a ~4% CPU cost increase (recovery vs verify).
                 let data_hash = dashcore::signer::double_sha(signable_bytes);
-                ecdsa::verify_hash_signature(&data_hash, signature.as_slice(), pubkey_hash)
+                signer::verify_hash_signature(&data_hash, signature.as_slice(), pubkey_hash)
                     .map_err(|e| {
                         ProtocolError::AddressWitnessError(format!(
                             "P2PKH signature verification failed: {}",
@@ -547,12 +547,12 @@ impl PlatformAddress {
                 let mut signature_verifications: u16 = 0;
 
                 let signable_bytes_hash = sha256d::Hash::hash(signable_bytes).to_byte_array();
-                let msg = Message::from_digest(signable_bytes_hash);
 
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
                     signature_verifications += 1;
 
-                    let sig = ecdsa::parse_compact_signature(valid_signatures[sig_idx].as_slice())
+                    let sig = sign_message::from_slice(valid_signatures[sig_idx].as_slice())
+                        .and_then(|signature| signature.signature().map_err(Into::into))
                         .map_err(|e| {
                             ProtocolError::AddressWitnessError(format!(
                                 "Invalid signature format: {}",
@@ -560,11 +560,11 @@ impl PlatformAddress {
                             ))
                         })?;
 
-                    let pub_key = ecdsa::parse_public_key(&pubkeys[pubkey_idx]).map_err(|e| {
+                    let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if sig.to_standard().verify(msg, &pub_key).is_ok() {
+                    if pub_key.inner.verify(&signable_bytes_hash, sig).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }

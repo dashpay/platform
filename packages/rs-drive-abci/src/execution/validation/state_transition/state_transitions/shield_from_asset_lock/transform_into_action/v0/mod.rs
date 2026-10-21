@@ -22,7 +22,7 @@ use dpp::consensus::basic::state_transition::ShieldedImplicitFeeCapExceededError
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::hashes::Hash;
-use dpp::util::ecdsa as signer;
+use dpp::dashcore::signer;
 use dpp::dashcore::{ ScriptBuf, Txid};
 use dpp::fee::Credits;
 use dpp::shielded::compute_minimum_shielded_fee;
