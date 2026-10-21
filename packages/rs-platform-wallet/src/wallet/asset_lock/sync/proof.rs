@@ -1497,10 +1497,12 @@ mod tests {
     }
 
     /// Test persister that answers `get_core_tx_record` from a
-    /// configurable in-memory map. `store` / `flush` are no-ops; `load`
-    /// returns the default state.
+    /// configurable in-memory map. `store` records each changeset in
+    /// `stored`; `flush` is a no-op and `load` returns the default state.
     pub(super) struct FakeRecordStore {
         records: Mutex<HashMap<Txid, TransactionRecord>>,
+        /// Every changeset `store` received, in order.
+        pub(super) stored: Mutex<Vec<PlatformWalletChangeSet>>,
     }
 
     impl FakeRecordStore {
@@ -1508,6 +1510,7 @@ mod tests {
             let map = records.into_iter().map(|r| (r.txid, r)).collect();
             Self {
                 records: Mutex::new(map),
+                stored: Mutex::new(Vec::new()),
             }
         }
     }
@@ -1516,8 +1519,9 @@ mod tests {
         fn store(
             &self,
             _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
+            changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            self.stored.lock().unwrap().push(changeset);
             Ok(())
         }
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
@@ -1804,6 +1808,7 @@ mod chain_lock_wait_tests {
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::orchestration::{AssetLockFunding, FundingResolution};
     use crate::wallet::asset_lock::sync::locate::{HeaderLookup, Located, MinedHeightLocator};
+    use crate::wallet::asset_lock::sync::proof::tests::FakeRecordStore;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -2279,12 +2284,18 @@ mod chain_lock_wait_tests {
     #[tokio::test(start_paused = true)]
     async fn should_attach_the_upgraded_chain_proof_to_the_row_before_it_is_submitted() {
         let locator = ScriptedLocator::new(vec![mined(100)]);
-        let ctx = ctx(
+        let store = Arc::new(FakeRecordStore::with_records([]));
+        let ctx = ctx_with_persister(
             instant_send_context(),
             Network::Testnet,
             Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+            {
+                let store = Arc::clone(&store);
+                move |_| store as Arc<dyn PlatformWalletPersistence>
+            },
         )
         .await;
+        store.stored.lock().unwrap().clear();
         set_wallet_chain_lock(&ctx, 150).await;
 
         let proof = tokio::time::timeout(
@@ -2299,7 +2310,18 @@ mod chain_lock_wait_tests {
         let row = tracked_row(&ctx).await;
         assert_eq!(row.status, AssetLockStatus::ChainLocked);
         assert_eq!(row.proof, Some(proof.clone()));
-        assert_eq!(chain_proof_height(proof), 100);
+        assert_eq!(chain_proof_height(proof.clone()), 100);
+
+        // The same update was handed to the persister before the helper
+        // returned.
+        let stored = store.stored.lock().unwrap();
+        let entry = stored
+            .iter()
+            .filter_map(|cs| cs.asset_locks.as_ref())
+            .find_map(|locks| locks.asset_locks.get(&ctx.out_point))
+            .expect("the advanced row is queued");
+        assert_eq!(entry.status, AssetLockStatus::ChainLocked);
+        assert_eq!(entry.proof, Some(proof));
     }
 
     /// The record shape a promotion wait can never satisfy: without a
@@ -3436,7 +3458,6 @@ mod chain_lock_wait_tests {
     mod evicted_record {
         use super::*;
         use crate::wallet::asset_lock::sync::proof::funding_tx_record;
-        use crate::wallet::asset_lock::sync::proof::tests::FakeRecordStore;
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
         #[tokio::test]

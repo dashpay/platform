@@ -19,8 +19,6 @@
 
 use std::time::Duration;
 
-use dpp::bincode;
-use dpp::bincode::enc::write::SizeWriter;
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
@@ -201,15 +199,12 @@ fn chain_lock_proof_fits(error: &Error, proof: &AssetLockProof) -> bool {
     })
 }
 
-/// The proof's length in a serialized state transition, encoded with the
-/// bincode configuration `#[platform_serialize]` uses for `StateTransition`.
+/// The proof's length in a serialized state transition, as DPP measures it.
 fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit();
-    let mut writer = SizeWriter::default();
-    bincode::encode_into_writer(proof, &mut writer, config).ok()?;
-    Some(writer.bytes_written as u64)
+    proof
+        .serialized_len_in_state_transition()
+        .ok()
+        .map(|len| len as u64)
 }
 
 /// Submit a state transition with automatic retry on
