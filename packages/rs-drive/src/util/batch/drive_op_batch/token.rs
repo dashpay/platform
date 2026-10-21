@@ -294,12 +294,17 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     transaction,
                     platform_version,
                 )?;
+                // A transition places one listing, and each transition's operations apply as a
+                // batch of their own, so no earlier operation of this batch queues the token's
+                // escrow tree. The balance estimation above registers its layers first, and the
+                // escrow's deeper Tokens estimate is kept.
                 batch_operations.extend(drive.add_to_token_order_escrow_operations(
                     token_id.to_buffer(),
                     order_id.to_buffer(),
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    &mut None,
                     platform_version,
                 )?);
                 Ok(batch_operations)

@@ -3985,12 +3985,17 @@ mod tests {
             RootTree::Tokens as u8,
             RootTree::PreFundedSpecializedBalances as u8,
         ];
-        let diffs = collect_subtree_diffs(
-            &platform_a,
-            &platform_b,
-            &txn_b,
-            roots.iter().map(|root| vec![*root]).collect(),
-        );
+        // `collect_subtree_diffs` walks one subtree from its path, so each root is compared on
+        // its own.
+        let mut diffs = Vec::new();
+        for root in roots {
+            diffs.extend(collect_subtree_diffs(
+                &platform_a,
+                &platform_b,
+                &txn_b,
+                vec![vec![root]],
+            ));
+        }
         assert!(
             diffs.is_empty(),
             "CONSENSUS FORK: the [Tokens] or [PreFundedSpecializedBalances] subtree differs \

@@ -37,11 +37,25 @@ describe('Token Market Contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(
-      identityId,
-      BigInt(1),
-      tokenMarketContractDocumentsSchema,
-    );
+    // The deployed contract stores every integer as a signed 8-byte value
+    // (`sizedIntegerTypes: false`), as a summed property must be: the default
+    // config would infer u64 for `remaining` and `escrow`, which a sum cannot
+    // hold. `create` takes no config, so the schemas go into the raw form of a
+    // placeholder contract whose config is set to match, validated on load.
+    const placeholder = dpp.dataContract.create(identityId, BigInt(1), {
+      placeholder: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', maxLength: 1, position: 0 },
+        },
+        additionalProperties: false,
+      },
+    });
+    const rawDataContract = placeholder.toObject();
+    rawDataContract.config.sizedIntegerTypes = false;
+    rawDataContract.documentSchemas = tokenMarketContractDocumentsSchema;
+
+    dataContract = await dpp.dataContract.createFromObject(rawDataContract);
   });
 
   const validate = (type, raw) => {

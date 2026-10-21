@@ -14,6 +14,9 @@ use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees, SomeSu
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
+/// The level of the Tokens Merk the escrow key sits on.
+const TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS: u32 = 3;
+
 impl Drive {
     /// The layers a write to one listing's escrow entry goes through: the root, the Tokens
     /// tree, where the escrow BigSumTree is a leaf on the third level, the escrow BigSumTree of
@@ -31,14 +34,30 @@ impl Drive {
             },
         );
 
-        estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_path(tokens_root_path()),
-            EstimatedLayerInformation {
-                tree_type: TreeType::NormalTree,
-                estimated_layer_count: EstimatedLevel(3, false),
-                estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
-            },
-        );
+        // The escrow key sits deeper in the Tokens Merk than the balances key the token balance
+        // estimation describes at level 0, and a batch moving tokens into or out of escrow writes
+        // both. One description covers the whole layer, so the deeper one is kept whichever is
+        // registered first: this estimation never lowers what is there. The balance estimation
+        // overwrites what it finds and belongs to every earlier protocol version's fees, so the
+        // escrow operations register theirs after it (`TokenPlaceInOrderEscrow`,
+        // `TokenReleaseFromOrderEscrow`).
+        let tokens_layer = EstimatedLayerInformation {
+            tree_type: TreeType::NormalTree,
+            estimated_layer_count: EstimatedLevel(TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS, false),
+            estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
+        };
+        match estimated_costs_only_with_layer_info
+            .get(&KeyInfoPath::from_known_path(tokens_root_path()))
+            .map(|existing| &existing.estimated_layer_count)
+        {
+            Some(EstimatedLevel(level, _)) if *level >= TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS => {}
+            _ => {
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_path(tokens_root_path()),
+                    tokens_layer,
+                );
+            }
+        }
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(token_order_escrow_root_path()),
