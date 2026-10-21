@@ -904,7 +904,7 @@ impl Sdk {
                     placeholder.put_to_platform_and_wait_for_response_with_private_key(
                         self,
                         proof.clone(),
-                        &voucher_priv,
+                        voucher_priv,
                         identity_signer,
                         s,
                     )
