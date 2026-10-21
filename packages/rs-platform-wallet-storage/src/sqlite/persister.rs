@@ -1357,6 +1357,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
         // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
+        // Conflict cleanup can remove asset-lock operation evidence. Until it
+        // preserves that evidence, do not attest ASSET_LOCK_OPERATION_IDS:
+        // absence cannot safely mean NotSent, so wallet draining stays disabled.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1364,7 +1367,6 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
