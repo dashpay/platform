@@ -139,14 +139,12 @@ public enum DocumentHistoryFilter: Sendable {
     /// must be one.
     case revision(UInt64)
 
-    var ffiValue: DashSDKDocumentHistoryFilter {
-        // DashSDKDocumentHistoryFilter is a C enum; Swift doesn't always
-        // import named cases, so the raw values are spelled out.
+    var ffiValue: UInt32 {
         switch self {
-        case .startAtTime: return DashSDKDocumentHistoryFilter(rawValue: 0)
-        case .startAfter: return DashSDKDocumentHistoryFilter(rawValue: 1)
-        case .startAtRevision: return DashSDKDocumentHistoryFilter(rawValue: 2)
-        case .revision: return DashSDKDocumentHistoryFilter(rawValue: 3)
+        case .startAtTime: return 0
+        case .startAfter: return 1
+        case .startAtRevision: return 2
+        case .revision: return 3
         }
     }
 

@@ -124,7 +124,7 @@ fn document_history_to_json(history: DocumentHistory) -> Result<String, FFIError
 /// - `contract_id`: Base58-encoded contract ID (resolved through the trusted context provider)
 /// - `document_type`: Name of a keep-history document type in that contract
 /// - `document_id`: Base58-encoded document ID
-/// - `filter`: Which revisions to read; decides how `time_ms` and `revision` are used
+/// - `filter`: A `DashSDKDocumentHistoryFilter` value (0..=3); decides how `time_ms` and `revision` are used
 /// - `time_ms`: Inclusive lower time bound (`StartAtTime`) or cursor time (`StartAfter`)
 /// - `revision`: Cursor revision (`StartAfter`), first revision (`StartAtRevision`), or the revision (`Revision`)
 /// - `limit`: Maximum number of entries, at most ten (0 for the default)
@@ -147,7 +147,7 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
     contract_id: *const c_char,
     document_type: *const c_char,
     document_id: *const c_char,
-    filter: DashSDKDocumentHistoryFilter,
+    filter: c_uint,
     time_ms: u64,
     revision: u64,
     limit: c_uint,
@@ -162,6 +162,19 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
             "One or more required parameters is null".to_string(),
         ));
     }
+
+    let filter = match filter {
+        0 => DocumentHistoryFilter::StartAtTime(time_ms),
+        1 => DocumentHistoryFilter::StartAfter { time_ms, revision },
+        2 => DocumentHistoryFilter::StartAtRevision(revision),
+        3 => DocumentHistoryFilter::Revision(revision),
+        _ => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "Unknown document history filter".to_string(),
+            ));
+        }
+    };
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
@@ -178,19 +191,6 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
-    };
-
-    let filter = match filter {
-        DashSDKDocumentHistoryFilter::HistoryStartAtTime => {
-            DocumentHistoryFilter::StartAtTime(time_ms)
-        }
-        DashSDKDocumentHistoryFilter::HistoryStartAfter => {
-            DocumentHistoryFilter::StartAfter { time_ms, revision }
-        }
-        DashSDKDocumentHistoryFilter::HistoryStartAtRevision => {
-            DocumentHistoryFilter::StartAtRevision(revision)
-        }
-        DashSDKDocumentHistoryFilter::HistoryRevision => DocumentHistoryFilter::Revision(revision),
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
@@ -296,6 +296,81 @@ mod tests {
     }
 
     #[test]
+    fn should_reject_unknown_history_filter_without_fetching() {
+        let sdk_handle = create_mock_sdk_handle();
+        let contract_id = CString::new("invalid contract ID").unwrap();
+        let document_type = CString::new("note").unwrap();
+        let document_id = CString::new("invalid document ID").unwrap();
+
+        for filter in [4, c_uint::MAX] {
+            let result = unsafe {
+                dash_sdk_document_fetch_history(
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    document_type.as_ptr(),
+                    document_id.as_ptr(),
+                    filter,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            assert!(!result.error.is_null());
+            unsafe {
+                let error = &*result.error;
+                assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+                assert_eq!(
+                    CStr::from_ptr(error.message).to_str().unwrap(),
+                    "Unknown document history filter"
+                );
+                crate::dash_sdk_error_free(result.error);
+            }
+        }
+
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn should_accept_named_history_filters_before_validating_contract_id() {
+        let sdk_handle = create_mock_sdk_handle();
+        let contract_id = CString::new("invalid contract ID").unwrap();
+        let document_type = CString::new("note").unwrap();
+        let document_id = CString::new("invalid document ID").unwrap();
+
+        for filter in [
+            DashSDKDocumentHistoryFilter::HistoryStartAtTime,
+            DashSDKDocumentHistoryFilter::HistoryStartAfter,
+            DashSDKDocumentHistoryFilter::HistoryStartAtRevision,
+            DashSDKDocumentHistoryFilter::HistoryRevision,
+        ] {
+            let result = unsafe {
+                dash_sdk_document_fetch_history(
+                    sdk_handle,
+                    contract_id.as_ptr(),
+                    document_type.as_ptr(),
+                    document_id.as_ptr(),
+                    filter as c_uint,
+                    123,
+                    7,
+                    1,
+                )
+            };
+            assert!(!result.error.is_null());
+            unsafe {
+                let error = &*result.error;
+                assert_eq!(error.code, DashSDKErrorCode::InternalError);
+                assert!(CStr::from_ptr(error.message)
+                    .to_str()
+                    .unwrap()
+                    .starts_with("Internal error: Invalid contract ID:"));
+                crate::dash_sdk_error_free(result.error);
+            }
+        }
+
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
     fn test_fetch_history_with_null_parameters() {
         let sdk_handle = create_mock_sdk_handle();
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
@@ -341,7 +416,7 @@ mod tests {
                     contract,
                     doc_type,
                     doc_id,
-                    DashSDKDocumentHistoryFilter::HistoryStartAtTime,
+                    DashSDKDocumentHistoryFilter::HistoryStartAtTime as c_uint,
                     0,
                     0,
                     0,

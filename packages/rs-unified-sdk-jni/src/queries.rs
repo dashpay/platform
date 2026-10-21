@@ -387,7 +387,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_documen
                 contract_c.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                filter,
+                filter as u32,
                 time_ms as u64,
                 revision as u64,
                 limit as u32,
