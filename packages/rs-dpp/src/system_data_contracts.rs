@@ -1164,6 +1164,10 @@ mod dpns_v3_tests {
     use crate::data_contract::document_type::accessors::{
         DocumentTypeV0Getters, DocumentTypeV2Getters,
     };
+    use crate::data_contract::document_type::property_constraints::{
+        AggregateBinding, AggregateKind, AggregateRead, ConstraintComparison, ConstraintExpression,
+        EqualityKind, PropertyConstraint,
+    };
     use crate::data_contract::document_type::{
         ChooseFirstOrder, DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupChooseFirst,
         LookupHashKey, LookupKeyParam, LookupKeySource,
@@ -1321,6 +1325,57 @@ mod dpns_v3_tests {
                 vec!["nameHash".to_string(), "$createdAtBlockHeight".to_string()],
                 false
             )
+        );
+    }
+
+    /// A name holds at most `max_choose_first_candidates` preorders, counted by its name hash
+    /// through the countable `nameHash` index: the competitors a reveal reads are then always
+    /// all of those before the revealer's own, so none can be pushed past the read
+    #[test]
+    fn should_hold_a_name_to_the_preorders_a_reveal_reads() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        let index = preorder
+            .indexes()
+            .get("nameHash")
+            .expect("the nameHash index");
+        assert!(index.countable.is_countable());
+        assert!(!index.unique);
+
+        let cap = preorder
+            .property_constraints()
+            .get("atMostAThousandPerName")
+            .expect("the per-name preorder cap");
+        let by_name_hash = AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "preorder".to_string(),
+            filter: [(
+                "nameHash".to_string(),
+                AggregateBinding::Property {
+                    path: "nameHash".to_string(),
+                    kind: Some(EqualityKind::Bytes),
+                },
+            )]
+            .into(),
+            of_own_type: true,
+        };
+        assert_eq!(
+            cap,
+            &PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThanOrEqual,
+                left: ConstraintExpression::Aggregate(by_name_hash.clone()),
+                right: ConstraintExpression::Value(i128::from(
+                    PlatformVersion::latest()
+                        .system_limits
+                        .max_choose_first_candidates
+                )),
+            }
+        );
+        assert_eq!(
+            by_name_hash
+                .answering_index(&preorder)
+                .map(|index| index.name.as_str()),
+            Some("nameHash")
         );
     }
 }

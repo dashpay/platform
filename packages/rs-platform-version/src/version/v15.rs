@@ -1,6 +1,6 @@
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
+use crate::version::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v4::DOCUMENT_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
@@ -93,7 +93,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    name (`ownerAndNameHash` over `$ownerId` and `nameHash`, replacing
 ///    `saltedHash`), is indexed by `nameHash` and creation height
 ///    (`nameHashAndHeight`) and lives an hour (`ttl` 3600, so it refunds nothing
-///    when consumed). The `domain` keeps `preorderSalt` declared, transient and
+///    when consumed). A name holds at most 1,000 preorders, the most a
+///    `chooseFirst` reads (`max_choose_first_candidates`): the preorder's
+///    `atMostAThousandPerName` rule counts them through a countable `nameHash`
+///    index (note 4), so a reveal always reads every preorder before its own and
+///    no copy can hide an older valid one; a preorder past it is refused (10422). The `domain` keeps `preorderSalt` declared, transient and
 ///    no longer required, so domains written under v1 and v2 decode. The rule
 ///    `recordsIdentityIsOwner` (`$transferredAt` equal to `$createdAt` implies
 ///    `records.identity` equal to `$ownerId`) holds a new name's identity record
@@ -111,6 +115,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. The data trigger bindings stay at 2: their
 ///    `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
+///
+/// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
+///    selects `parse_property_constraints` 1, whose grammar binds a filter key
+///    to a byte array property of the document written (or deleted), `{
+///    "nameHash": "nameHash" }`, and reads that property as a byte array, and
+///    whose registration check admits a byte array key of the counted type bound
+///    to a byte array property (never a constant, `$ownerId` or `$id`). The count
+///    or sum tree holds the key as `serialize_value_for_key` writes it, so
+///    consensus reads the total as it reads any other. `parse_property_constraints`
+///    0 (protocol version 14) reads such a binding as an integer and refuses it.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
@@ -129,7 +143,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6,
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

@@ -222,6 +222,15 @@
             "$createdAtBlockHeight": "asc"
           }
         ]
+      },
+      {
+        "name": "nameHash",
+        "properties": [
+          {
+            "nameHash": "asc"
+          }
+        ],
+        "countable": "countable"
       }
     ],
     "properties": {
@@ -244,6 +253,21 @@
       "ownerNameHash",
       "nameHash"
     ],
+    "propertyConstraints": {
+      "atMostAThousandPerName": {
+        "lessThanOrEqual": [
+          {
+            "countOf": [
+              "preorder",
+              {
+                "nameHash": "nameHash"
+              }
+            ]
+          },
+          1000
+        ]
+      }
+    },
     "additionalProperties": false
   }
 }
