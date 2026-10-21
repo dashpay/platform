@@ -150,22 +150,19 @@ export async function register(
     })
     : [];
 
-  // One that expires before a reveal could land is not found by the reveal. While the
-  // cleanup of expired documents has not reached it, it still holds the owner's entry
-  // of the name, which refuses a new preorder as a duplicate: its owner deletes it
-  // and preorders the name anew.
-  const revealable = pendingPreorder
-    && isRevealable(pendingPreorder, dpnsContract?.getDocumentSchema('preorder')?.ttl);
-  if (pendingPreorder && !revealable) {
-    await this.documents.broadcast(
-      {
-        delete: [pendingPreorder],
-      },
-      identity,
-    );
+  // One that expires before a reveal could land is not found by the reveal, and while
+  // the cleanup of expired documents has not reached it, it still holds the owner's
+  // entry of the name, which refuses a new preorder as a duplicate. This SDK reads
+  // documents and contracts without proofs, so it signs nothing destructive on what a
+  // node answered: it stops before paying, and the name can be preordered again once
+  // the cleanup has removed the expired preorder.
+  if (pendingPreorder
+    && !isRevealable(pendingPreorder, dpnsContract?.getDocumentSchema('preorder')?.ttl)) {
+    throw new Error('The pending preorder of this name expires before its reveal could land. '
+      + 'Retry once it has expired and the platform has removed it.');
   }
 
-  if (!revealable) {
+  if (!pendingPreorder) {
     const preorderDocument = await this.documents.create(
       'dpns.preorder',
       identity,

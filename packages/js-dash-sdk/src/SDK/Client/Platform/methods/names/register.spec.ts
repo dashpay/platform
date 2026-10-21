@@ -385,29 +385,30 @@ describe('Platform', () => {
         expect(platformMock.documents.broadcast.callCount).to.equal(1);
       });
 
-      it('should delete a pending preorder expiring before a reveal lands and preorder again', async () => {
+      it('should stop before paying when a pending preorder expires before a reveal lands', async () => {
         const identityId = await generateRandomIdentifier();
         identityMock.getId.returns(identityId);
         platformMock.contracts.get.resolves(dpnsV3Contract());
         const createdAt = 1_700_000_000_000;
         // Expired an hour after its creation, but not yet removed by the cleanup
-        const expired = pendingPreorderAt(createdAt, createdAt + 3_600_000);
-        platformMock.documents.get.resolves([expired]);
-        platformMock.documents.create.onCall(0).resolves('preorder document');
+        platformMock.documents.get.resolves([
+          pendingPreorderAt(createdAt, createdAt + 3_600_000),
+        ]);
 
-        await register.call(platformMock, 'User.dash', {
-          identity: identityId,
-        }, identityMock);
+        let error;
+        try {
+          await register.call(platformMock, 'User.dash', {
+            identity: identityId,
+          }, identityMock);
+        } catch (e: any) {
+          error = e;
+        }
 
-        expect(platformMock.documents.broadcast.callCount).to.equal(3);
-        expect(platformMock.documents.broadcast.getCall(0).args[0]).to.deep.equal({
-          delete: [expired],
-        });
-        expect(platformMock.documents.create.getCall(0).args[0]).to.equal('dpns.preorder');
-        expect(platformMock.documents.broadcast.getCall(1).args[0]).to.deep.equal({
-          create: ['preorder document'],
-        });
-        expect(platformMock.documents.create.getCall(1).args[0]).to.equal('dpns.domain');
+        // Nothing is signed on an unproved answer: no delete, preorder or domain
+        expect(error.message).to.equal('The pending preorder of this name expires before its '
+          + 'reveal could land. Retry once it has expired and the platform has removed it.');
+        expect(platformMock.documents.create.called).to.equal(false);
+        expect(platformMock.documents.broadcast.called).to.equal(false);
       });
 
       it('should fail when the pending preorder query fails', async () => {
