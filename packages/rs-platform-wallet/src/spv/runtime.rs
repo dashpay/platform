@@ -1485,7 +1485,7 @@ mod tests {
                 let racing = tokio::spawn(async move { stopper.stop().await });
                 // Give it time to reach the shutdown lock before publication.
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                stop_tx.send(racing).ok().expect("test receives the stop");
+                stop_tx.send(racing).expect("test receives the stop");
                 true
             })
             .await
