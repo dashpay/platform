@@ -7,14 +7,28 @@
 //! - **Mainnet**: Uses `https://quorums.mainnet.networks.dash.org/`
 //! - **Testnet**: Uses `https://quorums.testnet.networks.dash.org/`
 //! - **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
+//!
+//! ## Verified quorum keys
+//!
+//! [`VerifiedHttpContextProvider`] is an opt-in alternative for mainnet and
+//! testnet that trusts no HTTP endpoint: it proves every Platform quorum key
+//! from a checkpoint with Core's DIP 175 proofs, and treats the quorum
+//! service as an untrusted relay. It lives in this crate because it serves
+//! the same applications, talks to the same quorum service and shares the
+//! system-contract and HTTP plumbing; the name of the crate predates it.
 
 pub mod error;
+mod proof_fetches;
+mod proof_transport;
 pub mod provider;
 mod quorum_refresh;
+mod system_contracts;
 pub mod types;
+pub mod verified_provider;
 
 pub use error::TrustedContextProviderError;
 pub use provider::TrustedHttpContextProvider;
+pub use verified_provider::{VerifiedContextProviderError, VerifiedHttpContextProvider};
 
 use dpp::dashcore::Network;
 

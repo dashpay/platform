@@ -117,9 +117,136 @@ let sdk = SdkBuilder::new(AddressList::default())
     .build()?;
 ```
 
+## Verified Quorum Keys (opt-in)
+
+`VerifiedHttpContextProvider` trusts no HTTP endpoint for quorum keys. It
+starts from a checkpoint, a ChainLocked Core block and the masternode and
+quorum Merkle roots its coinbase commits to, and accepts a Platform quorum key
+only after a Core quorum proof chain (DIP 175, `DASHNC02`) verifies from that
+checkpoint and opens the quorum's commitment. Relays that serve the proofs are
+untrusted byte sources: a relay that lies, stalls or fails can delay requests,
+but cannot make the SDK accept a forged key or ban an honest node.
+
+```rust
+use dash_sdk::SdkBuilder;
+use dash_sdk::dapi_client::AddressList;
+use dpp::dashcore::Network;
+use rs_sdk_trusted_context_provider::VerifiedHttpContextProvider;
+use std::num::NonZeroUsize;
+
+// Embedded checkpoint, network's public quorum service as the relay.
+let provider = VerifiedHttpContextProvider::new(
+    Network::Testnet,
+    NonZeroUsize::new(100).expect("cache size"),
+)?;
+
+let sdk = SdkBuilder::new(AddressList::default())
+    .with_context_provider(provider)
+    .build()?;
+```
+
+Your own checkpoint and relays (1 to 8, `https` except on loopback):
+
+```rust
+let checkpoint = VerifiedHttpContextProvider::embedded_checkpoint(Network::Testnet)?;
+let provider = VerifiedHttpContextProvider::with_checkpoint(
+    Network::Testnet,
+    checkpoint,
+    vec!["https://relay.example.org".to_string()],
+    NonZeroUsize::new(100).expect("cache size"),
+)?;
+
+// Later: persist the newest verified state and start from it next time.
+let state_json = serde_json::to_string(&provider.latest_verified_state())?;
+```
+
+Behaviour:
+
+- Mainnet and testnet only. Each provider POSTs to `<source>/proofs` with the
+  checkpoint hash, a height, the quorum hash and type, and `nodeCount: 0`.
+- A proven key is served for 600 blocks past the target block that proved the
+  quorum active, then proven again. Failures of any kind (timeouts, HTTP
+  errors, oversize or invalid proofs, proofs of other quorums) are reported as
+  an unavailable quorum source, so the SDK tries another node without banning
+  the one that named the quorum. A quorum of another type than the network's
+  Platform quorum type is rejected as invalid.
+- Fetches of one quorum are shared, and requests for at most two quorums
+  are in flight at once (a fetch waiting out a backoff gives its place up).
+  A relay that cannot serve a quorum for the height and for its tip is
+  not asked again in that fetch; a busy relay (503) is retried after a
+  backoff; relays that fail otherwise, and quorums whose fetch failed, cool
+  down. A fetch gives up after 70 s. Redirects are refused and responses are
+  capped at 1 MiB.
+- The cache should hold at least the active Platform quorums (24 on mainnet
+  and testnet); 32 or more avoids proving keys again just because they were
+  evicted.
+- Data contracts come from the known-contracts cache and the system contracts
+  enabled by cargo features; token configurations from the known cache.
+- The public mainnet quorum service currently answers `/proofs` with HTTP 403.
+  `VerifiedHttpContextProvider::new(Network::Mainnet, ..)` builds, but its
+  fetches fail until the service serves proofs; pass working mainnet relays
+  to `with_checkpoint` meanwhile.
+
+### Trust model
+
+The checkpoint is trust configuration, like a hard-coded block hash: whoever
+chooses it chooses the chain. Beyond it, the provider trusts that no ChainLock
+quorum active at the checkpoint or mined after it ever signs dishonestly,
+retired ones included, as `dash-core-proof` documents. A valid proof shows a
+quorum was mined, not that its target is the newest ChainLock; how fresh a
+response must be is the SDK's policy.
+
+### Checkpoint shelf life
+
+A proof covers every ChainLock quorum rotation between its starting state and
+its target, so it grows as the checkpoint ages, and a relay has to keep the
+blocks back to it. Each SDK release can move the embedded checkpoints forward.
+A long-lived application should persist `latest_verified_state()` and pass it
+back to `with_checkpoint` on the next start, so its proofs stay short.
+
+### Limitations
+
+- Keys are proven for the Core height Platform reports in its responses. If
+  Platform halts, that height stops while Core moves on: a quorum not cached
+  before the halt can be proven only while a relay can still serve a proof
+  within 600 blocks of that height whose quorum root contains the quorum, and
+  retired quorums leave Core's quorum root. Such quorums may stay unprovable
+  until Platform resumes.
+- An inclusion proof cannot show that a quorum does not exist, so the
+  provider never reports a quorum as absent; nodes naming fake quorums are
+  skipped by the SDK, not banned.
+
+### Refreshing the embedded checkpoints
+
+`checkpoints/<network>.json` hold Core `ProofState` JSON (hashes in RPC display
+order). To move one to a newer block `H`:
+
+1. Pick a height with `chainlock: true` in `getblock` on two independent Core
+   nodes, and confirm `getblockhash H` and the block hash on a block explorer
+   agree.
+2. Write the state from the block: `network` (0 mainnet, 1 testnet), `height`,
+   `block_hash`, and the coinbase payload's `merkleRootMNList` and
+   `merkleRootQuorums` as `masternode_root` and `quorum_root`.
+3. Update `tests/data/checkpoint-evidence-<network>.json`: the raw header
+   (`getblockheader <hash> false`), the raw coinbase transaction, and the
+   coinbase's Merkle branch (sibling hashes in wire order). The
+   `checkpoints` test recomputes the block hash, the header's Merkle root and
+   both roots from this evidence.
+
 ## Implementation Details
 
-The `TrustedHttpContextProvider` implements the `ContextProvider` trait and provides:
+Both providers implement the `ContextProvider` trait.
+
+`VerifiedHttpContextProvider` provides:
+
+1. **Quorum Public Keys**: proven from its checkpoint with DIP 175 proofs from
+   its relays, and kept in an LRU cache
+2. **Data Contracts**: pre-loaded or registered known contracts, then the
+   system contracts enabled by cargo features, otherwise `None`
+3. **Token Configurations**: pre-loaded known configurations, otherwise `None`
+4. **Platform Activation Height**: hardcoded values for each network
+
+`TrustedHttpContextProvider` provides:
 
 1. **Quorum Public Keys**: Fetched from trusted HTTP endpoints with LRU caching
 2. **Data Contracts**: 
