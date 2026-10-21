@@ -7092,11 +7092,7 @@ typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
 
 GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
 
-/**
- * This shape replaces the timestamp-keyed request that earlier releases
- * served under the same version. Compatibility with those SDKs is not
- * retained by the 4.3 API.
- **/
+/** The versioned request carries exactly one history filter. */
 @property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
@@ -7132,8 +7128,7 @@ typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_On
 
 /**
  * Reads the retained revisions of a historical document (a type with
- * documentsKeepHistory). This 4.3 V0 shape intentionally replaces the
- * earlier SDK surface.
+ * documentsKeepHistory), selected by time, revision, or a composite cursor.
  **/
 GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPBMessage
 

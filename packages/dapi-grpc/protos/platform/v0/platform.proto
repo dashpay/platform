@@ -2474,8 +2474,7 @@ message GetDocumentsResponse {
 
 message GetDocumentHistoryRequest {
   // Reads the retained revisions of a historical document (a type with
-  // documentsKeepHistory). This 4.3 V0 shape intentionally replaces the
-  // earlier SDK surface.
+  // documentsKeepHistory), selected by time, revision, or a composite cursor.
   message GetDocumentHistoryRequestV0 {
     // Exclusive cursor returned with a page. Several revisions can share a
     // block time, so resuming needs the revision as well as the time.
@@ -2495,9 +2494,7 @@ message GetDocumentHistoryRequest {
       uint64 revision = 9 [ jstype = JS_STRING ];
     }
   }
-  // This shape replaces the timestamp-keyed request that earlier releases
-  // served under the same version. Compatibility with those SDKs is not
-  // retained by the 4.3 API.
+  // The versioned request carries exactly one history filter.
   oneof version {
     GetDocumentHistoryRequestV0 v0 = 1;
   }
