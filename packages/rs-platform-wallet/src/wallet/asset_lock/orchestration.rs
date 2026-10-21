@@ -119,27 +119,34 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Callback that receives the outpoint of an asset lock built for a
-/// [`AssetLockFunding::FromWalletBalance`] or
-/// [`AssetLockFunding::DrainAccountBalance`] request. It runs synchronously
+/// [`AssetLockFunding::FromWalletBalance`],
+/// [`AssetLockFunding::DrainAccountBalance`] or
+/// [`AssetLockFunding::DrainWalletBalance`] request. It runs synchronously
 /// once the transaction is signed, before the lock's row is persisted or the
-/// lock is broadcast, so it must not block. A caller that watches persisted
-/// lock rows uses it to tell its own new lock apart from rows the wallet
-/// re-inserts during recovery; it must record the outpoint before returning.
-/// The ordering covers persisted rows only. A build without an operation
-/// context tracks the lock in memory first, so in-memory listings can show
-/// it just before the callback runs, and queues its row best-effort; a build
-/// for an operation (a wallet drain) runs the callback before it stores the
-/// row durably and only then tracks the lock.
+/// lock is broadcast. A caller that watches persisted lock rows uses it to
+/// tell its own new lock apart from rows the wallet re-inserts during
+/// recovery; it must record the outpoint before returning. The ordering
+/// covers persisted rows only.
 ///
-/// It runs at most once per call and must not panic: an unwind there leaves
-/// the lock tracked in memory only, or, for an operation, retained in the
-/// operation's checkpoint with no row stored. It does not run for
-/// [`AssetLockFunding::FromExistingAssetLock`], whose outpoint the caller
-/// already holds, nor when the build itself fails, is abandoned before
-/// tracking, or finds the wallet gone when it tracks the lock. It does run
-/// for a lock whose broadcast then fails: after a definite rejection the lock
-/// is removed again, otherwise it stays tracked and can be resumed by its
-/// outpoint.
+/// It runs while the wallet serializes asset-lock builds, so it must not
+/// block and must not call back into the wallet: another build would wait
+/// for it. It runs at most once per call and must not panic.
+///
+/// - Without an operation context (`FromWalletBalance`,
+///   `DrainAccountBalance`) the lock is tracked in memory first, so
+///   in-memory listings can show it just before the callback runs, and its
+///   row is queued best-effort afterwards. The callback does not run when
+///   the wallet is gone at tracking. A lock whose broadcast then fails is
+///   removed again after a definite rejection; otherwise it stays tracked
+///   and can be resumed by its outpoint.
+/// - For a wallet drain (`DrainWalletBalance`) the callback runs before the
+///   row is stored durably and before the lock is tracked. If that store
+///   fails, the lock is not tracked and is recovered by resuming the drain
+///   with the same operation UUID, not by its outpoint.
+///
+/// It does not run for [`AssetLockFunding::FromExistingAssetLock`] (a resumed
+/// drain included), whose outpoint the caller already holds, nor when the
+/// build itself fails or is abandoned before the outpoint is handed out.
 pub type AssetLockBuiltObserver<'a> = dyn Fn(OutPoint) + Send + Sync + 'a;
 
 // ---------------------------------------------------------------------------
