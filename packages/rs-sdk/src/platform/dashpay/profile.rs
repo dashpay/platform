@@ -6,21 +6,26 @@
 
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::documents::transitions::{
-    DocumentCreateResult, DocumentCreateTransitionBuilder, DocumentReplaceResult,
-    DocumentReplaceTransitionBuilder,
+    DocumentCreateTransitionBuilder, DocumentReplaceTransitionBuilder,
 };
+use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::waitable::wait_for_document_and_owner_balance_with_metadata;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, SeedableRng};
+use dpp::state_transition::StateTransition;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -114,6 +119,29 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
+        self.create_profile_with_owner_balance_and_metadata(
+            dashpay_contract,
+            owner_id,
+            fields,
+            signing_key,
+            signer,
+        )
+        .await
+        .map(|(document, _owner_balance, _metadata)| document)
+    }
+
+    /// [`Self::create_profile`] that also returns the owner's credit balance
+    /// after the write, when the proof carries it (from protocol version 14),
+    /// and the proof's verified response metadata, whose height is the block
+    /// the balance is a snapshot at.
+    pub async fn create_profile_with_owner_balance_and_metadata<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
         self.ensure_dashpay_contract(dashpay_contract)?;
         let properties = sanitized_properties(dashpay_contract, fields.overlay(BTreeMap::new()))?;
 
@@ -131,9 +159,11 @@ impl Sdk {
             profile_document(id, owner_id, properties, None),
             entropy,
         );
-        let DocumentCreateResult::Document(document) =
-            self.document_create(builder, signing_key, signer).await?;
-        Ok(document)
+        let state_transition = builder
+            .sign(self, signing_key, signer, self.version())
+            .await?;
+        self.put_profile_write(dashpay_contract, state_transition)
+            .await
     }
 
     /// Update the existing profile document of `owner_id`: read it, overlay the
@@ -156,6 +186,29 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
+        self.update_profile_with_owner_balance_and_metadata(
+            dashpay_contract,
+            owner_id,
+            fields,
+            signing_key,
+            signer,
+        )
+        .await
+        .map(|(document, _owner_balance, _metadata)| document)
+    }
+
+    /// [`Self::update_profile`] that also returns the owner's credit balance
+    /// after the write, when the proof carries it (from protocol version 14),
+    /// and the proof's verified response metadata, whose height is the block
+    /// the balance is a snapshot at.
+    pub async fn update_profile_with_owner_balance_and_metadata<S: Signer<IdentityPublicKey>>(
+        &self,
+        dashpay_contract: &Arc<DataContract>,
+        owner_id: Identifier,
+        fields: ProfileFields,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
         let existing = self
             .get_profiles(dashpay_contract, &[owner_id])
             .await?
@@ -169,9 +222,34 @@ impl Sdk {
             PROFILE_DOCUMENT_TYPE.to_string(),
             replacement_document(&existing, fields, dashpay_contract)?,
         );
-        let DocumentReplaceResult::Document(document) =
-            self.document_replace(builder, signing_key, signer).await?;
-        Ok(document)
+        let state_transition = builder
+            .sign(self, signing_key, signer, self.version())
+            .await?;
+        self.put_profile_write(dashpay_contract, state_transition)
+            .await
+    }
+
+    /// Broadcast a signed profile write and wait for its proof: the profile
+    /// document it wrote, the owner's balance the proof carries and the
+    /// proof's verified metadata. As for any document type that keeps a row,
+    /// the proof must show that this write executed.
+    async fn put_profile_write(
+        &self,
+        dashpay_contract: &DataContract,
+        state_transition: StateTransition,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        let execution_proof_required = !dashpay_contract
+            .document_type_for_name(PROFILE_DOCUMENT_TYPE)
+            .map_err(|e| Error::Protocol(e.into()))?
+            .index_only();
+        state_transition.broadcast(self, None).await?;
+        wait_for_document_and_owner_balance_with_metadata(
+            self,
+            state_transition,
+            None,
+            execution_proof_required,
+        )
+        .await
     }
 
     async fn fetch_profile_documents(

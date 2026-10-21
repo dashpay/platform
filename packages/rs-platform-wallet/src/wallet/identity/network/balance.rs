@@ -123,8 +123,11 @@ mod tests {
     };
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::IdentityManager;
+    use dpp::document::{Document, DocumentV0};
     use dpp::identity::{v0::IdentityV0, Identity};
+    use dpp::platform_value::Value;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -827,6 +830,49 @@ mod tests {
             reload_balance(&backend, &id),
             (AFTER_DPNS, Some(BlockTime::new(11, 42, 1000)))
         );
+    }
+
+    /// A profile create or update is a document write like any other: the
+    /// owner's balance its proof carries is kept with the proof's block, next
+    /// to the profile it cached.
+    #[tokio::test]
+    async fn should_keep_the_proven_owner_balance_of_a_profile_write() {
+        let (iw, id, backend) = fixture(None).await;
+        let document = Document::V0(DocumentV0 {
+            owner_id: id,
+            properties: BTreeMap::from([(
+                "displayName".to_string(),
+                Value::Text("Alice".to_string()),
+            )]),
+            ..Default::default()
+        });
+
+        let profile = iw
+            .dashpay()
+            .record_own_profile_write(
+                &id,
+                &document,
+                Some(AFTER_DPNS),
+                document_proof_metadata(10),
+            )
+            .await;
+
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(local_balance(&iw, &id).await, AFTER_DPNS);
+        assert_eq!(
+            reload_balance(&backend, &id),
+            (AFTER_DPNS, Some(BlockTime::new(10, 42, 1000)))
+        );
+        let wm = iw.wallet_manager.read().await;
+        let cached = &wm
+            .get_wallet_info(&iw.wallet_id)
+            .unwrap()
+            .identity_manager
+            .identity(&id)
+            .unwrap()
+            .dashpay()
+            .profile;
+        assert_eq!(cached.as_ref(), Some(&profile));
     }
 
     #[tokio::test]
