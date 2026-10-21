@@ -1071,9 +1071,11 @@ pub struct IdentityKeyEntry {
     /// coordinates the key was checked at and found not to come from (a load
     /// or discovery derived a candidate there and it did not reproduce the
     /// key, or the caller of an update declared the key external), so a
-    /// persister clears a stored breadcrumb naming exactly these coordinates,
-    /// a stale inferred one, and keeps any other: only the derivation that
-    /// was checked is refuted. Ignored with `derivation_indices`.
+    /// persister clears a stored breadcrumb naming exactly these coordinates
+    /// under the seed of the wallet persisting the entry, a stale inferred
+    /// one, and keeps any other: only the derivation that was checked is
+    /// refuted, and the same coordinates under another wallet's seed are
+    /// another derivation. Ignored with `derivation_indices`.
     #[cfg_attr(feature = "serde", serde(default))]
     pub derivation_rejected: Option<IdentityKeyDerivationIndices>,
 }

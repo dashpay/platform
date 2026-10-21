@@ -1201,17 +1201,18 @@ class PlatformWalletPersistenceHandlerTest {
             rejected: Boolean,
             rejectedKeyIndex: Int = 0,
             key: ByteArray = ByteArray(33) { 10 },
+            from: ByteArray = walletId,
         ) {
-            handler.onChangesetBegin(walletId)
+            handler.onChangesetBegin(from)
             handler.onPersistIdentityKeyUpsert(
-                walletId, identityId, 0, 0, 0, 0, false, false, 0,
+                from, identityId, 0, 0, 0, 0, false, false, 0,
                 key, ByteArray(20), true, walletId,
                 indicesIsSome, 0, 7, 0, ByteArray(32), null,
                 derivationRejected = rejected,
                 rejectedIdentityIndex = 0,
                 rejectedKeyIndex = rejectedKeyIndex,
             )
-            handler.onChangesetEnd(walletId, success = true)
+            handler.onChangesetEnd(from, success = true)
         }
         suspend fun stored() = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
 
@@ -1221,6 +1222,8 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(7, stored().derivationKeyIndex)
         upsert(indicesIsSome = false, rejected = true, rejectedKeyIndex = 0)
         assertEquals("another slot's rejection keeps it", 7, stored().derivationKeyIndex)
+        upsert(indicesIsSome = false, rejected = true, rejectedKeyIndex = 7, from = ByteArray(32) { 2 })
+        assertEquals("another wallet's seed refutes nothing here", 7, stored().derivationKeyIndex)
         upsert(indicesIsSome = false, rejected = true, rejectedKeyIndex = 7)
         assertNull(stored().derivationKeyIndex)
         assertNull(stored().derivationIdentityIndex)

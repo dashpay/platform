@@ -1929,14 +1929,16 @@ class PlatformWalletPersistenceHandler(
         // alias whose row can never commit (the identity rows are gone),
         // stranding identity-key ciphertext behind a "successful" wipe.
         val roundKey = walletId.toHex()
-        // A rejection refutes the slot it checked: a pending repair entry
-        // for that slot needs no re-derive and is dropped, staged with the
-        // round; one for another slot stays.
+        // A rejection refutes the slot it checked under this wallet's seed: a
+        // pending repair entry for that slot of this wallet needs no
+        // re-derive and is dropped, staged with the round; one for another
+        // slot, or another wallet, stays.
         if (derivationRejected && !derivationIndicesIsSome) {
             val hex = publicKeyData.toHex()
             stagePendingKeyDelta(roundKey) { map ->
                 val pending = map[hex]
-                if (pending != null && pending.identityIndex == rejectedIdentityIndex &&
+                if (pending != null && pending.walletIdHex == roundKey &&
+                    pending.identityIndex == rejectedIdentityIndex &&
                     pending.keyIndex == rejectedKeyIndex
                 ) {
                     map - hex
@@ -2036,10 +2038,14 @@ class PlatformWalletPersistenceHandler(
             // key's derivation and private-key linkage, which must not pass to
             // this one: only a row for the same public key lends them.
             val existing = stored?.takeIf { it.publicKeyData.contentEquals(publicKeyData) }
-            // A rejection refutes only the coordinates it was checked at.
+            // A rejection refutes only the coordinates it was checked at, under
+            // the seed of the wallet persisting it: a key row's breadcrumb is
+            // its identity's wallet's derivation, so another wallet's
+            // rejection leaves it.
             val refuted = derivationRejected && !derivationIndicesIsSome &&
                 existing?.derivationIdentityIndex == rejectedIdentityIndex &&
-                existing.derivationKeyIndex == rejectedKeyIndex
+                existing.derivationKeyIndex == rejectedKeyIndex &&
+                db.identityDao().getByIdentityId(identityId)?.walletId?.contentEquals(walletId) == true
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
