@@ -111,6 +111,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 return;
             }
             let lock = TrackedAssetLock {
+                operation_id: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -519,6 +520,7 @@ pub(crate) fn final_lock_input_claims<'a>(
             AssetLockStatus::InstantSendLocked
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted
             | AssetLockStatus::RecoveredFromChain => true,
         })
         .flat_map(|lock| {
@@ -586,6 +588,7 @@ pub(crate) fn withhold_chain_final_fundings<'a>(
             | AssetLockStatus::InstantSendLocked => false,
             AssetLockStatus::ChainLocked
             | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted
             | AssetLockStatus::RecoveredFromChain => true,
         })
         .map(|lock| lock.transaction.txid())
@@ -1185,6 +1188,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            // A drain's lock is settled under the drain persistence contract
+            // whichever path resumes it (same-UUID resume, the generic
+            // exact-outpoint resume behind "Finish now", a readiness-deferred
+            // retry), so the admission policy applies here, before any
+            // dispatch or lifecycle write. Untagged legacy locks are unaffected.
+            if lock.operation_id.is_some() {
+                self.require_wallet_drain_persistence()?;
+            }
             // Only the two proof-less statuses are candidates. A lock
             // carrying an IS/Chain proof, a `RecoveredFromChain` entry
             // (reconstructed from a record the chain itself accepted), and
@@ -1199,7 +1210,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
-                | AssetLockStatus::Consumed => None,
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::DrainCompleted => None,
             };
             // Claim the dispatch window for the two statuses that can still
             // send, while the read guard that produced this snapshot is
@@ -1278,7 +1290,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::InstantSendLocked
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::RecoveredFromChain
-            | AssetLockStatus::Consumed => None,
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted => None,
         };
         if status == AssetLockStatus::Built && local_finality.is_some() {
             dispatch_claim
@@ -1949,7 +1962,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
-            (AssetLockStatus::Consumed, _) => {
+            (AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
                 // Retaining this state makes the typed distinction from
@@ -2380,6 +2393,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2515,6 +2529,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2733,9 +2748,12 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
+            operation_id: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -3012,6 +3030,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 self.out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -3949,6 +3968,7 @@ mod tests {
             ..transaction_spending(spends)
         };
         let lock = |transaction: Transaction, status| TrackedAssetLock {
+            operation_id: None,
             out_point: OutPoint::new(transaction.txid(), 0),
             transaction,
             account_index: 0,
@@ -4040,6 +4060,7 @@ mod tests {
             AssetLockProof::Instant(InstantAssetLockProof::new(lock, transaction.clone(), 0))
         };
         let tracked = |funding: &Transaction, proof| TrackedAssetLock {
+            operation_id: None,
             out_point: OutPoint::new(funding.txid(), 0),
             transaction: funding.clone(),
             account_index: 0,
@@ -4133,6 +4154,7 @@ mod tests {
 
         let outpoint = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
         let tracked = |funding: &Transaction, status| TrackedAssetLock {
+            operation_id: None,
             out_point: OutPoint::new(funding.txid(), 0),
             transaction: funding.clone(),
             account_index: 0,
@@ -4150,8 +4172,8 @@ mod tests {
             stored_direction: None,
             owned_inputs: Vec::new(),
         };
-        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked, foreign, unrecorded] =
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(|byte| transaction_spending(outpoint(byte)));
+        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked, foreign, unrecorded, drained] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(|byte| transaction_spending(outpoint(byte)));
         let locks = [
             tracked(&chain_locked, AssetLockStatus::ChainLocked),
             tracked(&consumed, AssetLockStatus::Consumed),
@@ -4163,8 +4185,10 @@ mod tests {
             tracked(&settled, AssetLockStatus::Consumed),
             tracked(&foreign, AssetLockStatus::ChainLocked),
             tracked(&unrecorded, AssetLockStatus::Consumed),
+            tracked(&drained, AssetLockStatus::DrainCompleted),
         ];
         let unconfirmed = [
+            &drained,
             &chain_locked,
             &consumed,
             &recovered,
@@ -4196,9 +4220,16 @@ mod tests {
 
         assert_eq!(
             withheld,
-            [&chain_locked, &consumed, &recovered, &foreign, &unrecorded]
-                .map(|transaction| transaction.txid())
-                .into()
+            [
+                &chain_locked,
+                &consumed,
+                &recovered,
+                &foreign,
+                &unrecorded,
+                &drained
+            ]
+            .map(|transaction| transaction.txid())
+            .into()
         );
         let kept: Vec<Txid> = history
             .transactions
@@ -4843,6 +4874,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -5356,6 +5388,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5479,6 +5512,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5981,6 +6015,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6085,6 +6120,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6363,6 +6399,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6507,6 +6544,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,

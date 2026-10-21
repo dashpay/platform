@@ -364,6 +364,7 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
             amount_duffs: 19_000,
             status,
             proof: None,
+            operation_id: None,
         };
         (out_point, entry)
     };

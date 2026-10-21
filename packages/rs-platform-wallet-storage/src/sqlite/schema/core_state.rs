@@ -510,7 +510,7 @@ fn surviving_stored_input_claims(
         }
         blob::check_size(row.get(2)?)?;
         let blob_bytes: Vec<u8> = row.get(3)?;
-        let record: TransactionRecord = blob::decode(&blob_bytes)?;
+        let record = decode_transaction_record(&blob_bytes)?;
         if record.txid != key_txid {
             return Err(WalletStorageError::blob_decode(
                 "core_transactions.txid disagrees with the decoded record's txid",
@@ -741,7 +741,7 @@ fn apply_sweep(
         )?;
         return Ok(());
     };
-    let loser: TransactionRecord = blob::decode(&loser_blob)?;
+    let loser = decode_transaction_record(&loser_blob)?;
     // Fails CLOSED on a key/record disagreement, before anything is deleted
     // or any input is touched. The typed key is what named this row a swept
     // loser — both here and in `surviving_stored_input_claims`, which skips
@@ -1141,7 +1141,7 @@ pub fn load_state(
             if let Some(record_blob_len) = row.get::<_, Option<i64>>(3)? {
                 blob::check_size(record_blob_len)?;
                 let payload: Vec<u8> = row.get(4)?;
-                let record = blob::decode::<TransactionRecord>(&payload)?;
+                let record = decode_transaction_record(&payload)?;
                 effective_txid = record.txid;
                 effective_height = record.block_info().map(|block_info| block_info.height());
                 if let Err(mismatch) =
@@ -1458,7 +1458,7 @@ pub fn get_tx_record(
     };
     blob::check_size(record_blob_len)?;
     let payload: Vec<u8> = row.get(2)?;
-    let record = blob::decode(&payload)?;
+    let record = decode_transaction_record(&payload)?;
     drop(rows);
     drop(stmt);
     if let Err(mismatch) = ensure_transaction_record_matches_columns(txid, height, &record) {
@@ -1474,6 +1474,17 @@ pub fn get_tx_record(
         }
     }
     Ok(Some(record))
+}
+
+/// Reject internally inconsistent bodies before they can drive replay or sweeps.
+fn decode_transaction_record(payload: &[u8]) -> Result<TransactionRecord, WalletStorageError> {
+    let record: TransactionRecord = blob::decode(payload)?;
+    if record.txid != record.transaction.txid() {
+        return Err(WalletStorageError::blob_decode(
+            "transaction record txid disagrees with its transaction body hash",
+        ));
+    }
+    Ok(record)
 }
 
 /// Diagnose typed txid/height columns that disagree with the authoritative blob.
@@ -1554,8 +1565,8 @@ mod tests {
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 
-    fn transaction_record(txid: Txid, context: TransactionContext) -> TransactionRecord {
-        let mut record = TransactionRecord::new(
+    fn transaction_record(context: TransactionContext) -> TransactionRecord {
+        TransactionRecord::new(
             Transaction {
                 version: 3,
                 lock_time: 0,
@@ -1573,9 +1584,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             100,
-        );
-        record.txid = txid;
-        record
+        )
     }
 
     fn sample_utxo(txid: Txid, height: u32, is_confirmed: bool) -> Utxo {
@@ -1601,7 +1610,7 @@ mod tests {
 
     /// A record spending `coins` in `context`, with no details and a zero net.
     fn spend(coins: &[OutPoint], context: TransactionContext) -> TransactionRecord {
-        let mut record = transaction_record(Txid::all_zeros(), context);
+        let mut record = transaction_record(context);
         record.transaction.input = coins
             .iter()
             .map(|&previous_output| dashcore::TxIn {
@@ -1847,7 +1856,7 @@ mod tests {
     fn should_reject_corrupt_prior_record_when_storing_the_transaction() {
         let wallet_id = [0xA9u8; 32];
         let mut conn = wallet_db(&wallet_id);
-        let record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        let record = transaction_record(TransactionContext::Mempool);
         conn.execute(
             "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
              VALUES (?1, ?2, 0, ?3)",
@@ -1942,7 +1951,7 @@ mod tests {
         use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
         let wallet_id = [0xAFu8; 32];
         let mut conn = wallet_db(&wallet_id);
-        let mut record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        let mut record = transaction_record(TransactionContext::Mempool);
         let mut output = sample_utxo(record.txid, 0, false);
         record.transaction.output = vec![output.txout.clone()];
         record.txid = record.transaction.txid();
@@ -2081,7 +2090,7 @@ mod tests {
         )
         .unwrap();
 
-        let txid = Txid::from_byte_array([0x7Eu8; 32]);
+        let txid = transaction_record(TransactionContext::Mempool).txid;
         let utxo = sample_utxo(txid, 123, true);
         let outpoint = utxo.outpoint;
 
@@ -2092,7 +2101,7 @@ mod tests {
                 &wallet_id,
                 &CoreChangeSet {
                     new_utxos: vec![utxo],
-                    records: vec![transaction_record(txid, TransactionContext::Mempool)],
+                    records: vec![transaction_record(TransactionContext::Mempool)],
                     ..Default::default()
                 },
             )
@@ -2107,14 +2116,13 @@ mod tests {
                 &tx,
                 &wallet_id,
                 &CoreChangeSet {
-                    records: vec![transaction_record(
-                        txid,
-                        TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    records: vec![transaction_record(TransactionContext::InChainLockedBlock(
+                        BlockInfo::new(
                             confirmed_height,
                             BlockHash::from_byte_array([0x34u8; 32]),
                             1_735_689_600,
-                        )),
-                    )],
+                        ),
+                    ))],
                     ..Default::default()
                 },
             )
@@ -2277,7 +2285,7 @@ mod tests {
         )
         .unwrap();
 
-        let txid = Txid::from_byte_array([0x81u8; 32]);
+        let txid = transaction_record(TransactionContext::Mempool).txid;
         let mut utxo = sample_utxo(txid, 456, true);
         {
             let tx = conn.transaction().unwrap();
@@ -2299,7 +2307,7 @@ mod tests {
                 &tx,
                 &wallet_id,
                 &CoreChangeSet {
-                    records: vec![transaction_record(txid, TransactionContext::Mempool)],
+                    records: vec![transaction_record(TransactionContext::Mempool)],
                     ..Default::default()
                 },
             )
@@ -2340,14 +2348,13 @@ mod tests {
                 &tx,
                 &wallet_id,
                 &CoreChangeSet {
-                    records: vec![transaction_record(
-                        txid,
-                        TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    records: vec![transaction_record(TransactionContext::InChainLockedBlock(
+                        BlockInfo::new(
                             confirmed_height,
                             BlockHash::from_byte_array([0x35u8; 32]),
                             1_735_689_700,
-                        )),
-                    )],
+                        ),
+                    ))],
                     ..Default::default()
                 },
             )
@@ -2435,7 +2442,7 @@ mod tests {
         )
         .unwrap();
 
-        let blob_txid = Txid::from_byte_array([0x82u8; 32]);
+        let blob_txid = transaction_record(TransactionContext::Mempool).txid;
         let typed_txid = Txid::from_byte_array([0x83u8; 32]);
         {
             let tx = conn.transaction().unwrap();
@@ -2443,7 +2450,7 @@ mod tests {
                 &tx,
                 &wallet_id,
                 &CoreChangeSet {
-                    records: vec![transaction_record(blob_txid, TransactionContext::Mempool)],
+                    records: vec![transaction_record(TransactionContext::Mempool)],
                     ..Default::default()
                 },
             )
@@ -2480,7 +2487,7 @@ mod tests {
 
     #[test]
     fn load_state_blob_height_wins_over_drifted_typed_column_in_either_scan_order() {
-        for (case, typed_byte) in [0x10, 0xF0].into_iter().enumerate() {
+        for (case, typed_byte) in [0x00, 0xFF].into_iter().enumerate() {
             let mut conn = rusqlite::Connection::open_in_memory().unwrap();
             migrations::run(&mut conn).unwrap();
             let wallet_id = [0x50 + case as u8; 32];
@@ -2491,7 +2498,7 @@ mod tests {
             )
             .unwrap();
 
-            let blob_txid = Txid::from_byte_array([0x80; 32]);
+            let blob_txid = transaction_record(TransactionContext::Mempool).txid;
             let typed_txid = Txid::from_byte_array([typed_byte; 32]);
             let confirmed_utxo = sample_utxo(blob_txid, 500, true);
             let tx = conn.transaction().unwrap();
@@ -2500,14 +2507,9 @@ mod tests {
                 &wallet_id,
                 &CoreChangeSet {
                     new_utxos: vec![confirmed_utxo.clone()],
-                    records: vec![transaction_record(
-                        blob_txid,
-                        TransactionContext::InChainLockedBlock(BlockInfo::new(
-                            500,
-                            BlockHash::from_byte_array([0x38; 32]),
-                            1_735_690_000,
-                        )),
-                    )],
+                    records: vec![transaction_record(TransactionContext::InChainLockedBlock(
+                        BlockInfo::new(500, BlockHash::from_byte_array([0x38; 32]), 1_735_690_000),
+                    ))],
                     ..Default::default()
                 },
             )
@@ -2557,21 +2559,19 @@ mod tests {
         )
         .unwrap();
 
-        let txid = Txid::from_byte_array([0x84u8; 32]);
         {
             let tx = conn.transaction().unwrap();
             apply(
                 &tx,
                 &wallet_id,
                 &CoreChangeSet {
-                    records: vec![transaction_record(
-                        txid,
-                        TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    records: vec![transaction_record(TransactionContext::InChainLockedBlock(
+                        BlockInfo::new(
                             500,
                             BlockHash::from_byte_array([0x36u8; 32]),
                             1_735_689_800,
-                        )),
-                    )],
+                        ),
+                    ))],
                     ..Default::default()
                 },
             )
@@ -2621,14 +2621,14 @@ mod tests {
         )
         .unwrap();
 
-        let blob_txid = Txid::from_byte_array([0x88u8; 32]);
+        let blob_txid = transaction_record(TransactionContext::Mempool).txid;
         let typed_txid = Txid::from_byte_array([0x89u8; 32]);
         let tx = conn.transaction().unwrap();
         apply(
             &tx,
             &wallet_id,
             &CoreChangeSet {
-                records: vec![transaction_record(blob_txid, TransactionContext::Mempool)],
+                records: vec![transaction_record(TransactionContext::Mempool)],
                 ..Default::default()
             },
         )
@@ -2677,20 +2677,15 @@ mod tests {
         )
         .unwrap();
 
-        let txid = Txid::from_byte_array([0x8Au8; 32]);
+        let txid = transaction_record(TransactionContext::Mempool).txid;
         let tx = conn.transaction().unwrap();
         apply(
             &tx,
             &wallet_id,
             &CoreChangeSet {
-                records: vec![transaction_record(
-                    txid,
-                    TransactionContext::InChainLockedBlock(BlockInfo::new(
-                        600,
-                        BlockHash::from_byte_array([0x37u8; 32]),
-                        1_735_689_900,
-                    )),
-                )],
+                records: vec![transaction_record(TransactionContext::InChainLockedBlock(
+                    BlockInfo::new(600, BlockHash::from_byte_array([0x37u8; 32]), 1_735_689_900),
+                ))],
                 ..Default::default()
             },
         )

@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
 use crate::changeset::recorded_history::RecordedHistory;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
@@ -73,4 +74,11 @@ pub struct ClientWalletStartState {
     /// [`load_from_persistor`](crate::manager::load), not while the snapshot
     /// is built.
     pub recorded_history: RecordedHistory,
+    /// Durable record of the DashPay coreHeight backfill, as the host last
+    /// stored it — which receival contacts the historical rescan already
+    /// covers, from which height each. Empty (the default) when the host
+    /// never stored one, or does not persist the slot at all; the first
+    /// rescan sweep then behaves exactly as before and writes one. See
+    /// [`DashPayBackfillRecord`].
+    pub dashpay_backfill: DashPayBackfillRecord,
 }

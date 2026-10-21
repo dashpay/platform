@@ -12,6 +12,7 @@ authors = [
 ]
 
 [dependencies]
+secp256k1 = { workspace = true }
 dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "33fcc59e1868c803f9608e0e78ee8bddf3abcee7", default-features = false, features = ["bls"], optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
@@ -31,7 +32,6 @@ chrono = { version = "0.4.35", default-features = false, features = [
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { workspace = true, features = [
-  "secp-recovery",
   "rand",
   "signer",
   "serde",

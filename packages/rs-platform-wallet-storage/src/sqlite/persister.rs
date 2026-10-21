@@ -1314,6 +1314,7 @@ impl PlatformWalletPersistence for SqlitePersister {
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1321,6 +1322,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
@@ -1923,6 +1925,8 @@ fn load_wallet_snapshot(
             // conflict repairs; empty keeps the shared load from replaying
             // the same records a second time.
             recorded_history: Default::default(),
+            // This backend does not persist backfill coverage; rescan on each launch.
+            dashpay_backfill: Default::default(),
         },
         sweeps,
     ))

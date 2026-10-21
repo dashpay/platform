@@ -667,6 +667,11 @@ fn enforce_asset_lock_amount_covers_address_funding_floor(
                 minimum_lock_duffs.map_or(required, |floor| floor.max(required)),
             ),
         }),
+        AssetLockFunding::DrainWalletBalance { .. } => {
+            Err(PlatformWalletError::AssetLockTransaction(
+                "pooled wallet drain is available only for shielded funding".into(),
+            ))
+        }
         funding @ AssetLockFunding::FromExistingAssetLock { .. } => Ok(funding),
     }
 }
@@ -916,8 +921,8 @@ mod tests {
             _sighash: [u8; 32],
         ) -> Result<
             (
-                dashcore::secp256k1::ecdsa::Signature,
-                dashcore::secp256k1::PublicKey,
+                dashcore::crypto::ecdsa::EcdsaSignature,
+                dashcore::crypto::ecdsa::EcdsaPublicKey,
             ),
             Self::Error,
         > {
@@ -927,7 +932,7 @@ mod tests {
         async fn public_key(
             &self,
             _path: &key_wallet::DerivationPath,
-        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+        ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
             unreachable!("underfunded fresh asset lock must fail before asset-lock signing")
         }
     }

@@ -71,6 +71,7 @@ final class InvitationPersistenceTests: XCTestCase {
             // wallet-owned `PersistentTransaction` back as
             // `recorded_transactions` for the load replay.
             | PlatformWalletPersistenceCapabilities.coreHistoryRestore
+            | PlatformWalletPersistenceCapabilities.assetLockOperationIds
 
         XCTAssertEqual(
             capabilities.version,

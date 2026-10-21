@@ -392,6 +392,13 @@ the disagreement costs: under `LoadPolicy::Strict` it aborts the load, under
 Repairing the drifted columns is a writer's job, on the next write of that
 row.
 
+A decoded record must also carry the hash of its embedded transaction body.
+All record readers reject an internal hash mismatch with `BlobDecode` before
+using the body for replay or sweep decisions; column-drift tolerance does not
+apply. Strict load aborts, while Recovery omits the affected wallet and reports
+`WalletRehydration` degradation without changing its stored history. Point
+reads reject the record under both policies.
+
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_transactions_height(wallet_id, height)`.
@@ -904,5 +911,6 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
-| V019–V020 | — | Not used on this line. Reserved for the 5.0 line's asset-lock migrations (`asset_lock_operation_id`, `shielded_funding_attempts`), which reach it through a forward merge. Refinery applies versions in order, so a database at V018 takes V019, V020 and V021 in that order once they are merged. |
+| V019 | `V019__asset_lock_operation_id.rs` | Adds the nullable `asset_locks.operation_id BLOB` column (CHECK: NULL or exactly 16 bytes) that correlates a wallet-drain operation with its funding outpoint; the lifecycle blob is untouched. Adds the unique partial index `asset_locks_wallet_operation_id` on `(wallet_id, operation_id) WHERE operation_id IS NOT NULL` and the `asset_locks_operation_id_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `operation_id`. Purely additive; existing rows read back NULL. |
+| V020 | — | Reserved for the 5.0 line's `shielded_funding_attempts` migration, which reaches this line through a forward merge. |
 | V021 | `V021__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). Records stored before V021 may carry wrong input details, net amounts and directions and have no indexed inputs, so instead of repairing them in place V021 deletes every wallet's Core history (`core_utxos`, `core_instant_locks`, `core_transactions`) and lowers each `core_sync_state.synced_height` to just below the wallet's birth height (never raising it), so the next SPV start rescans from birth and records the history again through the current accounting. `last_processed_height` and the chainlock stay, as chain facts; the SPV header/filter store, address pools, asset locks, identities, DashPay and metadata rows are untouched. Unconfirmed transactions are not re-delivered by a rescan and return only if the network relays them again. |

@@ -34,7 +34,6 @@ use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
 use dashcore::{Address as DashAddress, Network};
-use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
@@ -42,7 +41,9 @@ use dpp::prelude::Identifier;
 use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
-use super::locator::{p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole};
+use super::locator::{
+    operator_identity_ids, p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole,
+};
 use super::record::{
     owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
     MasternodeStatus,
@@ -593,6 +594,26 @@ where
     Ok((tracked, outcome))
 }
 
+/// Fetch the first identity found among the candidate operator identity
+/// `ids`, in order. A missing identity moves on to the next id; a found one
+/// ends the search. A failed fetch ends it too, with the error: the next id
+/// may find an older identity while the current one was unreadable.
+async fn first_operator_identity<F, Fut, E>(
+    ids: impl IntoIterator<Item = Identifier>,
+    mut fetch: F,
+) -> Result<Option<Identity>, E>
+where
+    F: FnMut(Identifier) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<Identity>, E>>,
+{
+    for id in ids {
+        if let Some(identity) = fetch(id).await? {
+            return Ok(Some(identity));
+        }
+    }
+    Ok(None)
+}
+
 impl std::fmt::Debug for TrackedMasternodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TrackedMasternodes")
@@ -869,8 +890,11 @@ impl TrackedMasternodes {
                 .as_ref()
                 .map(|r| r.operator_public_key));
         if let Some(operator_key) = operator_key {
-            let operator_id = Identifier::create_operator_identifier(&display, &operator_key);
-            match Identity::fetch(self.sdk.as_ref(), operator_id).await {
+            match first_operator_identity(operator_identity_ids(&display, &operator_key), |id| {
+                Identity::fetch(self.sdk.as_ref(), id)
+            })
+            .await
+            {
                 Ok(Some(identity)) => {
                     let mut platform = snapshot.platform.clone().unwrap_or_default();
                     platform.operator_payout_key_hash = identity
@@ -1384,6 +1408,78 @@ mod tests {
             .cloned()
             .expect("both passes persisted the set");
         assert_eq!(persisted, vec![live]);
+    }
+
+    fn bare_identity(id: Identifier) -> Identity {
+        use dpp::identity::v0::IdentityV0;
+        IdentityV0 {
+            id,
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    /// The operator identity id derived from the listed key bytes, then the
+    /// one derived from the same key's legacy-scheme bytes.
+    fn operator_candidates() -> (Identifier, Identifier) {
+        (Identifier::from([1u8; 32]), Identifier::from([2u8; 32]))
+    }
+
+    /// Run the operator identity lookup over `[listed, legacy]`, answering
+    /// each fetch with `answer`. Returns the id of the identity it settled
+    /// on (or its error) and every id it requested, in order.
+    async fn lookup_operator_identity(
+        answer: impl Fn(Identifier) -> Result<Option<Identity>, String>,
+    ) -> (Result<Option<Identifier>, String>, Vec<Identifier>) {
+        let (listed, legacy) = operator_candidates();
+        let mut requested = Vec::new();
+        let found = first_operator_identity([listed, legacy], |id| {
+            requested.push(id);
+            std::future::ready(answer(id))
+        })
+        .await;
+        (found.map(|identity| identity.map(|i| i.id())), requested)
+    }
+
+    /// A node whose operator key Core re-encodes has no identity under the
+    /// listed bytes; its identity lives under the legacy-scheme id.
+    #[tokio::test]
+    async fn operator_identity_lookup_falls_back_to_the_legacy_id_when_the_listed_one_is_missing() {
+        let (listed, legacy) = operator_candidates();
+        let (found, requested) =
+            lookup_operator_identity(|id| Ok((id == legacy).then(|| bare_identity(id)))).await;
+        assert_eq!(requested, vec![listed, legacy]);
+        assert_eq!(found, Ok(Some(legacy)));
+    }
+
+    /// An identity under the listed bytes is the current one: the legacy id
+    /// is never requested, even when an identity exists there too.
+    #[tokio::test]
+    async fn operator_identity_lookup_stops_at_the_first_identity_found() {
+        let (listed, _) = operator_candidates();
+        let (found, requested) = lookup_operator_identity(|id| Ok(Some(bare_identity(id)))).await;
+        assert_eq!(requested, vec![listed]);
+        assert_eq!(found, Ok(Some(listed)));
+    }
+
+    /// A failed fetch of the listed id is reported, not papered over with
+    /// the identity under the legacy id: that one may be stale while the
+    /// current one was merely unreadable.
+    #[tokio::test]
+    async fn operator_identity_lookup_returns_a_fetch_error_without_trying_the_next_id() {
+        let (listed, _) = operator_candidates();
+        let (found, requested) = lookup_operator_identity(|id| {
+            if id == listed {
+                Err("listed id unreadable".to_string())
+            } else {
+                Ok(Some(bare_identity(id)))
+            }
+        })
+        .await;
+        assert_eq!(requested, vec![listed]);
+        assert_eq!(found, Err("listed id unreadable".to_string()));
     }
 
     #[test]
