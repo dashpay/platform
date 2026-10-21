@@ -1766,6 +1766,7 @@ mod fixtures {
                         amount,
                         &mut None,
                         None,
+                        &mut None,
                         platform_version,
                     )
                     .expect("expected the listing escrow operations"),
