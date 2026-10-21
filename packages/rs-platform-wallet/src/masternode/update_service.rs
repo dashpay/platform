@@ -16,6 +16,7 @@
 //! follows Dash Core v24's rules (see [`prepare_update_service_placeholder`]).
 
 use dashcore::blockdata::script::ScriptBuf;
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::blockdata::transaction::special_transaction::provider_update_service::{
     ProTxVersion, ProviderUpdateServicePayload,
@@ -37,6 +38,7 @@ use dashcore::{Address as DashAddress, Network, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use zeroize::Zeroizing;
 
@@ -121,7 +123,7 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         .masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
-    let (entry, v24_active) = update_service_target(&entries, &params.pro_tx_hash)?;
+    let (entry, list_shows_v24) = update_service_target(&entries, &params.pro_tx_hash)?;
 
     verify_operator_secret(entry.operator_public_key.as_ref(), &operator_secret)?;
 
@@ -132,21 +134,30 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         wallet.network(),
     )?;
 
-    let placeholder = prepare_update_service_placeholder(
-        entry,
-        wallet.network(),
-        v24_active,
-        params.platform_p2p_port,
-        script_payout,
-    )?;
+    let placeholder = update_service_placeholder(
+        list_shows_v24,
+        |v24_active| {
+            prepare_update_service_placeholder(
+                entry,
+                wallet.network(),
+                v24_active,
+                params.platform_p2p_port,
+                script_payout.clone(),
+            )
+        },
+        spv.latest_coinbase(),
+    )
+    .await?;
 
     build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
 }
 
 /// The list entry for `pro_tx_hash` (wire order) and whether the list shows
 /// that the V24 hard fork is active. Version-3 entries exist only once V24
-/// is active, so any one of them proves it; until the first one appears the
-/// list reads as pre-V24.
+/// is active, so any one of them proves it. Their absence proves nothing:
+/// Core moves an entry to version 3 only when a version-3 provider
+/// transaction for it is mined, so right after activation every entry is
+/// still legacy (see [`update_service_placeholder`]).
 pub(crate) fn update_service_target<'a>(
     entries: &'a [MasternodeListEntry],
     pro_tx_hash: &[u8; 32],
@@ -160,10 +171,78 @@ pub(crate) fn update_service_target<'a>(
                 display_hex(pro_tx_hash)
             ))
         })?;
-    let v24_active = entries
+    let list_shows_v24 = entries
         .iter()
         .any(|entry| entry.version >= ProTxVersion::ExtAddr as u16);
-    Ok((entry, v24_active))
+    Ok((entry, list_shows_v24))
+}
+
+/// The lowest coinbase payload version Dash Core accepts while
+/// DEPLOYMENT_V24 is active; before it Core refuses this version
+/// (`CheckCbTx`).
+const V24_COINBASE_PAYLOAD_VERSION: u16 = 4;
+
+/// Whether Core refuses `payload` once V24 is active: an evonode service
+/// update below version 3 (`bad-protx-version-disallowed`).
+fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
+    payload.mn_type == Some(ProviderMasternodeType::HighPerformance as u16)
+        && payload.version < ProTxVersion::ExtAddr as u16
+}
+
+/// The placeholder for the V24 state Core will check it against.
+///
+/// Once V24 is active Core refuses an evonode service update below version
+/// 3, while before it Core refuses version 3, so a wrong guess fails on one
+/// side of the fork. Core rejects either with a consensus error and
+/// discourages every peer that relays it, and peer-to-peer broadcast reports
+/// no rejection, so the version must be right before anything is sent.
+///
+/// `build` makes the placeholder for a given V24 state. It runs first with
+/// the list's view (`list_shows_v24`), which refuses a request missing its
+/// P2P port or with nothing to re-assert before the coinbase is read. Only
+/// when the result is a payload Core refuses after V24 is `latest_coinbase`
+/// awaited: the coinbase payload of the highest block whose masternode list
+/// diff the SPV client applied with one.
+/// Core requires coinbase payload version 4 or later exactly while V24 is
+/// active, so such a version rebuilds the placeholder for V24 and a lower one
+/// keeps it. A regular masternode's or a version-3 entry's payload is the
+/// same on both sides, so for those the coinbase is never read.
+///
+/// No coinbase leaves V24 unknown and fails the build with a retryable
+/// [`PlatformWalletError::TransactionBuild`]. The SPV client keeps the
+/// coinbase in memory only, so after a restart an evonode update can be
+/// built only once the session's first masternode list diff has arrived.
+/// Right after V24 activates, until a diff for a block past activation
+/// arrives, the coinbase still reads as pre-V24 and the version-2 payload
+/// built then is refused; a retry builds version 3.
+///
+/// The pinned dash-spv does not authenticate the coinbase: it checks neither
+/// the diff's merkle proof of the coinbase transaction nor the payload's
+/// merkle roots, so the peer that served the diff chooses the version. A
+/// lying peer can only get this transaction refused and the wallet
+/// disconnected by the peers that relay it; no funds are at risk. A dash-spv
+/// that keeps only coinbases verified against their block removes this
+/// caveat.
+async fn update_service_placeholder(
+    list_shows_v24: bool,
+    build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let placeholder = build(list_shows_v24)?;
+    if !refused_after_v24(&placeholder) {
+        return Ok(placeholder);
+    }
+    let coinbase = latest_coinbase.await.ok_or_else(|| {
+        PlatformWalletError::TransactionBuild(
+            "cannot tell whether Dash Core's V24 fork is active (the SPV client has no \
+             coinbase from a masternode list diff yet); try again once it has synced"
+                .to_string(),
+        )
+    })?;
+    if coinbase.version >= V24_COINBASE_PAYLOAD_VERSION {
+        return build(true);
+    }
+    Ok(placeholder)
 }
 
 /// The `operatorReward` (basis points) the masternode was registered with,
@@ -629,6 +708,9 @@ mod tests {
     };
     use dashcore::bls_sig_utils::BLSPublicKey;
     use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
+    use dashcore::hash_types::{
+        MerkleRootAssetUnlocks, MerkleRootMasternodeList, MerkleRootQuorums,
+    };
     use dashcore::sml::masternode_list_entry::net_info::{
         Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
     };
@@ -765,7 +847,10 @@ mod tests {
 
         let pre_v24 = vec![legacy.clone(), operator_entry(0x33, false)];
         let (_, v24_active) = update_service_target(&pre_v24, &legacy_hash).expect("found");
-        assert!(!v24_active, "no version-3 entry, no V24");
+        assert!(
+            !v24_active,
+            "no version-3 entry: the list does not show V24"
+        );
 
         let mut display_order = [0u8; 32];
         display_order.copy_from_slice(&display);
@@ -1098,6 +1183,211 @@ mod tests {
         assert_eq!(
             base_payload_bytes(&placeholder).len() + 96,
             placeholder.size()
+        );
+    }
+
+    /// A coinbase payload of `version` as a masternode list diff carries it.
+    fn coinbase(version: u16) -> CoinbasePayload {
+        CoinbasePayload {
+            version,
+            height: 1,
+            merkle_root_masternode_list: MerkleRootMasternodeList::all_zeros(),
+            merkle_root_quorums: MerkleRootQuorums::all_zeros(),
+            best_cl_height: Some(0),
+            best_cl_signature: Some(BLSSignature::from([0u8; 96])),
+            asset_locked_amount: Some(0),
+            merkle_root_asset_unlocks: (version >= V24_COINBASE_PAYLOAD_VERSION)
+                .then(MerkleRootAssetUnlocks::all_zeros),
+        }
+    }
+
+    /// A coinbase the build must not read: the payload does not depend on
+    /// V24.
+    async fn coinbase_not_read() -> Option<CoinbasePayload> {
+        panic!("the coinbase must not be read for this payload")
+    }
+
+    /// The placeholder for `entry` as the wallet builds it for the list's
+    /// view of V24 and the SPV client's latest coinbase.
+    async fn placeholder_for(
+        entry: &MasternodeListEntry,
+        list_shows_v24: bool,
+        platform_p2p_port: Option<u16>,
+        latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+    ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+        update_service_placeholder(
+            list_shows_v24,
+            |v24_active| {
+                prepare_update_service_placeholder(
+                    entry,
+                    Network::Devnet,
+                    v24_active,
+                    platform_p2p_port,
+                    ScriptBuf::new(),
+                )
+            },
+            latest_coinbase,
+        )
+        .await
+    }
+
+    /// A list entry turns version 3 only when a version-3 ProRegTx or
+    /// ProUpServTx for it is mined, so right after V24 activates every entry
+    /// is still legacy, while Core already refuses an evonode service update
+    /// below version 3 (`bad-protx-version-disallowed`). The coinbase shows
+    /// V24 then, so reviving a banned legacy evonode must build the
+    /// version-3 payload Core accepts.
+    #[tokio::test]
+    async fn should_revive_a_legacy_evonode_at_version_3_after_v24_before_any_v3_entry_exists() {
+        let target = legacy_core_evonode_entry("68.67.122.237:20001");
+        let entries = vec![
+            target.clone(),
+            operator_entry(0x11, false),
+            operator_entry(0x22, true),
+        ];
+        let (entry, list_shows_v24) =
+            update_service_target(&entries, &target.pro_reg_tx_hash.to_byte_array())
+                .expect("found");
+        assert!(!list_shows_v24, "every entry is still legacy");
+
+        let placeholder = placeholder_for(entry, list_shows_v24, Some(26656), async {
+            Some(coinbase(V24_COINBASE_PAYLOAD_VERSION))
+        })
+        .await
+        .expect("a legacy evonode is converted");
+        assert_matches_core_v3_vector(placeholder);
+    }
+
+    /// The version-3 payload is checked again once the coinbase shows V24:
+    /// a mainnet conversion takes only port 26656, and another port is
+    /// refused rather than sent at version 2, which Core would refuse too.
+    #[tokio::test]
+    async fn should_refuse_a_mainnet_conversion_off_port_26656_once_the_coinbase_shows_v24() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let err = update_service_placeholder(
+            false,
+            |v24_active| {
+                prepare_update_service_placeholder(
+                    &entry,
+                    Network::Mainnet,
+                    v24_active,
+                    Some(26657),
+                    ScriptBuf::new(),
+                )
+            },
+            async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) },
+        )
+        .await
+        .expect_err("another port is refused on mainnet");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidParameter(message) if message.contains("26656")),
+            "got {err:?}"
+        );
+    }
+
+    /// Before V24 the coinbase payload is below version 4 and Core refuses
+    /// version 3, so a legacy evonode keeps its version-2 payload.
+    #[tokio::test]
+    async fn should_keep_version_2_for_a_legacy_evonode_while_the_coinbase_shows_no_v24() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let placeholder = placeholder_for(&entry, false, Some(26656), async {
+            Some(coinbase(V24_COINBASE_PAYLOAD_VERSION - 1))
+        })
+        .await
+        .expect("version-2 evonode placeholder");
+        assert_eq!(placeholder.version, ProTxVersion::BasicBLS as u16);
+        assert_eq!(placeholder.platform_p2p_port, Some(26656));
+    }
+
+    /// Core requires coinbase payload version 4 or later exactly while V24
+    /// is active, so a legacy evonode's payload follows the coinbase: the
+    /// version-3 coinbase of the last block before the fork keeps version 2,
+    /// and version 4, or any later version, builds version 3.
+    #[tokio::test]
+    async fn should_read_v24_from_the_coinbase_payload_version() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        for (coinbase_version, payload_version) in [
+            (V24_COINBASE_PAYLOAD_VERSION - 1, ProTxVersion::BasicBLS),
+            (V24_COINBASE_PAYLOAD_VERSION, ProTxVersion::ExtAddr),
+            (V24_COINBASE_PAYLOAD_VERSION + 1, ProTxVersion::ExtAddr),
+        ] {
+            let placeholder = placeholder_for(&entry, false, Some(26656), async {
+                Some(coinbase(coinbase_version))
+            })
+            .await
+            .expect("evonode placeholder");
+            assert_eq!(
+                placeholder.version, payload_version as u16,
+                "coinbase payload version {coinbase_version}"
+            );
+        }
+    }
+
+    /// Without a coinbase, as after a restart before the session's first
+    /// masternode list diff, either payload may be refused by Core, so
+    /// nothing is built and the caller is told to retry.
+    #[tokio::test]
+    async fn should_refuse_retryably_while_the_spv_client_has_no_coinbase() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let err = placeholder_for(&entry, false, Some(26656), async { None })
+            .await
+            .expect_err("V24 is unknown without a coinbase");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message)
+                if message.contains("cannot tell whether Dash Core's V24 fork is active")
+                    && message.contains("try again")),
+            "got {err:?}"
+        );
+    }
+
+    /// Only an evonode payload below version 3 changes with V24, so only
+    /// then is the coinbase read: regular and version-3 unbans never depend
+    /// on it, a version-3 neighbour already proves V24, and a request the
+    /// wallet refuses anyway fails on its own error first.
+    #[tokio::test]
+    async fn should_read_the_coinbase_only_for_a_payload_core_refuses_after_v24() {
+        let legacy_evonode = legacy_core_evonode_entry("68.67.122.237:20001");
+        let legacy_regular = operator_entry(0x11, false);
+        let v3_regular = MasternodeListEntry {
+            version: 3,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![NetInfoEntry::Service {
+                        network: Bip155Network::Ipv4,
+                        addr: vec![10, 0, 0, 0x11],
+                        port: 9999,
+                    }],
+                )],
+            }),
+            ..legacy_regular.clone()
+        };
+
+        let regular = placeholder_for(&legacy_regular, false, None, coinbase_not_read())
+            .await
+            .expect("a regular masternode needs no coinbase");
+        assert_eq!(regular.version, ProTxVersion::BasicBLS as u16);
+        let v3 = placeholder_for(&v3_regular, true, None, coinbase_not_read())
+            .await
+            .expect("a version-3 regular masternode needs no coinbase");
+        assert_eq!(v3.version, ProTxVersion::ExtAddr as u16);
+        let v3_evonode = placeholder_for(&core_v3_evonode_entry(), true, None, coinbase_not_read())
+            .await
+            .expect("a version-3 evonode needs no coinbase");
+        assert_matches_core_v3_vector(v3_evonode);
+        let shown_by_list =
+            placeholder_for(&legacy_evonode, true, Some(26656), coinbase_not_read())
+                .await
+                .expect("a version-3 neighbour shows V24");
+        assert_matches_core_v3_vector(shown_by_list);
+
+        let err = placeholder_for(&legacy_evonode, false, None, coinbase_not_read())
+            .await
+            .expect_err("an evonode request without its P2P port is refused");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidParameter(message) if message.contains("requires the platform P2P port")),
+            "got {err:?}"
         );
     }
 
