@@ -27,7 +27,7 @@ use crate::quorum_refresh::panic_message;
 use crate::quorum_refresh::sleep;
 use dash_context_provider::ContextProviderError;
 use dash_core_proof::bootstrap::{self, RecordKind};
-use dash_core_proof::{parse_commitment, rpc_hex, Error as ProofError, State};
+use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -72,9 +72,6 @@ const MAX_CANNOT_SERVE: u32 = 2;
 /// How long a fetch waits before trying again to take a place to prove its
 /// quorum.
 const PLACE_RETRY: Duration = Duration::from_millis(250);
-/// How `bootstrap::verify` reports a target below the minimum height, which
-/// it checks before any signature.
-const STALE_TARGET: ProofError = ProofError("stale target");
 /// How much of an error response's body goes into the failure reason.
 const MAX_REASON_BODY_CHARS: usize = 120;
 
@@ -774,12 +771,12 @@ impl ProofFetches {
         // height costs no BLS work. Only this source is affected if it lies.
         let verified = match bootstrap::verify(body, &ask.checkpoint, needed) {
             Ok(verified) => verified,
-            Err(error) if error == STALE_TARGET && ask.height == 0 => {
+            Err(error) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
                 return Verdict::BeyondTip(format!(
                     "its latest ChainLock is below the core height {needed} that {height} needs"
                 ));
             }
-            Err(error) if error == STALE_TARGET => {
+            Err(error) if error.kind() == ErrorKind::StaleTarget => {
                 return Verdict::CannotServe(format!("proof ends below core height {needed}"));
             }
             Err(error) => return Verdict::SourceFailed(format!("invalid proof: {error}")),
