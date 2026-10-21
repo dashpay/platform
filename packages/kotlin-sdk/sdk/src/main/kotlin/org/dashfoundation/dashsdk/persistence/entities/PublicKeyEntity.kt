@@ -101,7 +101,8 @@ data class PublicKeyEntity(
      * clears the breadcrumb only when the rejecting wallet is this one: the
      * same coordinates under another wallet's seed are another derivation.
      * Null when the row carries no breadcrumb. Added in schema 16, backfilled
-     * from the identity's wallet for rows that already carried one.
+     * from the identity's wallet (the best attribution available) for rows
+     * that already carried one.
      */
     val derivationWalletId: ByteArray? = null,
 )

@@ -10800,10 +10800,6 @@ private func persistContactsCallback(
     return 0
 }
 
-/// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the
-/// identity-persistence callbacks where Rust hands over `[u8; 32]`
-/// fields as `(UInt8, UInt8, ...)` tuples.
-@inline(__always)
 /// The rejected `[identity_index, key_index]` pairs a key entry carries.
 private func rejectedPairs(
     _ e: IdentityKeyEntryFFI
@@ -10815,6 +10811,10 @@ private func rejectedPairs(
     return stride(from: 0, to: flat.count, by: 2).map { (flat[$0], flat[$0 + 1]) }
 }
 
+/// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the
+/// identity-persistence callbacks where Rust hands over `[u8; 32]`
+/// fields as `(UInt8, UInt8, ...)` tuples.
+@inline(__always)
 private func dataFromTuple32(_ tuple: FFIByteTuple32) -> Data {
     var value = tuple
     return Swift.withUnsafeBytes(of: &value) { Data($0) }

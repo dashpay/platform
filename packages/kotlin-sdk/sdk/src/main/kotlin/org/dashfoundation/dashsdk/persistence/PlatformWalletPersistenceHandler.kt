@@ -4054,7 +4054,10 @@ class PlatformWalletPersistenceHandler(
             val identity = database.identityDao().getByIdentityId(identityIdData) ?: continue
             val networkRaw = network?.ffiValue
             if (networkRaw != null && identity.networkRaw != networkRaw) continue
-            val walletId = identity.walletId ?: continue
+            // The breadcrumb's own wallet: the identity may since have been
+            // re-associated with another wallet, whose seed is another
+            // derivation (legacy rows without one fall back to the identity's).
+            val walletId = row.derivationWalletId ?: identity.walletId ?: continue
             val pubkeyHex = row.publicKeyData.toHex()
             val usable = row.privateKeyKeychainIdentifier != null &&
                 try {

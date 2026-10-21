@@ -261,9 +261,9 @@ pub struct IdentityKeyEntryFFI {
     // mnemonic at the DIP-9 identity authentication path
     // `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
     // persist it locally. When either flag is false the entry gives no
-    // breadcrumb: `derivation_rejected_is_some` then says whether the client
-    // clears the one it holds when it names the rejected coordinates, or
-    // keeps it (unknown origin).
+    // breadcrumb: `rejected_derivations_ptr` / `_len` then say whether the
+    // client clears the one it holds (it names one of the rejected
+    // coordinates) or keeps it (empty: unknown origin).
     pub wallet_id_is_some: bool,
     pub wallet_id: [u8; 32],
     pub derivation_indices_is_some: bool,

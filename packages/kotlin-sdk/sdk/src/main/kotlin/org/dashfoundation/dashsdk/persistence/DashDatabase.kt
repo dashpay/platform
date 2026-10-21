@@ -184,8 +184,8 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * nullable `public_keys.derivationWalletId` column, the wallet whose seed a
  * row's derivation breadcrumb belongs to, so a rejection by another wallet's
  * seed at the same coordinates does not clear it. Rows that already carried
- * a breadcrumb are backfilled with their identity's wallet, which is whose
- * derivation every breadcrumb written before this version was.
+ * a breadcrumb are backfilled with their identity's wallet, the best
+ * attribution available for a breadcrumb written before this version.
  */
 @Database(
     version = 16,
