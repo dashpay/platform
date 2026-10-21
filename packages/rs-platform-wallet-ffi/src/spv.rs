@@ -798,6 +798,15 @@ mod spv_start_registry_tests {
     /// the writer, the writer on the stop, the stop on the start. The check
     /// reads the owner flag instead, so the start completes, the stop runs
     /// after it and the writer gets in.
+    ///
+    /// Each contender is established explicitly before the owner check runs:
+    /// the stop signals once it holds the registry's read guard (the lock
+    /// pattern of `platform_wallet_manager_spv_stop`, which keeps that guard
+    /// across its blocking stop), the writer's manager is built before its
+    /// insert is spawned so the thread goes straight for the write lock, and
+    /// the check waits until a fresh `try_read` of the registry is refused
+    /// while that known reader is still held — which, with a reader present,
+    /// only a queued writer causes.
     #[test]
     fn a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop() {
         let storage = std::env::temp_dir().join(format!(
@@ -811,10 +820,9 @@ mod spv_start_registry_tests {
             .with_restrict_to_configured_peers(true);
 
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
-        let (threads_tx, threads_rx) = mpsc::channel::<(
-            std::thread::JoinHandle<(PlatformWalletFFIResultCode, String)>,
-            std::thread::JoinHandle<Handle>,
-        )>();
+        type StopThread = std::thread::JoinHandle<Option<Result<(), String>>>;
+        let (threads_tx, threads_rx) =
+            mpsc::channel::<(StopThread, std::thread::JoinHandle<Handle>)>();
 
         let (result_tx, result_rx) = mpsc::channel();
         std::thread::spawn(move || {
@@ -822,27 +830,38 @@ mod spv_start_registry_tests {
                 code_and_message(start_spv_outside_registry(handle, |spv, still_owned| {
                     block_on_worker(async move {
                         spv.start_and_spawn(config, move || {
-                            // Under the shutdown lock. The native stop takes the
-                            // registry's read guard and blocks on that lock.
-                            let stop = std::thread::spawn(move || {
-                                code_and_message(unsafe {
-                                    platform_wallet_manager_spv_stop(handle)
+                            // Under the shutdown lock. The native stop's lock
+                            // pattern: the registry's read guard, held across a
+                            // blocking stop that now waits for the shutdown lock.
+                            let (guard_held_tx, guard_held_rx) = mpsc::channel::<()>();
+                            let stop: StopThread = std::thread::spawn(move || {
+                                PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                                    let spv = manager.spv_arc();
+                                    guard_held_tx.send(()).expect("test observes the guard");
+                                    block_on_worker(async move { spv.stop().await })
+                                        .map_err(|error| error.to_string())
                                 })
                             });
+                            guard_held_rx
+                                .recv_timeout(WAIT)
+                                .expect("the stop holds the registry's read guard");
+
+                            // A registry writer, built first so its thread goes
+                            // straight for the write lock and queues behind the
+                            // stop's guard.
+                            let other = mock_manager();
+                            let writer = std::thread::spawn(move || {
+                                PLATFORM_WALLET_MANAGER_STORAGE.insert(other)
+                            });
                             let deadline = std::time::Instant::now() + WAIT;
-                            while !PLATFORM_WALLET_MANAGER_STORAGE.is_read_locked() {
+                            while !PLATFORM_WALLET_MANAGER_STORAGE.try_read_refused() {
                                 assert!(
                                     std::time::Instant::now() < deadline,
-                                    "the stop never took the registry"
+                                    "the writer never queued behind the stop's guard"
                                 );
                                 std::thread::sleep(Duration::from_millis(5));
                             }
-                            // A registry writer queued behind that guard; from now
-                            // on parking_lot parks every new reader behind it.
-                            let writer = std::thread::spawn(|| {
-                                PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager())
-                            });
-                            std::thread::sleep(Duration::from_millis(100));
+
                             threads_tx
                                 .send((stop, writer))
                                 .expect("test collects the threads");
@@ -860,11 +879,10 @@ mod spv_start_registry_tests {
         assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
 
         let (stop, writer) = threads_rx.recv_timeout(WAIT).expect("the owner check ran");
-        let (stop_code, stop_message) = stop.join().expect("stop thread");
         assert_eq!(
-            stop_code,
-            PlatformWalletFFIResultCode::Success,
-            "{stop_message}"
+            stop.join().expect("stop thread"),
+            Some(Ok(())),
+            "the stop runs once the start released the shutdown lock"
         );
         let other = writer.join().expect("writer thread");
 

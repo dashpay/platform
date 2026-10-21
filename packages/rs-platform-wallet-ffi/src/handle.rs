@@ -63,11 +63,13 @@ impl<T> HandleStorage<T> {
         self.items.write().remove(&handle)
     }
 
-    /// Test probe: whether readers currently hold the registry (and no
-    /// writer does), e.g. an FFI call blocking on async work under its guard.
+    /// Test probe: whether a fresh shared read of the registry would be
+    /// refused right now. With a reader holding the registry, that is the
+    /// case exactly while a writer is queued behind it (parking_lot prefers
+    /// the queued writer and parks every new reader).
     #[cfg(test)]
-    pub(crate) fn is_read_locked(&self) -> bool {
-        self.items.is_locked() && !self.items.is_locked_exclusive()
+    pub(crate) fn try_read_refused(&self) -> bool {
+        self.items.try_read().is_none()
     }
 
     pub fn with_item<F, R>(&self, handle: Handle, f: F) -> Option<R>
