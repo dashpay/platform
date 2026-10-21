@@ -13,9 +13,9 @@ use dpp::dashcore::{sign_message, PublicKey};
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::secp256k1::{ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message};
 use dpp::serialization::PlatformMessageSignable;
 use dpp::ProtocolError;
+use secp256k1::{ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message};
 use vectors::{ECDSA_PUBLIC_KEY, TRANSFER_ECDSA_SIGNATURE, TRANSFER_HASH, TRANSFER_SIGNABLE};
 
 fn fixture() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
@@ -31,7 +31,7 @@ fn should_match_historical_verification_for_all_headers_and_scalar_boundaries() 
     let (data, signature, public_key) = fixture();
     let message =
         Message::from_digest(dpp::dashcore::hashes::sha256d::Hash::hash(&data).to_byte_array());
-    let raw_key = dpp::secp256k1::PublicKey::from_slice(&public_key).unwrap();
+    let raw_key = secp256k1::PublicKey::from_slice(&public_key).unwrap();
     let order =
         hex::decode("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141").unwrap();
     let mut signatures = vec![signature.clone()];
@@ -77,8 +77,8 @@ fn should_preserve_witness_fee_operations_for_recovery_and_multisig_search() {
         AddressWitnessVerificationOperations::for_p2pkh(data.len())
     );
 
-    let other = dpp::secp256k1::SecretKey::from_secret_bytes([2; 32]).unwrap();
-    let other_key = dpp::secp256k1::PublicKey::from_secret_key(&other).serialize();
+    let other = secp256k1::SecretKey::from_secret_bytes([2; 32]).unwrap();
+    let other_key = secp256k1::PublicKey::from_secret_key(&other).serialize();
     let mut script = vec![0x51, 33];
     script.extend_from_slice(&other_key);
     script.push(33);
@@ -351,4 +351,36 @@ fn should_use_core_identity_public_key_errors_and_preserve_encoding() {
             .to_string(),
         "unable to create pub key - key prefix invalid: 6"
     );
+}
+
+#[test]
+fn should_preserve_seeded_key_generation_and_rng_consumption() {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use secp256k1::rand::{rngs::StdRng as LegacyRng, SeedableRng as _};
+    let version = dpp::version::PlatformVersion::latest();
+    for seed in 0..64 {
+        for key_type in [
+            KeyType::ECDSA_SECP256K1,
+            KeyType::ECDSA_HASH160,
+            KeyType::BIP13_SCRIPT_HASH,
+        ] {
+            let mut actual_rng = StdRng::seed_from_u64(seed);
+            let mut expected_rng = actual_rng.clone();
+            let mut seed = [0u8; 32];
+            expected_rng.fill(&mut seed);
+            let secret = secp256k1::SecretKey::new(&mut LegacyRng::from_seed(seed));
+            let public = secp256k1::PublicKey::from_secret_key(&secret).serialize();
+            let expected_public = if key_type == KeyType::ECDSA_SECP256K1 {
+                public.to_vec()
+            } else {
+                hash160::Hash::hash(&public).to_byte_array().to_vec()
+            };
+            let (actual_public, actual_secret) = key_type
+                .random_public_and_private_key_data(&mut actual_rng, version)
+                .unwrap();
+            assert_eq!(actual_secret, secret.to_secret_bytes());
+            assert_eq!(actual_public, expected_public);
+            assert_eq!(actual_rng.gen::<[u8; 32]>(), expected_rng.gen::<[u8; 32]>());
+        }
+    }
 }

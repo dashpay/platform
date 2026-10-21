@@ -38,13 +38,13 @@ use dash_sdk::platform::Fetch;
 use dashcore::hashes::{hash160, Hash};
 use dashcore::{Network, PrivateKey};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecpSecretKey;
 use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use zeroize::Zeroizing;
 
 use super::list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
@@ -224,7 +224,7 @@ fn is_mainnet(network: Network) -> bool {
 /// only when below the group order; ed25519 accepts any 32 bytes as a seed.
 fn secret_candidates(bytes: &[u8; 32]) -> Vec<MasternodeLocatorInput> {
     let mut out = Vec::with_capacity(3);
-    if SecpSecretKey::from_secret_bytes(*bytes).is_ok() {
+    if SecpSecretKey::from_bytes(bytes).is_ok() {
         out.push(MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
             secret: Zeroizing::new(*bytes),
             compressed: true,
@@ -358,12 +358,12 @@ pub fn parse_locator_input(
 /// hash160 of the secp256k1 public key for `secret`, or `None` when the
 /// scalar is out of range.
 pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
-    let sk = SecpSecretKey::from_secret_bytes(*secret).ok()?;
-    let pk = SecpPublicKey::from_secret_key(&sk);
+    let sk = SecpSecretKey::from_bytes(secret).ok()?;
+    let pk = sk.public_key();
     let bytes: Vec<u8> = if compressed {
-        pk.serialize().to_vec()
+        pk.to_compressed().to_vec()
     } else {
-        pk.serialize_uncompressed().to_vec()
+        pk.to_uncompressed().to_vec()
     };
     Some(hash160::Hash::hash(&bytes).to_byte_array())
 }

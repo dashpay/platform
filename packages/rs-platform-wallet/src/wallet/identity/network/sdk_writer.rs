@@ -115,7 +115,7 @@ pub(crate) struct SendContactRequestParams<'a> {
     /// secret — the client-side equivalent of the old SdkSide key-id
     /// guard, so a recipient-key mismatch fails loudly instead of
     /// silently encrypting with the wrong secret.
-    pub expected_recipient_pubkey: dpp::secp256k1::PublicKey,
+    pub expected_recipient_pubkey: secp256k1::PublicKey,
     /// DashPay receiving-account xpub to share with the recipient, in the
     /// **69-byte DIP-15 compact form** (`parentFingerprint ‖ chainCode ‖
     /// pubKey`) — NOT `ExtendedPubKey::encode()`. The SDK validates len == 69
@@ -219,14 +219,13 @@ impl SdkWriter {
         // `F`/`Fut` (SdkSide) type params are unused here, so a never-called
         // `fn` placeholder satisfies their bounds.
         // Aliased so the annotation stays under the type-complexity lint.
-        type UnusedSdkSideEcdh = fn(
-            &IdentityPublicKey,
-            u32,
-        ) -> std::future::Ready<
-            Result<dpp::secp256k1::SecretKey, dash_sdk::Error>,
-        >;
+        type UnusedSdkSideEcdh =
+            fn(
+                &IdentityPublicKey,
+                u32,
+            ) -> std::future::Ready<Result<secp256k1::SecretKey, dash_sdk::Error>>;
         let ecdh_provider: EcdhProvider<UnusedSdkSideEcdh, _, _, _> = EcdhProvider::ClientSide {
-            get_shared_secret: move |peer: &dpp::secp256k1::PublicKey| {
+            get_shared_secret: move |peer: &secp256k1::PublicKey| {
                 let peer_matches = *peer == expected_recipient_pubkey;
                 async move {
                     if !peer_matches {

@@ -8,10 +8,10 @@ use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
+use dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dashcore::hashes::Hash;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
-use secp256k1::SecretKey;
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -82,13 +82,13 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 ) -> Result<bool, ProtocolError> {
     match key_type {
         KeyType::ECDSA_SECP256K1 => {
-            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
+            let secret_key = match EcdsaSecretKey::from_bytes(private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
-            let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+            let public_key = secret_key.public_key();
 
-            Ok(public_key.serialize().as_slice() == data.as_slice())
+            Ok(public_key.to_compressed().as_slice() == data.as_slice())
         }
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
@@ -108,13 +108,16 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
             ));
         }
         KeyType::ECDSA_HASH160 => {
-            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
+            let secret_key = match EcdsaSecretKey::from_bytes(private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
-            let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+            let public_key = secret_key.public_key();
 
-            Ok(ripemd160_sha256(public_key.serialize().as_slice()).as_slice() == data.as_slice())
+            Ok(
+                ripemd160_sha256(public_key.to_compressed().as_slice()).as_slice()
+                    == data.as_slice(),
+            )
         }
         KeyType::EDDSA_25519_HASH160 => {
             #[cfg(feature = "ed25519-dalek")]

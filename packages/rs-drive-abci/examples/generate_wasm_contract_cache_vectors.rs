@@ -9,6 +9,7 @@ use dapi_grpc::platform::v0::{
 use dpp::address_funds::AddressWitness;
 use dpp::block::block_info::BlockInfo;
 use dpp::bls::SecretKey;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dpp::dashcore::signer;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -21,7 +22,6 @@ use dpp::identity::{
     Identity, IdentityPublicKey, IdentityV0, KeyType, PartialIdentity, Purpose, SecurityLevel,
 };
 use dpp::platform_value::{platform_value, BinaryData, Value};
-use dpp::secp256k1;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
@@ -128,12 +128,12 @@ fn identity_key_with_seed(seed: u8) -> IdentityPublicKey {
         purpose: Purpose::AUTHENTICATION,
         security_level: SecurityLevel::CRITICAL,
         key_type: KeyType::ECDSA_SECP256K1,
-        data: secp256k1::PublicKey::from_secret_key(
-            &secp256k1::SecretKey::from_secret_bytes([seed; 32]).expect("identity secret"),
-        )
-        .serialize()
-        .to_vec()
-        .into(),
+        data: EcdsaSecretKey::from_bytes(&[seed; 32])
+            .expect("identity secret")
+            .public_key()
+            .to_compressed()
+            .to_vec()
+            .into(),
         ..Default::default()
     })
 }

@@ -16,12 +16,13 @@ use dpp::address_funds::{AddressWitness, OrchardAddress, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::blockdata::script::ScriptBuf;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dpp::dashcore::hashes::{sha256, Hash};
+use dpp::dashcore::key::rand::RngCore as EcdsaRngCore;
 use dpp::dashcore::PublicKey;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::AddressNonce;
-use dpp::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dpp::serialization::PlatformSerializable;
 use dpp::shielded::builder::OrchardProver;
 use dpp::shielded::SerializedAction;
@@ -61,14 +62,14 @@ pub use dpp::ProtocolError as TestProtocolError;
 /// A P2PKH key entry containing the secret key only
 #[derive(Debug, Clone)]
 pub struct P2pkhKeyEntry {
-    pub secret_key: RawSecretKey,
+    pub secret_key: EcdsaSecretKey,
 }
 
 /// A P2SH multisig entry containing multiple secret keys and the redeem script
 #[derive(Debug, Clone)]
 pub struct P2shMultisigEntry {
     pub threshold: u8,
-    pub secret_keys: Vec<RawSecretKey>,
+    pub secret_keys: Vec<EcdsaSecretKey>,
     pub redeem_script: Vec<u8>,
 }
 
@@ -84,19 +85,19 @@ impl TestAddressSigner {
         Self::default()
     }
 
-    pub fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
+    pub fn create_keypair(seed: [u8; 32]) -> (EcdsaSecretKey, PublicKey) {
         // Hash the seed to ensure it's always a valid secret key
         // (non-zero, less than curve order). Raw seeds like [0u8; 32] are invalid.
         let hashed_seed = sha256::Hash::hash(&seed);
-        let secret_key = RawSecretKey::from_secret_bytes(*hashed_seed.as_byte_array())
-            .expect("valid secret key");
-        let raw_public_key = RawPublicKey::from_secret_key(&secret_key);
+        let secret_key =
+            EcdsaSecretKey::from_bytes(hashed_seed.as_byte_array()).expect("valid secret key");
+        let raw_public_key = secret_key.public_key();
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)
     }
 
-    pub fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-        dpp::dashcore::signer::sign(data, secret_key.as_secret_bytes())
+    pub fn sign_data(data: &[u8], secret_key: &EcdsaSecretKey) -> Vec<u8> {
+        dpp::dashcore::signer::sign(data, secret_key.to_bytes().as_ref())
             .expect("signing should succeed")
             .to_vec()
     }
@@ -124,7 +125,7 @@ impl TestAddressSigner {
 
     pub fn add_p2sh_multisig(&mut self, threshold: u8, seeds: &[[u8; 32]]) -> PlatformAddress {
         let keypairs: Vec<_> = seeds.iter().map(|s| Self::create_keypair(*s)).collect();
-        let secret_keys: Vec<_> = keypairs.iter().map(|(sk, _)| *sk).collect();
+        let secret_keys: Vec<_> = keypairs.iter().map(|(sk, _)| sk.clone()).collect();
         let public_keys: Vec<_> = keypairs.iter().map(|(_, pk)| *pk).collect();
 
         let redeem_script = Self::create_multisig_script(threshold, &public_keys);
@@ -150,7 +151,7 @@ impl TestAddressSigner {
             PlatformAddress::P2pkh(hash) => self
                 .p2pkh_keys
                 .get(hash)
-                .map(|entry| entry.secret_key.to_secret_bytes()),
+                .map(|entry| *entry.secret_key.to_bytes()),
             _ => None,
         }
     }
@@ -953,4 +954,15 @@ fn serialize_bundle_actions(
             }
         })
         .collect()
+}
+
+/// Draws the same seeded scalar as the historical secp256k1 keypair constructor.
+pub fn random_ecdsa_secret_key(rng: &mut impl EcdsaRngCore) -> EcdsaSecretKey {
+    loop {
+        let mut bytes = [0; 32];
+        rng.fill_bytes(&mut bytes);
+        if let Ok(key) = EcdsaSecretKey::from_bytes(&bytes) {
+            return key;
+        }
+    }
 }
