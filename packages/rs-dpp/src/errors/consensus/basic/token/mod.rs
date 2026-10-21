@@ -35,3 +35,7 @@ pub use missing_default_localization::*;
 pub use token_note_only_allowed_on_proposer_error::*;
 pub use token_pricing_schedule_empty_error::*;
 pub use token_transfer_to_ourselves_error::*;
+mod invalid_token_order_price_error;
+pub use invalid_token_order_price_error::*;
+mod invalid_token_order_fill_range_error;
+pub use invalid_token_order_fill_range_error::*;

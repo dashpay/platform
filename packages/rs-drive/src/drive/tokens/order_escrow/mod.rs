@@ -7,6 +7,7 @@
 
 mod credits;
 mod estimated_costs;
+mod fetch_order;
 mod insert_trees;
 mod tokens;
 

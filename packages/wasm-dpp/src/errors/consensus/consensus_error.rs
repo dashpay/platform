@@ -6,6 +6,12 @@ use crate::errors::consensus::basic::{
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
+use dpp::consensus::basic::token::{InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError};
+use dpp::consensus::state::token::{
+    TokenNotTradeableError, TokenOrderExpiredError, TokenOrderFillAmountError,
+    TokenOrderNotFoundError, TokenOrderNotOwnedError, TokenOrderPriceLimitError,
+    TokenOrderSelfFillError, TokenOrderValueTooLargeError,
+};
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
 use crate::errors::consensus::basic::identity::{
@@ -526,6 +532,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::TokenNotTransferableError(e) => {
             generic_consensus_error!(TokenNotTransferableError, e).into()
+        }
+        StateError::TokenNotTradeableError(e) => {
+            generic_consensus_error!(TokenNotTradeableError, e).into()
+        }
+        StateError::TokenOrderNotFoundError(e) => {
+            generic_consensus_error!(TokenOrderNotFoundError, e).into()
+        }
+        StateError::TokenOrderExpiredError(e) => {
+            generic_consensus_error!(TokenOrderExpiredError, e).into()
+        }
+        StateError::TokenOrderFillAmountError(e) => {
+            generic_consensus_error!(TokenOrderFillAmountError, e).into()
+        }
+        StateError::TokenOrderPriceLimitError(e) => {
+            generic_consensus_error!(TokenOrderPriceLimitError, e).into()
+        }
+        StateError::TokenOrderNotOwnedError(e) => {
+            generic_consensus_error!(TokenOrderNotOwnedError, e).into()
+        }
+        StateError::TokenOrderSelfFillError(e) => {
+            generic_consensus_error!(TokenOrderSelfFillError, e).into()
+        }
+        StateError::TokenOrderValueTooLargeError(e) => {
+            generic_consensus_error!(TokenOrderValueTooLargeError, e).into()
         }
         StateError::IdentityInTokenConfigurationNotFoundError(e) => {
             generic_consensus_error!(IdentityInTokenConfigurationNotFoundError, e).into()
@@ -1423,6 +1453,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::NonTransferableTokenTradeableError(e) => {
             generic_consensus_error!(NonTransferableTokenTradeableError, e).into()
+        }
+        BasicError::InvalidTokenOrderPriceError(e) => {
+            generic_consensus_error!(InvalidTokenOrderPriceError, e).into()
+        }
+        BasicError::InvalidTokenOrderFillRangeError(e) => {
+            generic_consensus_error!(InvalidTokenOrderFillRangeError, e).into()
         }
     }
 }

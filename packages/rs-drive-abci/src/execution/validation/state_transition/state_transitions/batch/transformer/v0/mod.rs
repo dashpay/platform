@@ -110,6 +110,9 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::TokenCancelOrderTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::TokenFillAskTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::TokenPlaceAskTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
@@ -839,6 +842,39 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             }
             TokenTransition::ShieldedTransfer(token_shielded_transfer) => {
                 let (batched_action, fee_result) = TokenShieldedTransferTransitionAction::try_from_borrowed_token_shielded_transfer_transition_with_contract_lookup(drive, owner_id, token_shielded_transfer, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            // The token marketplace arms below are refused before they are reached on protocol
+            // versions 1 through 14: the batch's `is_allowed` gate rejects each order kind unpaid
+            // until protocol version 15.
+            TokenTransition::PlaceAsk(token_place_ask) => {
+                let (batched_action, fee_result) = TokenPlaceAskTransitionAction::try_from_borrowed_token_place_ask_transition_with_contract_lookup(drive, owner_id, token_place_ask, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::FillAsk(token_fill_ask) => {
+                let (batched_action, fee_result) = TokenFillAskTransitionAction::try_from_borrowed_token_fill_ask_transition_with_contract_lookup(drive, owner_id, token_fill_ask, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::CancelOrder(token_cancel_order) => {
+                let (batched_action, fee_result) = TokenCancelOrderTransitionAction::try_from_borrowed_token_cancel_order_transition_with_contract_lookup(drive, owner_id, token_cancel_order, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 

@@ -13,6 +13,8 @@ pub mod info;
 pub mod status;
 pub mod token_amount_on_contract_token;
 pub mod token_event;
+pub mod token_order;
+pub mod token_order_side;
 pub mod token_payment_info;
 pub mod token_pricing_schedule;
 

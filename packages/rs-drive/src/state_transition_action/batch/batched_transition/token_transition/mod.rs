@@ -50,6 +50,15 @@ pub mod token_claim_to_pool_transition_action;
 /// Direct purchase paid into the token shielded pool
 pub mod token_direct_purchase_to_pool_transition_action;
 
+/// A listing of a tradeable token (the token marketplace)
+pub mod token_place_ask_transition_action;
+
+/// A purchase from an open listing (the token marketplace)
+pub mod token_fill_ask_transition_action;
+
+/// A maker cancelling an open order (the token marketplace)
+pub mod token_cancel_order_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -91,6 +100,9 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::{TokenBurnFromPoolTransitionAction, TokenBurnFromPoolTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::{TokenClaimToPoolTransitionAction, TokenClaimToPoolTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::{TokenDirectPurchaseToPoolTransitionAction, TokenDirectPurchaseToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::{TokenPlaceAskTransitionAction, TokenPlaceAskTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::{TokenFillAskTransitionAction, TokenFillAskTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::{TokenCancelOrderTransitionAction, TokenCancelOrderTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -131,6 +143,12 @@ pub enum TokenTransitionAction {
     ClaimToPoolAction(TokenClaimToPoolTransitionAction),
     /// direct purchase paid into the token shielded pool
     DirectPurchaseToPoolAction(TokenDirectPurchaseToPoolTransitionAction),
+    /// lists a tradeable token for sale (the token marketplace)
+    PlaceAskAction(TokenPlaceAskTransitionAction),
+    /// buys from an open listing (the token marketplace)
+    FillAskAction(TokenFillAskTransitionAction),
+    /// cancels an open order (the token marketplace)
+    CancelOrderAction(TokenCancelOrderTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -155,6 +173,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(action) => action.base(),
             TokenTransitionAction::ClaimToPoolAction(action) => action.base(),
             TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base(),
+            TokenTransitionAction::PlaceAskAction(action) => action.base(),
+            TokenTransitionAction::FillAskAction(action) => action.base(),
+            TokenTransitionAction::CancelOrderAction(action) => action.base(),
         }
     }
 
@@ -179,6 +200,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(action) => action.base_owned(),
             TokenTransitionAction::ClaimToPoolAction(action) => action.base_owned(),
             TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::PlaceAskAction(action) => action.base_owned(),
+            TokenTransitionAction::FillAskAction(action) => action.base_owned(),
+            TokenTransitionAction::CancelOrderAction(action) => action.base_owned(),
         }
     }
 
@@ -203,6 +227,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(_) => "burnFromPool",
             TokenTransitionAction::ClaimToPoolAction(_) => "claimToPool",
             TokenTransitionAction::DirectPurchaseToPoolAction(_) => "directPurchaseToPool",
+            TokenTransitionAction::PlaceAskAction(_) => "orderPlaced",
+            TokenTransitionAction::FillAskAction(_) => "orderFilled",
+            TokenTransitionAction::CancelOrderAction(_) => "orderCancelled",
         }
     }
 
@@ -275,6 +302,11 @@ impl TokenTransitionAction {
             | TokenTransitionAction::BurnFromPoolAction(_)
             | TokenTransitionAction::ClaimToPoolAction(_)
             | TokenTransitionAction::DirectPurchaseToPoolAction(_) => Ok(false),
+            // The marketplace records no token history yet: the open orders themselves are
+            // documents of the token market contract.
+            TokenTransitionAction::PlaceAskAction(_)
+            | TokenTransitionAction::FillAskAction(_)
+            | TokenTransitionAction::CancelOrderAction(_) => Ok(false),
         }
     }
 }

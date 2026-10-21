@@ -82,6 +82,10 @@ use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::verify::RootHash;
+use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
+use dpp::tokens::token_order::TokenOrder;
+use dpp::tokens::token_order_side::TokenOrderSide;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -1330,6 +1334,84 @@ impl Drive {
                                     }
                                     Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                                 }
+                            }
+                            // The token marketplace keeps no token history: a listing is proven
+                            // by its `ask` document, whose order id follows from the signer and
+                            // the nonce and whose terms are the transition's.
+                            TokenTransition::PlaceAsk(token_place_ask_transition) => {
+                                let order_id = TokenOrderSide::Ask.order_id(
+                                    token_id,
+                                    owner_id,
+                                    identity_contract_nonce,
+                                );
+                                let (root_hash, document) = verify_token_order_document(
+                                    proof,
+                                    TokenOrderSide::Ask,
+                                    order_id,
+                                    carries_owner_balance,
+                                    platform_version,
+                                )?;
+                                let Some(document) = document else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                        "proof did not contain the listing {} expected to exist because of state transition (token place ask)",
+                                        order_id
+                                    ))));
+                                };
+                                let order =
+                                    TokenOrder::from_document(&document, TokenOrderSide::Ask)?;
+                                if order.token_id != token_id
+                                    || order.maker_id != owner_id
+                                    || order.price != token_place_ask_transition.price()
+                                    || order.amount != token_place_ask_transition.amount()
+                                    || order.min_fill != token_place_ask_transition.min_fill()
+                                    || order.expires_at != token_place_ask_transition.expires_at()
+                                {
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
+                                        "proof of the listing {} does not hold the terms of state transition (token place ask)",
+                                        order_id
+                                    ))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
+                                ))
+                            }
+                            // A cancel is proven by the order no longer existing.
+                            TokenTransition::CancelOrder(token_cancel_order_transition) => {
+                                let order_id = token_cancel_order_transition.order_id();
+                                let (root_hash, document) = verify_token_order_document(
+                                    proof,
+                                    token_cancel_order_transition.side(),
+                                    order_id,
+                                    carries_owner_balance,
+                                    platform_version,
+                                )?;
+                                if document.is_some() {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                        "proof contained the order {} expected to be gone because of state transition (token cancel order)",
+                                        order_id
+                                    ))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(order_id, None)])),
+                                ))
+                            }
+                            // A fill is proven by the buyer's balance.
+                            TokenTransition::FillAsk(_) => {
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        owner_id.into_buffer(),
+                                        carries_owner_balance,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token fill ask)", owner_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
                             }
                         }
                     }
@@ -3176,6 +3258,12 @@ impl Drive {
                         // not the amount burned: two burns of the same notes leaving different
                         // change spend the same nullifiers.
                         TokenTransition::BurnFromPool(_) => grouped,
+                        // A listing's document carries its id, derived from the signer and the
+                        // nonce, and the transition's terms, which the verification compares.
+                        TokenTransition::PlaceAsk(_) => true,
+                        // A fill leaves a balance snapshot and a cancel an absence, which the
+                        // order being filled entirely would leave too.
+                        TokenTransition::FillAsk(_) | TokenTransition::CancelOrder(_) => false,
                     }
                 }
             },
@@ -3311,6 +3399,36 @@ impl Drive {
 /// and verifies to `VerifiedDocuments` with the document named and none. That the type keeps
 /// none is read from the contract, when the provider holds it: a deletion of a type that keeps
 /// records is proved by its record without the contract, as it always was.
+/// Verifies the proof of one token market contract order document: the document when the order
+/// is open, `None` when it is not.
+fn verify_token_order_document(
+    proof: &[u8],
+    side: TokenOrderSide,
+    order_id: Identifier,
+    verify_subset_of_proof: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, Option<Document>), Error> {
+    let token_market_contract =
+        load_system_data_contract(SystemDataContract::TokenMarket, platform_version)?;
+    let document_type = token_market_contract
+        .document_type_for_name(side.document_type_name())
+        .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?;
+    let query = SingleDocumentDriveQuery {
+        contract_id: token_market_contract.id().into_buffer(),
+        document_type_name: side.document_type_name().to_string(),
+        document_type_keeps_history: false,
+        document_id: order_id.to_buffer(),
+        block_time_ms: None,
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+    };
+    query.verify_proof(
+        verify_subset_of_proof,
+        proof,
+        document_type,
+        platform_version,
+    )
+}
+
 fn verify_contract_document_deletion_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,

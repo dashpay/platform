@@ -69,12 +69,16 @@ impl TokenConfiguration {
     /// configuration that uses one is checked by `validate_token_configurations` before anything
     /// else.
     pub fn needs_activation_check(&self) -> bool {
-        self.format_version() > 0
-            || self
-                .as_cow_v0()
-                .marketplace_rules
-                .trade_mode()
-                .is_tradeable()
+        self.format_version() > 0 || self.is_tradeable()
+    }
+
+    /// Whether holders may list the token for sale and make offers for it
+    /// (`marketplaceRules.tradeMode` `Tradeable`).
+    pub fn is_tradeable(&self) -> bool {
+        self.as_cow_v0()
+            .marketplace_rules
+            .trade_mode()
+            .is_tradeable()
     }
 
     /// Checks the configuration's format version against the bounds the platform version
@@ -162,12 +166,7 @@ impl TokenConfiguration {
         token_contract_position: TokenContractPosition,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        if !self
-            .as_cow_v0()
-            .marketplace_rules
-            .trade_mode()
-            .is_tradeable()
-        {
+        if !self.is_tradeable() {
             return SimpleConsensusValidationResult::new();
         }
         if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {

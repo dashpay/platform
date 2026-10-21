@@ -5,6 +5,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
+use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderValueTooLargeError};
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use crate::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
@@ -745,6 +746,38 @@ pub enum StateError {
     // `chooseFirst` groups by (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenNotTradeableError(TokenNotTradeableError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderNotFoundError(TokenOrderNotFoundError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderExpiredError(TokenOrderExpiredError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderFillAmountError(TokenOrderFillAmountError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderPriceLimitError(TokenOrderPriceLimitError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderNotOwnedError(TokenOrderNotOwnedError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderSelfFillError(TokenOrderSelfFillError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderValueTooLargeError(TokenOrderValueTooLargeError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -771,6 +804,7 @@ mod tests {
         LookupKeySource,
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use crate::tokens::token_order_side::TokenOrderSide;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::vote_polls::VotePoll;
@@ -1673,6 +1707,66 @@ mod tests {
                 )
             )),
             175
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenNotTradeableError(
+                TokenNotTradeableError::new(Identifier::from([1; 32]))
+            )),
+            176
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderNotFoundError(
+                TokenOrderNotFoundError::new(Identifier::from([1; 32]), TokenOrderSide::Ask)
+            )),
+            177
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderExpiredError(
+                TokenOrderExpiredError::new(Identifier::from([1; 32]), 1, 2)
+            )),
+            178
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderFillAmountError(
+                TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
+            )),
+            179
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderPriceLimitError(
+                TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
+            )),
+            180
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderNotOwnedError(
+                TokenOrderNotOwnedError::new(
+                    Identifier::from([1; 32]),
+                    Identifier::from([1; 32]),
+                    Identifier::from([1; 32])
+                )
+            )),
+            181
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderSelfFillError(
+                TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
+            )),
+            182
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderValueTooLargeError(
+                TokenOrderValueTooLargeError::new(u64::MAX, u64::MAX, 0)
+            )),
+            183
         );
     }
 }

@@ -11,6 +11,7 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
+use crate::tokens::token_order_side::TokenOrderSide;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -149,6 +150,7 @@ impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 impl JsonSafeFields for crate::tokens::token_event::TokenEvent {}
 // `TokenEmergencyAction` is a unit-variant enum (Pause / Resume).
 impl JsonSafeFields for TokenEmergencyAction {}
+impl JsonSafeFields for TokenOrderSide {}
 // `TokenDistributionType` is a unit-variant enum.
 impl JsonSafeFields for TokenDistributionType {}
 // `TokenPricingSchedule` has tuple variants holding `Credits` (u64) and
