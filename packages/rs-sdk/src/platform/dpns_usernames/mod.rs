@@ -1066,6 +1066,99 @@ mod tests {
         assert!(declares_the_preorder_hash(&resolved));
     }
 
+    /// A signer the tests never reach: each registration below stops before it signs.
+    #[derive(Debug)]
+    struct UnusedSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            Err(dpp::ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            Err(dpp::ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// The public registration, from an SDK seeded at protocol version 13 whose context
+    /// provider holds DPNS v2: it learns the network's version, builds against the DPNS v3
+    /// the network stores, hands that contract to the provider, and looks for a pending
+    /// preorder of the name before it pays for a new one. That query is left unanswered, so
+    /// the registration stops with its error, before any nonce is fetched or anything signed.
+    #[tokio::test]
+    async fn should_look_for_a_pending_preorder_before_paying_for_one() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(13).expect("protocol version 13"))
+            .with_context_provider(provider.clone())
+            .build()
+            .expect("the mock SDK builds");
+        expect_epoch_refresh(&mut sdk).await;
+        let stored = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("the DPNS contract loads");
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+
+        let owner_id = Identifier::new([1u8; 32]);
+        let error = sdk
+            .register_dpns_name(RegisterDpnsNameInput {
+                label: "Bob".to_string(),
+                identity: Identity::create_basic_identity(owner_id, PlatformVersion::latest())
+                    .expect("the identity builds"),
+                identity_public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: 1,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: dpp::platform_value::BinaryData::new(vec![1; 33]),
+                    disabled_at: None,
+                }),
+                signer: UnusedSigner,
+                preorder_callback: None,
+                contest_fund: None,
+            })
+            .await
+            .expect_err("the unanswered pending-preorder query stops the registration");
+
+        // The request it stopped at is the documents query for the pending preorder, not the
+        // nonce fetch a new preorder would start with
+        let message = error.to_string();
+        assert!(
+            message.contains("GetDocumentsRequest"),
+            "expected the pending-preorder query to fail, got {message}"
+        );
+        assert_eq!(sdk.protocol_version_number(), LATEST_VERSION);
+        let resolved = provider
+            .get_data_contract(&stored.id(), PlatformVersion::latest())
+            .expect("the provider answers")
+            .expect("the provider holds DPNS");
+        assert!(declares_the_preorder_hash(&resolved));
+    }
+
     /// A DPNS v3 preorder of `owner` for `Bob.dash`, with the hashes the contract declares.
     fn bob_v3_preorder(owner: Identifier) -> Document {
         let properties =
