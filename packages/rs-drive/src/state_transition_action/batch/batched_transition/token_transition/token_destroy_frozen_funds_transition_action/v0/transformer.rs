@@ -90,7 +90,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
         )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -148,12 +148,31 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
+        // From protocol version 15 the frozen identity's open listings are destroyed with its
+        // balance: what they hold sits in escrow, out of the balance's reach. Earlier versions
+        // read none.
+        let (escrowed_listings, listings_read_cost) = drive.fetch_frozen_token_listings(
+            base.token_id(),
+            frozen_identity_id,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
+        fee_result.processing_fee = fee_result.processing_fee.saturating_add(listings_read_cost);
+        let token_market_contract = if escrowed_listings.is_empty() {
+            None
+        } else {
+            Some(drive.token_market_contract_fetch_info(platform_version)?)
+        };
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::DestroyFrozenFundsAction(
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id,
                     amount: token_amount,
+                    escrowed_listings,
+                    token_market_contract,
                     public_note: change_note.unwrap_or(public_note),
                 }
                 .into(),
@@ -237,7 +256,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
         )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -296,12 +315,31 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
+        // From protocol version 15 the frozen identity's open listings are destroyed with its
+        // balance: what they hold sits in escrow, out of the balance's reach. Earlier versions
+        // read none.
+        let (escrowed_listings, listings_read_cost) = drive.fetch_frozen_token_listings(
+            base.token_id(),
+            *frozen_identity_id,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
+        fee_result.processing_fee = fee_result.processing_fee.saturating_add(listings_read_cost);
+        let token_market_contract = if escrowed_listings.is_empty() {
+            None
+        } else {
+            Some(drive.token_market_contract_fetch_info(platform_version)?)
+        };
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::DestroyFrozenFundsAction(
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id: *frozen_identity_id,
                     amount: token_amount,
+                    escrowed_listings,
+                    token_market_contract,
                     public_note: change_note.unwrap_or(public_note.clone()),
                 }
                 .into(),

@@ -3,6 +3,7 @@ mod transformer;
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
+use dpp::tokens::token_order::TokenOrder;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 
@@ -15,6 +16,12 @@ pub struct TokenDestroyFrozenFundsTransitionActionV0 {
     pub frozen_identity_id: Identifier,
     /// The amount that will be burned
     pub amount: TokenAmount,
+    /// The frozen identity's open listings destroyed with its balance, oldest first (protocol
+    /// version 15; empty before)
+    pub escrowed_listings: Vec<TokenOrder>,
+    /// The token market contract, whose `ask` documents record the listings; read only when
+    /// there are listings to destroy
+    pub token_market_contract: Option<Arc<DataContractFetchInfo>>,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -38,6 +45,21 @@ pub trait TokenDestroyFrozenFundsTransitionActionAccessorsV0 {
 
     /// Sets the amount of tokens that the identity had and will be burned
     fn set_amount(&mut self, amount: TokenAmount);
+
+    /// The frozen identity's open listings destroyed with its balance
+    fn escrowed_listings(&self) -> &[TokenOrder];
+
+    /// The token market contract, when there are listings to destroy
+    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>>;
+
+    /// Everything destroyed: the balance and what the listings hold in escrow
+    fn total_destroyed(&self) -> Option<TokenAmount> {
+        self.escrowed_listings()
+            .iter()
+            .try_fold(self.amount(), |total, listing| {
+                total.checked_add(listing.remaining)
+            })
+    }
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -101,6 +123,14 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
         self.amount = amount;
     }
 
+    fn escrowed_listings(&self) -> &[TokenOrder] {
+        &self.escrowed_listings
+    }
+
+    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>> {
+        self.token_market_contract.as_ref()
+    }
+
     fn public_note(&self) -> Option<&String> {
         self.public_note.as_ref()
     }
@@ -147,6 +177,8 @@ mod tests {
             frozen_identity_id: frozen,
             amount,
             public_note: note.map(|s| s.to_string()),
+            escrowed_listings: vec![],
+            token_market_contract: None,
         }
     }
 

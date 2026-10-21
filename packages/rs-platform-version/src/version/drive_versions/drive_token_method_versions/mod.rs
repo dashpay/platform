@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -28,6 +28,10 @@ pub struct DriveTokenOrderEscrowMethodVersions {
     pub fetch_credits: FeatureVersion,
     pub estimated_costs_for_tokens: FeatureVersion,
     pub estimated_costs_for_credits: FeatureVersion,
+    /// Reads the open listings of a frozen identity that `TokenDestroyFrozenFunds` destroys with
+    /// its balance. `None` reads none: the frozen balance alone is destroyed, as before the
+    /// marketplace.
+    pub fetch_frozen_listings: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

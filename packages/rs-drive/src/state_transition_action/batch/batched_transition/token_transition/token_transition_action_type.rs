@@ -211,6 +211,8 @@ mod tests {
                     frozen_identity_id: Identifier::new([8u8; 32]),
                     amount: 9,
                     public_note: None,
+                    escrowed_listings: vec![],
+                    token_market_contract: None,
                 },
             ),
         );
@@ -337,6 +339,8 @@ mod tests {
                         frozen_identity_id: Identifier::new([8u8; 32]),
                         amount: 1,
                         public_note: None,
+                        escrowed_listings: vec![],
+                        token_market_contract: None,
                     },
                 ),
             ),

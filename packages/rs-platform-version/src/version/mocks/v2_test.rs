@@ -625,6 +625,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderation_added_moderators: 15,
         max_moderation_charter_elected_members: 15,
         max_contenders_per_contest: 1_000,
+        max_frozen_listings_destroyed_per_transition: 16,
         max_token_redemption_cycles: 128,
         max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,

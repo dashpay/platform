@@ -71,6 +71,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderation_added_moderators: 15,
     max_moderation_charter_elected_members: 15,
     max_contenders_per_contest: 1_000,
+    max_frozen_listings_destroyed_per_transition: 16,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on

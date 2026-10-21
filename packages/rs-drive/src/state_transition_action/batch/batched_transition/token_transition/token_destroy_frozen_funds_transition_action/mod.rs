@@ -1,6 +1,9 @@
+use crate::drive::contract::DataContractFetchInfo;
 use derive_more::From;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
+use dpp::tokens::token_order::TokenOrder;
+use std::sync::Arc;
 
 /// transformer module for token destroy_frozen_funds transition action
 pub mod transformer;
@@ -53,6 +56,18 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
     fn set_amount(&mut self, amount: TokenAmount) {
         match self {
             TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.amount = amount,
+        }
+    }
+
+    fn escrowed_listings(&self) -> &[TokenOrder] {
+        match self {
+            TokenDestroyFrozenFundsTransitionAction::V0(v0) => &v0.escrowed_listings,
+        }
+    }
+
+    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>> {
+        match self {
+            TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.token_market_contract.as_ref(),
         }
     }
 
@@ -125,6 +140,8 @@ mod tests {
             frozen_identity_id: Identifier::from(TEST_FROZEN_ID),
             amount: TEST_AMOUNT,
             public_note: Some("destroyed".to_string()),
+            escrowed_listings: vec![],
+            token_market_contract: None,
         }
     }
 

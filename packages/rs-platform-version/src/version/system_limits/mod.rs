@@ -286,6 +286,10 @@ pub struct SystemLimits {
     /// must stay at least this where it is read. Read by the contested document create
     /// state validation v2 (protocol version 14) and never reached before.
     pub max_contenders_per_contest: u16,
+    /// Most open listings of a frozen identity one `TokenDestroyFrozenFunds` destroys with its
+    /// balance, oldest first; another destroys the next ones. Read from protocol version 15
+    /// (`order_escrow.fetch_frozen_listings`) and never reached before.
+    pub max_frozen_listings_destroyed_per_transition: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

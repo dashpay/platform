@@ -195,6 +195,22 @@ The buyer's credits are checked with the batch's fees, which count the escrow li
 buyer pays the storage of the `bid` and gets it back when the offer closes. A `TokenPlaceBid` is
 proven by its `bid` document, and a `TokenFillBid` by the seller's token balance.
 
+## Frozen accounts
+
+A frozen account's open listings cannot be filled, and the tokens they hold sit in escrow, out of
+the frozen balance. From protocol version 15 a `TokenDestroyFrozenFunds` destroys them with the
+balance: it reads the frozen identity's open listings of the token, oldest first, at most
+`max_frozen_listings_destroyed_per_transition` (16), destroys what they hold in escrow, deletes
+their `ask` documents and records the whole amount destroyed in its `destroyFrozenFunds` history
+document. A frozen identity with more listings needs one more destroy per 16. Its offers hold
+credits, which are not the token's to destroy, and stay; it can still withdraw them.
+
+```text
+Frozen identity: balance 5,000, listings of 3,000 and 2,000
+Before (protocol version 14 rules): the destroy burns 5,000; the 5,000 in escrow stays
+From protocol version 15:           the destroy burns all 10,000 and deletes both listings
+```
+
 ## History
 
 A token that keeps transfer history (`keepsHistory.keepsTransferHistory`, the default) also

@@ -5,6 +5,7 @@ use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
+use crate::error::drive::DriveError;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
@@ -221,6 +222,20 @@ pub enum TokenOperationType {
         /// What the escrow holds after the release
         remaining_after: TokenAmount,
     },
+    /// Destroys a frozen identity's holding of a token: `balance_amount` from its balance and what
+    /// each of its `listings` (order id, amount) holds in escrow, and lowers the total supply by
+    /// all of it once (the token marketplace, protocol version 15). The listings' `ask`
+    /// documents are deleted by document operations of the same batch.
+    TokenDestroyFrozenHolding {
+        /// The token id
+        token_id: Identifier,
+        /// The frozen identity
+        holder_id: Identifier,
+        /// What its balance holds
+        balance_amount: TokenAmount,
+        /// Its open listings and what each holds in escrow
+        listings: Vec<(Identifier, TokenAmount)>,
+    },
     /// Holds `credits` in escrow for the new offer `order_id` (the token marketplace, protocol
     /// version 15). The credits come out of the buyer's balance through an identity balance
     /// operation of the same batch; the escrow sits under the prefunded specialized balances,
@@ -254,6 +269,46 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            TokenOperationType::TokenDestroyFrozenHolding {
+                token_id,
+                holder_id,
+                balance_amount,
+                listings,
+            } => {
+                let token_id = token_id.to_buffer();
+                let total = listings
+                    .iter()
+                    .try_fold(balance_amount, |total, (_, amount)| {
+                        total.checked_add(*amount)
+                    })
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a frozen holding is more tokens than a u64 holds",
+                    )))?;
+                let mut batch_operations = drive.remove_from_identity_token_balance_operations(
+                    token_id,
+                    holder_id.to_buffer(),
+                    balance_amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                for (order_id, _) in listings {
+                    batch_operations.extend(drive.remove_token_order_escrow_operations(
+                        token_id,
+                        order_id.to_buffer(),
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )?);
+                }
+                batch_operations.extend(drive.remove_from_token_total_supply_operations(
+                    token_id,
+                    total,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+                Ok(batch_operations)
+            }
             TokenOperationType::TokenHoldCreditsInOrderEscrow { order_id, credits } => drive
                 .add_to_credit_order_escrow_operations(
                     order_id.to_buffer(),
