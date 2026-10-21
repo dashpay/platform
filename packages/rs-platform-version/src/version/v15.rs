@@ -160,6 +160,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
 ///    Their structure and state validations and their high-level operation converters are 0 in
 ///    every table, which only this version reaches.
+///
+/// 8. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+///    tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
+///    the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
+///    the change in the offer's running total rounded down out of the escrow); a
+///    `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
+///    same `is_allowed` gate. Their validations and converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2

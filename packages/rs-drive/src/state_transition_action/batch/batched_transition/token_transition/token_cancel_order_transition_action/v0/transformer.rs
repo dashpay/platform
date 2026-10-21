@@ -7,7 +7,6 @@ use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::TokenCancelOrderTransitionV0;
 use dpp::tokens::token_order::TokenOrder;
-use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
@@ -124,15 +123,6 @@ impl TokenCancelOrderTransitionActionV0 {
                 fee_result,
             );
         }
-        // Offers are placed from the next generation of the marketplace on: until then no offer
-        // exists, and the read above finds none.
-        if *side == TokenOrderSide::Bid {
-            return bump(
-                vec![TokenOrderNotFoundError::new(*order_id, *side).into()],
-                fee_result,
-            );
-        }
-
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::CancelOrderAction(
                 TokenCancelOrderTransitionActionV0 {

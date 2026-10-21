@@ -156,5 +156,41 @@ The proof a node returns for each transition:
 | `TokenFillAsk` | The buyer's token balance |
 | `TokenCancelOrder` | That the order's document is gone |
 
-Offers (`bid`) and their fills come with the next transitions of the marketplace. Until then no
-offer can exist, and a `TokenCancelOrder` for one finds none.
+## Offers
+
+Two more token transitions work with offers, refused before protocol version 15 like the listing
+ones (as `TokenPlaceBid` and `TokenFillBid`). A `TokenCancelOrder` with the `bid` side withdraws
+an offer.
+
+| Transition | Fields | Effect |
+|---|---|---|
+| `TokenPlaceBid` | `amount`, `price`, `minFill`, optional `expiresAt` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
+| `TokenFillBid` | `orderId`, `minAmount`, `maxAmount`, `minTotalReceived` | Moves part or all of the amount still wanted from the seller to the buyer, and its price from the escrow to the seller |
+
+An offer holds what it is worth, its amount at its price rounded up, and its `escrow` property
+says what is left. Each sale is paid the change in the offer's running total rounded down, so the
+payments never add up past the escrow; when the offer closes, by a sale that takes everything
+still wanted or by a cancel, whatever is left goes back to the buyer:
+
+```text
+1.5 credits per base unit, an offer for 7 base units holds 11 credits (10.5 rounded up)
+sales of 3, 3 and 1:  4 + 5 + 1 = 10 credits to the sellers, 1 credit back to the buyer
+```
+
+The rounding favours the buyer and is never more than one credit per sale. The fill range works
+as it does for a listing, and a sale is refused when it would be paid less than
+`minTotalReceived` (`TokenOrderPriceLimitError`, 40754).
+
+| Rule | Refused with |
+|---|---|
+| The token is tradeable (to place or sell into) | `TokenNotTradeableError` (40750), in check_tx too |
+| An offer is worth at most `i64::MAX` credits | `TokenOrderValueTooLargeError` (40757), in check_tx too |
+| An offer's `expiresAt` is after the block, and a sale comes before it | `TokenOrderExpiredError` (40752) |
+| A seller does not sell into their own offer | `TokenOrderSelfFillError` (40756) |
+| The seller holds the amount the sale takes | `IdentityDoesNotHaveEnoughTokenBalanceError` |
+| The token is not paused (to place or sell into) | `TokenIsPausedError` |
+| The seller's account is not frozen, nor the buyer's unless the token allows transfers to frozen balances | `IdentityTokenAccountFrozenError` |
+
+The buyer's credits are checked with the batch's fees, which count the escrow like a purchase. The
+buyer pays the storage of the `bid` and gets it back when the offer closes. A `TokenPlaceBid` is
+proven by its `bid` document, and a `TokenFillBid` by the seller's token balance.

@@ -1,0 +1,89 @@
+use dpp::block::block_info::BlockInfo;
+use dpp::prelude::Identifier;
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use drive::query::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::{TokenPlaceBidTransitionAction, TokenPlaceBidTransitionActionAccessorsV0};
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_order_common::validate_token_account_not_frozen;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::validate_token_not_paused;
+use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
+use crate::platform_types::platform::PlatformStateRef;
+
+pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait TokenPlaceBidTransitionActionStateValidationV0 {
+    fn validate_state_v0(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+impl TokenPlaceBidTransitionActionStateValidationV0 for TokenPlaceBidTransitionAction {
+    /// An offer needs a token that is not paused, and a buyer whose account is not frozen unless
+    /// the token allows transfers to frozen balances: a fill moves the tokens to the buyer. What
+    /// needs no read (a tradeable token, an expiry after the block) is checked with the batch's
+    /// advanced structure, and the buyer's credits with the batch's fees, which count the
+    /// escrow as a purchase.
+    fn validate_state_v0(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        let validation_result = validate_token_not_paused(
+            platform,
+            self.token_id(),
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        if !self
+            .base()
+            .token_configuration()?
+            .is_allowed_transfer_to_frozen_balance()
+        {
+            let validation_result = validate_token_account_not_frozen(
+                platform,
+                self.token_id(),
+                owner_id,
+                "placeBid",
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            )?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
+        }
+
+        Ok(SimpleConsensusValidationResult::new())
+    }
+}

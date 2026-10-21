@@ -323,6 +323,12 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_fill_ask_transition_state_validation: FeatureVersion,
     pub token_cancel_order_transition_structure_validation: FeatureVersion,
     pub token_cancel_order_transition_state_validation: FeatureVersion,
+    /// An offer for a tradeable token (the token marketplace, protocol version 15)
+    pub token_place_bid_transition_structure_validation: FeatureVersion,
+    pub token_place_bid_transition_state_validation: FeatureVersion,
+    /// A sale into an open offer (the token marketplace, protocol version 15)
+    pub token_fill_bid_transition_structure_validation: FeatureVersion,
+    pub token_fill_bid_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

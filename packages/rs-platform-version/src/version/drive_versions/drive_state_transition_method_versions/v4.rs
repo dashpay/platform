@@ -65,6 +65,8 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_place_ask_transition: 0,
                 token_fill_ask_transition: 0,
                 token_cancel_order_transition: 0,
+                token_place_bid_transition: 0,
+                token_fill_bid_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
                 address_funds_transfer_transition: 0,
                 address_credit_withdrawal_transition: 0,
