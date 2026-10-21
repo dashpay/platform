@@ -1393,9 +1393,13 @@ mod dpns_v3_tests {
 mod token_market_tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
     use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use crate::data_contract::document_type::DocumentPropertyType;
+    use crate::document::transfer::Transferable;
+    use crate::nft::TradeMode;
     use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
 
     /// The order types are what the marketplace transitions rely on: only they create orders,
@@ -1427,6 +1431,23 @@ mod token_market_tests {
                 document_type.creation_restriction_mode(),
                 CreationRestrictionMode::NoCreationAllowed,
                 "only the marketplace transitions create {name} orders"
+            );
+            // The data trigger bindings refuse a user's replace and delete; these defaults
+            // refuse the remaining document transitions (transfer, purchase, price update and
+            // index-only delete), so a schema edit that enables one fails here.
+            assert_eq!(
+                document_type.documents_transferable(),
+                Transferable::Never,
+                "{name} orders cannot be transferred"
+            );
+            assert_eq!(
+                document_type.trade_mode(),
+                TradeMode::None,
+                "{name} orders cannot be priced or purchased as documents"
+            );
+            assert!(
+                !document_type.index_only(),
+                "{name} orders are not index-only"
             );
             for property in document_type.properties().values() {
                 if matches!(

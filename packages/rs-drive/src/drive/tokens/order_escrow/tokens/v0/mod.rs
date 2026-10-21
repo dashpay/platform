@@ -26,6 +26,7 @@ fn escrow_sum_value(amount: TokenAmount) -> Result<i64, Error> {
 }
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_to_token_order_escrow_operations_v0(
         &self,
         token_id: [u8; 32],
@@ -35,6 +36,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
@@ -56,14 +58,15 @@ impl Drive {
             }
         };
 
-        // The token's escrow tree is created with its first listing.
+        // The token's escrow tree is created with its first listing, whether that is in state or
+        // queued earlier in the same batch.
         self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKeyRef::<2>((token_order_escrow_root_path(), token_id.as_slice())),
             TreeType::SumTree,
             None,
             tree_apply_type,
             transaction,
-            &mut None,
+            previous_batch_operations,
             &mut drive_operations,
             &platform_version.drive,
         )?;
