@@ -841,9 +841,12 @@ impl Sdk {
     /// creation, so by the time the invitee claims (minutes-to-hours later, and on
     /// testnet possibly across a quorum rotation) Drive may reject the islock as
     /// stale with `InvalidInstantAssetLockProofSignatureError` — its own message
-    /// asks to "try chain asset lock proof instead". When the funding tx is
-    /// already chain-locked (the usual case by claim time), this resubmits a
-    /// `ChainAssetLockProof` over the SAME credit output. If the tx is not yet
+    /// asks to "try chain asset lock proof instead". An islock proof over a
+    /// funding tx with many inputs can also make the claim larger than
+    /// `max_state_transition_size` (dashwallet-ios#1042). When the funding tx
+    /// is already chain-locked (the usual case by claim time), this resubmits a
+    /// `ChainAssetLockProof` over the SAME credit output — for the size case
+    /// only if the claim fits with it. If the tx is not yet
     /// chain-locked no fallback is possible and the claim returns
     /// [`InvitationError::NotChainLocked`] as a retry signal.
     ///
@@ -1182,9 +1185,10 @@ fn identity_carries_keys(
 /// carried an islock (the fast path), or an [`AssetLockProof::Chain`] when it did
 /// not. `chain_fallback` is a ChainLock proof over the SAME credit output,
 /// populated ONLY when `primary` is InstantSend AND the funding tx is already
-/// chain-locked — [`Sdk::claim_invitation`]'s stale-islock recovery
-/// resubmits it if Platform rejects the primary IS proof with
-/// `InvalidInstantAssetLockProofSignatureError`. It is `None` when the primary is
+/// chain-locked — [`Sdk::claim_invitation`]'s IS → ChainLock fallback
+/// resubmits it if Platform rejects the primary IS proof as stale
+/// (`InvalidInstantAssetLockProofSignatureError`) or the IS proof makes the
+/// claim too large and the ChainLock proof fits. It is `None` when the primary is
 /// already a ChainLock proof (nothing to fall back to) or when the funding tx is
 /// not yet chain-locked (no ChainLock proof can be built — the claim must be
 /// retried once the block confirms).
@@ -1276,8 +1280,8 @@ fn inspect_funding_tx(
 ///
 /// When an islock is present AND the funding tx is already chain-locked, the
 /// returned [`ReconstructedProof`] also carries a `chain_fallback` ChainLock proof
-/// over the same credit output, so the caller can recover from a stale islock that
-/// Platform rejects without refetching the tx.
+/// over the same credit output, so the caller can recover from a stale or
+/// oversized islock proof without refetching the tx.
 fn assemble_asset_lock_proof(
     transaction: Transaction,
     is_chain_locked: bool,
@@ -1293,7 +1297,7 @@ fn assemble_asset_lock_proof(
     // A ChainLock proof over the selected credit output. Buildable only once the
     // funding block is chain-locked; `height` is the tx's mined height (the
     // `ChainAssetLockProof`'s `core_chain_locked_height`). Reused both as the
-    // primary for an islock-less invite and as the stale-islock fallback.
+    // primary for an islock-less invite and as the IS → ChainLock fallback.
     let chain_lock_proof =
         || AssetLockProof::Chain(ChainAssetLockProof::new(height, out_point.into()));
 
@@ -1757,8 +1761,8 @@ mod tests {
 
     /// An islock that locks the funding tx, with the tx already chain-locked,
     /// yields an InstantSend primary (fast path) PLUS a ChainLock fallback over the
-    /// same credit output — the stale-islock recovery the claim path submits if
-    /// Platform rejects the IS proof with `InvalidInstantAssetLockProofSignatureError`.
+    /// same credit output — what the claim path submits if the IS proof is stale
+    /// or makes the claim too large.
     #[test]
     fn should_carry_a_chain_fallback_for_a_chain_locked_islock_invitation() {
         let key = voucher();
@@ -1778,7 +1782,7 @@ mod tests {
         );
         assert!(
             matches!(reconstructed.chain_fallback, Some(AssetLockProof::Chain(_))),
-            "a chain-locked funding tx must carry a ChainLock fallback for stale-islock recovery"
+            "a chain-locked funding tx must carry a ChainLock fallback for the IS → ChainLock fallback"
         );
     }
 
@@ -2412,9 +2416,10 @@ mod tests {
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
 
-        /// The one rejection the seam recovers from: Platform's stale-islock
-        /// consensus error, in the `Protocol(ConsensusError)` shape
-        /// `is_instant_lock_proof_invalid` matches.
+        /// One of the two rejections the seam recovers from (the other is a
+        /// size refusal): Platform's stale-islock consensus error, in the
+        /// `Protocol(ConsensusError)` shape `is_instant_lock_proof_invalid`
+        /// matches.
         fn stale_islock_rejection() -> Error {
             Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
                 InvalidInstantAssetLockProofSignatureError::new().into(),
@@ -2428,7 +2433,7 @@ mod tests {
             ConsensusError::from(StateTransitionMaxSizeExceededError::new(20_481, 20_480)).into()
         }
 
-        /// Any error the seam must NOT treat as a stale islock.
+        /// Any error the seam must NOT treat as an unusable IS proof.
         fn unrelated_sdk_error() -> Error {
             Error::Config("simulated unrelated rejection".to_string())
         }

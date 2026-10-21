@@ -351,8 +351,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // The code-24 classification above came from Platform's
                     // outpoint-matched consensus error, not from this local
                     // lookup, so a `WalletNotFound` / `AssetLockProofWait`
-                    // (lock untracked after a restore, persister failure,
-                    // record-map mismatch) does not invalidate it — the
+                    // (lock untracked after a restore, persister failure)
+                    // does not invalidate it — the
                     // promotion is best-effort evidence-attachment either
                     // way. Propagating those errors instead would swap the
                     // host's actionable already-consumed branch for a
@@ -776,12 +776,16 @@ mod tests {
     //   - `already_consumed_reconciliation_terminates_without_a_chainlock`
     //     pins the BOUNDED-WAIT shape (`FinalityTimeout`);
     //   - `already_consumed_reconciliation_downgrades_non_timeout_promotion_failure`
-    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`).
+    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`, from a
+    //     failing record lookup).
     // Each first asserts the promotion error variant DIRECTLY, so the two
     // scenarios cannot silently collapse onto the same path, then asserts
     // the shared downgrade outcome.
     // -----------------------------------------------------------------
 
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
     use crate::test_support::{
         funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
     };
@@ -791,6 +795,7 @@ mod tests {
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
     use std::sync::Arc;
 
     /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset
@@ -818,6 +823,42 @@ mod tests {
     }
 
     async fn instant_reconciliation_context() -> InstantReconciliationContext {
+        instant_reconciliation_context_with(Arc::new(NoopTestPersister)).await
+    }
+
+    /// A persister whose transaction-record lookup fails, as a backend error
+    /// would.
+    struct FailingLookupPersister;
+
+    impl PlatformWalletPersistence for FailingLookupPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &dashcore::Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            Err(PersistenceError::LockPoisoned)
+        }
+    }
+
+    async fn instant_reconciliation_context_with(
+        persistence: Arc<dyn PlatformWalletPersistence>,
+    ) -> InstantReconciliationContext {
         use dashcore::{InstantLock, Network};
         use key_wallet::account::account_type::StandardAccountType;
         use tokio::sync::Notify;
@@ -836,7 +877,7 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
-            WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
+            WalletPersister::new(wallet_id, persistence),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -981,10 +1022,8 @@ mod tests {
 
         // Register the funding tx's record (mempool context, NOT chain-
         // locked) under BIP44 account 0, so the promotion's record lookup
-        // succeeds and it genuinely dispatches to `wait_for_chain_lock`.
-        // Without this the lookup misses and the promotion fast-fails with
-        // `AssetLockProofWait` before any waiting — the OTHER regression's
-        // scenario, which must stay distinct from this one.
+        // succeeds and the wait reads the record's own context rather than
+        // only the mined-height locator.
         {
             let record = TransactionRecord::new(
                 ctx.transaction.clone(),
@@ -1041,12 +1080,12 @@ mod tests {
     /// degraded-local-state scenarios where the host's code-24 branch is
     /// the only path that can still resolve the operation.
     ///
-    /// Shape: the lock is tracked, but its transaction record is
-    /// unavailable — never registered in any account's in-memory map (the
-    /// fixture never broadcasts) and unknown to the persister
-    /// (`NoopTestPersister` keeps the trait's `Ok(None)` default). That is
-    /// the post-restore / wallet-state-mismatch shape, and the promotion
-    /// fast-fails with `AssetLockProofWait` instead of waiting.
+    /// Shape: the lock is tracked, its transaction record is not in memory
+    /// (the fixture never broadcasts), and the persister's record lookup
+    /// fails. The promotion fails at once with `AssetLockProofWait` instead
+    /// of waiting. (A lookup that answers `Ok(None)` is not this shape: the
+    /// promotion then waits for the ChainLock through the mined-height
+    /// locator, and ends in `FinalityTimeout` at the bound.)
     ///
     /// "Fixing" the catch-all to propagate everything but
     /// `FinalityTimeout` turns the reconcile result below into
@@ -1055,9 +1094,9 @@ mod tests {
     /// keeps the decision from silently regressing.
     #[tokio::test(start_paused = true)]
     async fn already_consumed_reconciliation_downgrades_non_timeout_promotion_failure() {
-        let ctx = instant_reconciliation_context().await;
+        let ctx = instant_reconciliation_context_with(Arc::new(FailingLookupPersister)).await;
 
-        // Pin the SCENARIO first: with the record unavailable, the
+        // Pin the SCENARIO first: with the record lookup failing, the
         // promotion must fail with the NON-timeout `AssetLockProofWait`
         // fast-fail. If a future fixture change made the record findable,
         // this assertion — not a silently green downgrade check — fails.
@@ -1065,7 +1104,7 @@ mod tests {
             .manager
             .upgrade_to_chain_lock_proof(&ctx.out_point, Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT))
             .await
-            .expect_err("record unavailable: the promotion must fail");
+            .expect_err("record lookup failed: the promotion must fail");
         assert!(
             matches!(promotion_err, PlatformWalletError::AssetLockProofWait(_)),
             "expected the non-timeout AssetLockProofWait fast-fail, got {promotion_err:?}"

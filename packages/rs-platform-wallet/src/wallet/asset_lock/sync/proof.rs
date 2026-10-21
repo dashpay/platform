@@ -8,6 +8,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::persister::TransientMissTally;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::AssetLockStatus;
@@ -242,6 +243,21 @@ pub(super) fn record_or_persister(
     persister.get_core_tx_record(txid)
 }
 
+/// [`record_or_persister`], reading a transient backend failure as a miss,
+/// for [`AssetLockManager::upgrade_to_chain_lock_proof`]: a miss there leads
+/// into the ChainLock wait, which re-reads the record every round, so a busy
+/// store is no reason to fail the upgrade. Any other failure is returned.
+pub(super) fn record_or_persister_tolerating_transient(
+    in_memory: Option<TransactionRecord>,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &Txid,
+) -> Result<Option<TransactionRecord>, crate::changeset::PersistenceError> {
+    if let Some(record) = in_memory {
+        return Ok(Some(record));
+    }
+    persister.get_core_tx_record_or_transient_miss(txid, &mut TransientMissTally::default())
+}
+
 /// Family-aware in-memory funding-tx record lookup, shared by EVERY proof,
 /// ChainLock-wait, and recovery path.
 ///
@@ -292,9 +308,9 @@ fn funding_accounts(
 /// reports `txid` as chainlock-finalized.
 ///
 /// This is the same finality question [`record_holds_local_finality`] asks,
-/// for the record that is no longer there to ask it of. Under the default
-/// `keep-finalized-transactions` configuration a chainlock promotion drops
-/// the promoted record and keeps only its txid in the account's finalized
+/// for the record that is no longer there to ask it of. Without the
+/// `keep-finalized-transactions` feature (the default) a chainlock promotion
+/// drops the promoted record and keeps only its txid in the account's finalized
 /// set, so from that moment on a lookup by record cannot see a finality the
 /// wallet has already recorded — the txid set is the only place it survives.
 /// Searched over the same families, in the same order, as
@@ -422,19 +438,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // wm dropped at end of block — release before persister + DAPI calls.
         };
 
-        let record = record_or_persister(in_memory, &self.persister, &out_point.txid)
-            .map_err(|e| {
+        let record =
+            record_or_persister(in_memory, &self.persister, &out_point.txid).map_err(|e| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Persister lookup for tx {} failed: {}",
                     out_point.txid, e
                 ))
-            })?
-            .ok_or_else(|| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Transaction {} not found in account {} (in-memory or persister)",
-                    out_point.txid, account_index
-                ))
             })?;
+        // No record to read the context from (evicted after a ChainLock
+        // promotion, on a backend that keeps none): nothing here proves a
+        // ChainLock, so the InstantSend proof is returned as it is. If
+        // Platform cannot use it, the funding flow's IS→CL fallback builds
+        // the ChainLock proof (`upgrade_to_chain_lock_proof`).
+        let Some(record) = record else {
+            return Ok(proof);
+        };
 
         // Local SPV-verified ChainLock is the only signal we trust.
         // Skipping a Platform-tip pre-flight: it's an unproven self-
@@ -549,28 +567,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_tx_record(&info.core_wallet.accounts, account_index, &txid)
         };
 
-        let record = record_or_persister(in_memory, &self.persister, &txid).map_err(|e| {
-            PlatformWalletError::AssetLockProofWait(format!(
-                "Persister lookup for tx {} failed: {}",
-                txid, e
-            ))
-        })?;
-        let record = record.ok_or_else(|| {
-            // Both lookups missed. The asset lock is known-tracked
-            // (we validated `tracked_asset_locks.get` above), so this
-            // is a wallet-state mismatch / post-wipe race rather than
-            // a "not chain-locked yet" case. Fast-fail rather than
-            // dispatching to `wait_for_chain_lock` and burning the
-            // full timeout.
-            PlatformWalletError::AssetLockProofWait(format!(
-                "Transaction {} not found in account {} (in-memory or persister)",
-                txid, account_index
-            ))
-        })?;
-        let height = if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
-            record.height()
-        } else {
-            None
+        let record = record_or_persister_tolerating_transient(in_memory, &self.persister, &txid)
+            .map_err(|e| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Persister lookup for tx {} failed: {}",
+                    txid, e
+                ))
+            })?;
+        // Both lookups can miss for a lock that is still tracked: without
+        // `keep-finalized-transactions` a ChainLock promotion evicts the record
+        // from memory, a backend that keeps no transaction records answers
+        // `Ok(None)`, and the in-memory finalized set does not survive a
+        // restart. The ChainLock wait resolves such a lock through the
+        // SPV-verified mined-height locator, re-reading the record on every
+        // round; a failed persister lookup has already returned above.
+        let height = match &record {
+            Some(record) if matches!(record.context, TransactionContext::InChainLockedBlock(_)) => {
+                record.height()
+            }
+            _ => None,
         };
 
         let height = match height {
@@ -3459,6 +3474,61 @@ mod chain_lock_wait_tests {
             .expect("upgrade");
 
             assert_eq!(chain_proof_height(proof), 100);
+        }
+
+        /// The same eviction with a backend that keeps no transaction records
+        /// (`Ok(None)` from the lookup): the mined-height locator places the
+        /// transaction, and the proof is built at that height. With
+        /// `keep-finalized-transactions` the record is never evicted.
+        #[cfg(not(feature = "keep-finalized-transactions"))]
+        #[tokio::test]
+        async fn should_build_the_chain_proof_from_the_locator_when_no_record_is_kept() {
+            let locator = ScriptedLocator::new(vec![mined(100)]);
+            let in_block =
+                TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0));
+            let ctx = ctx_with_persister(
+                in_block,
+                Network::Testnet,
+                Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+                |_| Arc::new(FakeRecordStore::with_records([])),
+            )
+            .await;
+            {
+                let mut wm = ctx.wallet_manager.write().await;
+                let info = wm
+                    .get_wallet_info_mut(&ctx.wallet_id)
+                    .expect("wallet must remain registered");
+                info.apply_chain_lock(ChainLock {
+                    block_height: 150,
+                    block_hash: BlockHash::all_zeros(),
+                    signature: BLSSignature::from([0u8; 96]),
+                });
+                assert!(
+                    funding_tx_record(&info.core_wallet.accounts, 0, &ctx.out_point.txid).is_none(),
+                    "the chainlock promotion evicts the record"
+                );
+            }
+
+            // Without a record the proof is passed through, not upgraded.
+            assert_eq!(
+                ctx.manager
+                    .validate_or_upgrade_proof(ctx.instant_proof.clone(), 0, &ctx.out_point)
+                    .await
+                    .expect("no record is not an error"),
+                ctx.instant_proof
+            );
+
+            let proof = tokio::time::timeout(
+                Duration::from_secs(5),
+                ctx.manager
+                    .upgrade_to_chain_lock_proof(&ctx.out_point, None),
+            )
+            .await
+            .expect("resolves without waiting for another chain lock")
+            .expect("upgrade");
+
+            assert_eq!(chain_proof_height(proof), 100);
+            assert_eq!(locator.calls(), 1);
         }
     }
 }
