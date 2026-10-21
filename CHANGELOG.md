@@ -1,3 +1,14 @@
+## [5.0.0-rc.7](https://github.com/dashpay/platform/compare/v5.0.0-rc.6...v5.0.0-rc.7) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update rust-dashcore to v0.45.0 (#5517)
+
+### Miscellaneous Chores
+
+* **platform:** update rust-dashcore to v0.45.0 ([#5517](https://github.com/dashpay/platform/issues/5517))
+
 ## [5.0.0-rc.6](https://github.com/dashpay/platform/compare/v5.0.0-rc.5...v5.0.0-rc.6) (2026-10-21)
 
 
