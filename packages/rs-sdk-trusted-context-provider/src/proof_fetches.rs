@@ -61,7 +61,8 @@ const MAX_REQUESTS_IN_FLIGHT: usize = 2;
 /// call, and the quorums come from unverified responses.
 const MAX_QUORUMS_IN_FLIGHT: usize = 2;
 /// Most recently failed fetches remembered for their cooldowns. Running
-/// fetches are not counted: each has a caller waiting on it.
+/// fetches are not counted: natively each has a caller waiting on it, and in
+/// a browser each needed a free place to start and ends at its deadline.
 const MAX_FAILED_FETCHES: usize = 64;
 /// Verified states kept besides the checkpoint, to start later proofs from.
 const MAX_RECENT_STATES: usize = 16;
@@ -469,11 +470,8 @@ impl ProofFetches {
                 "{running} other quorums are being proven; not starting another"
             ));
         }
-        // The new fetch carries the earlier failures near its height on.
-        proven.fetches.retain(|(other, slot)| {
-            !(*other == quorum
-                && matches!(slot, Slot::Failed { height: failed, .. } if near(*failed)))
-        });
+        // The earlier failures near this height stay until the new fetch
+        // ends, so a fetch every caller abandons does not erase them.
         proven.next_fetch_id += 1;
         let id = proven.next_fetch_id;
         let holding = Arc::new(AtomicBool::new(true));
@@ -487,6 +485,8 @@ impl ProofFetches {
         };
         // Built under the lock, so it must do nothing until it is polled.
         let fetch = Arc::clone(self).start(attempt);
+        // A fetch not yet polled always downgrades; were it done, it would
+        // need no slot.
         let Some(weak) = fetch.downgrade() else {
             return Ok(fetch);
         };
@@ -534,6 +534,18 @@ impl ProofFetches {
     fn finish(&self, attempt: &Attempt, result: &Result<(), String>, asked: bool) {
         attempt.holding.store(false, Ordering::Relaxed);
         let mut proven = self.lock();
+        let ours = |slot: &Slot| matches!(slot, Slot::Running { id, .. } if *id == attempt.id);
+        if !proven.fetches.iter().any(|(_, slot)| ours(slot)) {
+            return;
+        }
+        // This fetch's outcome replaces the failures it carried on.
+        let window = self.window;
+        proven.fetches.retain(|(quorum, slot)| match slot {
+            Slot::Failed { height, .. } => {
+                *quorum != attempt.quorum || height.abs_diff(attempt.height) > window
+            }
+            Slot::Running { .. } => true,
+        });
         let Some(index) = proven
             .fetches
             .iter()
@@ -1274,6 +1286,32 @@ mod tests {
         // The second waited out a backoff and wants to send again.
         second.holding.store(false, Ordering::Relaxed);
         assert!(fetches.take_place(&second));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn should_keep_earlier_failures_when_every_caller_abandons_the_next_fetch() {
+        let fetches = Arc::new(fetches());
+        let quorum = (6, [1; 32]);
+        let now = Instant::now();
+        let Some(long_ago) = now.checked_sub(Duration::from_secs(11)) else {
+            return;
+        };
+        let failed = Slot::Failed {
+            at: long_ago,
+            failures: 2,
+            height: 150,
+        };
+        fetches.lock().fetches.push((quorum, failed));
+        let abandoned = fetches.join_or_start(6, [1; 32], 150).expect("cooled down");
+        drop(abandoned);
+        let _next = fetches
+            .join_or_start(6, [1; 32], 150)
+            .expect("starts again");
+        let kept = fetches.lock().fetches.iter().any(|(other, slot)| {
+            *other == quorum && matches!(slot, Slot::Failed { failures: 2, .. })
+        });
+        assert!(kept, "the earlier failures survive the abandoned fetch");
     }
 
     #[test]
