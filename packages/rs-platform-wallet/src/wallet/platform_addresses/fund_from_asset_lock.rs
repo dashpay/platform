@@ -921,8 +921,8 @@ mod tests {
             _sighash: [u8; 32],
         ) -> Result<
             (
-                dashcore::secp256k1::ecdsa::Signature,
-                dashcore::secp256k1::PublicKey,
+                dashcore::crypto::ecdsa::EcdsaSignature,
+                dashcore::crypto::ecdsa::EcdsaPublicKey,
             ),
             Self::Error,
         > {
@@ -932,7 +932,7 @@ mod tests {
         async fn public_key(
             &self,
             _path: &key_wallet::DerivationPath,
-        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+        ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
             unreachable!("underfunded fresh asset lock must fail before asset-lock signing")
         }
     }

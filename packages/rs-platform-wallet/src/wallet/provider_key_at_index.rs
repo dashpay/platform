@@ -74,7 +74,7 @@
 //! are scrubbed when dropped.
 
 use dashcore::bls_sig_utils::BlsScheme;
-use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
@@ -156,7 +156,7 @@ pub fn derive_platform_node_public_keys(
                     "failed to derive Ed25519 platform-node key at index {index}: {e}"
                 ))
             })?;
-        let public_key: [u8; 32] = EddsaSecretKey::from(&signing_key).public_key().to_bytes();
+        let public_key: [u8; 32] = signing_key.public_key().to_bytes();
         // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20] — the
         // Tenderdash/CometBFT convention (rust-dashcore #884) that a ProRegTx
         // `platform_node_id` field carries, NOT a hash160.
@@ -567,8 +567,7 @@ impl PlatformWallet {
                             "failed to derive Ed25519 platform-node key at index {index}: {e}"
                         ))
                     })?;
-                let verifying_bytes: [u8; 32] =
-                    EddsaSecretKey::from(&signing_key).public_key().to_bytes();
+                let verifying_bytes: [u8; 32] = signing_key.public_key().to_bytes();
                 let public_key_bytes = verifying_bytes.to_vec();
 
                 // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20]
@@ -665,7 +664,7 @@ impl PlatformWallet {
                                 "invalid provider key index {index}: {e}"
                             ))
                         })?;
-                        let mut child_xpriv = master
+                        let child_xpriv = master
                             .derive_priv(&account_path)
                             .and_then(|acct| {
                                 let child_path: key_wallet::bip32::DerivationPath =
@@ -677,26 +676,20 @@ impl PlatformWallet {
                                     "failed to derive provider private key at index {index}: {e}"
                                 ))
                             })?;
-                        let mut private = child_xpriv.to_priv();
+                        let private = child_xpriv.to_priv();
                         let derived_public = private.public_key();
 
-                        // Produce every output while the scalar is still live,
-                        // then erase it. `dashcore::PrivateKey` is `Copy` and
-                        // has no `Drop`, so unlike the `Zeroizing` outputs below
-                        // nothing scrubs it on the way out — the raw scalar
-                        // would otherwise be left behind in this frame. Both
-                        // copies are erased: the extended key it came from, and
-                        // the `PrivateKey` itself.
+                        // Secret-key owners and exported scalar copies zeroize on drop.
                         let outputs = if derived_public == public_key {
                             Some((
-                                Zeroizing::new(private.inner.to_secret_bytes().to_vec()),
+                                Zeroizing::new(private.inner.to_bytes().to_vec()),
                                 Zeroizing::new(private.to_wif()),
                             ))
                         } else {
                             None
                         };
-                        private.inner.non_secure_erase();
-                        child_xpriv.private_key.non_secure_erase();
+                        drop(private);
+                        drop(child_xpriv);
 
                         let Some((scalar, wif)) = outputs else {
                             return Err(PlatformWalletError::KeyDerivation(format!(
@@ -788,7 +781,7 @@ mod tests {
                 .expect("platform_node_key_at");
             assert_eq!(
                 k.public_key,
-                EddsaSecretKey::from(&via_api).public_key().to_bytes(),
+                via_api.public_key().to_bytes(),
                 "snapshot pubkey must equal platform_node_key_at at {i}"
             );
         }
@@ -813,7 +806,7 @@ mod tests {
         // The snapshot's index-0 public key corresponds to that golden secret.
         assert_eq!(
             keys[0].public_key,
-            EddsaSecretKey::from(&sk0).public_key().to_bytes(),
+            sk0.public_key().to_bytes(),
             "snapshot index-0 pubkey must match the golden secret's public key"
         );
         // Golden pubkey + Tenderdash node-id (SHA256[..20]) for mainnet
@@ -1136,8 +1129,8 @@ mod tests {
                     let expected = master.derive_priv(&path).expect("path derivation");
 
                     assert_eq!(
-                        derived.inner.to_secret_bytes(),
-                        expected.private_key.to_secret_bytes(),
+                        derived.inner.to_bytes(),
+                        expected.private_key.to_bytes(),
                         "{kind:?} key at index {index} on {network:?} must come from \
                          m/9'/{coin}/3'/{family}/{index}"
                     );
@@ -1173,8 +1166,8 @@ mod tests {
             .expect("doubled derivation");
 
         assert_ne!(
-            derived.inner.to_secret_bytes(),
-            doubled.private_key.to_secret_bytes(),
+            derived.inner.to_bytes(),
+            doubled.private_key.to_bytes(),
             "the account derivation path is being applied twice again"
         );
     }
@@ -1245,8 +1238,8 @@ mod tests {
                 .expect("path derivation");
 
             assert_eq!(
-                derived.inner.to_secret_bytes(),
-                expected.private_key.to_secret_bytes(),
+                derived.inner.to_bytes(),
+                expected.private_key.to_bytes(),
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }
