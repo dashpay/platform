@@ -656,6 +656,14 @@ mod tests {
                 .collect()
         }
 
+        /// The `height` of each request, in arrival order.
+        fn heights(&self) -> Vec<Value> {
+            self.requests()
+                .iter()
+                .map(|body| body["height"].clone())
+                .collect()
+        }
+
         fn most_open(&self) -> usize {
             self.most_open.load(AtomicOrdering::SeqCst)
         }
@@ -701,6 +709,12 @@ mod tests {
         let mut body = vec![0; length];
         reader.read_exact(&mut body).expect("read the request body");
         serde_json::from_slice(&body).expect("a JSON request body")
+    }
+
+    /// The URL of a loopback port nothing listens on.
+    fn refused_url() -> String {
+        let closed = TcpListener::bind("127.0.0.1:0").expect("bind");
+        format!("http://{}", closed.local_addr().expect("address"))
     }
 
     fn cache_size() -> NonZeroUsize {
@@ -889,10 +903,7 @@ mod tests {
     #[tokio::test]
     async fn should_report_a_refused_connection_as_an_unavailable_source() {
         let f = fixture(Network::Testnet);
-        let closed = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let url = format!("http://{}", closed.local_addr().expect("address"));
-        drop(closed);
-        let provider = provider_for(&f, vec![url], quick());
+        let provider = provider_for(&f, vec![refused_url()], quick());
         let started = Instant::now();
         unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await);
         assert!(started.elapsed() < Duration::from_secs(10));
@@ -909,11 +920,7 @@ mod tests {
         let height = f.target.height;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
         assert_eq!(key.expect("a proven key"), Some(f.key));
-        let heights: Vec<_> = relay
-            .requests()
-            .iter()
-            .map(|r| r["height"].clone())
-            .collect();
+        let heights = relay.heights();
         assert_eq!(heights, [json!(height), json!(0)]);
     }
 
@@ -935,11 +942,7 @@ mod tests {
         let honest = f.target.height;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, honest).await;
         assert_eq!(key.expect("the honest height is proven"), Some(f.key));
-        let heights: Vec<_> = relay
-            .requests()
-            .iter()
-            .map(|r| r["height"].clone())
-            .collect();
+        let heights = relay.heights();
         assert_eq!(heights, [json!(bogus), json!(0), json!(honest)]);
     }
 
@@ -956,11 +959,7 @@ mod tests {
         assert!(reason.contains("not asked again"), "{reason}");
         assert!(started.elapsed() < Duration::from_secs(20), "{reason}");
         for relay in &relays {
-            let heights: Vec<_> = relay
-                .requests()
-                .iter()
-                .map(|r| r["height"].clone())
-                .collect();
+            let heights = relay.heights();
             assert_eq!(heights, [json!(f.target.height), json!(0)], "{reason}");
         }
     }
@@ -1020,11 +1019,7 @@ mod tests {
         let height = f.target.height + 600;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
         assert_eq!(key.expect("the other source proves it"), Some(f.key));
-        let heights: Vec<_> = lagging
-            .requests()
-            .iter()
-            .map(|r| r["height"].clone())
-            .collect();
+        let heights = lagging.heights();
         assert_eq!(heights, [json!(height), json!(0)]);
         assert_eq!(proving.requests().len(), 1);
     }
@@ -1104,15 +1099,12 @@ mod tests {
     async fn should_cool_down_a_source_that_fails_early_on_a_request_the_deadline_shortened() {
         let f = fixture(Network::Testnet);
         let hung = MockRelay::spawn(vec![Answer::Hang(Duration::from_secs(20))]);
-        let closed = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let refused = format!("http://{}", closed.local_addr().expect("address"));
-        drop(closed);
         let timing = Timing {
             deadline: Duration::from_secs(2),
             hedge_after: Duration::from_millis(100),
             ..quick()
         };
-        let provider = provider_for(&f, vec![hung.url.clone(), refused], timing);
+        let provider = provider_for(&f, vec![hung.url.clone(), refused_url()], timing);
         unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await);
         // The hung request was cut short by the deadline; the refusal was not.
         assert_eq!(provider.inner.fetches.cooling(), [false, true]);
