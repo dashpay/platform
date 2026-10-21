@@ -1006,7 +1006,7 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use dashcore::secp256k1::{ecdsa, PublicKey};
+    use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
@@ -1906,7 +1906,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Err("intentional signer failure")
         }
 

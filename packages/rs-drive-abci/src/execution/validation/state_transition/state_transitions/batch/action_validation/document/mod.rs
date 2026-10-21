@@ -1,4 +1,6 @@
 mod document_base_transaction_action;
+#[cfg(test)]
+pub(crate) use document_base_transaction_action::DocumentBaseTransitionActionValidation;
 pub(crate) mod document_create_transition_action;
 pub(crate) mod document_delete_transition_action;
 pub(crate) mod document_index_only_delete_transition_action;

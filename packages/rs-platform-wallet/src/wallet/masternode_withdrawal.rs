@@ -28,10 +28,8 @@
 use std::fmt;
 
 use async_trait::async_trait;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaRecSignature, EcdsaSecretKey, EcdsaSignature};
 use dashcore::hashes::{hash160, sha256d, Hash};
-use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use dashcore::secp256k1::Message;
-use dashcore::sign_message::MessageSignature;
 use dashcore::{Address as DashAddress, AddressType, Network, ScriptBuf};
 use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -527,13 +525,13 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
 /// key against the masternode identity key's hash160, so a wrong key still
 /// cannot produce a broadcastable signature.
 pub struct RawSecretCoreSigner {
-    secret: dashcore::secp256k1::SecretKey,
+    secret: EcdsaSecretKey,
 }
 
 impl RawSecretCoreSigner {
     /// `secret` must be a valid secp256k1 scalar (32 bytes).
     pub fn from_bytes(secret: &[u8; 32]) -> Result<Self, PlatformWalletError> {
-        let secret = dashcore::secp256k1::SecretKey::from_secret_bytes(*secret).map_err(|_| {
+        let secret = EcdsaSecretKey::from_bytes(secret).map_err(|_| {
             PlatformWalletError::InvalidParameter("not a valid secp256k1 private key".to_string())
         })?;
         Ok(Self { secret })
@@ -541,8 +539,8 @@ impl RawSecretCoreSigner {
 
     /// hash160 of this key's compressed public key.
     pub fn public_key_hash160(&self) -> [u8; 20] {
-        let public = dashcore::secp256k1::PublicKey::from_secret_key(&self.secret);
-        hash160::Hash::hash(&public.serialize()).to_byte_array()
+        let public = self.secret.public_key();
+        hash160::Hash::hash(&public.to_compressed()).to_byte_array()
     }
 }
 
@@ -565,27 +563,19 @@ impl CoreSigner for RawSecretCoreSigner {
         &self,
         _path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<
-        (
-            dashcore::secp256k1::ecdsa::Signature,
-            dashcore::secp256k1::PublicKey,
-        ),
-        Self::Error,
-    > {
-        let msg = Message::from_digest(sighash);
+    ) -> Result<(EcdsaSignature, EcdsaPublicKey), Self::Error> {
+        // Recoverable signing preserves RFC6979 bytes without low-R grinding.
         Ok((
-            self.secret.sign_ecdsa(msg),
-            dashcore::secp256k1::PublicKey::from_secret_key(&self.secret),
+            self.secret
+                .sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?,
+            self.secret.public_key(),
         ))
     }
 
-    async fn public_key(
-        &self,
-        _path: &DerivationPath,
-    ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
-        Ok(dashcore::secp256k1::PublicKey::from_secret_key(
-            &self.secret,
-        ))
+    async fn public_key(&self, _path: &DerivationPath) -> Result<EcdsaPublicKey, Self::Error> {
+        Ok(self.secret.public_key())
     }
 }
 
@@ -689,7 +679,8 @@ where
 
         // Bind the derived key to the identity key BEFORE emitting anything:
         // a wrong index / wrong seed yields a different pubkey.
-        let derived_hash: [u8; 20] = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
+        let derived_hash: [u8; 20] =
+            hash160::Hash::hash(&public_key.to_compressed()).to_byte_array();
         if derived_hash != self.expected_key_hash160 {
             return Err(ProtocolError::Generic(format!(
                 "the key derived at {} does not match the masternode identity key (hash160 {} \
@@ -700,14 +691,10 @@ where
             )));
         }
 
-        let msg = Message::from_digest(digest);
-        let compact = signature.serialize_compact();
         let recoverable = (0..4i32)
-            .filter_map(|id| RecoveryId::try_from(id).ok())
-            .filter_map(|recid| RecoverableSignature::from_compact(&compact, recid).ok())
+            .filter_map(|id| EcdsaRecSignature::from_parts(signature, id as u8, true).ok())
             .find(|candidate| {
-                candidate
-                    .recover_ecdsa(msg)
+                EcdsaPublicKey::recover(&digest, candidate)
                     .is_ok_and(|recovered| recovered == public_key)
             })
             .ok_or_else(|| {
@@ -716,10 +703,7 @@ where
                 )
             })?;
 
-        Ok(MessageSignature::new(recoverable, true)
-            .serialize()
-            .to_vec()
-            .into())
+        Ok(recoverable.as_bytes().to_vec().into())
     }
 
     async fn sign_create_witness(
@@ -740,7 +724,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::{PublicKey, SecretKey};
+    use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSecretKey as SecretKey};
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{Purpose, SecurityLevel};
     use std::str::FromStr;
@@ -762,23 +746,25 @@ mod tests {
             &self,
             _path: &DerivationPath,
             sighash: [u8; 32],
-        ) -> Result<(dashcore::secp256k1::ecdsa::Signature, PublicKey), Self::Error> {
-            let msg = Message::from_digest(sighash);
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Ok((
-                self.secret.sign_ecdsa(msg),
-                PublicKey::from_secret_key(&self.secret),
+                self.secret
+                    .sign_recoverable(&sighash)
+                    .signature()
+                    .map_err(|e| e.to_string())?,
+                self.secret.public_key(),
             ))
         }
 
         async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-            Ok(PublicKey::from_secret_key(&self.secret))
+            Ok(self.secret.public_key())
         }
     }
 
     fn fixture() -> (FixedKeySigner, [u8; 20], IdentityPublicKey) {
-        let secret = SecretKey::from_secret_bytes([0x42u8; 32]).expect("valid scalar");
-        let pubkey = PublicKey::from_secret_key(&secret);
-        let hash: [u8; 20] = hash160::Hash::hash(&pubkey.serialize()).to_byte_array();
+        let secret = SecretKey::from_bytes(&[0x42u8; 32]).expect("valid scalar");
+        let pubkey = secret.public_key();
+        let hash: [u8; 20] = hash160::Hash::hash(&pubkey.to_compressed()).to_byte_array();
         let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
             purpose: Purpose::OWNER,

@@ -3182,7 +3182,7 @@ mod skip_if_absent_anywhere_tests {
     /// A day, 20000 days after the epoch, plus five hours.
     const BLOCK_TIME_MS: u64 = 20_000 * 86_400_000 + 5 * 3_600_000;
 
-    fn register(
+    pub(super) fn register(
         platform: &TempPlatform<MockCoreRPCLike>,
         owner_id: Identifier,
         path: &str,
@@ -3206,7 +3206,7 @@ mod skip_if_absent_anywhere_tests {
     }
 
     /// The document the executed `transition` is proven to have left.
-    fn proven_document(
+    pub(super) fn proven_document(
         platform: &TempPlatform<MockCoreRPCLike>,
         transition: &StateTransition,
         block_info: &BlockInfo,
@@ -3491,5 +3491,210 @@ mod skip_if_absent_anywhere_tests {
             platform_version,
         );
         assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+    }
+}
+
+/// An indexOnly `like` carrying its post's `tags`, each a key of `byTagPost`
+/// and of the trending `byTrendTagPost`, through the full pipeline.
+mod array_index_tests {
+    use super::index_only_tests::*;
+    use super::skip_if_absent_anywhere_tests::{proven_document, register};
+    use super::*;
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::document::Document;
+    use dpp::platform_value::Value;
+
+    const TAGGED_LIKES: &str =
+        "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-tags-contract.json";
+
+    /// A day, 20000 days after the epoch, plus five hours.
+    const BLOCK_TIME_MS: u64 = 20_000 * 86_400_000 + 5 * 3_600_000;
+
+    fn tags(tags: &[&str]) -> Value {
+        Value::Array(
+            tags.iter()
+                .map(|tag| Value::Text(tag.to_string()))
+                .collect(),
+        )
+    }
+
+    /// A like is created with an entry under each of its tags; a second like
+    /// of the post by its owner is refused on `byPost` whatever its tags; a
+    /// delete carrying the tags reordered matches no entry; the tags as created
+    /// delete. The executed create and delete are proven through `byPost`, the
+    /// type's proof index, which a tag index never is.
+    #[tokio::test]
+    async fn should_create_and_delete_a_tagged_like_by_its_exact_tags() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(52_001);
+        let block_info = BlockInfo::default_with_time(BLOCK_TIME_MS);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 962, dash_to_credits!(1.0));
+        let contract = register(&platform, alice.id(), TAGGED_LIKES, platform_version);
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+
+        let mut nonce = 1;
+        let tagged_like = |tag_list: &[&str], rng: &mut StdRng, nonce: u64| {
+            let entropy = Bytes32::random_with_rng(rng);
+            let mut like: Document = like_type
+                .random_document_with_identifier_and_entropy(
+                    rng,
+                    alice.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random like");
+            like.set("postId", Value::Identifier([7; 32]));
+            like.set("postAuthor", Value::Identifier([8; 32]));
+            like.set("tags", tags(tag_list));
+            like.set_id_for_creation(like_type, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
+            (like, entropy)
+        };
+
+        // ── Alice likes the post under three tags ──────────────────────
+        let (mut like, entropy) = tagged_like(&["dash", "evo", "news"], &mut rng, nonce);
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            like.clone(),
+            like_type,
+            entropy.0,
+            &alice_key,
+            nonce,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        nonce += 1;
+        let result = process_and_commit_at(
+            &platform,
+            &platform_state,
+            &create,
+            &block_info,
+            platform_version,
+        );
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+        assert!(
+            proven_document(&platform, &create, &block_info, &contract, platform_version).is_some(),
+            "the created like is proven present"
+        );
+        like.set_created_at(Some(BLOCK_TIME_MS));
+
+        // ── the same post again, under another tag, collides on byPost ─
+        let (other, other_entropy) = tagged_like(&["solo"], &mut rng, nonce);
+        let create_again = BatchTransition::new_document_creation_transition_from_document(
+            other,
+            like_type,
+            other_entropy.0,
+            &alice_key,
+            nonce,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        nonce += 1;
+        let result = process_and_commit_at(
+            &platform,
+            &platform_state,
+            &create_again,
+            &block_info,
+            platform_version,
+        );
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                ..
+            }],
+            "a second like of the post by its owner collides whatever its tags"
+        );
+
+        // ── a delete carrying the tags reordered matches no entry ──────
+        let mut reordered = like.clone();
+        reordered.set("tags", tags(&["evo", "dash", "news"]));
+        let delete_reordered = BatchTransition::new_document_deletion_transition_from_document(
+            reordered,
+            like_type,
+            &alice_key,
+            nonce,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        nonce += 1;
+        let result = process_and_commit_at(
+            &platform,
+            &platform_state,
+            &delete_reordered,
+            &block_info,
+            platform_version,
+        );
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentNotFoundError(_)),
+                ..
+            }],
+            "the row commits to the tags in their order"
+        );
+
+        // ── the tags as created delete ─────────────────────────────────
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            like,
+            like_type,
+            &alice_key,
+            nonce,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result = process_and_commit_at(
+            &platform,
+            &platform_state,
+            &delete,
+            &block_info,
+            platform_version,
+        );
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+        assert!(
+            proven_document(&platform, &delete, &block_info, &contract, platform_version).is_none(),
+            "the unlike is proven absent"
+        );
+
+        let issues = platform
+            .drive
+            .grove
+            .verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("verify_grovedb must run");
+        assert!(
+            issues.is_empty(),
+            "grovedb must stay consistent: {issues:?}"
+        );
     }
 }

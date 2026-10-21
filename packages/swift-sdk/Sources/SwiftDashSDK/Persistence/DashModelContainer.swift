@@ -303,9 +303,10 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// Separate compatibility route: V1 has fields missing from historical V2.
 /// Never insert V2 between this baseline and the current schema.
 enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV4.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV4.self)]
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
     }
 }
 
@@ -375,13 +376,13 @@ public enum DashSchemaV2: VersionedSchema {
     }
 }
 
-/// Frozen released graph and fixed target of the legacy-store bridge.
+/// Published V3 and fixed legacy-bridge target. Its complete model graph is frozen.
 public enum DashSchemaV3: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
 }
 
-/// Live schema adds an optional accounting-availability marker; existing rows keep nil.
+/// Current schema: optional drain operation IDs and transaction accounting availability.
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

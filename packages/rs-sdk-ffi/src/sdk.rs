@@ -40,6 +40,17 @@ fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilde
 }
 
 /// Internal SDK wrapper
+///
+/// A single `SDKHandle` is used from several threads at once (the Swift SDK
+/// runs Platform queries concurrently off the caller's actor), so every FFI
+/// entry point that is handed a live handle must borrow it shared:
+/// `&*(handle as *const SDKWrapper)`. Nothing here needs `&mut` once the
+/// wrapper is built: `Sdk` is `Send + Sync`, `runtime` is an `Arc`, and the
+/// trusted provider mutates only through its own interior locks. Taking
+/// `&mut SDKWrapper` from a handle another thread may be using would alias a
+/// live shared borrow, which is undefined behaviour even if nothing is
+/// written. The one exclusive operation is `dash_sdk_destroy`, whose contract
+/// is that the caller has already stopped every other use of the handle.
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<BigStackRuntime>,
@@ -330,13 +341,8 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         "dash_sdk_create_trusted: creating trusted context provider"
     );
 
-    // Create trusted context provider. Resolution order for the quorum
-    // lookup base URL:
-    //   1. Caller-provided `config.quorum_url` (highest priority — required
-    //      for devnet, also usable for non-default mainnet/testnet shards).
-    //   2. Regtest fallback to the local quorum sidecar `127.0.0.1:22444`
-    //      (the dashmate Docker default).
-    //   3. Network-derived default (mainnet/testnet only).
+    // Create the trusted context provider; see `build_trusted_provider` for
+    // how the quorum lookup base URL is chosen.
     let explicit_quorum_url: Option<String> = if config.quorum_url.is_null() {
         None
     } else {
@@ -351,62 +357,9 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
             }
         }
     };
-    let trusted_provider = if let Some(quorum_url) = explicit_quorum_url {
-        info!(
-            quorum_url = %quorum_url,
-            "dash_sdk_create_trusted: using caller-provided quorum URL"
-        );
-        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
-            network,
-            quorum_url,
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ) {
-            Ok(provider) => Arc::new(provider),
-            Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create context provider from override URL");
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    format!("Failed to create context provider: {}", e),
-                ));
-            }
-        }
-    } else if matches!(network, Network::Regtest) {
-        info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
-        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
-            network,
-            "http://127.0.0.1:22444".to_string(),
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ) {
-            Ok(provider) => {
-                info!("dash_sdk_create_trusted: local trusted context provider created");
-                Arc::new(provider)
-            }
-            Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create local context provider");
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    format!("Failed to create local context provider: {}", e),
-                ));
-            }
-        }
-    } else {
-        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
-            network,
-            None,                                      // Use default quorum lookup endpoints
-            std::num::NonZeroUsize::new(100).unwrap(), // Cache size
-        ) {
-            Ok(provider) => {
-                info!("dash_sdk_create_trusted: trusted context provider created");
-                Arc::new(provider)
-            }
-            Err(e) => {
-                error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    format!("Failed to create trusted context provider: {}", e),
-                ));
-            }
-        }
+    let trusted_provider = match build_trusted_provider(network, explicit_quorum_url) {
+        Ok(provider) => Arc::new(provider),
+        Err(error) => return DashSDKResult::error(error),
     };
 
     // Parse DAPI addresses - for trusted setup, we always need real addresses.
@@ -492,7 +445,8 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
             let runtime_clone = runtime.handle().clone();
             runtime_clone.spawn(async move {
-                match provider_for_prefetch.update_quorum_caches().await {
+                // Quorum key fetches that come in while this runs share it.
+                match provider_for_prefetch.refresh_quorum_caches().await {
                     Ok(_) => info!("dash_sdk_create_trusted: successfully prefetched quorums"),
                     Err(e) => warn!(error = %e, "dash_sdk_create_trusted: failed to prefetch quorums; continuing"),
                 }
@@ -510,10 +464,86 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     }
 }
 
+/// Quorum and contract cache size of the trusted context provider.
+const TRUSTED_PROVIDER_CACHE_SIZE: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(100) {
+    Some(size) => size,
+    None => panic!("the cache size is not zero"),
+};
+
+/// Build the trusted context provider of [`dash_sdk_create_trusted`].
+///
+/// The quorum lookup base URL is, in order: the caller's `quorum_url`
+/// (required for devnet, also usable for non-default mainnet/testnet shards),
+/// the local quorum sidecar `127.0.0.1:22444` on regtest (the dashmate Docker
+/// default), or the network's default.
+///
+/// Its synchronous lookup never fetches. A quorum key newer than the cache is
+/// fetched asynchronously by the SDK, which then verifies the response it
+/// already holds again: proof verification never blocks on the network, and
+/// concurrent misses share one refresh.
+fn build_trusted_provider(
+    network: Network,
+    quorum_url: Option<String>,
+) -> Result<rs_sdk_trusted_context_provider::TrustedHttpContextProvider, DashSDKError> {
+    let cache_size = TRUSTED_PROVIDER_CACHE_SIZE;
+    let provider = if let Some(quorum_url) = quorum_url {
+        info!(
+            quorum_url = %quorum_url,
+            "dash_sdk_create_trusted: using caller-provided quorum URL"
+        );
+        rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            network, quorum_url, cache_size,
+        )
+        .map_err(|e| {
+            error!(error = %e, "dash_sdk_create_trusted: failed to create context provider from override URL");
+            DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                format!("Failed to create context provider: {}", e),
+            )
+        })?
+    } else if matches!(network, Network::Regtest) {
+        info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
+        let provider = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            network,
+            "http://127.0.0.1:22444".to_string(),
+            cache_size,
+        )
+        .map_err(|e| {
+            error!(error = %e, "dash_sdk_create_trusted: failed to create local context provider");
+            DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                format!("Failed to create local context provider: {}", e),
+            )
+        })?;
+        info!("dash_sdk_create_trusted: local trusted context provider created");
+        provider
+    } else {
+        let provider = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
+            network, None, // Use default quorum lookup endpoints
+            cache_size,
+        )
+        .map_err(|e| {
+            error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
+            DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                format!("Failed to create trusted context provider: {}", e),
+            )
+        })?;
+        info!("dash_sdk_create_trusted: trusted context provider created");
+        provider
+    };
+    Ok(provider.with_refetch_if_not_found(false))
+}
+
 /// Destroy an SDK instance
 /// # Safety
 /// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
 /// - It may be null (no-op). After this call the handle must not be used again.
+/// - This is the only entry point that takes the wrapper exclusively, so no
+///   other call on the same handle may be in flight or start concurrently.
+///   The Swift SDK calls it only from `SDK.deinit`, which cannot run while a
+///   query holds its `SDK` (`performBlockingQuery` retains `self` across the
+///   FFI call).
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     if !handle.is_null() {
@@ -810,6 +840,30 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
                 e
             );
             std::ptr::null_mut()
+        }
+    }
+}
+
+#[cfg(test)]
+mod trusted_provider_tests {
+    use super::*;
+    use dash_sdk::platform::ContextProvider;
+
+    /// iOS and Android verify proofs with this provider. A quorum key newer
+    /// than its cache must be fetched asynchronously by the SDK, never by
+    /// blocking inside proof verification, whichever way the quorum URL was
+    /// chosen. The future is not polled: no request is made.
+    #[test]
+    fn should_build_a_provider_that_fetches_missing_quorum_keys_asynchronously() {
+        for quorum_url in [Some("http://127.0.0.1:1".to_string()), None] {
+            let provider = build_trusted_provider(Network::Regtest, quorum_url.clone())
+                .unwrap_or_else(|_| panic!("provider for {quorum_url:?}"));
+            assert!(
+                provider
+                    .fetch_quorum_public_key(106, [0x11; 32], 1)
+                    .is_some(),
+                "provider for {quorum_url:?} must fetch asynchronously"
+            );
         }
     }
 }

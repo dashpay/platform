@@ -1,3 +1,6 @@
+/// Chain lock quorum fixtures
+#[cfg(test)]
+pub mod chain_lock_quorums;
 /// Contract group fixtures
 #[cfg(test)]
 pub mod contract_groups;

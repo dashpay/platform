@@ -6,15 +6,16 @@
 //! DashPay state is rehydrated from the identities `entry_blob`, which is the
 //! authoritative load source. They exist for future per-profile/per-payment
 //! indexed queries. Round-trip pinned by
-//! `tests/sqlite_dashpay_overlay_contract.rs`.
+//! `tests/integration/sqlite_dashpay_overlay_contract.rs`.
 //!
 //! # …which is why the payment overlay is also PATCHED into `entry_blob`
 //!
 //! Because `load()` reads only the identity blob, a payment row that reached
-//! the overlay table alone is a write that does not survive a restart. The
-//! wallet-event adapter is the single writer of swept sent-payment verdicts
-//! and has no other durable channel for them, so [`apply`] finishes by
-//! folding each overlay row into the owning identity's `entry_blob`.
+//! the overlay table alone is a write that does not survive a restart. Swept
+//! sent-payment verdicts, from the wallet-event adapter or from a load that
+//! settles a conflict itself ([`settle_swept_payments`]), have no other
+//! durable channel, so [`apply`] finishes by folding each overlay row into
+//! the owning identity's `entry_blob`.
 //!
 //! The fold is a read-modify-write of ONLY the `(txid -> PaymentEntry)` keys
 //! the overlay names, run inside the persister's own write transaction:
@@ -33,18 +34,20 @@
 //! here and propagates [`WalletStorageError::WalletIdMismatch`] on a
 //! mis-attributed caller.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
+use dashcore::Txid;
 use rusqlite::{params, Transaction};
 
 use dpp::prelude::Identifier;
-use platform_wallet::changeset::IdentityEntry;
+use platform_wallet::changeset::{swept_payment_status, IdentityEntry};
 use platform_wallet::wallet::identity::{DashPayProfile, PaymentEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
+use crate::sqlite::schema::wallet_id_to_param;
 
 // PUBLIC material only: DashPay overlay types reaching `_blob` columns.
 impl_persistable_blob!(DashPayProfile, PaymentEntry);
@@ -104,6 +107,41 @@ pub fn apply(
         }
     }
     Ok(())
+}
+
+/// Give the payments filed under `swept` transactions the verdict the live
+/// sweep gives them. A load that settles a conflict removes the loser's record
+/// without an event, and nothing can derive the verdict once the record is gone.
+pub(crate) fn settle_swept_payments(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    swept: &HashSet<Txid>,
+) -> Result<(), WalletStorageError> {
+    let mut verdicts: BTreeMap<Identifier, BTreeMap<String, PaymentEntry>> = BTreeMap::new();
+    {
+        let mut stmt = tx.prepare_cached(
+            "SELECT length(entry_blob), entry_blob FROM identities WHERE wallet_id IS ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id_to_param(wallet_id)])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get(0)?)?;
+            let payload: Vec<u8> = row.get(1)?;
+            let entry: IdentityEntry = blob::decode(&payload)?;
+            for txid in swept.iter().map(Txid::to_string) {
+                let Some(payment) = entry.dashpay_payments.get(&txid) else {
+                    continue;
+                };
+                if let Some(status) = swept_payment_status(payment) {
+                    let payment = PaymentEntry {
+                        status,
+                        ..payment.clone()
+                    };
+                    verdicts.entry(entry.id).or_default().insert(txid, payment);
+                }
+            }
+        }
+    }
+    apply(tx, wallet_id, None, Some(&verdicts))
 }
 
 /// Fold the overlay's rows into each owning identity's authoritative

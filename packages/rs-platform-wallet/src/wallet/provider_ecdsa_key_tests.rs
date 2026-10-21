@@ -45,6 +45,8 @@ async fn platform_wallet() -> PlatformWallet {
         Arc::new(tokio::sync::Notify::new()),
         Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::changeset::DurableCursors::default(),
     )
 }
 
@@ -114,7 +116,7 @@ async fn private_reveal_is_internally_consistent() {
             // WIF and raw scalar must be the same key.
             let from_wif = PrivateKey::from_wif(wif).expect("valid WIF");
             assert_eq!(
-                from_wif.inner.to_secret_bytes().to_vec(),
+                from_wif.inner.to_bytes().to_vec(),
                 **scalar,
                 "{kind:?}#{index}: WIF and raw scalar disagree"
             );

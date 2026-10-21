@@ -60,12 +60,21 @@ impl DriveDocumentQuery<'_> {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
-        let documents = proved_key_values
+        let rows = proved_key_values
             .into_iter()
-            .filter_map(|(_path, _key, element)| element)
-            .map(|element| element.into_item_bytes().map_err(Error::from))
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-        let (documents, _skipped) = self.strip_cursor_from_page(documents, platform_version)?;
+            .filter_map(|(_path, key, element)| element.map(|element| (key, element)))
+            .map(|(key, element)| Ok::<_, Error>((key, element.into_item_bytes()?)))
+            .collect::<Result<Vec<(Vec<u8>, Vec<u8>)>, Error>>()?;
+        // A document read under several elements of a typed array is proved
+        // once per element, each time under its id: the key of the
+        // non-unique index's reference tree such a page ends in.
+        let documents = self
+            .drop_repeated_element_matches(rows, |(document_id, _)| Some(document_id.as_slice()))
+            .into_iter()
+            .map(|(_, document)| document)
+            .collect();
+        let (documents, _skipped) =
+            self.strip_cursor_from_distinct_page(documents, platform_version)?;
         Ok((root_hash, documents))
     }
 }

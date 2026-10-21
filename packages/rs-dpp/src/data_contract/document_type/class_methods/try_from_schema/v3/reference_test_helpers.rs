@@ -72,3 +72,14 @@ pub(super) fn assert_refused(result: Result<DataContract, ProtocolError>, fragme
         "expected {fragment:?} in: {error}"
     );
 }
+
+/// Both parses refuse `contract_value`: the validating one with the
+/// meta-schema or the parser, the one that skips the meta-schema with the
+/// parser's `fragment`.
+pub(super) fn assert_refused_by_the_parser(contract_value: serde_json::Value, fragment: &str) {
+    contract(contract_value.clone()).expect_err("a validating parse should refuse it");
+    assert_refused(
+        contract_on(contract_value, false, PlatformVersion::latest()),
+        fragment,
+    );
+}

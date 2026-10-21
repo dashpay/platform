@@ -26,6 +26,8 @@ fn applied_settings(ban: bool) -> AppliedRequestSettings {
         max_decoding_message_size: None,
         #[cfg(not(target_arch = "wasm32"))]
         ca_certificate: None,
+        #[cfg(not(target_arch = "wasm32"))]
+        proxy: None,
     }
 }
 

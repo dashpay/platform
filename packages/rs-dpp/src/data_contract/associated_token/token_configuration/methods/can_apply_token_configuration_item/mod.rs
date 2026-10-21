@@ -50,8 +50,9 @@ impl TokenConfiguration {
 
 impl TokenConfigurationV1 {
     /// Determines whether a `TokenConfigurationChangeItem` can be applied: the shielded pool's
-    /// threshold items under `minimum_pool_notes_for_outgoing_change_rules`, every other item
-    /// under the nested V0 configuration's rules.
+    /// threshold items under `minimum_pool_notes_for_outgoing_change_rules`, and only on a token
+    /// that has a pool (a non-transferable token is V1 without one), every other item under the
+    /// nested V0 configuration's rules.
     pub fn can_apply_token_configuration_item(
         &self,
         change_item: &TokenConfigurationChangeItem,
@@ -63,6 +64,13 @@ impl TokenConfigurationV1 {
     ) -> bool {
         let rules = &self.minimum_pool_notes_for_outgoing_change_rules;
         match change_item {
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_)
+                if !self.has_shielded_pool =>
+            {
+                false
+            }
             TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_) => {
                 rules.can_make_change(contract_owner_id, main_group, groups, action_taker, goal)
             }

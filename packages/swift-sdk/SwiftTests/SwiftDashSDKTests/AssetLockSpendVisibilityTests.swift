@@ -326,8 +326,8 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            injector.observedReads, ["PersistentTxo"],
-            "the faulted read must be the reconcile's stale-TXO fetch"
+            injector.observedReads, ["PersistentAssetLock", "PersistentTxo"],
+            "after reading the existing lock, the failed read is the stale-TXO reconcile"
         )
         XCTAssertFalse(
             staged,

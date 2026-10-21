@@ -14,6 +14,7 @@ mod v0;
 mod v1;
 
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use dpp::version::PlatformVersion;
@@ -52,6 +53,18 @@ pub(crate) fn group_where_clauses(
         .where_clause_grouping
     {
         0 => {
+            // The elements of a typed array are first indexed at protocol
+            // version 14, whose grammar is v1.
+            if where_clauses
+                .iter()
+                .any(|where_clause| where_clause.operator.reads_array_elements())
+            {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "contains and containsAny read the elements of a typed array, which no \
+                     index keys before protocol version 14"
+                        .to_string(),
+                )));
+            }
             let (equal_clauses, range_clause, in_clause) =
                 v0::group_where_clauses_v0(where_clauses)?;
             Ok((

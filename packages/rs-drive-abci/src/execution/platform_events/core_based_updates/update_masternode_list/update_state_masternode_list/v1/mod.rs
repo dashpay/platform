@@ -1,5 +1,7 @@
+use super::without_operator_payout_changes;
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
+use crate::platform_types::masternode::apply_diff_replacing_revived_height;
 use crate::platform_types::masternode::v0::MasternodeStateV0;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -125,9 +127,21 @@ where
             Some(state_core_height)
         };
 
-        let masternode_diff = self
-            .core_rpc
-            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+        // Inert for every protocol version selecting this generation: it processed its blocks
+        // without updated masternodes' operator payouts, so a diff's must not reach the stored
+        // list or the identity updates.
+        let mut masternode_diff = without_operator_payout_changes(
+            self.core_rpc
+                .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?,
+        );
+
+        if !start_from_scratch {
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,
@@ -264,7 +278,9 @@ fn in_stored_form(mut state: DMNState) -> DMNState {
 
 fn apply_diff_in_stored_form(state: &DMNState, diff: &DMNStateDiff) -> DMNState {
     let mut updated = legacy_stored_form(state.clone());
-    updated.apply_diff(diff.clone());
+    // Inert for every protocol version selecting this generation: it has always applied diffs
+    // with the revived height replaced by the diff's.
+    apply_diff_replacing_revived_height(&mut updated, diff.clone());
     in_stored_form(updated)
 }
 

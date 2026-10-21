@@ -4,9 +4,9 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::{
 
 /// V2 is protocol version 14's table. `validate_identity_public_keys_structure` 0 -> 1: a public
 /// key in creation may carry a budget or an expiry, which v1 only admits on AUTHENTICATION keys
-/// below the MASTER security level and with a non-zero budget. `verify_identity_signed_signature`
-/// 0 -> 1: a BLS12_381 signature must verify, where 0 accepted one that is well formed but does
-/// not. V1 stays as is for replay.
+/// below the MASTER security level and with a non-zero budget, and the data of a hash key must
+/// be 20 bytes. `verify_identity_signed_signature` 0 -> 1: a BLS12_381 signature must verify,
+/// where 0 accepted one that is well formed but does not. V1 stays as is for replay.
 pub const STATE_TRANSITION_METHOD_VERSIONS_V2: DPPStateTransitionMethodVersions =
     DPPStateTransitionMethodVersions {
         public_key_in_creation_methods: PublicKeyInCreationMethodVersions {
