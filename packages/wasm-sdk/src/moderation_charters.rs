@@ -3,7 +3,7 @@
 //! leader. Thin bindings over `dash_sdk::platform::moderation_charters`, where every read is a
 //! proved document query on the system contract.
 
-use crate::encrypted_for::message_from_options;
+use crate::encrypted_for::{message_from_options, secret_key_from_options};
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
@@ -24,7 +24,6 @@ use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityWasm;
 use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32};
-use wasm_dpp2::PrivateKeyWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const MODERATION_CHARTERS_TS: &'static str = r#"
@@ -403,10 +402,7 @@ impl WasmSdk {
         let submitted_charter_id: Identifier =
             IdentifierWasm::try_from_options(&options, "submittedCharterId")?.into();
         let message = message_from_options(&options, "message")?;
-        let writer_encryption_key =
-            PrivateKeyWasm::try_from_options(&options, "writerEncryptionKey")?
-                .inner()
-                .inner;
+        let writer_encryption_key = secret_key_from_options(&options, "writerEncryptionKey")?;
         let writer = self.writer_from_options(&options).await?;
         let request = self
             .as_ref()
@@ -433,10 +429,7 @@ impl WasmSdk {
         let elected_charter_id: Identifier =
             IdentifierWasm::try_from_options(&options, "electedCharterId")?.into();
         let message = message_from_options(&options, "message")?;
-        let writer_encryption_key =
-            PrivateKeyWasm::try_from_options(&options, "writerEncryptionKey")?
-                .inner()
-                .inner;
+        let writer_encryption_key = secret_key_from_options(&options, "writerEncryptionKey")?;
         let writer = self.writer_from_options(&options).await?;
         let request = self
             .as_ref()
