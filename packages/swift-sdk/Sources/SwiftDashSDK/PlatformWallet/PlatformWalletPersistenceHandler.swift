@@ -4218,7 +4218,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             } else if let rejected = entry.derivationRejected,
                 let rejectedPath = identityAuthPath(
-                    walletId: row.walletId ?? entry.walletId ?? walletId,
+                    walletId: walletId,
                     indices: rejected
                 ),
                 row.identityDerivationPath == rejectedPath

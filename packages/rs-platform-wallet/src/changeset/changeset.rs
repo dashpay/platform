@@ -1037,12 +1037,13 @@ pub struct KeyWithBreadcrumb {
 
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
 ///
-/// Carries the DPP public-key record and a breadcrumb pointing at the wallet
-/// derivation that produced it. No private material crosses here: the client
-/// derives the key on demand from the Keychain seed at the breadcrumb path
-/// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). When
-/// `derivation_indices` is `None` the key is watch-only from this wallet's
-/// point of view.
+/// Carries the DPP public-key record and, when its origin was verified, a
+/// breadcrumb pointing at the wallet derivation that produced it. No private
+/// material crosses here: the client derives the key on demand from the
+/// Keychain seed at the breadcrumb path
+/// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). An entry with no
+/// `derivation_indices` gives no coordinates; whether a persister then keeps
+/// the breadcrumb it holds for the key or clears it is `derivation_rejected`.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
@@ -1137,7 +1138,8 @@ impl Merge for IdentityKeysChangeSet {
         // persister keeps a stored one, or its rejection): a buffered write
         // that only knows the key's new state must neither turn a
         // wallet-derived key watch-only nor bring back a breadcrumb a
-        // rejection cleared. One that settles the origin itself wins.
+        // rejection cleared. Its own breadcrumb wins, and its own rejection
+        // wins over an earlier breadcrumb at exactly those coordinates.
         for (id, mut entry) in other.upserts {
             if let Some(earlier) = self.upserts.get(&id) {
                 entry.inherit_origin(earlier);

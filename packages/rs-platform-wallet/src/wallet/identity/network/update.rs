@@ -305,9 +305,10 @@ impl IdentityWallet {
     /// but was not stored.
     ///
     /// An added key named in `external_key_ids` is stored without a
-    /// breadcrumb and settled as not derived on both paths, which clears a
-    /// breadcrumb a persister holds for it; every other one with the
-    /// breadcrumb of its slot, `(wallet_id, identity_index, key_id)`.
+    /// breadcrumb and refutes its slot's coordinates on both paths, which
+    /// clears a breadcrumb a persister holds there (one an older update
+    /// inferred); every other one with the breadcrumb of its slot,
+    /// `(wallet_id, identity_index, key_id)`.
     async fn apply_landed_update(
         &self,
         identity_id: &Identifier,

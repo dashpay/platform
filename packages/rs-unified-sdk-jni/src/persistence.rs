@@ -1536,8 +1536,8 @@ unsafe extern "C" fn tramp_persist_identity_keys(
     })
 }
 
-/// `onPersistIdentityKeyUpsert`'s JNI descriptor. The trailing `ZJZJ` before
-/// the final `Z` is the key usage limits pair (`hasTotalBudget`,
+/// `onPersistIdentityKeyUpsert`'s JNI descriptor. The `ZJZJ` before the
+/// final `ZII` is the key usage limits pair (`hasTotalBudget`,
 /// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `ZII` is
 /// `derivationRejected`, `rejectedIdentityIndex`, `rejectedKeyIndex`. Bound at the `call_method` site and in
 /// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves

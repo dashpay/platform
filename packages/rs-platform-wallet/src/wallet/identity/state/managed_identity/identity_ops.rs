@@ -629,8 +629,8 @@ impl ManagedIdentity {
     /// batched [`IdentityKeysChangeSet`] carrying each key's derivation
     /// breadcrumb (`Some((wallet_id, identity_index, key_index))`) or
     /// `None` for a key the wallet can't re-derive (set
-    /// `derivation_rejected` when that is settled, so a stored breadcrumb is
-    /// cleared).
+    /// `derivation_rejected` to the coordinates checked when that is settled,
+    /// so a stored breadcrumb naming them is cleared).
     ///
     /// The single-write batch form of [`Self::add_key`], used by discovery
     /// to materialize every re-derivable key of a freshly found identity in

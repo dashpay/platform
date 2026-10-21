@@ -1929,10 +1929,21 @@ class PlatformWalletPersistenceHandler(
         // alias whose row can never commit (the identity rows are gone),
         // stranding identity-key ciphertext behind a "successful" wipe.
         val roundKey = walletId.toHex()
-        // A key Rust settled as not derived needs no re-derive: drop a
-        // pending repair entry for it, staged with the round.
+        // A rejection refutes the slot it checked: a pending repair entry
+        // for that slot needs no re-derive and is dropped, staged with the
+        // round; one for another slot stays.
         if (derivationRejected && !derivationIndicesIsSome) {
-            stagePendingKeyDelta(roundKey, clearPendingKeyDelta(publicKeyData.toHex()))
+            val hex = publicKeyData.toHex()
+            stagePendingKeyDelta(roundKey) { map ->
+                val pending = map[hex]
+                if (pending != null && pending.identityIndex == rejectedIdentityIndex &&
+                    pending.keyIndex == rejectedKeyIndex
+                ) {
+                    map - hex
+                } else {
+                    map
+                }
+            }
         }
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }

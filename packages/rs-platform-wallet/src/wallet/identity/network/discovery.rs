@@ -75,11 +75,20 @@ fn breadcrumb_decisions(
         .iter()
         .map(|(key_id, on_chain_key)| {
             // `None` when there is no candidate (its derivation failed) or
-            // the check itself failed: the origin stays unknown.
+            // the check failed on an ECDSA key: the origin stays unknown. A
+            // check that cannot run on another key type (BLS, EdDSA, a script
+            // hash) settles it as not this wallet's: the wallet only derives
+            // ECDSA identity keys.
+            let ecdsa = matches!(
+                on_chain_key.key_type(),
+                KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
+            );
             let checked = candidate_scalars.get(key_id).and_then(|scalar| {
-                on_chain_key
-                    .validate_private_key_bytes(scalar, network)
-                    .ok()
+                match on_chain_key.validate_private_key_bytes(scalar, network) {
+                    Ok(reproduces) => Some(reproduces),
+                    Err(_) if !ecdsa => Some(false),
+                    Err(_) => None,
+                }
             });
             let reproduces = checked == Some(true);
             // A candidate that does not reproduce the key refutes exactly the
