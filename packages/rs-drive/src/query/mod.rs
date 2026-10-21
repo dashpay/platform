@@ -2554,7 +2554,8 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// Versioned preflight over the non-primary-key `In` clause shape.
+    /// Versioned preflight over the shape of the query's where clauses, run
+    /// by the server and the verifier alike before any lowering.
     ///
     /// Runs before any cursor storage lookup or proof processing so the
     /// rejection precedence matches each protocol version's contract: v0

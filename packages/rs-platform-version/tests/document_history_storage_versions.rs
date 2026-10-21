@@ -73,7 +73,7 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
 
 #[test]
 fn should_activate_storage_migration_and_history_proofs_together() {
-    let version = PlatformVersion::latest();
+    let version = PlatformVersion::get(15).unwrap();
     let document = &version.drive.methods.document;
     // The layout-dependent methods change together.
     assert_eq!(document.insert.add_document_to_primary_storage, 1);

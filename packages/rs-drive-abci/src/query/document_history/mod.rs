@@ -42,9 +42,9 @@ impl<C> Platform<C> {
         }
 
         match version {
-            RequestVersion::V0(request) => {
+            RequestVersion::V0(request_v0) => {
                 let result =
-                    self.query_document_history_v0(request, platform_state, platform_version)?;
+                    self.query_document_history_v0(request_v0, platform_state, platform_version)?;
                 Ok(result.map(|response| GetDocumentHistoryResponse {
                     version: Some(ResponseVersion::V0(response)),
                 }))

@@ -73,7 +73,10 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
-    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({ entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } });
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({
+      entries: [],
+      lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) },
+    });
     getDocumentHistoryWithProofInfoStub = this.sinon.stub(
       wasmSdk,
       'getDocumentHistoryWithProofInfo',
@@ -195,7 +198,11 @@ describe('DocumentsFacade', () => {
         revision: BigInt(2),
       };
 
-      const result = { data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } }, proof: { grovedbProof: new Uint8Array([2]) }, metadata: {} };
+      const result = {
+        data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } },
+        proof: { grovedbProof: new Uint8Array([2]) },
+        metadata: {},
+      };
       getDocumentHistoryWithProofInfoStub.resolves(result);
       expect(await client.documents.historyWithProof(query)).to.equal(result);
 

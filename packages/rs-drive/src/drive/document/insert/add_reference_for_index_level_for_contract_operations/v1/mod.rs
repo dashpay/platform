@@ -104,9 +104,8 @@ impl Drive {
 
         // The terminal reference's tree type is driven by the
         // composition of the index's countability AND summability,
-        // per-axis (grovedb PR 670's expanded TreeType set
-        // distinguishes provable from root-only on each axis
-        // independently):
+        // per-axis (the TreeType set distinguishes provable from root-only
+        // on each axis independently):
         //
         // - count provable + sum root → `ProvableCountSumTree`
         //   (existing variant: per-node count, root-only sum)
@@ -114,8 +113,7 @@ impl Drive {
         //   (no dedicated "count-root + sum-provable" variant exists;
         //   upgrades count to per-node too)
         // - count provable + sum provable →
-        //   `ProvableCountProvableSumTree` (PR 670 newcomer: both
-        //   per-node)
+        //   `ProvableCountProvableSumTree` (both per-node)
         //
         // Same dispatch shape as the primary-key tree dispatcher's v1
         // arm in `primary_key_tree_type.rs` — see
@@ -130,7 +128,7 @@ impl Drive {
         // Element-shape selector. Under a summable index path the
         // reference element MUST be
         // `Element::ReferenceWithSumItem(reference_path, amount_i64,
-        // flags)` (grovedb PR 670) rather than a plain
+        // flags)` rather than a plain
         // `Element::Reference` — only `ReferenceWithSumItem`
         // contributes a sum to the ancestor sum trees while still
         // dereferencing to the document body in primary storage

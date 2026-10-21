@@ -2,6 +2,7 @@ use dapi_grpc::platform::v0::get_document_history_response::get_document_history
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::get_contested_resource_identity_votes_response_v0::Result as IdentityVotesResult;
 use super::offsets::{history_contract, search_kind};
 use super::*;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter as DocumentHistoryRequestFilter;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -404,7 +405,7 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                             document_type_name: "profile".to_owned(),
                             document_id: document_id.to_vec(),
                             limit: Some(2),
-                            filter: Some(wire::get_document_history_request::get_document_history_request_v0::Filter::StartAtMs(start_at_ms)),
+                            filter: Some(DocumentHistoryRequestFilter::StartAtMs(start_at_ms)),
                             prove,
                         },
                     ))

@@ -1,4 +1,5 @@
 use super::*;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter as DocumentHistoryFilter;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -81,6 +82,27 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
         let (contract_id, _) = fixture.store_contract();
         let profile = history_contract(&fixture);
         let (mut client, server) = fixture.client();
+        let status = client
+            .get_document_history(wire::GetDocumentHistoryRequest::from(
+                wire::get_document_history_request::GetDocumentHistoryRequestV0 {
+                    data_contract_id: profile.id().to_vec(),
+                    document_type_name: "profile".to_owned(),
+                    document_id: vec![9; 32],
+                    limit: Some(u32::MAX),
+                    filter: Some(DocumentHistoryFilter::StartAtMs(0)),
+                    prove: true,
+                },
+            ))
+            .await
+            .expect_err("document-history limit must fit the query range");
+        if status.code() != Code::InvalidArgument
+            || !status.message().contains("history limit out of bounds")
+        {
+            failures.push(format!(
+                "PV{} document history limit: {status}",
+                version.protocol_version
+            ));
+        }
         for offset in [1, u16::MAX as u32] {
             for (name, kind, prove) in [
                 (
@@ -127,27 +149,6 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
             {
                 failures.push(format!(
                     "PV{} contract history offset={offset}: {status}",
-                    version.protocol_version
-                ));
-            }
-            let status = client
-                .get_document_history(wire::GetDocumentHistoryRequest::from(
-                    wire::get_document_history_request::GetDocumentHistoryRequestV0 {
-                        data_contract_id: profile.id().to_vec(),
-                        document_type_name: "profile".to_owned(),
-                        document_id: vec![9; 32],
-                        limit: Some(u32::MAX),
-                        filter: Some(wire::get_document_history_request::get_document_history_request_v0::Filter::StartAtMs(0)),
-                        prove: true,
-                    },
-                ))
-                .await
-                .expect_err("document-history limit must fit the query range");
-            if status.code() != Code::InvalidArgument
-                || !status.message().contains("history limit out of bounds")
-            {
-                failures.push(format!(
-                    "PV{} document history limit: {status}",
                     version.protocol_version
                 ));
             }
@@ -449,7 +450,7 @@ async fn should_validate_query_shapes_before_missing_history_lookups() {
             (profile.id().to_vec(), "absentType"),
         ] {
             for prove in [false, true] {
-                for filter in [None, Some(wire::get_document_history_request::get_document_history_request_v0::Filter::StartAtMs(0))] {
+                for filter in [None, Some(DocumentHistoryFilter::StartAtMs(0))] {
                     let malformed = filter.is_none();
                     let request = wire::get_document_history_request::GetDocumentHistoryRequestV0 {
                         data_contract_id: id.clone(),
@@ -463,9 +464,21 @@ async fn should_validate_query_shapes_before_missing_history_lookups() {
                         .get_document_history(wire::GetDocumentHistoryRequest::from(request))
                         .await
                         .expect_err("missing history or malformed filter");
-                    assert_eq!(status.code(), if malformed { Code::InvalidArgument } else { Code::NotFound });
+                    assert_eq!(
+                        status.code(),
+                        if malformed {
+                            Code::InvalidArgument
+                        } else {
+                            Code::NotFound
+                        }
+                    );
                     if malformed {
-                        assert!(status.message().contains("exactly one history filter is required"), "{status}");
+                        assert!(
+                            status
+                                .message()
+                                .contains("exactly one history filter is required"),
+                            "{status}"
+                        );
                     }
                 }
             }

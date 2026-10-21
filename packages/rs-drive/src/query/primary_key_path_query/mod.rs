@@ -12,7 +12,8 @@ use dpp::version::PlatformVersion;
 pub(in crate::query) enum PrimaryKeyPathQueryTarget {
     /// The primary key contains a subtree of timestamp-keyed revisions.
     LegacyHistoryTree,
-    /// The primary key contains the current serialized document directly.
+    /// The primary key contains the current document, directly in the ordinary
+    /// layout or through a reference to the current retained revision at PV15.
     CurrentDocument,
 }
 

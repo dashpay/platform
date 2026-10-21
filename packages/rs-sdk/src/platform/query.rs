@@ -1694,6 +1694,7 @@ impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
 mod history_query_tests {
     use super::*;
     use crate::platform::QuerySettings;
+    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter;
     use dpp::dashcore::Network;
     use dpp::version::PlatformVersion;
     use drive::query::document_history_drive_query::DocumentHistoryFilter;
@@ -1807,7 +1808,9 @@ mod history_query_tests {
         else {
             panic!("expected history version one");
         };
-        let Some(proto::get_document_history_request::get_document_history_request_v0::Filter::StartAfter(cursor)) = request.filter else { panic!("expected composite cursor"); };
+        let Some(Filter::StartAfter(cursor)) = request.filter else {
+            panic!("expected composite cursor");
+        };
         assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
         for protocol in [12, 13, 14] {
             assert!(query

@@ -1564,7 +1564,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             core_height: mtd.core_chain_locked_height,
             // Response metadata is not part of the authenticated state ID.
             // Current proof consumers do not require an epoch, so do not
-            // propagate an unsigned filter into the verification context.
+            // propagate an unsigned selector into the verification context.
             epoch: Default::default(),
         };
 
