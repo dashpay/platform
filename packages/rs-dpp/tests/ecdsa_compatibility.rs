@@ -7,7 +7,9 @@ mod vectors;
 
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::hashes::{hash160, Hash};
-use dpp::identity::KeyType;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformMessageSignable;
 use dpp::util::ecdsa::{
     parse_compact_signature, parse_public_key, sign, verify_data_signature, verify_hash_signature,
@@ -229,4 +231,46 @@ fn should_preserve_multisig_malformed_public_key_error() {
         }
         error => panic!("unexpected error: {error}"),
     }
+}
+
+#[test]
+fn should_preserve_identity_public_key_hash_errors_and_encoding() {
+    let (_, _, public_key) = fixture();
+    let parsed = parse_public_key(&public_key).unwrap();
+    let identity_key = |bytes: Vec<u8>| {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: bytes.into(),
+            read_only: false,
+            disabled_at: None,
+        })
+    };
+    for bytes in [public_key, parsed.serialize_uncompressed().to_vec()] {
+        assert_eq!(
+            identity_key(bytes.clone()).public_key_hash().unwrap(),
+            hash160::Hash::hash(&bytes).to_byte_array()
+        );
+    }
+    let mut malformed = vec![0xff; 33];
+    malformed[0] = 2;
+    assert_eq!(
+        identity_key(malformed)
+            .public_key_hash()
+            .unwrap_err()
+            .to_string(),
+        "Generic Error: unable to create pub key - key secp256k1 error"
+    );
+    let mut hybrid = parsed.serialize_uncompressed().to_vec();
+    hybrid[0] = 6;
+    assert_eq!(
+        identity_key(hybrid)
+            .public_key_hash()
+            .unwrap_err()
+            .to_string(),
+        "Generic Error: unable to create pub key - key prefix invalid: 6"
+    );
 }

@@ -5,6 +5,7 @@ use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
+use crate::util::ecdsa::parse_public_key;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
@@ -45,8 +46,15 @@ pub(in crate::identity::identity_public_key) fn public_key_hash_for_key_data(
         KeyType::ECDSA_SECP256K1 => {
             let key = match data.len() {
                 // TODO: We need to update schema and tests for 65 len keys
-                65 | 33 => ECDSAPublicKey::from_slice(data.as_slice())
-                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
+                65 | 33 => {
+                    // Preserve historical SEC1 validation errors and hash the supplied encoding.
+                    let inner = parse_public_key(data.as_slice())
+                        .map_err(|e| anyhow!("unable to create pub key - {}", e))?;
+                    ECDSAPublicKey {
+                        compressed: data.len() == 33,
+                        inner: inner.into(),
+                    }
+                }
                 _ => {
                     return Err(ProtocolError::ParsingError(format!(
                         "the key length is invalid: {} Allowed sizes: 33 or 65 bytes for ecdsa key",
