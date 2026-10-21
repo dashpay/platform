@@ -116,6 +116,20 @@ fn held_breadcrumb(
     Some((held.wallet_id, held.derivation_indices?))
 }
 
+/// Read a stored row selected as `(length(public_key_blob), public_key_blob,
+/// public_key_hash)`. The size guard runs before the payload is read, as in
+/// `load_state`; an oversized row is read as empty and replaced
+/// (`held_breadcrumb`).
+fn read_stored_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Vec<u8>, Vec<u8>)> {
+    let blob_len: i64 = row.get(0)?;
+    let payload: Vec<u8> = if blob::check_size(blob_len).is_ok() {
+        row.get(1)?
+    } else {
+        Vec::new()
+    };
+    Ok((blob_len, payload, row.get(2)?))
+}
+
 /// SQLite's extended result code for a foreign-key constraint failure
 /// (`SQLITE_CONSTRAINT_FOREIGNKEY`). Discriminated numerically — never by
 /// matching the driver's message text.
@@ -234,18 +248,7 @@ pub fn apply(
                 let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
-                        |row| {
-                            // The size guard runs before the payload is read,
-                            // as in `load_state`; an oversized row is read as
-                            // empty and replaced (`held_breadcrumb`).
-                            let blob_len: i64 = row.get(0)?;
-                            let payload: Vec<u8> = if blob::check_size(blob_len).is_ok() {
-                                row.get(1)?
-                            } else {
-                                Vec::new()
-                            };
-                            Ok((blob_len, payload, row.get(2)?))
-                        },
+                        read_stored_row,
                     )
                     .optional()?;
                 if let Some((wallet_id_kept, derivation_indices)) = held
@@ -385,6 +388,15 @@ pub fn load_state(
         cs.upserts.insert((identity_id, key_id), entry);
     }
     Ok(cs)
+}
+
+/// Encode an [`IdentityKeyEntry`] to its on-disk `public_key_blob` form via
+/// the wire type. Test-only seam so integration tests can forge a row whose
+/// blob disagrees with its typed columns without naming the crate-internal
+/// [`IdentityKeyWire`].
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn encode_entry_for_test(entry: &IdentityKeyEntry) -> Result<Vec<u8>, WalletStorageError> {
+    blob::encode(&IdentityKeyWire::from_entry(entry)?)
 }
 
 /// Build an outer `public_key_blob` payload whose inner `public_key_bincode`
@@ -677,6 +689,43 @@ mod tests {
             matches!(err, WalletStorageError::BlobDecode { .. }),
             "expected BlobDecode for trailing-byte garbage, got {err:?}"
         );
+    }
+
+    /// Run `read_stored_row` over a synthetic row whose stated blob length is
+    /// `blob_len` while the payload cell actually holds `payload`.
+    fn read_synthetic_row(blob_len: i64, payload: &[u8]) -> (i64, Vec<u8>, Vec<u8>) {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.query_row(
+            "SELECT ?1, ?2, ?3",
+            params![blob_len, payload, &[0x5Au8; 20][..]],
+            read_stored_row,
+        )
+        .unwrap()
+    }
+
+    /// A stored row whose length exceeds the blob size limit is not read: the
+    /// payload comes back empty, whatever the cell holds, so the writer never
+    /// allocates an oversized buffer to look for a breadcrumb.
+    #[test]
+    fn should_read_an_oversized_stored_row_as_an_empty_payload() {
+        let blob_len = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap() + 1;
+        let (len, payload, hash) = read_synthetic_row(blob_len, &[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(len, blob_len);
+        assert!(
+            payload.is_empty(),
+            "oversized payload was read: {payload:?}"
+        );
+        assert_eq!(hash, vec![0x5Au8; 20]);
+    }
+
+    /// A stored row within the limit is read in full.
+    #[test]
+    fn should_read_a_stored_row_within_the_size_limit() {
+        let blob_len = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap();
+        let (len, payload, hash) = read_synthetic_row(blob_len, &[0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(len, blob_len);
+        assert_eq!(payload, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        assert_eq!(hash, vec![0x5Au8; 20]);
     }
 
     /// `IdentityKeyEntry` carries no key material by construction

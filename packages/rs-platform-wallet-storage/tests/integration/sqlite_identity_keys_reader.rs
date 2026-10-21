@@ -492,3 +492,294 @@ fn gk3_corrupt_blob_is_hard_error() {
         "corrupt public_key_blob must be a typed BincodeDecode; got {result:?}"
     );
 }
+
+/// Store `entries` under `w` as one identity-keys changeset.
+fn store_entries(
+    persister: &platform_wallet_storage::SqlitePersister,
+    w: [u8; 32],
+    entries: Vec<IdentityKeyEntry>,
+) {
+    let mut keys = IdentityKeysChangeSet::default();
+    for entry in entries {
+        keys.upserts
+            .insert((entry.identity_id, entry.key_id), entry);
+    }
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identity_keys: Some(keys),
+                ..Default::default()
+            },
+        )
+        .expect("store identity keys");
+}
+
+/// Reopen the database at `path` and read `w`'s identity keys back.
+fn reload(path: &std::path::Path, w: &[u8; 32]) -> IdentityKeysChangeSet {
+    let persister = reopen(path);
+    let conn = persister.lock_conn_for_test();
+    identity_keys::load_state(&conn, w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state")
+}
+
+/// `entry` as an upsert that carries no derivation breadcrumb.
+fn without_breadcrumb(mut entry: IdentityKeyEntry) -> IdentityKeyEntry {
+    entry.derivation_indices = None;
+    entry
+}
+
+/// Insert the row `(id, upsert.key_id)` under `w` directly, bypassing the
+/// writer, with `stored` as its blob and `hash_column` as its typed
+/// `public_key_hash`, so the blob can disagree with the row's columns. Then
+/// store `upsert` (which carries no breadcrumb) over it and return the row a
+/// reload reads.
+fn reload_after_upsert_over_crafted_row(
+    w: [u8; 32],
+    id: Identifier,
+    stored: &IdentityKeyEntry,
+    hash_column: [u8; 20],
+    upsert: &IdentityKeyEntry,
+) -> Option<IdentityKeyEntry> {
+    assert!(upsert.derivation_indices.is_none());
+    let (persister, _tmp, path) = fresh_persister();
+    ensure_wallet_meta(&persister, &w);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+            rusqlite::params![
+                w.as_slice(),
+                id.as_slice(),
+                i64::from(upsert.key_id),
+                identity_keys::encode_entry_for_test(stored).unwrap(),
+                &hash_column[..],
+            ],
+        )
+        .unwrap();
+    store_entries(&persister, w, vec![upsert.clone()]);
+    drop(persister);
+    reload(&path, &w).upserts.remove(&(id, upsert.key_id))
+}
+
+/// A kept breadcrumb keeps the wallet scope the row's blob was stored with:
+/// an upsert that carries neither a breadcrumb nor a `wallet_id` takes both
+/// from the row, so the reloaded entry still names its wallet.
+#[test]
+fn should_keep_a_stored_wallet_id_with_the_breadcrumb_when_an_upsert_carries_neither() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE0);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x20; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let mut stored = key_entry(id, 0, 0x11);
+    stored.wallet_id = Some(w);
+    store_entries(&persister, w, vec![stored.clone()]);
+
+    let mut upsert = without_breadcrumb(stored.clone());
+    upsert.wallet_id = None;
+    if let IdentityPublicKey::V0(key) = &mut upsert.public_key {
+        key.disabled_at = Some(9);
+    }
+    store_entries(&persister, w, vec![upsert.clone()]);
+    drop(persister);
+
+    let row = reload(&path, &w).upserts.remove(&(id, 0)).expect("row");
+    assert_eq!(row.wallet_id, Some(w));
+    assert_eq!(row.derivation_indices, stored.derivation_indices);
+    assert_eq!(row.public_key, upsert.public_key);
+}
+
+/// A stored row within the size limit that does not decode holds no
+/// breadcrumb to keep: the upsert replaces it and the store succeeds.
+#[test]
+fn should_replace_a_stored_row_that_does_not_decode() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE1);
+    ensure_wallet_meta(&persister, &w);
+    // The identity and key id the crafted blob itself names.
+    let id = Identifier::from([0xAA; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let crafted = identity_keys::crafted_entry_blob_with_bad_pk_bincode_for_test();
+    assert!(identity_keys::decode_entry(&crafted).is_err());
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, 0, ?3, ?4, NULL)",
+            rusqlite::params![
+                w.as_slice(),
+                id.as_slice(),
+                crafted,
+                &upsert.public_key_hash[..]
+            ],
+        )
+        .unwrap();
+
+    store_entries(&persister, w, vec![upsert.clone()]);
+    drop(persister);
+
+    assert_eq!(reload(&path, &w).upserts.get(&(id, 0)), Some(&upsert));
+}
+
+/// Control for the crafted-row tests below: a row inserted directly whose
+/// blob agrees with its columns keeps its breadcrumb, so each of those tests
+/// loses the breadcrumb only to the one disagreement it introduces.
+#[test]
+fn should_keep_the_breadcrumb_of_a_crafted_row_that_agrees_with_its_columns() {
+    let id = Identifier::from([0x21; 32]);
+    let stored = key_entry(id, 0, 0x11);
+    let upsert = without_breadcrumb(stored.clone());
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE2),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(stored));
+}
+
+/// A stored blob naming another identity than its `identity_id` column
+/// holds no breadcrumb to keep.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_whose_blob_names_another_identity() {
+    let id = Identifier::from([0x22; 32]);
+    let stored = key_entry(Identifier::from([0x23; 32]), 0, 0x11);
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE3),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
+
+/// A stored blob naming another key id than its `key_id` column holds no
+/// breadcrumb to keep, even when its public key's own id matches the column.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_whose_blob_names_another_key_id() {
+    let id = Identifier::from([0x24; 32]);
+    let mut stored = key_entry(id, 0, 0x11);
+    stored.key_id = 1;
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE4),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
+
+/// A stored blob whose public key carries another id than the row's
+/// `key_id` holds no breadcrumb to keep, even when the blob's own `key_id`
+/// matches the column.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_whose_public_key_has_another_id() {
+    let id = Identifier::from([0x25; 32]);
+    let mut stored = key_entry(id, 0, 0x11);
+    if let IdentityPublicKey::V0(key) = &mut stored.public_key {
+        key.id = 5;
+    }
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE5),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
+
+/// A row whose typed `public_key_hash` column disagrees with the hash in its
+/// blob holds no breadcrumb to keep, even when the blob's hash matches the
+/// upsert's.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_whose_hash_column_disagrees_with_its_blob() {
+    let id = Identifier::from([0x26; 32]);
+    let stored = key_entry(id, 0, 0x11);
+    let upsert = without_breadcrumb(stored.clone());
+    let row = reload_after_upsert_over_crafted_row(wid(0xE6), id, &stored, [0x99; 20], &upsert);
+    assert_eq!(row, Some(upsert));
+}
+
+/// A row stored under another public-key hash than the upsert's holds no
+/// breadcrumb to keep, even when the key bytes and the row's columns agree.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_stored_under_another_public_key_hash() {
+    let id = Identifier::from([0x27; 32]);
+    let mut stored = key_entry(id, 0, 0x11);
+    stored.public_key_hash = [0x99; 20];
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE7),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
+
+/// A stored blob whose `wallet_id` names another wallet than the scope it is
+/// read under holds no breadcrumb to keep.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_whose_blob_names_another_wallet() {
+    let id = Identifier::from([0x28; 32]);
+    let mut stored = key_entry(id, 0, 0x11);
+    stored.wallet_id = Some(wid(0xEF));
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE8),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
+
+/// A row holding other public-key bytes than the upsert's holds no
+/// breadcrumb to keep, even when it is stored under the upsert's hash.
+#[test]
+fn should_not_keep_the_breadcrumb_of_a_row_holding_other_public_key_bytes() {
+    let id = Identifier::from([0x29; 32]);
+    let mut stored = key_entry(id, 0, 0x11);
+    if let IdentityPublicKey::V0(key) = &mut stored.public_key {
+        key.data = BinaryData::new(vec![0x44; 33]);
+    }
+    let upsert = without_breadcrumb(key_entry(id, 0, 0x11));
+    let row = reload_after_upsert_over_crafted_row(
+        wid(0xE9),
+        id,
+        &stored,
+        stored.public_key_hash,
+        &upsert,
+    );
+    assert_eq!(row, Some(upsert));
+}
