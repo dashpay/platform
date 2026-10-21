@@ -5093,7 +5093,6 @@ mod tests {
             .await;
         assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
         let point = operation.snapshot().out_point.unwrap();
-        drop(observer);
         assert_eq!(
             seen.into_inner().unwrap(),
             vec![(
