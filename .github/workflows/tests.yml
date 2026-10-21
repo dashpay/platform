@@ -360,6 +360,7 @@ jobs:
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
               - packages/rs-context-provider/**
+              - packages/rs-core-proof/**
               - packages/rs-dapi-client/**
               - packages/rs-dash-async/**
               - packages/rs-dash-platform-macros/**

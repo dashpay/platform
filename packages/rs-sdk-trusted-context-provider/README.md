@@ -117,6 +117,94 @@ let sdk = SdkBuilder::new(AddressList::default())
     .build()?;
 ```
 
+## Verified Quorum Keys (opt-in)
+
+`VerifiedHttpContextProvider` trusts no HTTP endpoint for quorum keys. It
+starts from a checkpoint, a ChainLocked Core block and the masternode and
+quorum Merkle roots its coinbase commits to, and accepts a Platform quorum key
+only after a Core quorum proof chain (DIP 175, `DASHNC02`) verifies from that
+checkpoint and opens the quorum's commitment. Relays that serve the proofs are
+untrusted byte sources: a relay that lies, stalls or fails can delay requests,
+but cannot make the SDK accept a forged key or ban an honest node.
+
+```rust
+use dash_sdk::SdkBuilder;
+use dash_sdk::dapi_client::AddressList;
+use dpp::dashcore::Network;
+use rs_sdk_trusted_context_provider::VerifiedHttpContextProvider;
+use std::num::NonZeroUsize;
+
+// Embedded checkpoint, network's public quorum service as the relay.
+let provider = VerifiedHttpContextProvider::new(
+    Network::Testnet,
+    NonZeroUsize::new(100).expect("cache size"),
+)?;
+
+let sdk = SdkBuilder::new(AddressList::default())
+    .with_context_provider(provider)
+    .build()?;
+```
+
+Your own checkpoint and relays (1 to 8, `https` except on loopback):
+
+```rust
+let checkpoint = VerifiedHttpContextProvider::embedded_checkpoint(Network::Testnet)?;
+let provider = VerifiedHttpContextProvider::with_checkpoint(
+    Network::Testnet,
+    checkpoint,
+    vec!["https://relay.example.org".to_string()],
+    NonZeroUsize::new(100).expect("cache size"),
+)?;
+
+// Later: persist the newest verified state and start from it next time.
+let state_json = serde_json::to_string(&provider.latest_verified_state())?;
+```
+
+Behaviour:
+
+- Mainnet and testnet only. Each provider POSTs to `<source>/proofs` with the
+  checkpoint hash, a height, the quorum hash and type, and `nodeCount: 0`.
+- A proven key is served for 600 blocks past the target block that proved the
+  quorum active, then proven again. Failures of any kind (timeouts, HTTP
+  errors, oversize or invalid proofs, proofs of other quorums) are reported as
+  an unavailable quorum source, so the SDK tries another node without banning
+  the one that named the quorum. A quorum of another type than the network's
+  Platform quorum type is rejected as invalid.
+- Fetches of one quorum are shared, at most two quorums are proven at once,
+  failed quorums and failing sources cool down, and a fetch gives up after
+  70 s. Redirects are refused and responses are capped at 1 MiB.
+- Data contracts come from the known-contracts cache and the system contracts
+  enabled by cargo features; token configurations from the known cache.
+- The public mainnet quorum service currently answers `/proofs` with HTTP 403.
+  `VerifiedHttpContextProvider::new(Network::Mainnet, ..)` builds, but its
+  fetches fail until the service serves proofs; pass working mainnet relays
+  to `with_checkpoint` meanwhile.
+
+### Trust model
+
+The checkpoint is trust configuration, like a hard-coded block hash: whoever
+chooses it chooses the chain. Beyond it, the provider trusts the ChainLock
+quorums the proof chain passes through, as Core does. A valid proof shows a
+quorum was mined, not that its target is the newest ChainLock; how fresh a
+response must be is the SDK's policy.
+
+### Refreshing the embedded checkpoints
+
+`checkpoints/<network>.json` hold Core `ProofState` JSON (hashes in RPC display
+order). To move one to a newer block `H`:
+
+1. Pick a height with `chainlock: true` in `getblock` on two independent Core
+   nodes, and confirm `getblockhash H` and the block hash on a block explorer
+   agree.
+2. Write the state from the block: `network` (0 mainnet, 1 testnet), `height`,
+   `block_hash`, and the coinbase payload's `merkleRootMNList` and
+   `merkleRootQuorums` as `masternode_root` and `quorum_root`.
+3. Update `tests/data/checkpoint-evidence-<network>.json`: the raw header
+   (`getblockheader <hash> false`), the raw coinbase transaction, and the
+   coinbase's Merkle branch (sibling hashes in wire order). The
+   `checkpoints` test recomputes the block hash, the header's Merkle root and
+   both roots from this evidence.
+
 ## Implementation Details
 
 The `TrustedHttpContextProvider` implements the `ContextProvider` trait and provides:

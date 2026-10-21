@@ -6757,10 +6757,12 @@ dependencies = [
  "arc-swap",
  "dash-async",
  "dash-context-provider",
+ "dash-core-proof",
  "dpp",
  "futures",
  "gloo-timers",
  "hex",
+ "js-sys",
  "lru",
  "reqwest 0.12.28",
  "serde",
@@ -6769,7 +6771,10 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
+ "web-sys",
  "web-time",
 ]
 
