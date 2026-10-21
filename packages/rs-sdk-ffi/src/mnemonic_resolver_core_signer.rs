@@ -50,14 +50,8 @@
 //! - **`Zeroizing` wrappers** scrub the plain byte buffers that carry
 //!   no `Drop` of their own: the resolver mnemonic buffer, the BIP-39
 //!   seed, and the final derived 32-byte scalar.
-//! - **The `WipingSecretKey` RAII guard** scrubs the raw
-//!   [`secp256k1::SecretKey`] copies at the two sign sites, where the
-//!   scalar comes back out of `SecretKey::from_secret_bytes`. `SecretKey` is an
-//!   upstream secp256k1 type with no `Zeroize` impl (only
-//!   `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper; the
-//!   guard wipes it on every exit path — normal return, `?`-early-return,
-//!   and panic-unwind — closing the one leak window a bare inline erase
-//!   would leave open between construction and the scrub.
+//! - **Typed ECDSA secret keys** scrub signing copies on drop. The
+//!   `WipingSecretKey` guard scrubs the raw secp256k1 copy used for ECDH.
 //!
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
@@ -66,8 +60,9 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use async_trait::async_trait;
+use dash_sdk::dpp::secp256k1;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
-use key_wallet::dashcore::secp256k1;
+use key_wallet::dashcore::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSecretKey, EcdsaSignature};
 use key_wallet::dip9::{
     DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD, DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
     FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT, FEATURE_PURPOSE_IDENTITIES,
@@ -167,6 +162,10 @@ pub enum MnemonicResolverSignerError {
     /// error.
     #[error("invalid private key scalar: {0}")]
     InvalidScalar(String),
+
+    /// Decoding the generated recoverable signature failed.
+    #[error("ECDSA signature conversion failed: {0}")]
+    SignatureConversion(#[source] EcdsaError),
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -349,11 +348,9 @@ impl MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        // `to_secret_bytes()` copies the scalar out of the borrowed key; the
+        // `to_bytes()` copies the scalar out of the borrowed key; the
         // `ExtendedPrivKey` itself never leaves `resolve_and_derive`.
-        self.resolve_and_derive(path, |derived| {
-            Zeroizing::new(derived.private_key.to_secret_bytes())
-        })
+        self.resolve_and_derive(path, |derived| derived.private_key.to_bytes())
     }
 
     /// Export the raw auto-accept private scalar at `path` (DIP-15 QR
@@ -453,9 +450,11 @@ impl MnemonicResolverCoreSigner {
         // Read the scalar by reference inside the closure; the borrowed
         // `ExtendedPrivKey` self-wipes on `Drop` when `resolve_and_derive`
         // returns. Only the ECDH product crosses the boundary.
-        let shared = self.resolve_and_derive(path, |derived| {
-            platform_encryption::derive_shared_key_ecdh(&derived.private_key, peer_pubkey)
-        })?;
+        let secret = WipingSecretKey(
+            secp256k1::SecretKey::from_secret_bytes(*self.derive_priv(path)?)
+                .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
+        );
+        let shared = platform_encryption::derive_shared_key_ecdh(&secret.0, peer_pubkey);
         Ok(Zeroizing::new(shared))
     }
 
@@ -602,15 +601,7 @@ pub struct ContactInfoOpened {
     pub private_data: Vec<u8>,
 }
 
-/// RAII guard that wipes a [`secp256k1::SecretKey`]'s scalar on `Drop`.
-///
-/// `SecretKey` is an upstream secp256k1 type with no `Zeroize` impl (only
-/// `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper. Wrapping the
-/// `SecretKey::from_secret_bytes` copy here wipes it on every exit path — normal
-/// return, `?`-early-return, and panic-unwind — closing the leak window a bare
-/// inline `non_secure_erase()` would leave open between construction and the
-/// manual scrub. This is the one key intermediate that upstream key-wallet's
-/// `Zeroize`/`Drop` on `ExtendedPrivKey` cannot cover.
+/// Scrubs the raw secp256k1 scalar copy used by ECDH on every exit path.
 struct WipingSecretKey(secp256k1::SecretKey);
 
 impl Drop for WipingSecretKey {
@@ -634,32 +625,23 @@ impl Signer for MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(secp256k1::ecdsa::Signature, secp256k1::PublicKey), Self::Error> {
+    ) -> Result<(EcdsaSignature, EcdsaPublicKey), Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
-        // `SecretKey::from_secret_bytes` validates the 32-byte scalar is a
-        // legitimate field element. The `WipingSecretKey` guard scrubs this
-        // separate copy on every exit path, including a panic between here and
-        // the return — `Zeroizing<[u8;32]>` already covers `secret_bytes`.
-        let secret = WipingSecretKey(
-            secp256k1::SecretKey::from_secret_bytes(*secret_bytes)
-                .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
-        );
-        let msg = secp256k1::Message::from_digest(sighash);
-        let signature = secret.0.sign_ecdsa(msg);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secret.0);
-        Ok((signature, pubkey))
+        let secret = EcdsaSecretKey::from_bytes(&secret_bytes)
+            .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
+        // Recoverable signing preserves the non-grinding deterministic signature.
+        let signature = secret
+            .sign_recoverable(&sighash)
+            .signature()
+            .map_err(MnemonicResolverSignerError::SignatureConversion)?;
+        Ok((signature, secret.public_key()))
     }
 
-    async fn public_key(&self, path: &DerivationPath) -> Result<secp256k1::PublicKey, Self::Error> {
+    async fn public_key(&self, path: &DerivationPath) -> Result<EcdsaPublicKey, Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
-        // `WipingSecretKey` scrubs this `from_secret_bytes` copy on every exit path,
-        // including panic-unwind — `Zeroizing<[u8;32]>` covers `secret_bytes`.
-        let secret = WipingSecretKey(
-            secp256k1::SecretKey::from_secret_bytes(*secret_bytes)
-                .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
-        );
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secret.0);
-        Ok(pubkey)
+        let secret = EcdsaSecretKey::from_bytes(&secret_bytes)
+            .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
+        Ok(secret.public_key())
     }
 }
 
@@ -746,9 +728,20 @@ mod tests {
             .await
             .expect("signing succeeds");
 
-        let msg = secp256k1::Message::from_digest(sighash);
-        sig.verify(msg, &pk)
+        pk.verify(&sighash, sig)
             .expect("signature must verify against returned pubkey");
+
+        let secret = WipingSecretKey(
+            secp256k1::SecretKey::from_secret_bytes(
+                *signer.derive_priv(&test_path()).expect("derived scalar"),
+            )
+            .expect("valid scalar"),
+        );
+        let expected = secret
+            .0
+            .sign_ecdsa(secp256k1::Message::from_digest(sighash));
+        assert_eq!(sig.to_bytes(), expected.serialize_compact());
+        assert_eq!(pk.to_compressed(), secret.0.public_key().serialize());
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
@@ -1013,7 +1006,11 @@ mod tests {
         let xprv = wallet
             .derive_extended_private_key(&path)
             .expect("wallet derives the private key at path");
-        let expected = platform_encryption::derive_shared_key_ecdh(&xprv.private_key, &peer_pk);
+        let expected = platform_encryption::derive_shared_key_ecdh(
+            &secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+                .expect("derived scalar"),
+            &peer_pk,
+        );
 
         // New route: resolver-backed signer fed the same mnemonic.
         let resolver = make_resolver(english_resolve);
@@ -1066,7 +1063,7 @@ mod tests {
             .derive_extended_private_key(&path)
             .expect("wallet derives the private key at path")
             .private_key
-            .to_secret_bytes();
+            .to_bytes();
         let expected = platform_encryption::calculate_account_reference(
             &secret,
             &compact_xpub,
@@ -1149,7 +1146,7 @@ mod tests {
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
                 .expect("seeded wallet");
-        let enc_key: [u8; 32] = {
+        let enc_key: Zeroizing<[u8; 32]> = {
             let path = root_path.clone().extend([
                 ChildNumber::from_hardened_idx(65536).unwrap(),
                 ChildNumber::from_hardened_idx(derivation_index).unwrap(),
@@ -1158,7 +1155,7 @@ mod tests {
                 .derive_extended_private_key(&path)
                 .expect("derive encToUserId key")
                 .private_key
-                .to_secret_bytes()
+                .to_bytes()
         };
         let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_key, &contact_id);
         assert_eq!(

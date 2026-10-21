@@ -1,7 +1,6 @@
 //! Identity top-up from addresses operations
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
-use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::prelude::Identity;
@@ -151,10 +150,7 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
 
         // Parse private key (32 bytes)
         let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let secret_key = match <[u8; 32]>::try_from(pk_bytes)
-            .map_err(|_| dash_sdk::dpp::dashcore::secp256k1::Error::InvalidSecretKey)
-            .and_then(SecretKey::from_secret_bytes)
-        {
+        let private_key = match PrivateKey::from_slice(pk_bytes, wrapper.sdk.network) {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(
@@ -163,10 +159,6 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
                 ))
             }
         };
-
-        // Create PrivateKey (network doesn't matter for signing — `PrivateKey`
-        // only carries it through to WIF encoding, which we never invoke here).
-        let private_key = PrivateKey::new(secret_key, wrapper.sdk.network);
 
         signer.add_key(&address, private_key);
         input_map.insert(address, input.amount);
