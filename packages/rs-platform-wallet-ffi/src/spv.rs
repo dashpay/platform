@@ -654,12 +654,16 @@ mod spv_start_registry_tests {
 
     /// Take the code and the owned message out of a result and free it, so
     /// a result can be inspected (and sent across threads) as plain values.
-    fn code_and_message(mut result: PlatformWalletFFIResult) -> (PlatformWalletFFIResultCode, String) {
+    fn code_and_message(
+        mut result: PlatformWalletFFIResult,
+    ) -> (PlatformWalletFFIResultCode, String) {
         let code = result.code;
         let message = if result.message.is_null() {
             String::new()
         } else {
-            unsafe { CStr::from_ptr(result.message) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
         };
         unsafe { platform_wallet_ffi_result_free(&mut result) };
         (code, message)
@@ -677,11 +681,15 @@ mod spv_start_registry_tests {
         let start_thread = std::thread::spawn(move || {
             code_and_message(start_spv_outside_registry(handle, move |_spv| {
                 entered_tx.send(()).expect("test observes the start");
-                release_rx.recv_timeout(WAIT).expect("test releases the start");
+                release_rx
+                    .recv_timeout(WAIT)
+                    .expect("test releases the start");
                 Ok(())
             }))
         });
-        entered_rx.recv_timeout(WAIT).expect("the start must reach its native step");
+        entered_rx
+            .recv_timeout(WAIT)
+            .expect("the start must reach its native step");
 
         // A registry write on another thread, bounded so a regression (the
         // guard held across the start again) fails instead of hanging.
@@ -719,12 +727,21 @@ mod spv_start_registry_tests {
             Ok(())
         }));
 
-        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidHandle, "{message}");
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "{message}"
+        );
         assert!(
-            PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |_| ()).is_none(),
+            PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(handle, |_| ())
+                .is_none(),
             "the handle stays destroyed"
         );
-        assert!(!spv.is_started(), "no started client may outlive its destroyed manager");
+        assert!(
+            !spv.is_started(),
+            "no started client may outlive its destroyed manager"
+        );
     }
 
     /// A start whose native step fails never reaches the registry again and
@@ -738,7 +755,10 @@ mod spv_start_registry_tests {
         }));
 
         assert_ne!(code, PlatformWalletFFIResultCode::Success);
-        assert!(message.contains("store is locked"), "unexpected message: {message:?}");
+        assert!(
+            message.contains("store is locked"),
+            "unexpected message: {message:?}"
+        );
         drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
     }
 }
