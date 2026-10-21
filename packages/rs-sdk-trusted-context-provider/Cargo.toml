@@ -10,6 +10,8 @@ description = "Trusted HTTP-based context provider for Dash Platform SDK"
 
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider" }
+# Verifies the quorum proofs behind `VerifiedHttpContextProvider`.
+dash-core-proof = { path = "../rs-core-proof" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
     "bls-signatures",
@@ -65,6 +67,23 @@ decision-proposals-contract = ["dpp/decision-proposals-contract"]
 # Runs the browser's non-`Send` quorum fetches and timers on the local executor.
 wasm-bindgen-futures = { version = "0.4.58" }
 gloo-timers = { version = "0.3.0", features = ["futures"] }
+# Browser `fetch` for proof requests: unlike reqwest on wasm32 it can refuse
+# redirects, abort, and bound a body while streaming it.
+js-sys = "0.3.85"
+wasm-bindgen = "0.2.108"
+wasm-streams = "0.5"
+web-sys = { version = "0.3.85", features = [
+    "AbortController",
+    "AbortSignal",
+    "Headers",
+    "ReadableStream",
+    "Request",
+    "RequestCache",
+    "RequestCredentials",
+    "RequestInit",
+    "RequestRedirect",
+    "Response",
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Waits out the gap between two refreshes of the quorum lists.
