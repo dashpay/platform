@@ -1208,9 +1208,7 @@ class PlatformWalletPersistenceHandlerTest {
                 from, identityId, 0, 0, 0, 0, false, false, 0,
                 key, ByteArray(20), true, walletId,
                 indicesIsSome, 0, 7, 0, ByteArray(32), null,
-                derivationRejected = rejected,
-                rejectedIdentityIndex = 0,
-                rejectedKeyIndex = rejectedKeyIndex,
+                rejectedDerivations = if (rejected) intArrayOf(0, rejectedKeyIndex) else IntArray(0),
             )
             handler.onChangesetEnd(from, success = true)
         }
@@ -1231,6 +1229,59 @@ class PlatformWalletPersistenceHandlerTest {
         upsert(indicesIsSome = true, rejected = false)
         upsert(indicesIsSome = false, rejected = false, key = ByteArray(33) { 11 })
         assertNull("another public key takes no breadcrumb", stored().derivationKeyIndex)
+    }
+
+    @Test
+    fun identityKeyRejectionByAnotherWalletKeepsTheBreadcrumbAcrossAFullRound() = runTest {
+        // Wallet A holds a verified breadcrumb for the key. A full load
+        // through wallet B re-associates the identity with B (its scalar
+        // upsert comes first in the round), then rejects the same numeric
+        // slot under B's seed: A's breadcrumb is another derivation and
+        // stays.
+        val walletA = walletId
+        val walletB = ByteArray(32) { 3 }
+        val identityId = ByteArray(32) { 16 }
+        seedIdentity(identityId)
+        val key = ByteArray(33) { 12 }
+        handler.onChangesetBegin(walletA)
+        handler.onPersistIdentityKeyUpsert(
+            walletA, identityId, 0, 0, 0, 0, false, false, 0,
+            key, ByteArray(20), true, walletA,
+            true, 0, 7, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+        handler.onChangesetBegin(walletB)
+        handler.onPersistIdentityUpsert(
+            walletB, identityId, 1, 0, true, 0, 2, true, walletB,
+            emptyArray(), longArrayOf(), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onPersistIdentityKeyUpsert(
+            walletB, identityId, 0, 0, 0, 0, false, false, 0,
+            key, ByteArray(20), false, ByteArray(32),
+            false, 0, 0, 0, ByteArray(32), null,
+            rejectedDerivations = intArrayOf(0, 7),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertEquals("wallet B's rejection refutes nothing of wallet A", 7, row.derivationKeyIndex)
+        assertTrue(walletA.contentEquals(row.derivationWalletId))
+
+        // Wallet A's own rejection of that slot clears it.
+        handler.onChangesetBegin(walletA)
+        handler.onPersistIdentityKeyUpsert(
+            walletA, identityId, 0, 0, 0, 0, false, false, 0,
+            key, ByteArray(20), false, ByteArray(32),
+            false, 0, 0, 0, ByteArray(32), null,
+            rejectedDerivations = intArrayOf(1, 7, 0, 7),
+        )
+        handler.onChangesetEnd(walletA, success = true)
+        val cleared = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(cleared.derivationKeyIndex)
+        assertNull(cleared.derivationWalletId)
     }
 
     @Test

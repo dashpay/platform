@@ -179,9 +179,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * treated the account as rotated, tore it down and rebuilt it — and that
  * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
  * native rebuilds once, stamps it, and never again.
+ *
+ * Version 16 (key-origin provenance, dashpay/platform#5487): adds the
+ * nullable `public_keys.derivationWalletId` column, the wallet whose seed a
+ * row's derivation breadcrumb belongs to, so a rejection by another wallet's
+ * seed at the same coordinates does not clear it. Rows that already carried
+ * a breadcrumb are backfilled with their identity's wallet, which is whose
+ * derivation every breadcrumb written before this version was.
  */
 @Database(
-    version = 15,
+    version = 16,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -716,6 +723,18 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `derivationWalletId` BLOB")
+                db.execSQL(
+                    "UPDATE `public_keys` SET `derivationWalletId` = (" +
+                        "SELECT `walletId` FROM `identities` " +
+                        "WHERE `identities`.`identityId` = `public_keys`.`identityIdData`) " +
+                        "WHERE `derivationKeyIndex` IS NOT NULL",
+                )
+            }
+        }
+
         /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
@@ -746,6 +765,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                 .build()
 

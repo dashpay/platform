@@ -722,6 +722,7 @@ mod tests {
     use dpp::prelude::Identifier;
     use platform_wallet::changeset::IdentityChangeSet;
     use platform_wallet::wallet::identity::IdentityStatus;
+    use std::collections::BTreeSet;
 
     fn migrated_conn() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -903,7 +904,7 @@ mod tests {
             public_key_hash: [byte; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let mut keys = IdentityKeysChangeSet::default();
         keys.upserts
@@ -1112,7 +1113,7 @@ mod tests {
             public_key_hash: [byte; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         }
     }
 

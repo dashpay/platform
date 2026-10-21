@@ -4216,15 +4216,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
                     row.identityDerivationPath = path
                 }
-            } else if let rejected = entry.derivationRejected,
+            } else if !entry.derivationRejected.isEmpty,
                 // The rejection was checked under this wallet's seed: a path
                 // another wallet derived is not refuted by it.
                 (row.walletId ?? walletId) == walletId,
-                let rejectedPath = identityAuthPath(
-                    walletId: walletId,
-                    indices: rejected
-                ),
-                row.identityDerivationPath == rejectedPath
+                let heldPath = row.identityDerivationPath,
+                entry.derivationRejected.contains(where: { rejected in
+                    identityAuthPath(walletId: walletId, indices: rejected) == heldPath
+                })
             {
                 // Rust checked the key at these coordinates and found it does
                 // not come from there (the candidate did not reproduce it, or
@@ -5274,10 +5273,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
         /// With no `derivationIndices`: the coordinates Rust checked the key
-        /// at and found it does not come from, so a stored derivation path
-        /// naming exactly them is cleared; `nil` when its origin is unknown,
-        /// which keeps the stored path.
-        var derivationRejected: (identityIndex: UInt32, keyIndex: UInt32)? = nil
+        /// at under the persisting wallet's seed and found it does not come
+        /// from, so a stored derivation path of that wallet naming one of them
+        /// is cleared; empty when its origin is unknown, which keeps the
+        /// stored path.
+        var derivationRejected: [(identityIndex: UInt32, keyIndex: UInt32)] = []
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -10350,9 +10350,7 @@ private func persistIdentityKeysCallback(
                 walletId: walletId,
                 derivationIndices: indices,
                 contractBounds: bounds,
-                derivationRejected: e.derivation_rejected_is_some
-                    ? (e.rejected_identity_index, e.rejected_key_index)
-                    : nil
+                derivationRejected: rejectedPairs(e)
             ))
         }
     }
@@ -10806,6 +10804,17 @@ private func persistContactsCallback(
 /// identity-persistence callbacks where Rust hands over `[u8; 32]`
 /// fields as `(UInt8, UInt8, ...)` tuples.
 @inline(__always)
+/// The rejected `[identity_index, key_index]` pairs a key entry carries.
+private func rejectedPairs(
+    _ e: IdentityKeyEntryFFI
+) -> [(identityIndex: UInt32, keyIndex: UInt32)] {
+    guard let ptr = e.rejected_derivations_ptr, e.rejected_derivations_len > 0 else {
+        return []
+    }
+    let flat = UnsafeBufferPointer(start: ptr, count: Int(e.rejected_derivations_len) * 2)
+    return stride(from: 0, to: flat.count, by: 2).map { (flat[$0], flat[$0 + 1]) }
+}
+
 private func dataFromTuple32(_ tuple: FFIByteTuple32) -> Data {
     var value = tuple
     return Swift.withUnsafeBytes(of: &value) { Data($0) }

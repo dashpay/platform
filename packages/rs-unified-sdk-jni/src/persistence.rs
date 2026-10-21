@@ -1537,13 +1537,13 @@ unsafe extern "C" fn tramp_persist_identity_keys(
 }
 
 /// `onPersistIdentityKeyUpsert`'s JNI descriptor. The `ZJZJ` before the
-/// final `ZII` is the key usage limits pair (`hasTotalBudget`,
-/// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `ZII` is
-/// `derivationRejected`, `rejectedIdentityIndex`, `rejectedKeyIndex`. Bound at the `call_method` site and in
+/// final `[I` is the key usage limits pair (`hasTotalBudget`,
+/// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `[I` is
+/// `rejectedDerivations`, flat `[identityIndex, keyIndex]` pairs. Bound at the `call_method` site and in
 /// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves
 /// the table up front, while the call site only resolves when a key is
 /// first persisted.
-const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJZII)I";
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ[I)I";
 
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
@@ -1557,6 +1557,16 @@ unsafe fn persist_identity_key_upsert(
     let key_wallet_id = env.byte_array_from_slice(&e.wallet_id)?;
     let cb_id = env.byte_array_from_slice(&e.contract_bounds_id)?;
     let cb_doctype = cstr_opt(env, e.contract_bounds_document_type)?;
+    // The rejected `[identity_index, key_index]` pairs, flat.
+    let rejected_pairs: &[u32] =
+        if e.rejected_derivations_ptr.is_null() || e.rejected_derivations_len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(e.rejected_derivations_ptr, e.rejected_derivations_len * 2)
+        };
+    let rejected = env.new_int_array(rejected_pairs.len() as i32)?;
+    let rejected_ints: Vec<i32> = rejected_pairs.iter().map(|v| *v as i32).collect();
+    env.set_int_array_region(&rejected, 0, &rejected_ints)?;
     env.call_method(
         bridge,
         "onPersistIdentityKeyUpsert",
@@ -1585,9 +1595,7 @@ unsafe fn persist_identity_key_upsert(
             JValue::Long(e.total_budget as i64),
             JValue::Bool(e.expires_at_is_some as u8),
             JValue::Long(e.expires_at as i64),
-            JValue::Bool(e.derivation_rejected_is_some as u8),
-            JValue::Int(e.rejected_identity_index as i32),
-            JValue::Int(e.rejected_key_index as i32),
+            (&rejected).into(),
         ],
     )?
     .i()

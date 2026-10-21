@@ -21,6 +21,7 @@ use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Compute the 20-byte RIPEMD160(SHA256) hash of the DPP public-key
 /// bytes. Shared between `keys_snapshot_changeset` so the FFI surface
@@ -72,7 +73,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(pub_key),
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             );
         }
@@ -482,7 +483,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(key),
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             );
         }
@@ -543,7 +544,7 @@ impl ManagedIdentity {
             if public_key_hash != entry.public_key_hash || key.data() != entry.public_key.data() {
                 entry.wallet_id = None;
                 entry.derivation_indices = None;
-                entry.derivation_rejected = None;
+                entry.derivation_rejected = BTreeSet::new();
             }
             entry.public_key_hash = public_key_hash;
             entry.public_key = key.clone();
@@ -619,7 +620,7 @@ impl ManagedIdentity {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: public_key,
                 breadcrumb: derivation_breadcrumb,
-                derivation_rejected: None,
+                derivation_rejected: BTreeSet::new(),
             }],
             persister,
         )
@@ -690,8 +691,11 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id,
                     derivation_indices,
-                    derivation_rejected: derivation_rejected
-                        .filter(|_| derivation_indices.is_none()),
+                    derivation_rejected: if derivation_indices.is_none() {
+                        derivation_rejected
+                    } else {
+                        BTreeSet::new()
+                    },
                 },
             );
         }
@@ -744,7 +748,7 @@ impl ManagedIdentity {
                 public_key_hash,
                 wallet_id: None,
                 derivation_indices: None,
-                derivation_rejected: None,
+                derivation_rejected: BTreeSet::new(),
             },
         );
         self.store_with_queued_key_rows(keys_cs, persister)
@@ -874,7 +878,7 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             );
         }
@@ -1156,12 +1160,12 @@ mod tests {
                 KeyWithBreadcrumb {
                     key: key(3),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
                 KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 },
             ]
         };
@@ -1194,7 +1198,7 @@ mod tests {
             let decisions = vec![KeyWithBreadcrumb {
                 key: key(3).with_limits(Some(100), None),
                 breadcrumb: None,
-                derivation_rejected: None,
+                derivation_rejected: BTreeSet::new(),
             }];
             let folded = managed.key_decisions_for_fetch(&identity(revision, 100), decisions);
             assert_eq!(folded[0].key.total_budget(), Some(500), "at {revision}");
@@ -1283,7 +1287,7 @@ mod tests {
         let with_breadcrumb = |key: IdentityPublicKey| KeyWithBreadcrumb {
             breadcrumb: Some((wallet_id, 0, key.id())),
             key,
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let row = |key_id: KeyID| {
             persister
@@ -1335,7 +1339,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: raised.clone(),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1413,7 +1417,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1477,7 +1481,7 @@ mod tests {
                     vec![KeyWithBreadcrumb {
                         breadcrumb: Some((wallet_id, 0, key.id())),
                         key,
-                        derivation_rejected: None,
+                        derivation_rejected: BTreeSet::new(),
                     }],
                     &p,
                 )
@@ -1494,7 +1498,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: other_key(2),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1516,17 +1520,17 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
-                    derivation_rejected: Some(IdentityKeyDerivationIndices {
+                    derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
                         identity_index: 0,
                         key_index: 4,
-                    }),
+                    }]),
                 }],
                 &p,
             )
             .unwrap();
         let settled = row(4).unwrap();
         assert_eq!(settled.derivation_indices, None);
-        assert!(settled.derivation_rejected.is_some());
+        assert!(!settled.derivation_rejected.is_empty());
 
         // A refused rejection is kept by the next store's own row for the
         // same key that leaves its origin unknown (a disable).
@@ -1538,10 +1542,10 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(5),
                     breadcrumb: None,
-                    derivation_rejected: Some(IdentityKeyDerivationIndices {
+                    derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
                         identity_index: 0,
                         key_index: 5,
-                    }),
+                    }]),
                 }],
                 &p,
             )
@@ -1552,8 +1556,41 @@ mod tests {
         managed.disable_keys(&[5], 9, &p);
         let disabled = row(5).unwrap();
         assert_eq!(disabled.public_key.disabled_at(), Some(9));
+        assert_eq!(disabled.derivation_rejected.len(), 1);
+
+        // A refused rejection retried with a second, distinct one for the
+        // same key keeps both.
+        let rejecting = |identity_index| KeyWithBreadcrumb {
+            key: key(6),
+            breadcrumb: None,
+            derivation_rejected: BTreeSet::from([IdentityKeyDerivationIndices {
+                identity_index,
+                key_index: 6,
+            }]),
+        };
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed.add_keys(vec![rejecting(0)], &p).is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.add_keys(vec![rejecting(1)], &p).unwrap();
+        assert_eq!(
+            row(6).unwrap().derivation_rejected,
+            BTreeSet::from([
+                IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: 6,
+                },
+                IdentityKeyDerivationIndices {
+                    identity_index: 1,
+                    key_index: 6,
+                },
+            ])
+        );
         assert!(
-            disabled.derivation_rejected.is_some(),
+            !disabled.derivation_rejected.is_empty(),
             "the queued rejection survives"
         );
     }
@@ -1586,7 +1623,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1825,12 +1862,12 @@ mod tests {
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(0),
                         breadcrumb: Some((wallet_id, 7, 0)),
-                        derivation_rejected: None,
+                        derivation_rejected: BTreeSet::new(),
                     },
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(1),
                         breadcrumb: None,
-                        derivation_rejected: None,
+                        derivation_rejected: BTreeSet::new(),
                     },
                 ],
                 &p,
@@ -1891,7 +1928,7 @@ mod tests {
                 vec![crate::changeset::KeyWithBreadcrumb {
                     key: key(1),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 }],
                 &p,
             )
@@ -1963,7 +2000,7 @@ mod tests {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: key(0),
                 breadcrumb: Some((wallet_id, 7, 0)),
-                derivation_rejected: None,
+                derivation_rejected: BTreeSet::new(),
             }],
             &p,
         );

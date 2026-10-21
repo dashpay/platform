@@ -995,7 +995,7 @@ impl IdentityEntry {
 /// from the wallet's mnemonic at the DIP-9 identity authentication
 /// path — platform-wallet itself never carries or persists the key
 /// bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyDerivationIndices {
     /// DIP-9 identity index (hardened).
@@ -1027,12 +1027,13 @@ pub struct KeyWithBreadcrumb {
     /// meaning set by `derivation_rejected`.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
     /// With no `breadcrumb`: the derivation coordinates this key was
-    /// checked at and found not to come from (a candidate derived there did
-    /// not reproduce it, or the caller declared the key external), so a
-    /// stored breadcrumb naming exactly these coordinates is cleared; any
-    /// other stored breadcrumb, and every one when `None` (the origin is
-    /// unknown), is kept. See [`IdentityKeyEntry::derivation_rejected`].
-    pub derivation_rejected: Option<IdentityKeyDerivationIndices>,
+    /// checked at, under the persisting wallet's seed, and found not to come
+    /// from (a candidate derived there did not reproduce it, or the caller
+    /// declared the key external), so a stored breadcrumb naming one of them
+    /// is cleared; any other stored breadcrumb, and every one when the set is
+    /// empty (the origin is unknown), is kept. See
+    /// [`IdentityKeyEntry::derivation_rejected`].
+    pub derivation_rejected: BTreeSet<IdentityKeyDerivationIndices>,
 }
 
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
@@ -1066,28 +1067,31 @@ pub struct IdentityKeyEntry {
     /// `derivation_rejected`.
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
     /// With no `derivation_indices`, what the entry knows about the key's
-    /// origin. `None`: unknown here (a refresh, a limits update, a disable),
-    /// so a persister keeps the breadcrumb a row already holds. `Some`: the
-    /// coordinates the key was checked at and found not to come from (a load
-    /// or discovery derived a candidate there and it did not reproduce the
-    /// key, or the caller of an update declared the key external), so a
-    /// persister clears a stored breadcrumb naming exactly these coordinates
-    /// under the seed of the wallet persisting the entry, a stale inferred
-    /// one, and keeps any other: only the derivation that was checked is
+    /// origin. Empty: unknown here (a refresh, a limits update, a disable),
+    /// so a persister keeps the breadcrumb a row already holds. Otherwise:
+    /// the coordinates the key was checked at and found not to come from,
+    /// under the seed of the wallet persisting the entry (a load or discovery
+    /// derived a candidate there and it did not reproduce the key, or the
+    /// caller of an update declared the key external), so a persister clears
+    /// a stored breadcrumb that wallet holds at one of them, a stale inferred
+    /// one, and keeps any other: only the derivations that were checked are
     /// refuted, and the same coordinates under another wallet's seed are
-    /// another derivation. Ignored with `derivation_indices`.
+    /// another derivation. A set, so entries for one key combine by union
+    /// and give what applying them one by one gives. Ignored with
+    /// `derivation_indices`.
     #[cfg_attr(feature = "serde", serde(default))]
-    pub derivation_rejected: Option<IdentityKeyDerivationIndices>,
+    pub derivation_rejected: BTreeSet<IdentityKeyDerivationIndices>,
 }
 
 impl IdentityKeyEntry {
     /// When this entry gives no breadcrumb, take what `earlier` (an earlier
     /// row for the same key) settled about the key's origin: its breadcrumb,
-    /// as every persister keeps a stored one, unless this entry's own
-    /// rejection names those coordinates; or, when this entry's origin is
-    /// unknown, its rejection, so a later unknown-origin write (a disable, a
-    /// limits update) does not let a persister keep a stale inferred
-    /// breadcrumb the rejection cleared. A key's origin belongs to one public
+    /// as every persister keeps a stored one, unless one of this entry's own
+    /// rejections names those coordinates; or its rejections, joined with
+    /// this entry's, so a later write (a disable, a limits update, another
+    /// rejection) does not let a persister keep a stale inferred breadcrumb
+    /// an earlier rejection cleared: combining two entries gives what
+    /// applying them one after the other gives. A key's origin belongs to one public
     /// key, so `earlier` must carry the same public key, and a breadcrumb the
     /// same scope.
     pub fn inherit_origin(&mut self, earlier: &IdentityKeyEntry) {
@@ -1101,14 +1105,16 @@ impl IdentityKeyEntry {
                 .wallet_id
                 .zip(earlier.wallet_id)
                 .is_none_or(|(own, other)| own == other);
-            // This entry's own rejection refutes exactly those coordinates.
-            if same_scope && self.derivation_rejected != Some(indices) {
+            // This entry's own rejections refute exactly those coordinates.
+            if same_scope && !self.derivation_rejected.contains(&indices) {
                 self.wallet_id = earlier.wallet_id;
                 self.derivation_indices = Some(indices);
-                self.derivation_rejected = None;
+                self.derivation_rejected = BTreeSet::new();
             }
-        } else if self.derivation_rejected.is_none() {
-            self.derivation_rejected = earlier.derivation_rejected;
+        } else {
+            // Rejections compose: each clears what it names, in any order.
+            self.derivation_rejected
+                .extend(earlier.derivation_rejected.iter().copied());
         }
     }
 }
@@ -2617,7 +2623,7 @@ mod tests {
                 identity_index: 0,
                 key_index,
             }),
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         };
         let changeset = |entry: IdentityKeyEntry| {
             let mut cs = IdentityKeysChangeSet::default();
@@ -2634,21 +2640,43 @@ mod tests {
 
         // A rejection of other coordinates does not refute the breadcrumb.
         let mut elsewhere = entry(Some(9), None);
-        elsewhere.derivation_rejected = Some(IdentityKeyDerivationIndices {
+        elsewhere.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
             identity_index: 0,
             key_index: 3,
-        });
+        }]);
         merged.merge(changeset(elsewhere));
         assert_eq!(merged.upserts[&(id, 3)], entry(Some(9), Some(4)));
 
         // A rejection of exactly its coordinates clears it.
         let mut rejected = entry(Some(9), None);
-        rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+        rejected.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
             identity_index: 0,
             key_index: 4,
-        });
+        }]);
         merged.merge(changeset(rejected.clone()));
         assert_eq!(merged.upserts[&(id, 3)], rejected);
+
+        // Two rejections combine: each still refutes what it names.
+        let mut first = entry(Some(11), None);
+        first.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
+            identity_index: 1,
+            key_index: 3,
+        }]);
+        let mut combined = changeset(first);
+        combined.merge(changeset(rejected.clone()));
+        assert_eq!(
+            combined.upserts[&(id, 3)].derivation_rejected,
+            BTreeSet::from([
+                IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: 4,
+                },
+                IdentityKeyDerivationIndices {
+                    identity_index: 1,
+                    key_index: 3,
+                },
+            ])
+        );
 
         // A later unknown-origin entry (a disable) keeps the rejection.
         let later = entry(Some(10), None);

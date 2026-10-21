@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
+use std::collections::BTreeSet;
 
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -326,13 +327,15 @@ impl IdentityWallet {
         // A declared external key refutes the coordinates an update would
         // have inferred for it (older code stored them), so a persister clears
         // exactly that breadcrumb.
-        let external_slot = |id: KeyID| {
+        let external_slot = |id: KeyID| -> BTreeSet<IdentityKeyDerivationIndices> {
             identity_index
                 .filter(|_| external_key_ids.contains(&id))
                 .map(|identity_index| IdentityKeyDerivationIndices {
                     identity_index,
                     key_index: id,
                 })
+                .into_iter()
+                .collect()
         };
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
@@ -390,7 +393,7 @@ impl IdentityWallet {
                 keys.push(KeyWithBreadcrumb {
                     key: key.clone(),
                     breadcrumb: None,
-                    derivation_rejected: None,
+                    derivation_rejected: BTreeSet::new(),
                 });
             }
             // Stored with the identity's snapshot even when no touched key
@@ -961,10 +964,10 @@ mod update_identity_at_revision_tests {
             assert_eq!(stored.wallet_id, None, "cached at {cached}");
             assert_eq!(
                 stored.derivation_rejected,
-                Some(IdentityKeyDerivationIndices {
+                BTreeSet::from([IdentityKeyDerivationIndices {
                     identity_index: 0,
                     key_index: 3,
-                }),
+                }]),
                 "a declared external key refutes its slot's breadcrumb, cached at {cached}"
             );
         }

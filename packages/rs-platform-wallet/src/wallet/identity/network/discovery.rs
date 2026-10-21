@@ -3,6 +3,7 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
+use std::collections::BTreeSet;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
@@ -95,12 +96,13 @@ fn breadcrumb_decisions(
             // coordinates it was derived at, `(identity_index, key_id)`, which
             // clears a stale breadcrumb a client holds there; a breadcrumb
             // stored at other coordinates is kept.
-            let derivation_rejected = (checked == Some(false)).then_some(
-                crate::changeset::IdentityKeyDerivationIndices {
+            let derivation_rejected: BTreeSet<_> = (checked == Some(false))
+                .then_some(crate::changeset::IdentityKeyDerivationIndices {
                     identity_index,
                     key_index: *key_id,
-                },
-            );
+                })
+                .into_iter()
+                .collect();
             let breadcrumb = if reproduces {
                 // The candidate scalar reproduced the on-chain key, so this
                 // wallet owns it: emit the DIP-9 coordinates. The scalar is
@@ -865,6 +867,7 @@ mod tests {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
 
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
@@ -980,13 +983,13 @@ mod tests {
             "reproducible key breadcrumbed"
         );
         assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
-        assert_eq!(by_id[&0].derivation_rejected, None);
+        assert!(by_id[&0].derivation_rejected.is_empty());
         assert_eq!(
             by_id[&1].derivation_rejected,
-            Some(crate::changeset::IdentityKeyDerivationIndices {
+            BTreeSet::from([crate::changeset::IdentityKeyDerivationIndices {
                 identity_index: 0,
                 key_index: 1,
-            }),
+            }]),
             "a checked candidate that does not reproduce the key refutes its coordinates"
         );
 
@@ -996,7 +999,7 @@ mod tests {
         let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
         let unchecked = decisions.iter().find(|d| d.key.id() == 1).unwrap();
         assert_eq!(unchecked.breadcrumb, None);
-        assert_eq!(unchecked.derivation_rejected, None);
+        assert!(unchecked.derivation_rejected.is_empty());
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of

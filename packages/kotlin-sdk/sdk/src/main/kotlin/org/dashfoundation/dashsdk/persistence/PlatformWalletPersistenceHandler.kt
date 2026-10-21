@@ -1900,9 +1900,7 @@ class PlatformWalletPersistenceHandler(
         totalBudget: Long,
         expiresAtIsSome: Boolean,
         expiresAt: Long,
-        derivationRejected: Boolean,
-        rejectedIdentityIndex: Int,
-        rejectedKeyIndex: Int,
+        rejectedDerivations: IntArray,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -1929,17 +1927,25 @@ class PlatformWalletPersistenceHandler(
         // alias whose row can never commit (the identity rows are gone),
         // stranding identity-key ciphertext behind a "successful" wipe.
         val roundKey = walletId.toHex()
-        // A rejection refutes the slot it checked under this wallet's seed: a
-        // pending repair entry for that slot of this wallet needs no
+        // The slots a rejection refutes under this wallet's seed, as
+        // `(identityIndex, keyIndex)`; empty when the key's origin is unknown.
+        val refutedSlots: Set<Pair<Int, Int>> =
+            if (derivationIndicesIsSome) {
+                emptySet()
+            } else {
+                (0 until rejectedDerivations.size / 2)
+                    .map { rejectedDerivations[2 * it] to rejectedDerivations[2 * it + 1] }
+                    .toSet()
+            }
+        // A pending repair entry for a refuted slot of this wallet needs no
         // re-derive and is dropped, staged with the round; one for another
         // slot, or another wallet, stays.
-        if (derivationRejected && !derivationIndicesIsSome) {
+        if (refutedSlots.isNotEmpty()) {
             val hex = publicKeyData.toHex()
             stagePendingKeyDelta(roundKey) { map ->
                 val pending = map[hex]
                 if (pending != null && pending.walletIdHex == roundKey &&
-                    pending.identityIndex == rejectedIdentityIndex &&
-                    pending.keyIndex == rejectedKeyIndex
+                    (pending.identityIndex to pending.keyIndex) in refutedSlots
                 ) {
                     map - hex
                 } else {
@@ -2039,13 +2045,16 @@ class PlatformWalletPersistenceHandler(
             // this one: only a row for the same public key lends them.
             val existing = stored?.takeIf { it.publicKeyData.contentEquals(publicKeyData) }
             // A rejection refutes only the coordinates it was checked at, under
-            // the seed of the wallet persisting it: a key row's breadcrumb is
-            // its identity's wallet's derivation, so another wallet's
-            // rejection leaves it.
-            val refuted = derivationRejected && !derivationIndicesIsSome &&
-                existing?.derivationIdentityIndex == rejectedIdentityIndex &&
-                existing.derivationKeyIndex == rejectedKeyIndex &&
-                db.identityDao().getByIdentityId(identityId)?.walletId?.contentEquals(walletId) == true
+            // the seed of the wallet persisting it: the row's breadcrumb is
+            // cleared only when it is that wallet's derivation
+            // ([PublicKeyEntity.derivationWalletId]) at a refuted slot. The
+            // identity's wallet does not say whose the breadcrumb is: the same
+            // round may just have re-associated it.
+            val heldSlot = existing?.derivationIdentityIndex?.let { identity ->
+                existing.derivationKeyIndex?.let { key -> identity to key }
+            }
+            val refuted = heldSlot != null && heldSlot in refutedSlots &&
+                existing.derivationWalletId?.contentEquals(walletId) == true
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
@@ -2083,8 +2092,7 @@ class PlatformWalletPersistenceHandler(
                 // pending-repair state reconstructible after restart
                 // (dashpay/platform#4060 finding 5).
                 // Without indices, an upsert keeps the stored breadcrumb of
-                // the same public key unless it refutes exactly those
-                // coordinates ([derivationRejected]).
+                // the same public key unless it refutes it ([refuted]).
                 derivationIdentityIndex = when {
                     derivationIndicesIsSome -> identityIndex
                     refuted -> null
@@ -2094,6 +2102,11 @@ class PlatformWalletPersistenceHandler(
                     derivationIndicesIsSome -> keyIndex
                     refuted -> null
                     else -> existing?.derivationKeyIndex
+                },
+                derivationWalletId = when {
+                    derivationIndicesIsSome -> if (walletIdIsSome) keyWalletId else walletId
+                    refuted -> null
+                    else -> existing?.derivationWalletId
                 },
                 identityId = identityBase58,
                 identityIdData = identityId,

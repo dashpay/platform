@@ -8,6 +8,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
@@ -68,7 +69,7 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         })
     }
 }
@@ -249,7 +250,7 @@ pub fn apply(
                     .optional()?;
                 if let Some((wallet_id_kept, derivation_indices)) = held
                     .and_then(|held| held_breadcrumb(held, entry, wallet_id))
-                    .filter(|(_, held)| entry.derivation_rejected != Some(*held))
+                    .filter(|(_, held)| !entry.derivation_rejected.contains(held))
                 {
                     wire.wallet_id = wallet_id_kept;
                     wire.derivation_indices = Some(derivation_indices);
@@ -707,7 +708,7 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
-            derivation_rejected: None,
+            derivation_rejected: BTreeSet::new(),
         };
 
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");

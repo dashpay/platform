@@ -5,6 +5,7 @@
 //! corrupt blob.
 
 use crate::common;
+use std::collections::BTreeSet;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -45,7 +46,7 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
             identity_index: 0,
             key_index: u32::from(byte),
         }),
-        derivation_rejected: None,
+        derivation_rejected: BTreeSet::new(),
     }
 }
 
@@ -149,10 +150,10 @@ fn should_clear_a_stored_breadcrumb_a_load_rejects_and_keep_an_unknown_one() {
 
     let mut rejected = key_entry(id, 0, 0x11);
     rejected.derivation_indices = None;
-    rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+    rejected.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
         identity_index: 0,
         key_index: 0x11,
-    });
+    }]);
     let mut unknown = key_entry(id, 1, 0x22);
     unknown.derivation_indices = None;
     store(vec![rejected.clone(), unknown]);
@@ -164,7 +165,7 @@ fn should_clear_a_stored_breadcrumb_a_load_rejects_and_keep_an_unknown_one() {
         .expect("load_state");
     drop(conn);
     let mut cleared = rejected;
-    cleared.derivation_rejected = None;
+    cleared.derivation_rejected = BTreeSet::new();
     assert_eq!(cs.upserts.get(&(id, 0)), Some(&cleared));
     assert_eq!(cs.upserts.get(&(id, 1)), Some(&key_entry(id, 1, 0x22)));
 }
@@ -205,10 +206,10 @@ fn should_keep_a_stored_breadcrumb_a_rejection_does_not_name() {
     // A load checks `(0, 3)` and rejects it.
     let mut rejected = stored.clone();
     rejected.derivation_indices = None;
-    rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+    rejected.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
         identity_index: 0,
         key_index: 3,
-    });
+    }]);
     store(rejected);
     drop(persister);
 
@@ -223,6 +224,75 @@ fn should_keep_a_stored_breadcrumb_a_rejection_does_not_name() {
             .and_then(|row| row.derivation_indices),
         stored.derivation_indices
     );
+}
+
+/// Two rejections of one key at different coordinates give the same stored
+/// row whether they are written one by one or combined in a buffered
+/// segment: the legacy inferred breadcrumb either names is cleared.
+#[test]
+fn should_clear_a_breadcrumb_two_combined_rejections_name_as_one_by_one() {
+    for mode in [
+        platform_wallet_storage::FlushMode::Immediate,
+        platform_wallet_storage::FlushMode::Manual,
+    ] {
+        let (persister, _tmp, path) = common::fresh_persister_with_mode(mode);
+        let w = wid(0xD7);
+        ensure_wallet_meta(&persister, &w);
+        let id = Identifier::from([0x11; 32]);
+        platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+            &persister.lock_conn_for_test(),
+            &w,
+            id.as_slice().try_into().unwrap(),
+        )
+        .unwrap();
+        let store = |entry: IdentityKeyEntry| {
+            let mut keys = IdentityKeysChangeSet::default();
+            keys.upserts
+                .insert((entry.identity_id, entry.key_id), entry);
+            persister
+                .store(
+                    w,
+                    PlatformWalletChangeSet {
+                        identity_keys: Some(keys),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        };
+        // The legacy inferred breadcrumb at `(0, 3)`.
+        let mut inferred = key_entry(id, 3, 0x44);
+        inferred.derivation_indices = Some(IdentityKeyDerivationIndices {
+            identity_index: 0,
+            key_index: 3,
+        });
+        store(inferred.clone());
+        persister.flush(w).unwrap();
+
+        let rejecting = |identity_index| {
+            let mut entry = inferred.clone();
+            entry.derivation_indices = None;
+            entry.derivation_rejected = BTreeSet::from([IdentityKeyDerivationIndices {
+                identity_index,
+                key_index: 3,
+            }]);
+            entry
+        };
+        store(rejecting(0));
+        store(rejecting(1));
+        persister.flush(w).unwrap();
+        drop(persister);
+
+        let p2 = reopen(&path);
+        let conn = p2.lock_conn_for_test();
+        let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .expect("load_state");
+        drop(conn);
+        assert_eq!(
+            cs.upserts.get(&(id, 3)).map(|row| row.derivation_indices),
+            Some(None),
+            "{mode:?}"
+        );
+    }
 }
 
 /// A stored row over the blob size limit is not read into memory to look for
