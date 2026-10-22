@@ -444,41 +444,50 @@ let identity_ids = drive.fetch_identity_ids_by_non_unique_public_key_hash(
 
 `getIdentityByNonUniquePublicKeyHash` returns the first matching identity in
 lexicographic identity-ID byte order. `start_after` is exclusive; use the returned
-ID to fetch the next match. The protocol 13 producer returns separate index and
-identity proofs (result field 2); protocol 14 returns one standard `Proof`
-(result field 4). It proves the complete index prefix through that identity and
-all its keys, balance and revision at the same signed root. An absent hash or
-exhausted cursor proves the entire remaining range is empty. A missing identity
-referenced by the index is a proof error, rather than an empty result.
+ID to fetch the next match. The request version chooses the shape of a proved
+answer:
+
+| Request | Proved answer | Served from |
+|---|---|---|
+| V0 | Separate index and identity proofs (`IdentityProvedResponse`, result field 2), as 4.1 nodes send | every protocol version |
+| V1 | One standard `Proof` (result field 2 of response V1) | protocol 14 |
+
+The V0 index proof proves exactly the first index entry after the cursor, or that
+there is none; the identity proof proves that identity's keys, balance and revision.
+Both must have the same root, and an identity proof without an index entry, or an
+index entry without its identity, is a proof error. The V1 proof proves the complete
+index prefix through that identity and all its keys, balance and revision at one
+root. In both shapes an absent hash or exhausted cursor proves the remaining range
+is empty, and a missing identity referenced by the index is a proof error, rather
+than an empty result. Unproved answers (result field 1) are the same in both
+versions.
+
+The response version must equal the request version. The quorum signature covers
+the state, not the envelope, so the SDK refuses an answer of the other version
+instead of reinterpreting it, and the request moves to another node. For a V0
+answer the signed proof is the index proof; `fetch_with_metadata_and_proof` returns
+it, and independent replay of the full verification needs both original blobs.
 
 Clients reconstruct the query using the producer protocol version in signed
 metadata and retain their verification security floor. A producer version newer
 than the SDK is read with the newest query rules the SDK knows; the proof must
 still rebuild the signed root. The Rust SDK still returns `Option<Identity>`;
 high-level WASM/JavaScript APIs retain their existing result shape. The direct
-WASM verifier takes one proof blob and returns a root that the caller must
+WASM verifier takes one V1 proof blob and returns a root that the caller must
 authenticate independently.
 
-The SDK also accepts the legacy nested response at field 2. It strictly verifies
-its first-after index proof and complete identity proof, requires equal roots,
-and authenticates that root with the trusted quorum key and signed metadata.
-Only proved index absence permits an omitted identity proof. Both formats require
-GroveDB V1 or newer. The signed protocol version selects the one format the SDK
-accepts: field 2 up to protocol 13, field 4 from protocol 14 (and from versions
-newer than the SDK). An answer in the other format is a proof error and is never
-re-read in the other format, so the request moves to another node. Freshness
-checks and authenticated version learning apply after successful verification.
-The response generation follows committed current protocol state, so lock-in of
-protocol 14 still returns the protocol 13 encoding until activation. Unproved
-response field 1 and request version 0 are unchanged.
+**How the SDK picks the request version.** A node that refuses a request version
+is banned for every method, so the SDK sends V1 only when two versions both select
+it: its stored protocol version, and the highest protocol version it has seen in a
+verified, signed answer. Until it has verified one, it sends V0, which every node
+serves. A seeded, pinned or persisted version alone therefore never sends V1 to a
+network that may still run protocol 13. On a network that has just activated
+protocol 14, a node one block behind can still refuse the first V1 request.
 
-4.1.x clients understand only field 2. They keep working against protocol 13
-nodes, including 5.0 nodes until protocol 14 activates on mainnet. From then on
-every node answers in field 4, which those clients drop as an unknown field: each
-proved lookup fails as a missing proof, is retried and bans the node it asked.
-Update clients before protocol 14 activates on mainnet.
-For a legacy response, `fetch_with_metadata_and_proof` returns the signed index
-`Proof`; independent replay of the full verification needs both original blobs.
+**Older clients.** 4.1.x clients and 5.0 betas up to beta.4 send only V0 and read
+only result field 2, so every 5.0 node keeps answering them, before and after
+protocol 14 activates. The 5.0 prereleases from beta.5 to rc.7 sent V0 and expected
+the proof at field 4, which no node sends any more; they must update.
 
 **Fetch all keys for an identity:**
 ```rust
