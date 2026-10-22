@@ -16,13 +16,18 @@ class AppState: ObservableObject {
     /// UI binds to).
     @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
 
-    @Published var currentNetwork: Network {
+    @Published private(set) var currentNetwork: Network {
         didSet {
             UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
-            Task {
-                await switchNetwork(to: currentNetwork)
-            }
         }
+    }
+
+    /// Publish `network` as the current network. Publishing rebuilds
+    /// nothing: call it from the `apply` step of
+    /// `rebuildSdkAndMoveWalletManager`, which then builds that network's
+    /// SDK and moves the wallet manager onto it.
+    func publishCurrentNetwork(_ network: Network) {
+        currentNetwork = network
     }
 
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
@@ -35,15 +40,15 @@ class AppState: ObservableObject {
     /// fall back to the currently-active network behavior when `nil`.
     @Published var platformProtocolVersion: UInt32?
 
-    /// Monotonic tick incremented when a wallet-scoped service rebind
-    /// is needed but neither of the standard triggers
-    /// (`currentNetwork.onChange`, `wallets.keys.onChange`) will fire.
-    /// Concretely: a devnet→devnet SDK rebuild from OptionsView swaps
-    /// the cached `PlatformWalletManager` but leaves the network and
-    /// wallet ID set unchanged, so `PlatformBalanceSyncService` and
-    /// `ShieldedService` keep their references to the old manager.
-    /// SwiftExampleAppApp observes this tick to re-run
-    /// `rebindWalletScopedServices()` in that edge case.
+    /// Monotonic tick bumped after OptionsView moves the wallet manager
+    /// onto a rebuilt SDK: a network switch, the Docker toggle or a devnet
+    /// edit. SwiftExampleAppApp observes it to re-run
+    /// `rebindWalletScopedServices()` against the new manager. A network
+    /// change is published before the wallet manager moves onto the new
+    /// network's SDK, and a same-network rebuild changes neither the
+    /// network nor the wallet ID set, so neither can trigger the rebind;
+    /// `PlatformBalanceSyncService` and `ShieldedService` would otherwise
+    /// keep the old manager.
     @Published var walletScopedServicesRebindTick: Int = 0
 
     @Published var useDockerSetup: Bool {
@@ -200,8 +205,12 @@ class AppState: ObservableObject {
         showError = true
     }
 
-    func switchNetwork(to network: Network) async {
-        guard let modelContext = modelContext else { return }
+    /// Build and publish an SDK for `network`. Returns that SDK, or `nil`
+    /// before `initializeSDK` has run or after a build failure, which it
+    /// shows and which also clears `sdk`. The wallet manager stays on its
+    /// old SDK either way; `rebuildSdkAndMoveWalletManager` moves it.
+    func switchNetwork(to network: Network) async -> SDK? {
+        guard let modelContext = modelContext else { return nil }
 
         // Identities, contracts, documents, and token balances are
         // scoped per-network inside SwiftData. `@Query` consumers
@@ -231,11 +240,13 @@ class AppState: ObservableObject {
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
             isLoading = false
+            return newSDK
         } catch {
             sdk = nil
             showError(message: "Failed to switch network: \(error.localizedDescription)")
             NSLog("❌ AppState.switchNetwork: \(error)")
             isLoading = false
+            return nil
         }
     }
 

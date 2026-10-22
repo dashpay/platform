@@ -59,13 +59,11 @@ final class WalletManagerStore: ObservableObject {
     /// re-checks it (alongside manager identity) after its off-main
     /// peer resolution; a mismatch means the start is stale and must
     /// not revive a stopped or replaced manager. Identity alone is not
-    /// enough because of the stop→activate gap: OptionsView's picker
-    /// stops the old manager synchronously but the store only swaps
-    /// `activeManager` later (from the app-level `onChange`), and the
-    /// devnet rebuild widens that gap with an `await` on the SDK
-    /// rebuild. This token is invalidated at the *earliest* synchronous
-    /// point of each such path, closing the window. See the guard in
-    /// `CoreSpvLauncher.start`.
+    /// enough because of the stop→activate gap: OptionsView stops the
+    /// old manager, then awaits the SDK rebuild, and the store swaps
+    /// `activeManager` only after that. This token is invalidated at
+    /// the *earliest* synchronous point of each such path, closing the
+    /// window. See the guard in `CoreSpvLauncher.start`.
     ///
     /// Not `@Published` — nothing renders off it; it's read
     /// synchronously by start call sites and their revalidation
