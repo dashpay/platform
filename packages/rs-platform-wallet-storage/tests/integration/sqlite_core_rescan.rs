@@ -540,11 +540,7 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
             .unwrap()
             .core_wallet,
     );
-    drop((manager, events, persister));
-    let reloaded = SqlitePersister::open(SqlitePersisterConfig::new(&path))
-        .unwrap()
-        .load()
-        .unwrap();
+    let reloaded = persister.load().unwrap();
 
     let mut expected = vec![coin(2), OutPoint::new(locked.txid(), 1)];
     expected.sort();
@@ -555,22 +551,58 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
         "the reload keeps both reservations"
     );
     let conn = rusqlite::Connection::open(&path).unwrap();
-    // The rescan records the funding again; the forged spend is gone.
-    let records = [
-        (&funding, true),
-        (&locked, true),
-        (&signed, true),
-        (&forged, false),
-    ];
-    for (tx, kept) in records {
-        let stored: bool = conn
-            .query_row(
-                "SELECT EXISTS (SELECT 1 FROM core_transactions WHERE wallet_id = ?1 \
-                 AND txid = ?2 AND record_blob IS NOT NULL)",
-                rusqlite::params![wallet_id.as_slice(), tx.txid().as_byte_array().as_slice()],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(stored, kept, "record of {}", tx.txid());
+    let row = |tx: &Transaction| -> Option<(Option<u32>, bool)> {
+        conn.query_row(
+            "SELECT height, record_blob IS NOT NULL FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            rusqlite::params![wallet_id.as_slice(), tx.txid().as_byte_array().as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok()
+    };
+    assert_eq!(
+        row(&funding),
+        Some((Some(100), true)),
+        "the rescan records the height-only funding again"
+    );
+    assert!(matches!(
+        stored(&path, &wallet_id, &funding).context,
+        TransactionContext::InBlock(_)
+    ));
+    assert_eq!(row(&locked), Some((None, true)));
+    assert_eq!(row(&signed), Some((None, true)));
+    assert_eq!(row(&forged), None, "the forged spend is gone");
+
+    // The kept spends mine later, and the wallet records them again.
+    mine(&manager, wallet_id, locked.clone(), 101).await;
+    mine(&manager, wallet_id, signed.clone(), 102).await;
+    persist_events(&manager, &persister, &mut events).await;
+    drop((manager, events, persister));
+    let mined = SqlitePersister::open(SqlitePersisterConfig::new(&path))
+        .unwrap()
+        .load()
+        .unwrap();
+    assert_eq!(row(&locked), Some((Some(101), true)));
+    assert_eq!(row(&signed), Some((Some(102), true)));
+    for (tx, value, net) in [(&locked, 100_000, -61_000), (&signed, 50_000, -50_000)] {
+        let record = stored(&path, &wallet_id, tx);
+        assert!(matches!(record.context, TransactionContext::InBlock(_)));
+        let details: Vec<_> = record
+            .input_details
+            .iter()
+            .map(|d| (d.index, d.value, d.address.clone()))
+            .collect();
+        assert_eq!(details, vec![(0, value, address.clone())], "{}", tx.txid());
+        assert_eq!(
+            (record.net_amount, record.direction),
+            (net, TransactionDirection::Outgoing),
+            "{}",
+            tx.txid()
+        );
     }
+    assert_eq!(
+        spendable(&mined.wallets[&wallet_id].wallet_info),
+        expected,
+        "mining the kept spends settles the same coins"
+    );
 }

@@ -14,8 +14,12 @@
 //! stands behind. A kept coin's mined funding is reduced to a height-only row
 //! the rescan records again, and each kept record's claimed inputs are
 //! indexed. The loader then authenticates every kept claim before replay, as
-//! it does any stored one. Kept records carry their stored accounting until
-//! the wallet records them again.
+//! it does any stored one.
+//!
+//! Kept records carry their possibly wrong stored accounting until the wallet
+//! records them again, at the latest when they mine. SQL cannot recompute it,
+//! and a pending record that shows a wrong amount for a while costs less than
+//! a lost reservation, which lets the wallet spend the coin again.
 //!
 //! The SPV header/filter store, the address pools, asset locks, identities,
 //! DashPay and metadata rows are untouched; `last_processed_height` and the
