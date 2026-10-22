@@ -1,6 +1,7 @@
 #[cfg(feature = "validation-schema")]
 use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::validation::JsonSchemaValidator;
+use std::fmt;
 use std::ops::Deref;
 #[cfg(feature = "validation-schema")]
 use std::sync::{Arc, OnceLock};
@@ -13,7 +14,6 @@ use std::sync::{Arc, OnceLock};
 /// Beside the `jsonschema` validator it holds the native one, built on demand the same
 /// way: `None` once built when the document type's schema has no validation schema, whose
 /// documents the `jsonschema` validator then checks.
-#[derive(Debug)]
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")] OnceLock<Option<Arc<DocumentSchemaValidator>>>,
@@ -38,6 +38,17 @@ impl StatelessJsonSchemaLazyValidator {
     #[cfg(feature = "validation-schema")]
     pub(crate) fn native(&self) -> &OnceLock<Option<Arc<DocumentSchemaValidator>>> {
         &self.1
+    }
+}
+
+/// Prints the `jsonschema` validator alone, as before the native one was added: the native
+/// validator is a cache of what the document type's schema builds, which `PartialEq` and
+/// `Clone` leave out too, so a document type prints the same whichever cache is filled.
+impl fmt::Debug for StatelessJsonSchemaLazyValidator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("StatelessJsonSchemaLazyValidator")
+            .field(&self.0)
+            .finish()
     }
 }
 
