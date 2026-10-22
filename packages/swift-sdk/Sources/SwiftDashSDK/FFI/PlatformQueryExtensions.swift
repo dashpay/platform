@@ -261,20 +261,24 @@ extension SDK {
     /// when the proof shows no reference. A key's value holds `id`, `type`, `data` (hex),
     /// `purpose`, `security_level`, `read_only` and `disabled_at`.
     ///
-    /// What the reference holds depends on the contract's storage requirement for the purpose
-    /// (as Drive writes it from protocol version 14); a key bound to a contract group, whose id can
+    /// What the reference holds depends on the storage requirement for the purpose of the
+    /// contract, or of the document type for a key bound to one (as Drive writes it from protocol
+    /// version 14); a key bound to a contract group, whose id can
     /// be passed as `contractId`, is always under `MultipleReferenceToLatest`.
     /// Under `MultipleReferenceToLatest` it is the key of the latest registration (of the keys
     /// one identity create or update registers together, the one with the highest id), and it
-    /// stays that key when the key is disabled. Under `Unique` it is, for a contract, the first key registered
-    /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
+    /// stays that key when the key is disabled. Under `Unique` it is the identity's one key bound
+    /// to that contract or document type for the purpose: Platform refuses a second one later,
+    /// also once the first is disabled (if one identity create or update registers several, the
+    /// reference names the last one Drive queued). Under `Multiple` there is no
     /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
     /// bound to a contract) and for a contract or document type that does not exist. See
     /// `dash_sdk_identities_fetch_contract_keys`.
     ///
     /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
-    /// four, and an empty array throws. An empty `documentType` is the same as `nil`. No identity
-    /// ids answer an empty dictionary.
+    /// four, and an empty array throws when there are identity ids to ask about. An empty
+    /// `documentType` is the same as `nil`. No identity ids answer an empty dictionary, whatever
+    /// `purposes` holds.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,

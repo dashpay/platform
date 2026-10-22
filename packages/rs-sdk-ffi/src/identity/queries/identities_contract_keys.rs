@@ -28,15 +28,17 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
 /// Drive's current-key reference names for the identity, contract (or document type) and purpose.
-/// What that reference holds depends on the contract's storage requirement for the purpose (as
-/// Drive writes it from protocol version 14):
+/// What that reference holds depends on the storage requirement for the purpose of the contract,
+/// or of the document type for a key bound to one (as Drive writes it from protocol version 14):
 /// - `MultipleReferenceToLatest` (every bound authentication key, a bound encryption or
-///   decryption key when the contract asks for it, and every key bound to a contract group, whose
-///   ID can be passed as `contract_id`): the key of the latest registration, and of
+///   decryption key when the contract, or for a key bound to a document type the document type,
+///   asks for it, and every key bound to a contract group, whose ID can be passed as
+///   `contract_id`): the key of the latest registration, and of
 ///   the keys one identity create or update registers together, the one with the highest ID. It
 ///   stays the current one when it is disabled (`disabled_at` is then set).
-/// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document
-///   type, the last.
+/// - `Unique`: the identity's one key bound to that contract or document type for the purpose;
+///   Platform refuses a second one later, also once the first is disabled. (If one identity create
+///   or update registers several, the reference names the last one Drive queued.)
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
 ///
 /// Only authentication, encryption and decryption keys can be bound to a contract, so
