@@ -70,6 +70,10 @@ fn compare_layer_cost(
     b: &EstimatedLayerInformation,
     platform_version: &PlatformVersion,
 ) -> Result<Ordering, Error> {
+    // The operations of one batch mostly describe a shared layer alike: nothing to price.
+    if a == b {
+        return Ok(Ordering::Equal);
+    }
     Ok(a.estimated_layer_count
         .estimate_levels()
         .cmp(&b.estimated_layer_count.estimate_levels())
