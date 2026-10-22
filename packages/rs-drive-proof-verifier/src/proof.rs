@@ -3862,11 +3862,28 @@ mod tests {
     fn identity_by_non_unique_public_key_hash_rejects_malformed_legacy_proof() {
         use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use dapi_grpc::Message;
-        // Legacy field 2 is decoded, but missing metadata must be rejected.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
+        // Raw result field 2 decodes as the legacy two-proof answer.
+        let mut response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
             &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
         )
         .expect("legacy fields decode");
+        let Some(NonUniqueLookupVersion::V0(v0)) = &mut response.version else {
+            panic!("v0")
+        };
+        let Some(NonUniqueLookupResult::LegacyProof(legacy)) = &mut v0.result else {
+            panic!("field 2 is the legacy answer")
+        };
+        // A supported envelope over garbage, signed as protocol 13: the answer passes the
+        // format and envelope checks, so the legacy verifier itself must refuse it.
+        legacy
+            .grovedb_identity_public_key_hash_proof
+            .as_mut()
+            .expect("index proof")
+            .grovedb_proof = vec![0x01, 0xff, 0xff];
+        v0.metadata = Some(ResponseMetadata {
+            protocol_version: 13,
+            ..Default::default()
+        });
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
             GetIdentityByNonUniquePublicKeyHashRequestV0 {
                 public_key_hash: vec![0; 20],
@@ -3877,7 +3894,40 @@ mod tests {
         let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
         ).unwrap_err();
-        assert!(matches!(err, Error::EmptyResponseMetadata));
+        assert!(matches!(err, Error::GroveDBError { .. }), "{err}");
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_legacy_answer_without_index_proof() {
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+        use platform::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse;
+        use platform::get_identity_by_non_unique_public_key_hash_response::GetIdentityByNonUniquePublicKeyHashResponseV0;
+        // The index proof carries the signature; identity bytes alone prove nothing.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(NonUniqueLookupVersion::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupResult::LegacyProof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: None,
+                        identity_proof_bytes: Some(vec![0x01]),
+                    })),
+                    metadata: Some(ResponseMetadata {
+                        protocol_version: 13,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0; 20],
+                start_after: None,
+                prove: true,
+            }
+            .into();
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
+        ).unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "{err}");
     }
 
     #[test]

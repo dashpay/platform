@@ -490,6 +490,36 @@ fn should_verify_nonunique_hash_absence_in_both_formats() {
     }
 }
 
+/// Callers replaying a verified answer get the signed proof back: for a legacy answer
+/// that is the index proof, which carries the quorum signature.
+#[test]
+fn should_return_the_signed_proof_of_either_format() {
+    for legacy in [true, false] {
+        let f = Fixture::new(producer_for(legacy));
+        let mut response = f.response(legacy, None);
+        let signed = proof(&mut response).clone();
+        let request: GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: f.hash.to_vec(),
+                start_after: None,
+                prove: true,
+            }
+            .into();
+        let (identity, _, returned) = <Identity as FromProof<
+            GetIdentityByNonUniquePublicKeyHashRequest,
+        >>::maybe_from_proof_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &Provider,
+        )
+        .unwrap();
+        assert_eq!(identity.as_ref(), Some(&f.identities[0]), "legacy={legacy}");
+        assert_eq!(returned, signed, "legacy={legacy}");
+    }
+}
+
 #[test]
 fn should_not_interpret_a_malformed_current_nonunique_proof_as_legacy() {
     let f = Fixture::new(producer_for(false));
