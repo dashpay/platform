@@ -53,7 +53,9 @@ mod tests {
     fn v3_adds_the_order_types_to_v2_and_changes_nothing_else() {
         let v2 = v2::load_documents_schemas().expect("expected the v2 schemas");
         let mut v3 = v3::load_documents_schemas().expect("expected the v3 schemas");
-        let v3_types = v3.as_object_mut().expect("expected the v3 schemas to be an object");
+        let v3_types = v3
+            .as_object_mut()
+            .expect("expected the v3 schemas to be an object");
         for name in ["orderPlaced", "orderFilled", "orderCancelled"] {
             assert!(
                 v3_types.remove(name).is_some(),
