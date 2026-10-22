@@ -2735,7 +2735,7 @@ mod tests {
     /// protocol version 15 refuses as naming no contested poll). Before 15 neither decodes, so
     /// the masternode vote validators selected there never meet a yes/no poll.
     #[test]
-    fn test_active_version_range_masternode_vote_on_a_yes_no_poll_starts_at_15() {
+    fn should_make_a_masternode_vote_on_a_yes_no_poll_active_from_protocol_version_15() {
         use crate::serialization::PlatformSerializable;
         use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;

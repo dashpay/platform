@@ -16,7 +16,6 @@ const CONTENDER_FLAGS: &str =
      refunded when the poll is cleaned up. Written without storage flags, it carries none.";
 const POLL_FLAGS: &str = "The owner is the identity whose contested document started the \
                           poll. A yes/no poll is opened by the system and carries none.";
-const POLL: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
@@ -121,7 +120,7 @@ pub(crate) fn structure() -> StructureNode {
                  with the sign bit flipped",
             )
             .kind(ElementKind::Tree)
-            .flags(&POLL, POLL_FLAGS)
+            .flags(&OWNED, POLL_FLAGS)
             .describe("The polls ending at this time.")
             .child(
                 StructureNode::dynamic(
@@ -129,10 +128,12 @@ pub(crate) fn structure() -> StructureNode {
                     "vote_poll_id",
                     KeyMatcher::Len(32),
                     KeyEncoding::Hash32,
-                    "The double sha256 of the serialized vote poll",
+                    "The poll's unique id: for a contest the double sha256 of the \
+                     serialized poll, for a yes/no poll that of the yes/no \
+                     domain tag followed by the serialized vote poll",
                 )
                 .kind(ElementKind::Item)
-                .flags(&POLL, POLL_FLAGS)
+                .flags(&OWNED, POLL_FLAGS)
                 .value("serialized VotePoll")
                 .describe("One poll ending at this time."),
             ),
@@ -376,7 +377,8 @@ fn decision_active_polls() -> StructureNode {
             "vote_poll_id",
             KeyMatcher::Len(32),
             KeyEncoding::Hash32,
-            "The double sha256 of the serialized vote poll",
+            "The double sha256 of the domain tag `dash platform yes/no vote \
+             poll id` followed by the serialized vote poll",
         )
         .kind(ElementKind::Tree)
         .describe(
@@ -452,7 +454,8 @@ fn decision_identity_votes() -> StructureNode {
                 "vote_poll_id",
                 KeyMatcher::Len(32),
                 KeyEncoding::Hash32,
-                "The double sha256 of the serialized vote poll",
+                "The double sha256 of the domain tag `dash platform yes/no vote \
+                 poll id` followed by the serialized vote poll",
             )
             .kind(ElementKind::Item)
             .value(

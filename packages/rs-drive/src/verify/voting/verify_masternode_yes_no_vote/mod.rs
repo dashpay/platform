@@ -45,24 +45,18 @@ impl Drive {
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
-    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
     use crate::error::proof::ProofError;
     use crate::query::IdentityBasedVoteDriveQuery;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
-    use dpp::platform_value::{BinaryData, Identifier};
+    use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
+    use dpp::platform_value::Identifier;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 
     fn poll() -> YesNoVotePoll {
-        YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-            supermajority_numerator: 2,
-            supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
-        }
+        test_yes_no_vote_poll()
     }
 
     fn vote(vote_choice: YesNoAbstainVoteChoice) -> YesNoVote {
@@ -90,30 +84,13 @@ mod tests {
     fn should_prove_a_vote_and_its_absence() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        drive
-            .open_yes_no_vote_poll(
-                &poll(),
-                1_000,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("open");
         let voter = [7u8; 32];
-        drive
-            .register_yes_no_identity_vote(
-                voter,
-                1,
-                ResolvedYesNoVote {
-                    vote_poll: poll(),
-                    vote_choice: YesNoAbstainVoteChoice::No,
-                    previous_vote_choice_to_remove: None,
-                },
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("register");
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &poll(),
+            &[(voter, 1, YesNoAbstainVoteChoice::No)],
+            platform_version,
+        );
 
         let proof = proof_of_vote(&drive, voter);
         let (_, proved) = Drive::verify_masternode_yes_no_vote(
@@ -174,30 +151,13 @@ mod tests {
             platform_version,
         )
         .expect("expected a data contract");
-        drive
-            .open_yes_no_vote_poll(
-                &poll(),
-                1_000,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("open");
         let voter = [7u8; 32];
-        drive
-            .register_yes_no_identity_vote(
-                voter,
-                1,
-                ResolvedYesNoVote {
-                    vote_poll: poll(),
-                    vote_choice: YesNoAbstainVoteChoice::No,
-                    previous_vote_choice_to_remove: None,
-                },
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("register");
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &poll(),
+            &[(voter, 1, YesNoAbstainVoteChoice::No)],
+            platform_version,
+        );
         let yes_no_vote = Vote::YesNoVote(vote(YesNoAbstainVoteChoice::No));
 
         // The right proof verifies through the generic entry point.

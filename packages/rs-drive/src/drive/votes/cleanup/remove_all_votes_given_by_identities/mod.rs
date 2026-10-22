@@ -23,6 +23,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // In place: this dispatcher read `cleanup.remove_specific_vote_references_given_by_identity`,
+        // which, like its own slot, is 0 in every table up to protocol version 14, so v0 still
+        // runs there.
         match platform_version
             .drive
             .methods

@@ -7,7 +7,6 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
-use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -36,10 +35,4 @@ pub struct YesNoVoteV0 {
     pub vote_poll: YesNoVotePoll,
     /// The answer.
     pub vote_choice: YesNoAbstainVoteChoice,
-}
-
-impl YesNoVoteV0 {
-    pub fn vote_poll_unique_id(&self) -> Result<Identifier, ProtocolError> {
-        self.vote_poll.unique_id()
-    }
 }

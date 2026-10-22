@@ -242,6 +242,61 @@ pub(crate) fn add_dpns_name_contenders(
     vote_poll
 }
 
+#[cfg(all(test, feature = "server"))]
+/// The yes/no poll rs-drive's tests open: it passes on more than two thirds of yes over yes plus
+/// no, with at least 400 voting power cast.
+pub(crate) fn test_yes_no_vote_poll() -> dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll {
+    use dpp::platform_value::BinaryData;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+    YesNoVotePoll {
+        resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        supermajority_numerator: 2,
+        supermajority_denominator: 3,
+        minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+/// Opens `vote_poll` to end at 1_000, written straight to Drive at the default block with no
+/// validation, and registers each `(voter, strength, choice)` vote on it as a first vote.
+pub(crate) fn open_yes_no_vote_poll_with_votes(
+    drive: &crate::drive::Drive,
+    vote_poll: &dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll,
+    votes: &[(
+        [u8; 32],
+        u8,
+        dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice,
+    )],
+    platform_version: &dpp::version::PlatformVersion,
+) {
+    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
+    drive
+        .open_yes_no_vote_poll(
+            vote_poll,
+            1_000,
+            &dpp::block::block_info::BlockInfo::default(),
+            None,
+            platform_version,
+        )
+        .expect("expected to open the yes/no vote poll");
+    for (voter, strength, vote_choice) in votes {
+        drive
+            .register_yes_no_identity_vote(
+                *voter,
+                *strength,
+                ResolvedYesNoVote {
+                    vote_poll: vote_poll.clone(),
+                    vote_choice: *vote_choice,
+                    previous_vote_choice_to_remove: None,
+                },
+                &dpp::block::block_info::BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to register the vote");
+    }
+}
+
 #[cfg(test)]
 /// Serializes a hex string to CBOR.
 pub fn cbor_from_hex(hex_string: String) -> Vec<u8> {

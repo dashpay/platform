@@ -2499,7 +2499,7 @@ mod tests {
     /// byte-identical to the one of a chain born at 15, so both node populations build the
     /// same Merk when the first yes/no poll opens.
     #[test]
-    fn test_transition_to_version_15_creates_vote_decisions_trees() {
+    fn should_create_the_vote_decisions_trees_on_transition_to_version_15() {
         use drive::drive::votes::paths::{
             vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
         };

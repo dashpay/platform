@@ -183,20 +183,12 @@ impl YesNoVotePollStateDriveQuery {
 #[cfg(all(test, feature = "server", feature = "verify"))]
 mod tests {
     use super::*;
-    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
-    use dpp::platform_value::BinaryData;
+    use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
-    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoMinimumVotingPower;
 
     fn poll() -> YesNoVotePoll {
-        YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-            supermajority_numerator: 2,
-            supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
-        }
+        test_yes_no_vote_poll()
     }
 
     #[test]
@@ -204,35 +196,16 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let vote_poll = poll();
-        drive
-            .open_yes_no_vote_poll(
-                &vote_poll,
-                1_000,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected to open the poll");
-        for (voter, strength, vote_choice) in [
-            ([1u8; 32], 4, YesNoAbstainVoteChoice::Yes),
-            ([2u8; 32], 1, YesNoAbstainVoteChoice::Yes),
-            ([3u8; 32], 1, YesNoAbstainVoteChoice::No),
-        ] {
-            drive
-                .register_yes_no_identity_vote(
-                    voter,
-                    strength,
-                    ResolvedYesNoVote {
-                        vote_poll: vote_poll.clone(),
-                        vote_choice,
-                        previous_vote_choice_to_remove: None,
-                    },
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                )
-                .expect("expected to register the vote");
-        }
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &vote_poll,
+            &[
+                ([1u8; 32], 4, YesNoAbstainVoteChoice::Yes),
+                ([2u8; 32], 1, YesNoAbstainVoteChoice::Yes),
+                ([3u8; 32], 1, YesNoAbstainVoteChoice::No),
+            ],
+            platform_version,
+        );
         let query = YesNoVotePollStateDriveQuery { vote_poll };
         let state = query
             .execute_no_proof(&drive, None, &mut vec![], platform_version)

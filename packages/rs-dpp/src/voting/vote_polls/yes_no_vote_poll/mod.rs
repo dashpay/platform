@@ -53,6 +53,14 @@ pub enum VotingPowerRounding {
 /// `{ "$type": "absolute", "votingPower": 400 }` or
 /// `{ "$type": "fractionOfTotal", "numerator": 1, "denominator": 3, "rounding": "up" }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(
+        into = "YesNoMinimumVotingPowerRepr",
+        from = "YesNoMinimumVotingPowerRepr"
+    )
+)]
 pub enum YesNoMinimumVotingPower {
     /// A fixed voting power, at most `max_yes_no_vote_poll_minimum_voting_power`.
     Absolute(VotingPower),
@@ -66,99 +74,55 @@ pub enum YesNoMinimumVotingPower {
     },
 }
 
-// `Absolute` wraps a bare number, which serde's internal tagging cannot carry, so both
-// directions are written out, as for `ResourceVoteChoice`.
+// Internal-`$type` serde shape: `Absolute` is a tuple variant, which internal tagging cannot
+// carry, so this struct-variant helper names its field. Bincode, and with it the poll id, still
+// encodes the outer enum directly.
 #[cfg(feature = "serde-conversion")]
-impl Serialize for YesNoMinimumVotingPower {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        match self {
-            YesNoMinimumVotingPower::Absolute(voting_power) => {
-                let mut map = serializer.serialize_map(Some(2))?;
-                map.serialize_entry("$type", "absolute")?;
-                map.serialize_entry("votingPower", voting_power)?;
-                map.end()
-            }
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+enum YesNoMinimumVotingPowerRepr {
+    #[serde(rename_all = "camelCase")]
+    Absolute { voting_power: VotingPower },
+    FractionOfTotal {
+        numerator: u8,
+        denominator: u8,
+        rounding: VotingPowerRounding,
+    },
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<YesNoMinimumVotingPower> for YesNoMinimumVotingPowerRepr {
+    fn from(minimum: YesNoMinimumVotingPower) -> Self {
+        match minimum {
+            YesNoMinimumVotingPower::Absolute(voting_power) => Self::Absolute { voting_power },
             YesNoMinimumVotingPower::FractionOfTotal {
                 numerator,
                 denominator,
                 rounding,
-            } => {
-                let mut map = serializer.serialize_map(Some(4))?;
-                map.serialize_entry("$type", "fractionOfTotal")?;
-                map.serialize_entry("numerator", numerator)?;
-                map.serialize_entry("denominator", denominator)?;
-                map.serialize_entry("rounding", rounding)?;
-                map.end()
-            }
+            } => Self::FractionOfTotal {
+                numerator,
+                denominator,
+                rounding,
+            },
         }
     }
 }
 
 #[cfg(feature = "serde-conversion")]
-impl<'de> Deserialize<'de> for YesNoMinimumVotingPower {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::{self, MapAccess, Visitor};
-
-        struct MinimumVisitor;
-
-        impl<'de> Visitor<'de> for MinimumVisitor {
-            type Value = YesNoMinimumVotingPower;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("YesNoMinimumVotingPower as a map with a `$type` discriminator")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let mut variant: Option<String> = None;
-                let mut voting_power: Option<VotingPower> = None;
-                let mut numerator: Option<u8> = None;
-                let mut denominator: Option<u8> = None;
-                let mut rounding: Option<VotingPowerRounding> = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "$type" if variant.is_none() => variant = Some(map.next_value()?),
-                        "votingPower" if voting_power.is_none() => {
-                            voting_power = Some(map.next_value()?)
-                        }
-                        "numerator" if numerator.is_none() => numerator = Some(map.next_value()?),
-                        "denominator" if denominator.is_none() => {
-                            denominator = Some(map.next_value()?)
-                        }
-                        "rounding" if rounding.is_none() => rounding = Some(map.next_value()?),
-                        "$type" | "votingPower" | "numerator" | "denominator" | "rounding" => {
-                            return Err(de::Error::custom(format!("duplicate field `{key}`")));
-                        }
-                        _ => {
-                            let _: de::IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                match variant
-                    .ok_or_else(|| de::Error::missing_field("$type"))?
-                    .as_str()
-                {
-                    "absolute" => Ok(YesNoMinimumVotingPower::Absolute(
-                        voting_power.ok_or_else(|| de::Error::missing_field("votingPower"))?,
-                    )),
-                    "fractionOfTotal" => Ok(YesNoMinimumVotingPower::FractionOfTotal {
-                        numerator: numerator
-                            .ok_or_else(|| de::Error::missing_field("numerator"))?,
-                        denominator: denominator
-                            .ok_or_else(|| de::Error::missing_field("denominator"))?,
-                        rounding: rounding.ok_or_else(|| de::Error::missing_field("rounding"))?,
-                    }),
-                    other => Err(de::Error::unknown_variant(
-                        other,
-                        &["absolute", "fractionOfTotal"],
-                    )),
-                }
-            }
+impl From<YesNoMinimumVotingPowerRepr> for YesNoMinimumVotingPower {
+    fn from(repr: YesNoMinimumVotingPowerRepr) -> Self {
+        match repr {
+            YesNoMinimumVotingPowerRepr::Absolute { voting_power } => Self::Absolute(voting_power),
+            YesNoMinimumVotingPowerRepr::FractionOfTotal {
+                numerator,
+                denominator,
+                rounding,
+            } => Self::FractionOfTotal {
+                numerator,
+                denominator,
+                rounding,
+            },
         }
-
-        deserializer.deserialize_map(MinimumVisitor)
     }
 }
 
@@ -232,9 +196,10 @@ impl fmt::Display for YesNoMinimumVotingPower {
 /// the poll so every feature sets its own. Two thirds with a floor of 400 is numerator 2,
 /// denominator 3 and an absolute minimum of 400.
 ///
-/// The parameters are part of the poll's identity: [`Self::unique_id`] hashes the serialized
-/// [`VotePoll`] that carries the poll, so a vote names the exact poll it answers. The prefunded
-/// balance that pays for the votes has the same id.
+/// The parameters are part of the poll's identity: [`Self::unique_id`] is the double SHA-256 of
+/// the domain tag `dash platform yes/no vote poll id` followed by the serialized [`VotePoll`]
+/// that carries the poll, so a vote names the exact poll it answers. The prefunded balance that
+/// pays for the votes has the same id.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),

@@ -899,6 +899,29 @@ pub(in crate::execution) mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
+    /// The processing credits epoch 0 will distribute; the item is written by the first credit,
+    /// so before any it is missing, which is none.
+    pub(in crate::execution) fn processing_credits(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> dpp::fee::Credits {
+        match platform
+            .drive
+            .get_epoch_processing_credits_for_distribution(
+                &dpp::block::epoch::Epoch::new(0).expect("epoch"),
+                None,
+                platform_version,
+            ) {
+            Ok(credits) => credits,
+            Err(drive::error::Error::GroveDB(error))
+                if matches!(*error, drive::grovedb::Error::PathKeyNotFound(_)) =>
+            {
+                0
+            }
+            Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
+        }
+    }
+
     #[allow(dead_code)]
     pub(in crate::execution) enum IdentityTestInfo<'a> {
         Given {

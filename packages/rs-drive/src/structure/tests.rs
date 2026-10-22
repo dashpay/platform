@@ -280,7 +280,6 @@ mod fixtures {
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::structure::export::{LayerShape, ShapeNode, StateShape};
@@ -300,6 +299,7 @@ mod fixtures {
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_document;
     use crate::util::test_helpers::setup_contract;
+    use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
     use crate::drive::credit_pools::epochs::paths::EpochProposers;
@@ -365,7 +365,6 @@ mod fixtures {
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
-    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::borrow::Cow;
@@ -1407,41 +1406,16 @@ mod fixtures {
     fn yes_no_vote_polls(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let vote_poll = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-            supermajority_numerator: 2,
-            supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
-        };
-        drive
-            .open_yes_no_vote_poll(
-                &vote_poll,
-                1_000,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected to open the yes/no vote poll");
-        for (voter, strength, vote_choice) in [
-            ([1; 32], 4, YesNoAbstainVoteChoice::Yes),
-            ([2; 32], 1, YesNoAbstainVoteChoice::No),
-            ([3; 32], 1, YesNoAbstainVoteChoice::Abstain),
-        ] {
-            drive
-                .register_yes_no_identity_vote(
-                    voter,
-                    strength,
-                    ResolvedYesNoVote {
-                        vote_poll: vote_poll.clone(),
-                        vote_choice,
-                        previous_vote_choice_to_remove: None,
-                    },
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                )
-                .expect("expected to register the vote");
-        }
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &test_yes_no_vote_poll(),
+            &[
+                ([1; 32], 4, YesNoAbstainVoteChoice::Yes),
+                ([2; 32], 1, YesNoAbstainVoteChoice::No),
+                ([3; 32], 1, YesNoAbstainVoteChoice::Abstain),
+            ],
+            platform_version,
+        );
         conformance_of(&drive, "yes_no_vote_polls", run);
     }
 

@@ -1,8 +1,7 @@
 use crate::drive::votes::paths::vote_decisions_identity_votes_tree_path_for_identity;
-use crate::drive::votes::resolved::votes::resolved_yes_no_vote::PreviousYesNoVoteCount;
 use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
+use crate::drive::votes::PreviousVoteCount;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
@@ -19,7 +18,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousYesNoVoteCount)>, Error> {
+    ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousVoteCount)>, Error> {
         let path =
             vote_decisions_identity_votes_tree_path_for_identity(masternode_pro_tx_hash.as_bytes());
         let maybe_element = self.grove_get_raw_optional(
@@ -33,14 +32,7 @@ impl Drive {
         maybe_element
             .map(|element| {
                 let bytes = element.into_item_bytes()?;
-                let storage_form =
-                    YesNoVoteReferenceStorageForm::deserialize(&bytes).map_err(|e| {
-                        Error::Drive(DriveError::CorruptedSerialization(format!(
-                            "serialization of yes/no vote reference {} is corrupted: {}",
-                            hex::encode(bytes),
-                            e
-                        )))
-                    })?;
+                let storage_form = YesNoVoteReferenceStorageForm::deserialize_stored(&bytes)?;
                 Ok((storage_form.vote_choice, storage_form.identity_vote_times))
             })
             .transpose()

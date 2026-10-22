@@ -372,6 +372,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
+    // In place, type only: this v0 (every protocol version) returned the same poll wrapped in
+    // `VotePoll::ContestedDocumentResourceVotePoll`, the only variant it ever built. The poll
+    // and every check made on it are unchanged.
     fn contested_vote_poll_for_document_v0(
         &self,
         document: &Document,
@@ -380,6 +383,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
+    // In place, type only, as for `contested_vote_poll_for_document_v0`: the poll built below is
+    // the one this v0 always built, no longer wrapped in `VotePoll`.
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,

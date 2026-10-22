@@ -1,6 +1,4 @@
-use crate::drive::votes::paths::{
-    vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
-};
+use crate::drive::votes::paths::{vote_decisions_tree_path, VOTE_DECISIONS_SUBTREE_KEYS};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
@@ -16,7 +14,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        for subtree_key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+        for subtree_key in VOTE_DECISIONS_SUBTREE_KEYS {
             self.grove_insert_if_not_exists(
                 vote_decisions_tree_path().as_slice().into(),
                 &[subtree_key as u8],
@@ -61,12 +59,10 @@ mod tests {
             vote_decisions_active_polls_tree_path(),
             vote_decisions_identity_votes_tree_path(),
         ] {
-            let (parent, key) = path.split_at(3);
-            let _ = key;
             let element = drive
                 .grove
                 .get(
-                    &parent[..2],
+                    &path[..2],
                     path[2],
                     None,
                     &platform_version.drive.grove_version,

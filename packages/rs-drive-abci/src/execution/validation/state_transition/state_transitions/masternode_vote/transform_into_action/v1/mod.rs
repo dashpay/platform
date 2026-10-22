@@ -1,15 +1,13 @@
 use crate::error::Error;
 use crate::execution::platform_events::voting::masternode_vote_strength;
-use crate::execution::validation::state_transition::state_transitions::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::state_transitions::masternode_vote::transform_into_action::v0::{
+    previous_vote_to_replace, voting_masternode,
+    MasternodeVoteStateTransitionTransformIntoActionValidationV0,
+};
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
-use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
-use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::ProTxHash;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -19,7 +17,6 @@ use drive::state_transition_action::identity::masternode_vote::v0::MasternodeVot
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
@@ -39,10 +36,11 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 }
 
 impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for MasternodeVoteTransition {
-    /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll, with the rules
-    /// of a resource vote: the same answer cannot be given twice, and a masternode may vote on a
-    /// poll at most `votes_allowed_per_masternode` times, its first vote included. A resource
-    /// vote on a contested poll transforms through version 0, unchanged.
+    /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll, with the rule
+    /// of a resource vote ([`previous_vote_to_replace`]): the same answer cannot be given twice,
+    /// and a masternode may vote on a poll at most `votes_allowed_per_masternode` times, its
+    /// first vote included. A resource vote on a contested poll transforms through version 0,
+    /// unchanged.
     fn transform_into_action_v1<C>(
         &self,
         platform: &PlatformRef<C>,
@@ -84,51 +82,21 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
                 &mut vec![],
                 platform_version,
             )?;
-            if let Some((existing_vote_choice, previous_vote_count)) = maybe_existing_vote_choice {
-                if existing_vote_choice == yes_no_vote.vote_choice() {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::MasternodeVoteAlreadyPresentError(
-                            MasternodeVoteAlreadyPresentError::new(
-                                self.pro_tx_hash(),
-                                VotePoll::YesNoVotePoll(vote_poll.clone()),
-                            ),
-                        )),
-                    ));
-                } else if previous_vote_count
-                    >= platform_version
-                        .dpp
-                        .validation
-                        .voting
-                        .votes_allowed_per_masternode
-                {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::MasternodeVotedTooManyTimesError(
-                            MasternodeVotedTooManyTimesError::new(
-                                self.pro_tx_hash(),
-                                previous_vote_count,
-                                platform_version
-                                    .dpp
-                                    .validation
-                                    .voting
-                                    .votes_allowed_per_masternode,
-                            ),
-                        )),
-                    ));
-                } else {
-                    previous_vote_choice_to_remove =
-                        Some((existing_vote_choice, previous_vote_count));
-                }
+            match previous_vote_to_replace(
+                self.pro_tx_hash(),
+                maybe_existing_vote_choice,
+                &yes_no_vote.vote_choice(),
+                || VotePoll::YesNoVotePoll(vote_poll.clone()),
+                platform_version,
+            ) {
+                Ok(previous_vote) => previous_vote_choice_to_remove = previous_vote,
+                Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
             }
         }
 
-        let Some(masternode) = platform
-            .state
-            .full_masternode_list()
-            .get(&ProTxHash::from_byte_array(self.pro_tx_hash().to_buffer()))
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                MasternodeNotFoundError::new(self.pro_tx_hash()).into(),
-            ));
+        let masternode = match voting_masternode(platform, self.pro_tx_hash()) {
+            Ok(masternode) => masternode,
+            Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
         };
 
         // A yes/no vote needs nothing from the state to be resolved; the previous answer found

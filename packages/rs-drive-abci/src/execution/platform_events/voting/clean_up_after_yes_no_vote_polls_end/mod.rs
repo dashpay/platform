@@ -6,10 +6,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use drive::grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 mod v0;
 
@@ -17,19 +15,18 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Cleans up after yes/no polls that ended: their entries in the end date index (each
-    /// given with its end date), their votes and vote trees, the voters' entries in the
+    /// Cleans up after yes/no polls that ended, each given with its end date and its voters:
+    /// their entries in the end date index, their vote trees, the voters' entries in the
     /// identity votes index, and what is left of the prefunded balance that paid for the votes,
     /// which goes to the processing pool. The stored info stays as the record of the decision.
-    #[allow(clippy::type_complexity)]
+    ///
+    /// `leftover_end_date_entries` are the end date entries, by poll id, of polls an earlier
+    /// entry already closed: only the entries go.
     pub(in crate::execution) fn clean_up_after_yes_no_vote_polls_end(
         &self,
         block_info: &BlockInfo,
-        vote_polls: Vec<(
-            &YesNoVotePoll,
-            &TimestampMillis,
-            &BTreeMap<YesNoAbstainVoteChoice, Vec<Identifier>>,
-        )>,
+        vote_polls: &[(YesNoVotePoll, TimestampMillis, Vec<Identifier>)],
+        leftover_end_date_entries: &[(Identifier, TimestampMillis)],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -42,6 +39,7 @@ where
             0 => self.clean_up_after_yes_no_vote_polls_end_v0(
                 block_info,
                 vote_polls,
+                leftover_end_date_entries,
                 transaction,
                 platform_version,
             ),

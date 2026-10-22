@@ -59,6 +59,9 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
             let expected_vote_poll = document_type
                 .contested_vote_poll_for_document_properties(self.data(), platform_version)?;
 
+            // In place, type only (protocol versions 14 and 15): the expected poll was the same
+            // contested poll wrapped in `VotePoll`, the only variant the helper built, so these
+            // arms match the same cases as before.
             match (expected_vote_poll, self.prefunded_voting_balance()) {
                 (Some(expected), Some((provided, _))) => {
                     // -->> Changed in V1 <<-- The amount is the most the contender pays, and

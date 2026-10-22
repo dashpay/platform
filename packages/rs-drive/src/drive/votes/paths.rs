@@ -64,6 +64,10 @@ pub const ACTIVE_POLLS_TREE_KEY: char = 'p';
 /// A subtree made for being able to query votes that an identity has made
 pub const IDENTITY_VOTES_TREE_KEY: char = 'i';
 
+/// The subtrees of the decisions branch, in the order they are created: the active yes/no polls
+/// and the identity votes index.
+pub const VOTE_DECISIONS_SUBTREE_KEYS: [char; 2] = [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY];
+
 /// The finished info
 pub const RESOURCE_STORED_INFO_KEY_U8_32: [u8; 32] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -369,10 +373,21 @@ impl YesNoVotePollPaths for YesNoVotePoll {
         &self,
         vote_choice: YesNoAbstainVoteChoice,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        let mut path = self.poll_path_vec()?;
-        path.push(vec![vote_choice.to_tree_key()]);
-        Ok(path)
+        Ok(vote_decisions_poll_choice_votes_tree_path_vec(
+            self.unique_id()?.as_bytes(),
+            vote_choice,
+        ))
     }
+}
+
+/// the sum tree holding one choice's votes on a yes/no vote poll, by the poll's unique id
+pub fn vote_decisions_poll_choice_votes_tree_path_vec(
+    poll_id: &[u8; 32],
+    vote_choice: YesNoAbstainVoteChoice,
+) -> Vec<Vec<u8>> {
+    let mut path = vote_decisions_active_polls_poll_tree_path_vec(poll_id);
+    path.push(vec![vote_choice.to_tree_key()]);
+    path
 }
 
 /// the root path of the voting branch
@@ -632,16 +647,6 @@ pub fn vote_decisions_active_polls_tree_path_vec() -> Vec<Vec<u8>> {
         vec![RootTree::Votes as u8],
         vec![VOTE_DECISIONS_TREE_KEY as u8],
         vec![ACTIVE_POLLS_TREE_KEY as u8],
-    ]
-}
-
-/// the tree of one yes/no vote poll, keyed by its unique id
-pub fn vote_decisions_active_polls_poll_tree_path(poll_id: &[u8; 32]) -> [&[u8]; 4] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::Votes),
-        &[VOTE_DECISIONS_TREE_KEY as u8],
-        &[ACTIVE_POLLS_TREE_KEY as u8],
-        poll_id,
     ]
 }
 

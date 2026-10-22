@@ -15,6 +15,9 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
 
+/// How many times a masternode already voted on a poll, before the vote being cast.
+pub type PreviousVoteCount = u16;
+
 #[cfg(feature = "server")]
 mod cleanup;
 #[cfg(all(feature = "server", any(test, feature = "structure")))]

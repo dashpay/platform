@@ -51,6 +51,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
+        // In place: this dispatcher read `contested_resource_insert.register_identity_vote`,
+        // which, like `insert.register_identity_vote`, is 0 in every table up to protocol
+        // version 14, so v0 still runs there.
         match platform_version
             .drive
             .methods
@@ -118,6 +121,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // In place, as in `register_identity_vote`: both slots are 0 up to protocol version 14.
         match platform_version
             .drive
             .methods

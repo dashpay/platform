@@ -5,15 +5,14 @@
 //! included, keeps the generic windows and fund.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, fill_contest_with_bare_contenders, setup_identity,
-    setup_masternode_voting_identity,
+    create_dpns_identity_name_contest, fill_contest_with_bare_contenders, processing_credits,
+    setup_identity, setup_masternode_voting_identity,
 };
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
@@ -53,8 +52,6 @@ use dpp::voting::votes::Vote;
 use drive::drive::contract::paths::contract_root_path;
 use drive::drive::document::ContestWindows;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
-use drive::error::Error as DriveError;
-use drive::grovedb::Error as GroveError;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive::util::test_helpers::setup_contract;
 use platform_version::version::PlatformVersion;
@@ -611,25 +608,6 @@ fn balance_of(
         .fetch_identity_balance(identity_id.to_buffer(), None, platform_version)
         .expect("expected to read the balance")
         .expect("expected the identity")
-}
-
-/// The processing credits epoch 0 will distribute; the item is written by the first credit, so
-/// before any it is missing, which is none.
-fn processing_credits(
-    platform: &TempPlatform<MockCoreRPCLike>,
-    platform_version: &PlatformVersion,
-) -> Credits {
-    match platform
-        .drive
-        .get_epoch_processing_credits_for_distribution(
-            &Epoch::new(0).expect("epoch"),
-            None,
-            platform_version,
-        ) {
-        Ok(credits) => credits,
-        Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => 0,
-        Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
-    }
 }
 
 #[tokio::test]

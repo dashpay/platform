@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::ContestedIndexResolution;
 use dpp::document::DocumentV0Getters;
+use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
@@ -80,22 +81,36 @@ where
                 platform_version,
             )?;
 
+        // The yes/no polls this block closes, with their voters, and the end date entries of
+        // yes/no polls an earlier entry already closed. Both stay empty before protocol
+        // version 15.
+        let mut finished_yes_no_vote_polls: Vec<(YesNoVotePoll, TimestampMillis, Vec<Identifier>)> =
+            vec![];
+        let mut leftover_yes_no_end_date_entries: Vec<(Identifier, TimestampMillis)> = vec![];
+
         // Check if awarding is disabled
         let vote_polls_with_info = vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
                 let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
                     // Reached from protocol version 15 only. At 14, which also selects this
                     // generation, no yes/no poll is in the end date index: it enters only
-                    // through `Drive::open_yes_no_vote_poll`, which writes under the `Votes/d/p`
-                    // tree that exists from 15 (genesis structure v4 behind `>= 15`,
-                    // `transition_to_version_15`). A yes/no poll needs no resolution.
+                    // through `Drive::open_yes_no_vote_poll`, which refuses to open one before
+                    // protocol version 15. A yes/no poll needs no resolution, and is cleaned up
+                    // apart from the contested polls below.
                     if let VotePoll::YesNoVotePoll(yes_no_vote_poll) = vote_poll {
-                        return self.finish_yes_no_vote_poll(
+                        match self.finish_yes_no_vote_poll(
                             block_platform_state,
                             block_info,
-                            yes_no_vote_poll,
+                            &yes_no_vote_poll,
                             transaction,
                             platform_version,
-                        );
+                        )? {
+                            Some(voters) => {
+                                finished_yes_no_vote_polls.push((yes_no_vote_poll, end_date, voters))
+                            }
+                            None => leftover_yes_no_end_date_entries
+                                .push((yes_no_vote_poll.unique_id()?, end_date)),
+                        }
+                        return Ok(None);
                     }
                     let resolved_vote_poll =
                         vote_poll.resolve(&self.drive, transaction, platform_version)?;
@@ -226,10 +241,10 @@ where
                                 transaction,
                                 platform_version,
                             )?;
-                            Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
+                            Ok(Some(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders)))
                         }
                     }
-                }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
+                }).collect::<Result<Vec<Option<ResolvedVotePollWithVotes>>, Error>>()?.into_iter().flatten().collect::<Vec<_>>();
                 Ok((end_date, vote_polls_with_votes))
             }).collect::<Result<BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>, Error>>()
 ?;
@@ -246,22 +261,45 @@ where
             )?;
         }
 
+        // Then the yes/no polls, in a batch of their own: its read of a shared end date sees
+        // what the contested clean-up left there.
+        if !finished_yes_no_vote_polls.is_empty() || !leftover_yes_no_end_date_entries.is_empty() {
+            self.clean_up_after_yes_no_vote_polls_end(
+                block_info,
+                &finished_yes_no_vote_polls,
+                &leftover_yes_no_end_date_entries,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         Ok(())
     }
 
     /// Closes one yes/no poll whose time has come: tallies it, records the result in its
     /// stored info, hands the result to the feature that opened the poll, and returns the
     /// voters so the clean-up can remove their votes.
+    ///
+    /// Returns `None` for a poll that is already finished: one listed under two end dates
+    /// (two openings that could not see each other) closes at the first, and its later entry
+    /// is only removed.
     fn finish_yes_no_vote_poll(
         &self,
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
-        vote_poll: YesNoVotePoll,
+        vote_poll: &YesNoVotePoll,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ResolvedVotePollWithVotes, Error> {
+    ) -> Result<Option<Vec<Identifier>>, Error> {
+        let already_finished = self
+            .drive
+            .fetch_yes_no_vote_poll_stored_info(vote_poll, transaction, platform_version)?
+            .is_some_and(|stored_info| stored_info.result().is_some());
+        if already_finished {
+            return Ok(None);
+        }
         let tally =
-            self.tally_votes_for_yes_no_vote_poll(&vote_poll, transaction, platform_version)?;
+            self.tally_votes_for_yes_no_vote_poll(vote_poll, transaction, platform_version)?;
         // A minimum given as a share of the total is measured against the masternode list of
         // the closing block, each masternode weighed as its vote is. A fixed minimum reads no
         // total.
@@ -279,7 +317,7 @@ where
         };
         let result = self.keep_record_of_finished_yes_no_vote_poll(
             block_info,
-            &vote_poll,
+            vote_poll,
             &tally,
             total_voting_power,
             transaction,
@@ -287,18 +325,16 @@ where
         )?;
         self.on_yes_no_vote_poll_finished(
             block_info,
-            &vote_poll,
+            vote_poll,
             &result,
             transaction,
             platform_version,
         )?;
         let voters = self.drive.fetch_identities_voting_in_yes_no_vote_poll(
-            &vote_poll,
+            vote_poll,
             transaction,
             platform_version,
         )?;
-        Ok(ResolvedVotePollWithVotes::YesNoVotePollWithVotes(
-            vote_poll, voters,
-        ))
+        Ok(Some(voters))
     }
 }

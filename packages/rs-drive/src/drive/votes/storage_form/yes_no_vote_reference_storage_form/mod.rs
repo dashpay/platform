@@ -1,3 +1,5 @@
+use crate::error::drive::DriveError;
+use crate::error::Error;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 
@@ -21,6 +23,18 @@ impl YesNoVoteReferenceStorageForm {
     pub fn deserialize(bytes: &[u8]) -> Result<Self, bincode::error::DecodeError> {
         bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
             .map(|(form, _)| form)
+    }
+
+    /// Decodes the form stored in the identity votes index, a stored form that does not
+    /// decode being corrupted state.
+    pub fn deserialize_stored(bytes: &[u8]) -> Result<Self, Error> {
+        Self::deserialize(bytes).map_err(|e| {
+            Error::Drive(DriveError::CorruptedSerialization(format!(
+                "serialization of yes/no vote reference {} is corrupted: {}",
+                hex::encode(bytes),
+                e
+            )))
+        })
     }
 }
 

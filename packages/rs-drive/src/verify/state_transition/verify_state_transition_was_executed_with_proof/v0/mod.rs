@@ -5391,50 +5391,26 @@ mod tests {
     // --- MasternodeVote on a yes/no poll: the prover's path query and the verifier agree,
     // so a registered vote is proved executed and an unregistered one is refused.
     #[test]
-    fn verify_masternode_yes_no_vote_executed_round_trip() {
-        use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
+    fn should_verify_a_yes_no_masternode_vote_executed_and_refuse_one_never_cast() {
         use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-        use dpp::platform_value::BinaryData;
+        use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
         use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
         use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
         use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-        use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
         use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
         use dpp::voting::votes::yes_no_vote::YesNoVote;
         use dpp::voting::votes::Vote;
 
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(None);
-        let vote_poll = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-            supermajority_numerator: 2,
-            supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
-        };
-        drive
-            .open_yes_no_vote_poll(
-                &vote_poll,
-                1_000,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected to open the poll");
+        let vote_poll = test_yes_no_vote_poll();
         let voter = [1u8; 32];
-        drive
-            .register_yes_no_identity_vote(
-                voter,
-                4,
-                ResolvedYesNoVote {
-                    vote_poll: vote_poll.clone(),
-                    vote_choice: YesNoAbstainVoteChoice::Yes,
-                    previous_vote_choice_to_remove: None,
-                },
-                &BlockInfo::default(),
-                None,
-                platform_version,
-            )
-            .expect("expected to register the vote");
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &vote_poll,
+            &[(voter, 4, YesNoAbstainVoteChoice::Yes)],
+            platform_version,
+        );
 
         let transition_for = |voter: [u8; 32], vote_choice: YesNoAbstainVoteChoice| {
             StateTransition::MasternodeVote(MasternodeVoteTransition::V0(

@@ -11,7 +11,6 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMeth
     contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
         register_contested_resource_identity_vote: 0,
         insert_stored_info_for_contested_resource_vote_poll: 0,
-        register_identity_vote: 0,
         add_vote_poll_end_date_query_operations: 0,
     },
     cleanup: DriveVoteCleanupMethodVersions {

@@ -5,20 +5,18 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 impl Drive {
-    /// The masternodes that voted on a yes/no poll, by their answer. Every choice is present,
-    /// with an empty list when nobody chose it.
+    /// The masternodes that voted on a yes/no poll: the yes voters, then the no voters, then
+    /// the abstaining ones.
     pub fn fetch_identities_voting_in_yes_no_vote_poll(
         &self,
         vote_poll: &YesNoVotePoll,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<YesNoAbstainVoteChoice, Vec<Identifier>>, Error> {
+    ) -> Result<Vec<Identifier>, Error> {
         match platform_version
             .drive
             .methods

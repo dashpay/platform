@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::votes::resolved::votes::resolved_yes_no_vote::PreviousYesNoVoteCount;
+use crate::drive::votes::PreviousVoteCount;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -20,7 +20,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousYesNoVoteCount)>, Error> {
+    ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousVoteCount)>, Error> {
         match platform_version
             .drive
             .methods

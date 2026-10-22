@@ -67,9 +67,9 @@ where
 
     /// Empties the prefunded balances of ended vote polls, in the given order, and credits what
     /// they held to the epoch's processing pool, appending the operations. Moved here unchanged
-    /// from the body above, which shipped with protocol version 14, so its operations must not
-    /// change; the yes/no clean-up v0 (protocol version 15) drains its polls' balances through it
-    /// too.
+    /// from the body above, which every protocol version from 8 selects (mainnet included), so
+    /// its operations must not change; the yes/no clean-up v0 (protocol version 15) drains its
+    /// polls' balances through it too.
     pub(in crate::execution::platform_events::voting) fn empty_vote_poll_prefunded_balances_operations_v1(
         &self,
         specialized_balance_ids: impl IntoIterator<Item = Result<Identifier, ProtocolError>>,

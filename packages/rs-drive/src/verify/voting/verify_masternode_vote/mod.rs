@@ -51,6 +51,10 @@ impl Drive {
         // decisions branch, so it goes to its own verifier: querying the contested index for it
         // would accept a genuine absence proof from the wrong branch as "not voted". A resource
         // vote cannot name a yes/no poll at all.
+        //
+        // In place (client side, every version): these arms take only votes naming a yes/no
+        // poll, which no valid transition carries before protocol version 15 (it does not
+        // decode there). Every contested vote reaches the version match below unchanged.
         match vote {
             Vote::YesNoVote(yes_no_vote) => {
                 return Self::verify_masternode_yes_no_vote(

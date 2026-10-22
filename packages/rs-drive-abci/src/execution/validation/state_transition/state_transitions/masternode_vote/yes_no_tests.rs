@@ -2,10 +2,9 @@
 
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    process_test_state_transition, setup_masternode_voting_identity,
+    process_test_state_transition, processing_credits, setup_masternode_voting_identity,
     take_down_masternode_identities,
 };
-use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
@@ -14,16 +13,15 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use crate::test::helpers::state_mutation_guard::check_tx_at_all_levels;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
-use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -34,7 +32,9 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
+    YesNoVotePollResult, YesNoVotePollStatus,
+};
 use dpp::voting::vote_polls::yes_no_vote_poll::{
     VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll,
 };
@@ -44,8 +44,6 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
 use dpp::voting::votes::Vote;
-use drive::error::Error as DriveError;
-use drive::grovedb::Error as GroveError;
 use drive::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
 use drive::util::test_helpers::vote_poll_end_dates;
 use simple_signer::signer::SimpleSigner;
@@ -164,26 +162,10 @@ fn check_tx_verdicts(
     platform: &TempPlatform<MockCoreRPCLike>,
     serialized_transition: &[u8],
 ) -> Vec<(CheckTxLevel, Result<bool, String>)> {
-    let platform_state = platform.state.load();
-    let platform_version = platform_state
-        .current_platform_version()
-        .expect("expected the current platform version");
-    let platform_ref = PlatformRef {
-        drive: &platform.drive,
-        state: &platform_state,
-        config: &platform.config,
-        core_rpc: &platform.core_rpc,
-    };
-    [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck]
+    check_tx_at_all_levels(platform, serialized_transition)
         .into_iter()
-        .map(|level| {
-            let verdict = platform
-                .check_tx(
-                    serialized_transition,
-                    level,
-                    &platform_ref,
-                    platform_version,
-                )
+        .map(|(level, result)| {
+            let verdict = result
                 .map(|result| result.is_valid())
                 .map_err(|error| error.to_string());
             (level, verdict)
@@ -249,9 +231,16 @@ async fn perform_vote_transition(
                         | StateError::PrefundedSpecializedBalanceInsufficientError(_)
                 ))
             );
+            // CheckTx fails with an error only where the block reports an internal error too
+            // (a transition protocol version 13 cannot decode); any other refusal must be a
+            // consensus refusal.
             let (level, verdict) = &check_tx_verdicts[0];
+            let refused = match verdict {
+                Ok(admitted) => !admitted,
+                Err(_) => matches!(other, InternalError(_)),
+            };
             assert!(
-                refused_for_its_fund || matches!(verdict, Ok(false) | Err(_)),
+                refused_for_its_fund || refused,
                 "check_tx {level:?} must refuse a yes/no vote a block refuses ({other:?}), got \
                  {verdict:?}"
             );
@@ -357,23 +346,31 @@ fn poll_state(
     .expect("expected the poll state")
 }
 
-/// The processing credits epoch 0 will distribute; the item is written by the first credit, so
-/// before any it is missing, which is none.
-fn processing_credits(
+/// The recorded result of a poll that ended.
+fn finished_result(
     platform: &TempPlatform<MockCoreRPCLike>,
+    vote_poll: &YesNoVotePoll,
     platform_version: &PlatformVersion,
-) -> Credits {
-    match platform
+) -> YesNoVotePollResult {
+    *poll_state(platform, vote_poll, platform_version)
+        .stored_info
+        .expect("stored info")
+        .result()
+        .expect("expected the poll to be finished")
+}
+
+/// A masternode's answer to a poll and how many times it voted on it, from the identity votes
+/// index.
+fn identity_vote(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    voter: Identifier,
+    vote_poll_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Option<(YesNoAbstainVoteChoice, u16)> {
+    platform
         .drive
-        .get_epoch_processing_credits_for_distribution(
-            &Epoch::new(0).expect("epoch"),
-            None,
-            platform_version,
-        ) {
-        Ok(credits) => credits,
-        Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => 0,
-        Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
-    }
+        .fetch_identity_yes_no_vote(voter, vote_poll_id, None, &mut vec![], platform_version)
+        .expect("vote")
 }
 
 fn new_platform() -> TempPlatform<MockCoreRPCLike> {
@@ -465,11 +462,7 @@ async fn should_pass_at_exactly_the_threshold_and_fail_one_power_below_it_with_a
 
     close_ended_polls(&mut platform, platform_version);
 
-    let passing_result = *poll_state(&platform, &passing, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let passing_result = finished_result(&platform, &passing, platform_version);
     assert!(passing_result.passed);
     assert_eq!(passing_result.yes_voting_power, 5);
     assert_eq!(passing_result.no_voting_power, 1);
@@ -479,11 +472,7 @@ async fn should_pass_at_exactly_the_threshold_and_fail_one_power_below_it_with_a
         END_DATE + 300_000
     );
 
-    let failing_result = *poll_state(&platform, &failing, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let failing_result = finished_result(&platform, &failing, platform_version);
     assert!(!failing_result.passed);
     assert_eq!(failing_result.yes_voting_power, 4);
     assert_eq!(failing_result.no_voting_power, 2);
@@ -518,11 +507,7 @@ async fn should_fail_below_the_minimum_voting_power_even_when_every_vote_is_yes(
 
     close_ended_polls(&mut platform, platform_version);
 
-    let result = *poll_state(&platform, &vote_poll, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let result = finished_result(&platform, &vote_poll, platform_version);
     assert!(!result.passed);
     assert_eq!(result.yes_voting_power, 5);
     assert_eq!(result.no_voting_power, 0);
@@ -625,18 +610,11 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         platform_version,
     );
 
-    let result_of = |vote_poll: &YesNoVotePoll| {
-        *poll_state(&platform, vote_poll, platform_version)
-            .stored_info
-            .expect("stored info")
-            .result()
-            .expect("expected the poll to be finished")
-    };
-    let alone = result_of(&evonode_alone);
+    let alone = finished_result(&platform, &evonode_alone, platform_version);
     assert_eq!(alone.yes_voting_power, 4);
     assert_eq!(alone.required_voting_power, 7);
     assert!(!alone.passed);
-    let with_three = result_of(&evonode_and_three);
+    let with_three = finished_result(&platform, &evonode_and_three, platform_version);
     assert_eq!(with_three.yes_voting_power, 7);
     assert_eq!(with_three.required_voting_power, 7);
     assert!(with_three.passed);
@@ -678,11 +656,7 @@ async fn should_count_an_evonode_vote_as_four() {
     close_ended_polls(&mut platform, platform_version);
 
     // Five cast, minimum five: four is strictly more than two thirds of five.
-    let result = *poll_state(&platform, &vote_poll, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let result = finished_result(&platform, &vote_poll, platform_version);
     assert!(result.passed);
     assert_eq!(result.yes_voting_power, 4);
 }
@@ -722,20 +696,14 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
         .drive
         .fetch_identities_voting_in_yes_no_vote_poll(&vote_poll, None, platform_version)
         .expect("voters");
-    assert_eq!(voters[&YesNoAbstainVoteChoice::Yes].len(), 3);
-    assert_eq!(voters[&YesNoAbstainVoteChoice::No].len(), 1);
-    assert!(voters[&YesNoAbstainVoteChoice::Abstain].is_empty());
+    let mut sorted_voters = voters.clone();
+    sorted_voters.sort();
+    let mut expected_voters: Vec<Identifier> =
+        yes_voters.iter().chain(no_voters.iter()).copied().collect();
+    expected_voters.sort();
+    assert_eq!(sorted_voters, expected_voters);
     assert_eq!(
-        platform
-            .drive
-            .fetch_identity_yes_no_vote(
-                yes_voters[0],
-                vote_poll_id,
-                None,
-                &mut vec![],
-                platform_version
-            )
-            .expect("vote"),
+        identity_vote(&platform, yes_voters[0], vote_poll_id, platform_version),
         Some((YesNoAbstainVoteChoice::Yes, 1))
     );
     let balance = platform
@@ -751,11 +719,7 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
 
     // After the end: the record with the result, and nothing else.
     let state = poll_state(&platform, &vote_poll, platform_version);
-    let result = *state
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let result = finished_result(&platform, &vote_poll, platform_version);
     assert!(result.passed);
     assert_eq!((result.yes_voting_power, result.no_voting_power), (3, 1));
     assert_eq!(
@@ -770,19 +734,10 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
         .drive
         .fetch_identities_voting_in_yes_no_vote_poll(&vote_poll, None, platform_version)
         .expect("voters");
-    assert!(voters.values().all(|voters| voters.is_empty()));
+    assert!(voters.is_empty());
     for voter in yes_voters.iter().chain(no_voters.iter()) {
         assert_eq!(
-            platform
-                .drive
-                .fetch_identity_yes_no_vote(
-                    *voter,
-                    vote_poll_id,
-                    None,
-                    &mut vec![],
-                    platform_version
-                )
-                .expect("vote"),
+            identity_vote(&platform, *voter, vote_poll_id, platform_version),
             None
         );
     }
@@ -1003,16 +958,7 @@ async fn should_move_a_changed_vote_and_cap_the_changes() {
             assert_eq!(state.voting_power(choice), expected, "vote {}", vote_number);
         }
         assert_eq!(
-            platform
-                .drive
-                .fetch_identity_yes_no_vote(
-                    pro_tx_hash,
-                    vote_poll_id,
-                    None,
-                    &mut vec![],
-                    platform_version
-                )
-                .expect("vote"),
+            identity_vote(&platform, pro_tx_hash, vote_poll_id, platform_version),
             Some((*vote_choice, vote_number as u16 + 1))
         );
     }
@@ -1067,16 +1013,12 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
         ))
     );
     assert_eq!(
-        platform
-            .drive
-            .fetch_identity_yes_no_vote(
-                pro_tx_hash,
-                vote_poll.unique_id().expect("id"),
-                None,
-                &mut vec![],
-                platform_version
-            )
-            .expect("vote"),
+        identity_vote(
+            &platform,
+            pro_tx_hash,
+            vote_poll.unique_id().expect("id"),
+            platform_version
+        ),
         None
     );
     let state = poll_state(&platform, &vote_poll, platform_version);
@@ -1086,11 +1028,7 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
     // on, rather than failing the block.
     let processing_credits_before = processing_credits(&platform, platform_version);
     close_ended_polls(&mut platform, platform_version);
-    let result = *poll_state(&platform, &vote_poll, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let result = finished_result(&platform, &vote_poll, platform_version);
     assert!(!result.passed);
     assert_eq!(
         processing_credits(&platform, platform_version),
@@ -1152,44 +1090,22 @@ async fn should_remove_the_votes_of_masternodes_that_left_the_list() {
         .drive
         .fetch_identities_voting_in_yes_no_vote_poll(&vote_poll, None, platform_version)
         .expect("voters");
-    assert_eq!(voters[&YesNoAbstainVoteChoice::Yes], vec![yes_voters[2]]);
-    assert_eq!(voters[&YesNoAbstainVoteChoice::No], vec![no_voters[1]]);
+    // The yes voters, then the no voters.
+    assert_eq!(voters, vec![yes_voters[2], no_voters[1]]);
     for voter in &removed {
         assert_eq!(
-            platform
-                .drive
-                .fetch_identity_yes_no_vote(
-                    *voter,
-                    vote_poll_id,
-                    None,
-                    &mut vec![],
-                    platform_version
-                )
-                .expect("vote"),
+            identity_vote(&platform, *voter, vote_poll_id, platform_version),
             None
         );
     }
     assert_eq!(
-        platform
-            .drive
-            .fetch_identity_yes_no_vote(
-                yes_voters[2],
-                vote_poll_id,
-                None,
-                &mut vec![],
-                platform_version
-            )
-            .expect("vote"),
+        identity_vote(&platform, yes_voters[2], vote_poll_id, platform_version),
         Some((YesNoAbstainVoteChoice::Yes, 1))
     );
 
     // The poll still closes cleanly with what is left.
     close_ended_polls(&mut platform, platform_version);
-    let result = *poll_state(&platform, &vote_poll, platform_version)
-        .stored_info
-        .expect("stored info")
-        .result()
-        .expect("expected the poll to be finished");
+    let result = finished_result(&platform, &vote_poll, platform_version);
     assert_eq!((result.yes_voting_power, result.no_voting_power), (1, 1));
     assert!(!result.passed);
 }
@@ -1244,14 +1160,7 @@ async fn should_close_a_contested_poll_and_a_yes_no_poll_that_end_at_the_same_ti
 
     let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert!(end_dates.is_empty());
-    assert!(
-        poll_state(&platform, &vote_poll, platform_version)
-            .stored_info
-            .expect("stored info")
-            .result()
-            .expect("finished")
-            .passed
-    );
+    assert!(finished_result(&platform, &vote_poll, platform_version).passed);
 
     // The contest closed in the same block: it has a result, and its clean-up drained its
     // fund.
@@ -1340,9 +1249,79 @@ async fn should_keep_an_end_date_the_block_only_partly_closed() {
     assert!(end_dates(&platform).is_empty());
 }
 
+/// Two openings of one poll that cannot see each other (each built with no previous
+/// operations, as drive operations are converted one at a time) list it under two end dates.
+/// The poll closes at the first; when the second comes due, only its entry goes, rather than
+/// the block failing on a poll that is already finished.
+#[tokio::test]
+async fn should_only_remove_the_later_end_date_entry_of_a_poll_listed_twice() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let vote_poll = two_thirds_poll(b"listed twice", 1);
+    let later_end_date = END_DATE + 1_000_000;
+    let mut operations = vec![];
+    for end_date in [END_DATE, later_end_date] {
+        let mut opening_operations = vec![];
+        platform
+            .drive
+            .open_yes_no_vote_poll_operations(
+                &vote_poll,
+                end_date,
+                &BlockInfo::default(),
+                &mut None,
+                &mut opening_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        operations.append(&mut opening_operations);
+    }
+    platform
+        .drive
+        .apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+        .expect("expected the openings to apply");
+    platform
+        .drive
+        .add_prefunded_specialized_balance(
+            vote_poll.specialized_balance_id().expect("id"),
+            FUND,
+            None,
+            platform_version,
+        )
+        .expect("expected to fund the poll");
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version).len(),
+        2
+    );
+
+    close_ended_polls(&mut platform, platform_version);
+    let result = finished_result(&platform, &vote_poll, platform_version);
+    assert!(!result.passed);
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version)
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![later_end_date]
+    );
+
+    close_ended_polls_at(&mut platform, later_end_date + 300_000, platform_version);
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+    assert_eq!(
+        finished_result(&platform, &vote_poll, platform_version),
+        result
+    );
+}
+
 /// Protocol version 13 selects the shipped (v0) masternode vote transform and state
-/// validation, vote registration, end of poll check and clean-up, which this change gave
-/// yes/no arms. A contest there runs as it did before: the vote counts, the poll ends, the
+/// validation and vote registration, which this change gave yes/no arms. A contest there runs
+/// as it did before: the vote counts, the poll ends, the
 /// contender is awarded and the end date index empties. A masternode vote naming a yes/no
 /// poll, of either kind, does not decode there, so it is stripped before any of them runs and
 /// consumes nothing.
@@ -1352,8 +1331,8 @@ async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_versi
 }
 
 /// Protocol version 14 selects the masternode vote transform v0 and state validation v1, vote
-/// registration v0, end of poll check v1 and clean-up v0, which this change gave yes/no arms
-/// that only 15 reaches. A contest there runs as it did before, and a masternode vote naming a
+/// registration v0 and end of poll check v1, which this change gave yes/no arms that only 15
+/// reaches. A contest there runs as it did before, and a masternode vote naming a
 /// yes/no poll is stripped as at 13.
 #[tokio::test]
 async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_version_14() {

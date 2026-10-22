@@ -10,6 +10,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::{
@@ -436,7 +437,7 @@ impl Sdk {
         limit: Option<u16>,
     ) -> Result<BTreeMap<String, TimestampMillis>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-        let query_limit = limit.unwrap_or(MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT);
+        let mut query_limit = limit.unwrap_or(DEFAULT_QUERY_LIMIT);
         let mut name_to_end_time: BTreeMap<String, TimestampMillis> = BTreeMap::new();
         let mut current_start_time = start_time.map(|t| (t, true));
 
@@ -449,6 +450,13 @@ impl Sdk {
                 .fetch_vote_polls_by_end_date(current_start_time, end_time, query_limit)
                 .await?;
             let Some(&(last_ts, _)) = result.0.last() else {
+                // Empty end date trees alone can fill a page and leave it empty. Before ending,
+                // read on at the largest page, which only that many empty end dates in a row
+                // would leave empty too (each block sweeps the first due ones away).
+                if query_limit < DEFAULT_QUERY_LIMIT {
+                    query_limit = DEFAULT_QUERY_LIMIT;
+                    continue;
+                }
                 break;
             };
             let polls_in_page: usize = result.0.iter().map(|(_, polls)| polls.len()).sum();
@@ -459,19 +467,19 @@ impl Sdk {
                 // This end date alone filled the page, so the limit may have cut it, and a
                 // proved query cannot continue within one end date: read it alone at the
                 // largest limit, or refuse rather than leave contests out.
-                if query_limit >= MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT {
+                if query_limit >= DEFAULT_QUERY_LIMIT {
                     return Err(too_many_vote_polls_at_end_date(last_ts));
                 }
                 let whole_end_date = self
                     .fetch_vote_polls_by_end_date(
                         Some((last_ts, true)),
                         Some(last_ts),
-                        MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT,
+                        DEFAULT_QUERY_LIMIT,
                     )
                     .await?;
                 let polls_at_end_date: usize =
                     whole_end_date.0.iter().map(|(_, polls)| polls.len()).sum();
-                if polls_at_end_date >= MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT as usize {
+                if polls_at_end_date >= DEFAULT_QUERY_LIMIT as usize {
                     return Err(too_many_vote_polls_at_end_date(last_ts));
                 }
                 record_dpns_contests(&mut name_to_end_time, dpns_contract_id, whole_end_date);
@@ -486,10 +494,6 @@ impl Sdk {
         Ok(name_to_end_time)
     }
 }
-
-/// The largest page the vote polls by end date query serves (the platform's default query
-/// limit), and the page size `get_current_dpns_contests` uses when given none.
-const MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT: u16 = 100;
 
 impl Sdk {
     /// One proved page of vote polls by end date, from `start_time` up to `end_time` included.
@@ -538,7 +542,7 @@ fn record_dpns_contests(
 /// that its contests cannot all be listed.
 fn too_many_vote_polls_at_end_date(end_date: TimestampMillis) -> Error {
     Error::Generic(format!(
-        "at least {MAXIMUM_VOTE_POLLS_BY_END_DATE_LIMIT} vote polls end at {end_date}, more than \
+        "at least {DEFAULT_QUERY_LIMIT} vote polls end at {end_date}, more than \
          one page of vote polls by end date can list"
     ))
 }

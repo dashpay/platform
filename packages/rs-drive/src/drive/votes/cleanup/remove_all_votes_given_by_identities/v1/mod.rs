@@ -1,23 +1,17 @@
 use crate::drive::Drive;
-use std::ops::RangeFull;
 
-use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::drive::votes::paths::{
-    vote_decisions_active_polls_poll_tree_path_vec, vote_decisions_identity_votes_tree_path_vec,
+    vote_decisions_identity_votes_tree_path_vec, vote_decisions_poll_choice_votes_tree_path_vec,
     vote_decisions_tree_path, IDENTITY_VOTES_TREE_KEY,
 };
 use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
-use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
-use crate::query::QueryItem;
 use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use dpp::dashcore::Network;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeMap;
+use grovedb::{MaybeTree, TransactionArg};
 
 impl Drive {
     /// Version 1 (protocol version 15) removes the contested resource votes of the removed
@@ -59,7 +53,8 @@ impl Drive {
         }
 
         let mut deletion_batch = vec![];
-        for (identifier_bytes, votes_to_remove) in self.yes_no_votes_of_identities(
+        for (identifier_bytes, votes_to_remove) in self.identity_vote_entries_of_identities_v0(
+            vote_decisions_identity_votes_tree_path_vec(),
             identity_ids_as_byte_arrays,
             transaction,
             platform_version,
@@ -67,19 +62,14 @@ impl Drive {
             let identity_id = Identifier::from_vec(identifier_bytes.clone())?;
             let mut vote_poll_ids = Vec::with_capacity(votes_to_remove.len());
             for (vote_poll_id, vote_to_remove) in votes_to_remove {
-                let serialized_form = vote_to_remove.into_item_bytes()?;
-                let storage_form = YesNoVoteReferenceStorageForm::deserialize(&serialized_form)
-                    .map_err(|e| {
-                        Error::Drive(DriveError::CorruptedSerialization(format!(
-                            "serialization of yes/no vote reference {} is corrupted: {}",
-                            hex::encode(serialized_form),
-                            e
-                        )))
-                    })?;
+                let storage_form = YesNoVoteReferenceStorageForm::deserialize_stored(
+                    &vote_to_remove.into_item_bytes()?,
+                )?;
                 let vote_poll_id = Identifier::from_vec(vote_poll_id)?;
-                let mut votes_path =
-                    vote_decisions_active_polls_poll_tree_path_vec(vote_poll_id.as_bytes());
-                votes_path.push(vec![storage_form.vote_choice.to_tree_key()]);
+                let votes_path = vote_decisions_poll_choice_votes_tree_path_vec(
+                    vote_poll_id.as_bytes(),
+                    storage_form.vote_choice,
+                );
                 self.batch_delete(
                     votes_path.as_slice().into(),
                     identifier_bytes.as_slice(),
@@ -114,32 +104,5 @@ impl Drive {
         }
 
         Ok(())
-    }
-
-    /// The yes/no vote index entries of these masternodes, by masternode then poll id.
-    #[allow(clippy::type_complexity)]
-    fn yes_no_votes_of_identities(
-        &self,
-        identity_ids_as_byte_arrays: Vec<Vec<u8>>,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Element>>, Error> {
-        let decisions_vote_path = vote_decisions_identity_votes_tree_path_vec();
-        let mut query = Query::new_with_direction(true);
-        query.insert_keys(identity_ids_as_byte_arrays);
-        query.set_subquery(Query::new_single_query_item(QueryItem::RangeFull(
-            RangeFull,
-        )));
-        let path_query = PathQuery::new(decisions_vote_path, SizedQuery::new(query, None, None));
-        Ok(self
-            .grove_get_raw_path_query(
-                &path_query,
-                transaction,
-                QueryPathKeyElementTrioResultType,
-                &mut vec![],
-                &platform_version.drive,
-            )?
-            .0
-            .to_last_path_to_key_elements_btree_map())
     }
 }

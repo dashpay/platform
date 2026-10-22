@@ -95,19 +95,11 @@ mod tests {
     };
     use crate::util::grove_operations::DirectQueryType;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::test_yes_no_vote_poll as poll;
+    use crate::util::test_helpers::vote_poll_end_dates;
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
-    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
-
-    fn poll() -> YesNoVotePoll {
-        YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-            supermajority_numerator: 2,
-            supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
-        }
-    }
 
     #[test]
     fn should_refuse_to_open_a_poll_a_batch_already_opens() {
@@ -178,5 +170,87 @@ mod tests {
             .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
             .expect("expected to fetch the stored info")
             .is_some());
+    }
+
+    #[test]
+    fn should_refuse_to_open_a_poll_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .open_yes_no_vote_poll(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect_err("expected protocol version 14 to refuse opening a yes/no poll");
+    }
+
+    #[test]
+    fn should_refuse_a_poll_that_ends_by_the_block_that_opens_it() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo {
+            time_ms: 1_000,
+            ..Default::default()
+        };
+        for end_date in [999, 1_000] {
+            drive
+                .open_yes_no_vote_poll(&poll(), end_date, &block_info, None, platform_version)
+                .expect_err("expected a poll ending by the opening block to be refused");
+        }
+        drive
+            .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
+            .expect("expected a poll ending after the opening block to open");
+    }
+
+    #[test]
+    fn should_queue_the_trees_two_openings_in_a_batch_share_once() {
+        // A chain born at 14 lacks the decisions trees, which both openings need, and both polls
+        // end at the same time. The test drive verifies batch consistency, which refuses a tree
+        // queued twice.
+        let drive = setup_drive_with_initial_state_structure(Some(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        ));
+        let platform_version = PlatformVersion::latest();
+        let mut other_poll = poll();
+        other_poll
+            .resource_path
+            .push(BinaryData::new(b"other".to_vec()));
+        let mut batch_operations = vec![];
+        for vote_poll in [poll(), other_poll.clone()] {
+            drive
+                .open_yes_no_vote_poll_operations(
+                    &vote_poll,
+                    1_000,
+                    &BlockInfo::default(),
+                    &mut None,
+                    &mut batch_operations,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to open the poll");
+        }
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+        let end_dates = vote_poll_end_dates(&drive, platform_version);
+        assert_eq!(end_dates.len(), 1);
+        assert_eq!(
+            end_dates[&1_000],
+            [
+                poll().unique_id().expect("id"),
+                other_poll.unique_id().expect("id")
+            ]
+            .into_iter()
+            .collect()
+        );
     }
 }
