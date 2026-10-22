@@ -2,7 +2,7 @@ use crate::error::WasmDppResult;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use crate::utils::{try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u64, try_to_u8};
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::prelude::TimestampMillis;
@@ -23,6 +23,8 @@ export interface TokenPlaceAskTransitionOptions {
     base: TokenBaseTransition;
     amount: bigint;
     price: bigint;
+    /** The token's decimals the price is at; the listing is refused unless they are the token's. */
+    decimals: number;
     minFill: bigint;
     expiresAt?: bigint;
 }
@@ -63,6 +65,9 @@ impl TokenPlaceAskTransitionWasm {
 
         let price: Credits = try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
 
+        let decimals: u8 =
+            try_from_options_with(&options, "decimals", |v| try_to_u8(v, "decimals"))?;
+
         let min_fill: TokenAmount =
             try_from_options_with(&options, "minFill", |v| try_to_u64(v, "minFill"))?;
 
@@ -74,6 +79,7 @@ impl TokenPlaceAskTransitionWasm {
                 base: base.into(),
                 amount,
                 price,
+                decimals,
                 min_fill,
                 expires_at,
             },
@@ -93,6 +99,11 @@ impl TokenPlaceAskTransitionWasm {
     #[wasm_bindgen(getter = price)]
     pub fn price(&self) -> Credits {
         self.0.price()
+    }
+
+    #[wasm_bindgen(getter = decimals)]
+    pub fn decimals(&self) -> u8 {
+        self.0.decimals()
     }
 
     #[wasm_bindgen(getter = minFill)]
@@ -121,6 +132,12 @@ impl TokenPlaceAskTransitionWasm {
     #[wasm_bindgen(setter = price)]
     pub fn set_price(&mut self, price: &js_sys::BigInt) -> WasmDppResult<()> {
         self.0.set_price(try_to_u64(price, "price")?);
+        Ok(())
+    }
+
+    #[wasm_bindgen(setter = decimals)]
+    pub fn set_decimals(&mut self, decimals: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.set_decimals(try_to_u8(decimals, "decimals")?);
         Ok(())
     }
 

@@ -12,24 +12,24 @@
 //! block-context sweep (winner actually mined) stamps the winner's
 //! height, and the collector in `core_state::apply` evicts the row
 //! exactly when `min(chainlock_height, synced_height)` reaches that
-//! height — `prune_finalized_observed_spends`' condition verbatim, with
-//! no observation-age margin. An InstantSend-locked, unmined winner
-//! writes the same row with the stamp NULL — under DIP-10 its lock
-//! alone settles the input, but it carries no height to key a lifetime
-//! on — and the collector never takes an unstamped row: it resolves
-//! only through proof, when the funding upsert materialises it, a later
-//! block-context sweep re-stamps it into the collectible set, or a
-//! release deletes it. See `CORE_SWEEP_REMOVAL` and the `apply_sweep`
-//! doc in `core_state.rs` for why an unstamped hold must survive (it is
-//! the only durable carrier of upstream's in-memory `spent_outpoints`
-//! hold across a restart) and what bounds the foreign-input residue.
+//! height — `prune_finalized_observed_spends`' condition over applied
+//! chainlocks, with no observation-age margin. An InstantSend-locked,
+//! unmined winner writes the same row with the stamp NULL — under
+//! DIP-10 its lock alone settles the input, but it carries no height to
+//! key a lifetime on — and the collector never takes an unstamped row:
+//! it resolves only through proof, when the funding upsert materialises
+//! it, a later block-context sweep re-stamps it into the collectible
+//! set, or a release deletes it. See `CORE_SWEEP_REMOVAL` and the
+//! `apply_sweep` doc in `core_state.rs` for why an unstamped hold must
+//! survive (it is the only durable carrier of upstream's in-memory
+//! `spent_outpoints` hold across a restart) and what bounds the
+//! foreign-input residue.
 //!
 //! `core_sync_state.chainlock_height` is the monotonic-max height of
 //! the last applied chainlock, mirrored from
 //! `CoreChangeSet::last_applied_chain_lock` (previously dropped by
 //! this store). It is one half of the collector's finality boundary;
-//! rows are never collected before a chainlock has been persisted,
-//! matching upstream's "no-op until a chainlock has been applied".
+//! rows are never collected before a chainlock has been persisted.
 //!
 //! The partial index covers exactly the unmaterialised rows — the
 //! collector's scan set is the stamped subset of these — so the

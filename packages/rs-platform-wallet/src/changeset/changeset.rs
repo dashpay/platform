@@ -377,16 +377,17 @@ pub struct SweepBatch {
     /// placeholder's lifetime. `Some` stamps the winner's own block height
     /// — the projection of upstream's `observed_spent_outpoints` — and the
     /// placeholder is collectible once `min(chainlock_height,
-    /// synced_height)` reaches it, exactly upstream's
-    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
-    /// winner, unmined) leaves the placeholder UNSTAMPED and never
-    /// collectible: under DIP-10 the lock alone settles the input —
-    /// upstream retains it in the account's `spent_outpoints`, a hold with
-    /// no height that no record survives to rebuild — and an IS-locked
-    /// winner has no mining deadline, so no watermark can ever prove the
-    /// funding output delivered-or-never. An unstamped placeholder
-    /// resolves only through proof: funding materialisation, a later
-    /// block-context sweep's re-stamp, or a release.
+    /// synced_height)` reaches it, upstream's
+    /// `prune_finalized_observed_spends` boundary counting applied
+    /// chainlocks only. `None` (IS-locked winner, unmined) leaves the
+    /// placeholder UNSTAMPED and never collectible: under DIP-10 the lock
+    /// alone settles the input — upstream retains it in the account's
+    /// `spent_outpoints`, a hold with no height that no record survives to
+    /// rebuild — and an IS-locked winner has no mining deadline, so no
+    /// watermark can ever prove the funding output delivered-or-never. An
+    /// unstamped placeholder resolves only through proof: funding
+    /// materialisation, a later block-context sweep's re-stamp, or a
+    /// release.
     ///
     /// `serde(default)`: a journaled payload written before this field
     /// existed reads back as `None` — the conservative reading (no new

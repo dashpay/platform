@@ -430,7 +430,7 @@ impl WasmSdk {
 
         // Get public key
         let public_key = private_key.public_key();
-        let public_key_bytes = public_key.inner.serialize();
+        let public_key_bytes = public_key.inner.to_compressed();
         // Get address
         let address = dashcore::Address::p2pkh(&public_key, net);
 
@@ -484,7 +484,7 @@ impl WasmSdk {
 
         // In v0.40-dev, ExtendedPrivKey might have a different structure
         // Create a PrivateKey from the derived key
-        let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
+        let private_key = dashcore::PrivateKey::new(derived_key.private_key.clone(), net);
 
         // Get public key
         let public_key = private_key.public_key();
@@ -495,7 +495,7 @@ impl WasmSdk {
         Ok(PathDerivedKeyInfoWasm {
             path,
             private_key_wif: private_key.to_wif(),
-            private_key_hex: hex::encode(private_key.inner.to_secret_bytes()),
+            private_key_hex: hex::encode(private_key.inner.to_bytes().as_slice()),
             public_key: hex::encode(public_key.to_bytes()),
             address: address.to_string(),
             network,

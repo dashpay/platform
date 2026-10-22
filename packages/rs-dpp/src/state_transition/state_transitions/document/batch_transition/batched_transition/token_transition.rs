@@ -1,6 +1,6 @@
 use derive_more::{Display, From};
-#[cfg(feature = "serde-conversion")]
 use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode, DecodeUntrusted};
@@ -992,7 +992,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 place_ask.price(),
                 place_ask.min_fill(),
                 place_ask.expires_at(),
-                token_configuration.conventions().decimals(),
+                place_ask.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and costs, before the order
             // is read
@@ -1018,7 +1018,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 place_bid.price(),
                 place_bid.min_fill(),
                 place_bid.expires_at(),
-                token_configuration.conventions().decimals(),
+                place_bid.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and pays, before the order is
             // read

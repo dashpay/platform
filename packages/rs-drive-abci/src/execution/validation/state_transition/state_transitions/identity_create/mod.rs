@@ -218,6 +218,8 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::dashcore::{Network, PrivateKey};
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::KeyType::ECDSA_SECP256K1;
@@ -997,7 +999,7 @@ mod tests {
                 // A transition carrying a group-bound key is not active before protocol version
                 // 14: refused by the `active_version_range` check at decode, before any
                 // consensus validation, with nothing charged and nothing written.
-                assert_matches!(processing_result.execution_results().as_slice(), [StateTransitionExecutionResult::InternalError(message)] if message.contains("IdentityCreate") && message.contains("not active"));
+                assert_matches!(processing_result.execution_results().as_slice(), [StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))] if error.state_transition_type().starts_with("IdentityCreate"));
                 assert_eq!(
                     platform
                         .drive
