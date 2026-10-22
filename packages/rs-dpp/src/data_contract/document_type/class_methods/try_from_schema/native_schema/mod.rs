@@ -38,6 +38,8 @@ mod document_type;
 mod indexes;
 mod properties;
 mod references;
+#[cfg(test)]
+mod tests;
 
 /// The system timestamps a rule or a `where` bound may read.
 const TIMESTAMP_PROPERTIES: [&str; 9] = [
