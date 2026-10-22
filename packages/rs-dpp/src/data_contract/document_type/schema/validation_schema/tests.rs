@@ -838,7 +838,7 @@ fn should_keep_enum_const_and_bounds_as_the_validator_compares_them() {
             (text_value("type"), text_value("number")),
             (text_value("maximum"), bound),
         ])));
-        assert!(message.contains("not a JSON value"), "{case}: {message}");
+        assert!(message.contains("does not convert"), "{case}: {message}");
     }
 }
 
@@ -2770,4 +2770,46 @@ fn should_validate_as_the_existing_validator_when_written_back() {
         held >= 300,
         "expected most generated schemas to build: {held} did, {refused} were refused"
     );
+}
+
+/// Document schemas that do not convert to JSON, only in a value the validator ignores or
+/// in an entry a repeated key shadows.
+fn roots_that_do_not_convert_to_json() -> [Value; 3] {
+    let property = |schema: Vec<(Value, Value)>| {
+        Value::Map(vec![
+            (text_value("type"), text_value("object")),
+            (
+                text_value("properties"),
+                Value::Map(vec![(text_value("a"), Value::Map(schema))]),
+            ),
+        ])
+    };
+    [
+        property(vec![
+            (text_value("type"), text_value("string")),
+            (
+                text_value("examples"),
+                Value::Array(vec![Value::Float(f64::NAN)]),
+            ),
+        ]),
+        property(vec![
+            (text_value("type"), text_value("string")),
+            (text_value("x-note"), Value::U128(u128::MAX)),
+        ]),
+        property(vec![
+            (text_value("type"), text_value("string")),
+            (text_value("maxLength"), Value::Float(f64::INFINITY)),
+            (text_value("maxLength"), Value::U64(8)),
+        ]),
+    ]
+}
+
+#[test]
+fn should_refuse_a_schema_that_does_not_convert_to_json() {
+    for root in roots_that_do_not_convert_to_json() {
+        // as the document validator's conversion refuses it
+        assert!(root.try_to_validating_json().is_err(), "{root:?}");
+        let message = refusal(root);
+        assert!(message.contains("does not convert"), "{message}");
+    }
 }

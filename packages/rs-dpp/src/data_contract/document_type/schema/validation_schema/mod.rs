@@ -284,8 +284,10 @@ impl ValidationSchema {
     /// document type's schema with the contract's `$defs` and the base schema added and its
     /// property type shorthands expanded.
     ///
-    /// Refuses a keyword value of the wrong shape; a key the JSON Schema validator compiles
-    /// there that is not a [`SchemaKeyword`]; at the root, the shapes the validator's check of
+    /// Refuses a schema that does not convert to the JSON the validator compiles, a value it
+    /// ignores or an entry a repeated key shadows included; a keyword value of the wrong
+    /// shape; a key the JSON Schema validator compiles there that is not a [`SchemaKeyword`];
+    /// at the root, the shapes the validator's check of
     /// the document schema against its meta-schema refuses; a `format`, `pattern` or
     /// `dependentRequired` it does not compile; `byteArray: false`; `maxBytes`, `encryptedFor`
     /// or `byteArray` where consensus does not check it (see the module documentation); a
@@ -295,6 +297,15 @@ impl ValidationSchema {
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
+        // The document validator converts the whole schema before it compiles it, so a value
+        // JSON cannot hold anywhere, even one the validator would then ignore or drop as a
+        // shadowed entry of a repeated key, leaves it nothing to compile
+        root.try_to_validating_json().map_err(|error| {
+            structure_error(format!(
+                "the document schema does not convert to the JSON the JSON Schema validator \
+                 compiles: {error}"
+            ))
+        })?;
         let mut reached = Reached::default();
         let root_node = build_node(root, Reading::Document, &mut reached)?;
         refuse_identifiers_that_may_move_a_reference(root)?;
