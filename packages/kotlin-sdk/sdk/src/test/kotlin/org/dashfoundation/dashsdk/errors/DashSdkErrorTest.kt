@@ -33,6 +33,7 @@ class DashSdkErrorTest {
             8 to DashSdkError.Timeout::class,
             9 to DashSdkError.NotImplemented::class,
             10 to DashSdkError.DriveInternalError::class,
+            11 to DashSdkError.StateTransitionResultUnconfirmed::class,
             99 to DashSdkError.InternalError::class,
         )
         cases.forEach { (code, expected) ->
@@ -40,6 +41,19 @@ class DashSdkErrorTest {
             assertEquals("code $code", expected, mapped::class)
             assertEquals("boom", mapped.message)
         }
+    }
+
+    @Test
+    fun shouldPreserveUnconfirmedSubmissionWithoutRetrying() {
+        val detail = "Identity top-up may have executed: wait timeout after nonce rejection"
+        val native = DashSDKException(11, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.StateTransitionResultUnconfirmed)
+        assertEquals(detail, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertNull(mapped.consensusError)
+        assertFalse(mapped.isRetryable)
+        assertTrue(mapped.userMessage.contains("before submitting again"))
     }
 
     @Test

@@ -124,6 +124,9 @@ public enum ErrorFormatter {
 
     /// Extract a user-friendly message from any error
     public static func userFriendlyMessage(from error: Error) -> String {
+        if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
+            return sdkError.localizedDescription
+        }
         // Handle specific SDK error types
         let errorString = String(describing: error)
 
@@ -321,6 +324,16 @@ public enum ErrorCategorizer {
     public static func toUserFacingError(_ error: Error) -> UserFacingError {
         if let userFacing = error as? UserFacingError {
             return userFacing
+        }
+
+        if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
+            return UserFacingError(
+                title: "Submission unconfirmed",
+                message: sdkError.localizedDescription,
+                category: .unknown,
+                underlyingError: String(describing: sdkError),
+                isRetryable: false
+            )
         }
 
         let category = categorize(error)
