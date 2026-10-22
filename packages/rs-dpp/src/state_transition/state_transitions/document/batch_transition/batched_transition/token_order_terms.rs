@@ -4,12 +4,13 @@
 use crate::balances::credits::TokenAmount;
 use crate::consensus::basic::token::{
     InvalidTokenAmountError, InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError,
-    InvalidTokenOrderPriceError,
+    InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
 };
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::fee::Credits;
 use crate::prelude::TimestampMillis;
+use crate::tokens::token_order::TokenOrder;
 use crate::validation::SimpleConsensusValidationResult;
 
 /// The largest amount, price and expiry an order may carry: its document stores each as a signed
@@ -17,12 +18,14 @@ use crate::validation::SimpleConsensusValidationResult;
 pub(crate) const MAX_TOKEN_ORDER_TERM: u64 = i64::MAX as u64;
 
 /// The amount and the price are between 1 and `i64::MAX`, the minimum fill between 1 and the
-/// amount, and an expiry at most `i64::MAX`. Whether the whole order's value fits and whether it
-/// expires after the block are checked with the batch's advanced structure, which knows the
-/// token's decimals and the block.
+/// amount, an expiry at most `i64::MAX`, and what the order is worth at the decimals it signs
+/// (`TokenOrder::order_value`) at most `i64::MAX` credits. Whether the signed decimals are the
+/// token's and whether it expires after the block are checked with the batch's advanced
+/// structure, which knows the token and the block.
 pub(crate) fn validate_token_order_terms(
     amount: TokenAmount,
     price: Credits,
+    decimals: u8,
     min_fill: TokenAmount,
     expires_at: Option<TimestampMillis>,
 ) -> SimpleConsensusValidationResult {
@@ -51,6 +54,11 @@ pub(crate) fn validate_token_order_terms(
             );
         }
     }
+    if TokenOrder::order_value(amount, price, decimals).is_none() {
+        return SimpleConsensusValidationResult::new_with_error(
+            InvalidTokenOrderValueError::new(amount, price, decimals).into(),
+        );
+    }
     SimpleConsensusValidationResult::default()
 }
 
@@ -64,7 +72,26 @@ mod tests {
         min_fill: TokenAmount,
         expires_at: Option<TimestampMillis>,
     ) -> Vec<ConsensusError> {
-        validate_token_order_terms(amount, price, min_fill, expires_at).errors
+        validate_token_order_terms(amount, price, 8, min_fill, expires_at).errors
+    }
+
+    /// An order is worth its amount at its price at the decimals it signs, at most `i64::MAX`
+    /// credits: 1 base unit at `i64::MAX` credits per whole token is worth exactly that at 0
+    /// decimals, 2 are worth more; at 8 decimals 2 are worth far less.
+    #[test]
+    fn should_refuse_an_order_worth_more_than_an_order_holds() {
+        let at = |amount, decimals| {
+            validate_token_order_terms(amount, MAX_TOKEN_ORDER_TERM, decimals, 1, None).errors
+        };
+        assert!(at(1, 0).is_empty());
+        assert!(at(2, 8).is_empty());
+        assert!(matches!(
+            at(2, 0).as_slice(),
+            [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
+                if error.amount() == 2
+                    && error.price() == MAX_TOKEN_ORDER_TERM
+                    && error.decimals() == 0
+        ));
     }
 
     #[test]

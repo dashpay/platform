@@ -656,7 +656,14 @@ impl Market {
             &lookup,
             platform_version,
         )
-        .map(|(_, outcome)| outcome.into_result())
+        .map(|(root_hash, outcome)| {
+            assert_eq!(
+                root_hash,
+                self.committed_root(),
+                "the proof authenticates the committed state"
+            );
+            outcome.into_result()
+        })
     }
 
     fn prove_and_try_verify(
@@ -680,7 +687,14 @@ impl Market {
             &lookup,
             platform_version,
         )
-        .map(|(_, outcome)| outcome.into_result())
+        .map(|(root_hash, outcome)| {
+            assert_eq!(
+                root_hash,
+                self.committed_root(),
+                "the proof authenticates the committed state"
+            );
+            outcome.into_result()
+        })
     }
 
     /// Proves the executed transition the way the node answers a wait, and verifies the proof
@@ -704,8 +718,22 @@ impl Market {
             platform_version,
         )
         .expect("expected the proof to verify");
-        assert_ne!(root_hash, [0u8; 32]);
+        assert_eq!(
+            root_hash,
+            self.committed_root(),
+            "the proof authenticates the committed state"
+        );
         outcome.into_result()
+    }
+
+    /// The root of the state committed so far, which a client authenticates a proof against.
+    fn committed_root(&self) -> [u8; 32] {
+        self.platform
+            .drive
+            .grove
+            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+            .value
+            .expect("expected the committed Drive root")
     }
 }
 
@@ -958,6 +986,54 @@ async fn should_charge_each_fill_the_change_in_the_running_total() {
     assert_eq!(market.escrow(order_id), Some(1));
 }
 
+/// 0.5 credits per base unit: of a listing of 3, the first unit costs 1 credit (its running
+/// total, 0.5, rounds up to 1) and the second 0 (the total for 2 units is exactly 1). A fill
+/// paying 0 credits, with a limit of 0, still takes its unit out of escrow, advances the buyer's
+/// nonce and charges its fee; the seller's credits do not move. The listing keeps one unit open,
+/// so no storage refund mixes into the seller's balance.
+#[tokio::test]
+async fn should_fill_a_unit_that_leaves_the_running_total_unchanged() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(3, 50_000_000, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+    let fill = market.fill_ask(order_id, 1, 1, 1).await;
+    market.assert_executes(&fill, &BlockInfo::default());
+    let seller_credits = market.credit_balance(market.seller.id());
+    let buyer_credits = market.credit_balance(market.buyer.id());
+    let buyer_nonce = market.contract_nonce(market.buyer.id());
+
+    let fill = market.fill_ask(order_id, 1, 1, 0).await;
+    let processing_result = market.process(&fill);
+    let [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =
+        processing_result.execution_results().as_slice()
+    else {
+        panic!(
+            "expected the fill to execute: {:?}",
+            processing_result.execution_results()
+        );
+    };
+    assert!(fee_result.processing_fee > 0);
+    let refund = fee_result
+        .fee_refunds
+        .calculate_refunds_amount_for_identity(market.buyer.id())
+        .unwrap_or_default();
+    assert_eq!(
+        market.credit_balance(market.buyer.id()) as i128,
+        buyer_credits as i128 - fee_result.storage_fee as i128 - fee_result.processing_fee as i128
+            + refund as i128,
+        "the buyer pays the fee and nothing for the unit"
+    );
+    assert_eq!(market.credit_balance(market.seller.id()), seller_credits);
+    assert_eq!(market.token_balance(market.buyer.id()), Some(2));
+    assert_eq!(market.escrow(order_id), Some(1));
+    assert_eq!(
+        market.listing(order_id).map(|listing| listing.remaining),
+        Some(1)
+    );
+    assert_ne!(market.contract_nonce(market.buyer.id()), buyer_nonce);
+    market.assert_supply_balanced();
+}
+
 #[tokio::test]
 async fn should_return_the_tokens_of_a_cancelled_listing() {
     let mut market = tradeable_market();
@@ -1157,6 +1233,9 @@ async fn should_refuse_listing_more_than_the_seller_holds() {
     assert_eq!(market.listing(order_id), None);
 }
 
+/// What a listing is worth at the decimals it signs is checked with the transition's structure:
+/// two whole tokens at `i64::MAX` credits each are refused by check_tx and in a block before
+/// anything is charged, and nothing moves.
 #[tokio::test]
 async fn should_refuse_a_listing_worth_more_than_an_order_holds() {
     let mut market = market_with(
@@ -1166,23 +1245,24 @@ async fn should_refuse_a_listing_worth_more_than_an_order_holds() {
         },
         dash_to_credits!(1.0),
     );
-    // Two whole tokens at i64::MAX credits each.
-    let (place, _) = market.place_ask(2, i64::MAX as u64, 1, None).await;
+    let seller_credits = market.credit_balance(market.seller.id());
+    let (place, order_id) = market.place_ask(2, i64::MAX as u64, 1, None).await;
     assert_matches!(
         market.check_tx(&place).as_slice(),
-        [ConsensusError::StateError(
-            StateError::TokenOrderValueTooLargeError(_)
-        )]
+        [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
+            if error.amount() == 2 && error.decimals() == 0
     );
     let processing_result = market.process(&place);
 
     assert_matches!(
         processing_result.execution_results().as_slice(),
-        [StateTransitionExecutionResult::PaidConsensusError {
-            error: error @ ConsensusError::StateError(StateError::TokenOrderValueTooLargeError(_)),
-            ..
-        }] if error.code() == 40757
+        [StateTransitionExecutionResult::UnpaidConsensusError(
+            error @ ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(_))
+        )] if error.code() == 10465
     );
+    assert_eq!(market.credit_balance(market.seller.id()), seller_credits);
+    assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+    assert_eq!(market.listing(order_id), None);
 }
 
 #[tokio::test]
@@ -2027,21 +2107,22 @@ mod offers {
             },
             dash_to_credits!(1.0),
         );
-        // Two whole tokens at i64::MAX credits each.
+        // Two whole tokens at i64::MAX credits each: refused by the transition's structure,
+        // before anything is charged.
+        let buyer_credits = market.credit_balance(market.buyer.id());
         let (place, order_id) = market.place_bid(2, i64::MAX as u64, 1, None).await;
         assert_matches!(
             market.check_tx(&place).as_slice(),
-            [ConsensusError::StateError(
-                StateError::TokenOrderValueTooLargeError(_)
-            )]
+            [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
+                if error.amount() == 2 && error.decimals() == 0
         );
         assert_matches!(
             market.process(&place).execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::StateError(StateError::TokenOrderValueTooLargeError(_)),
-                ..
-            }]
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                error @ ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(_))
+            )] if error.code() == 10465
         );
+        assert_eq!(market.credit_balance(market.buyer.id()), buyer_credits);
         assert_eq!(market.credit_escrow(order_id), None);
     }
 

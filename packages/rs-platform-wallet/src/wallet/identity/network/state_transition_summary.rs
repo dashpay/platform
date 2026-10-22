@@ -1058,6 +1058,42 @@ mod tests {
 
     /// Two config updates granting manual minting to different takers must not
     /// summarize the same; neither is complete from the typed fields alone.
+    /// A listing's row names the decimals it signs: two listings differing only in them render
+    /// different approvals (1,000 base units at 1,000,000,000 credits per whole token are worth
+    /// 10,000 credits at 8 decimals and 1 credit at 16).
+    #[test]
+    fn listing_rows_show_the_signed_decimals() {
+        let listing = |decimals: u8| {
+            BatchedTransition::Token(TokenTransition::PlaceAsk(TokenPlaceAskTransition::V0(
+                TokenPlaceAskTransitionV0 {
+                    base: token_base(),
+                    amount: 1_000,
+                    price: 1_000_000_000,
+                    decimals,
+                    min_fill: 1,
+                    expires_at: None,
+                },
+            )))
+        };
+        let summary = summarize_bytes(&batch(vec![listing(8), listing(16)]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        assert_ne!(transitions[0], transitions[1]);
+        let details = |row: &BatchedTransitionSummary| row.details.clone().expect("details");
+        assert!(
+            details(&transitions[0]).contains("at 8 decimals"),
+            "{}",
+            details(&transitions[0])
+        );
+        assert!(
+            details(&transitions[1]).contains("at 16 decimals"),
+            "{}",
+            details(&transitions[1])
+        );
+        assert_eq!(transitions[0].amount, Some(1_000));
+    }
+
     /// An offer's row shows the credits it commits to escrow, worked out at the decimals it
     /// signs, and the decimals themselves: two offers differing only in their decimals render
     /// different approvals (1,000 base units at 1,000,000,000 credits per whole token commit

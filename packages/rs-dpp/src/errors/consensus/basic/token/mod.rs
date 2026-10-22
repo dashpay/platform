@@ -41,3 +41,5 @@ mod invalid_token_order_fill_range_error;
 pub use invalid_token_order_fill_range_error::*;
 mod invalid_token_order_expiry_error;
 pub use invalid_token_order_expiry_error::*;
+mod invalid_token_order_value_error;
+pub use invalid_token_order_value_error::*;
