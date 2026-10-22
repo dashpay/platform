@@ -65,6 +65,12 @@ impl TokenPlaceAskTransitionActionAccessorsV0 for TokenPlaceAskTransitionAction 
         }
     }
 
+    fn decimals(&self) -> u8 {
+        match self {
+            TokenPlaceAskTransitionAction::V0(v0) => v0.decimals,
+        }
+    }
+
     fn order_document(&self) -> &Document {
         match self {
             TokenPlaceAskTransitionAction::V0(v0) => &v0.order_document,

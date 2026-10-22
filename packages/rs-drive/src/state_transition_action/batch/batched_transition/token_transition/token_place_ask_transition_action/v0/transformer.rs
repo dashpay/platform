@@ -130,6 +130,7 @@ impl TokenPlaceAskTransitionActionV0 {
                     price: *price,
                     min_fill: *min_fill,
                     expires_at: *expires_at,
+                    decimals,
                     order_document,
                     token_market_contract: drive
                         .token_market_contract_fetch_info(platform_version)?,

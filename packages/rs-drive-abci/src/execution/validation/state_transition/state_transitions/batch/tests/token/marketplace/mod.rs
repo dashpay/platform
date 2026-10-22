@@ -2056,6 +2056,15 @@ mod history {
             property(&placed[0], "price").to_integer::<u64>().ok(),
             Some(PRICE)
         );
+        assert_eq!(
+            property(&placed[0], "minFill").to_integer::<u64>().ok(),
+            Some(1)
+        );
+        assert_eq!(
+            property(&placed[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+        assert_eq!(placed[0].properties().get("expiresAt"), None);
 
         let filled = market.history("orderFilled");
         assert_eq!(filled.len(), 1);
@@ -2071,6 +2080,10 @@ mod history {
         assert_eq!(
             property(&filled[0], "credits").to_integer::<u64>().ok(),
             Some(4_000)
+        );
+        assert_eq!(
+            property(&filled[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
         );
 
         let cancelled = market.history("orderCancelled");
@@ -2135,6 +2148,106 @@ mod history {
         assert_eq!(
             property(&cancelled[0], "side").to_integer::<u8>().ok(),
             Some(1)
+        );
+    }
+
+    /// A closed order's placement is proved by its `orderPlaced` record, which holds every term
+    /// of the placement. A placement with the same signer, nonce, amount and price but another
+    /// minimum fill or expiry has the same order id and record id, and does not verify against
+    /// that proof, on either side.
+    #[tokio::test]
+    async fn should_not_prove_a_closed_order_for_other_terms() {
+        let mut market = tradeable_market();
+        let other_terms = [(11, Some(9_000)), (10, Some(9_001)), (10, None)];
+
+        let nonce = market.seller.nonce;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 10, Some(9_000)).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        for (min_fill, expires_at) in other_terms {
+            let next = market.seller.nonce;
+            market.seller.nonce = nonce;
+            let (other, other_id) = market.place_ask(1_000, PRICE, min_fill, expires_at).await;
+            market.seller.nonce = next;
+            assert_eq!(other_id, order_id);
+            assert!(
+                market.prove_and_try_verify(&other).is_err(),
+                "a listing with a minimum fill of {min_fill} and expiry {expires_at:?}"
+            );
+        }
+
+        let nonce = market.buyer.nonce;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 10, Some(9_000)).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        for (min_fill, expires_at) in other_terms {
+            let next = market.buyer.nonce;
+            market.buyer.nonce = nonce;
+            let (other, other_id) = market.place_bid(1_000, PRICE, min_fill, expires_at).await;
+            market.buyer.nonce = next;
+            assert_eq!(other_id, order_id);
+            assert!(
+                market.prove_and_try_verify(&other).is_err(),
+                "an offer with a minimum fill of {min_fill} and expiry {expires_at:?}"
+            );
+        }
+    }
+
+    /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
+    /// the token changes to 2 records 8 on its placement and its fill, and its placement is
+    /// still proved once it has closed.
+    #[tokio::test]
+    async fn should_record_the_decimals_an_order_was_placed_at() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration.set_conventions_change_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        market.set_decimals(2).await;
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+
+        let placed = market.history("orderPlaced");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(
+            property(&placed[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+        let filled = market.history("orderFilled");
+        assert_eq!(filled.len(), 1);
+        assert_eq!(
+            property(&filled[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+        assert_eq!(
+            property(&filled[0], "credits").to_integer::<u64>().ok(),
+            Some(10_000)
+        );
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
         );
     }
 

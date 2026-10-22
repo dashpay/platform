@@ -220,9 +220,14 @@ signer of each transition owns the record and pays its storage, as for a transfe
 
 | Document type | Written by | Properties |
 |---|---|---|
-| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price` |
-| `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits` |
+| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `minFill`, optional `expiresAt`, `decimals` |
+| `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits`, `decimals` |
 | `orderCancelled` | `TokenCancelOrder` | `tokenId`, `orderId`, `side` |
+
+The records keep an order's price scale: `decimals` is the token's when the order was placed, which
+priced every fill of it, so a closed order reads correctly after a later change of the token's
+decimals. A placement's record holds every term of the transition, so it proves the placement once
+the order has closed (filled entirely or cancelled).
 
 Each type is indexed by token and date, by signer, and by order (`byOrder`); `orderFilled` also by
 maker (`byMakerId`), so an identity can list the fills of its own orders. The upgrade to 15

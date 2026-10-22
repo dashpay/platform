@@ -253,6 +253,9 @@ impl TokenTransitionAction {
                 TokenOrderSide::Ask,
                 action.amount(),
                 action.price(),
+                action.min_fill(),
+                action.expires_at(),
+                action.decimals(),
             ),
             TokenTransitionAction::FillAskAction(action) => TokenEvent::OrderFilled(
                 action.order().id,
@@ -260,6 +263,7 @@ impl TokenTransitionAction {
                 action.order().maker_id,
                 action.fill_amount(),
                 action.credits(),
+                action.order().decimals,
             ),
             TokenTransitionAction::CancelOrderAction(action) => {
                 TokenEvent::OrderCancelled(action.order().id, action.order().side)
@@ -269,6 +273,9 @@ impl TokenTransitionAction {
                 TokenOrderSide::Bid,
                 action.amount(),
                 action.price(),
+                action.min_fill(),
+                action.expires_at(),
+                action.decimals(),
             ),
             TokenTransitionAction::FillBidAction(action) => TokenEvent::OrderFilled(
                 action.order().id,
@@ -276,6 +283,7 @@ impl TokenTransitionAction {
                 action.order().maker_id,
                 action.fill_amount(),
                 action.credits(),
+                action.order().decimals,
             ),
         }
     }
