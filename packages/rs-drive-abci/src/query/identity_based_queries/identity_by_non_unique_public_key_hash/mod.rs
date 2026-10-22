@@ -174,6 +174,50 @@ mod tests {
             }
         }
     }
+    /// Clients pick the wire format to accept from the signed version's handler generation,
+    /// while the handler builds its answer from the producer generation. If the two drifted
+    /// apart, that version would either fail every proved lookup or have its answers refused.
+    #[test]
+    fn should_select_one_nonunique_proof_generation_in_every_protocol_version() {
+        for platform_version in dpp::version::PLATFORM_VERSIONS {
+            let handler = platform_version
+                .drive_abci
+                .query
+                .identity_by_non_unique_public_key_hash_handler;
+            let producer = platform_version
+                .drive
+                .methods
+                .identity
+                .prove
+                .prove_full_identity_by_non_unique_public_key_hash;
+            let verifier = platform_version
+                .drive
+                .methods
+                .verify
+                .identity
+                .verify_full_identity_by_non_unique_public_key_hash;
+            assert_eq!(
+                (producer, verifier),
+                (handler, handler),
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+            // Deployed versions keep the format their nodes already answer with.
+            let deployed = match platform_version.protocol_version {
+                ..=13 => Some(0),
+                14 => Some(1),
+                _ => None,
+            };
+            if let Some(deployed) = deployed {
+                assert_eq!(
+                    handler, deployed,
+                    "protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
     #[test]
     fn should_reject_unknown_nonunique_handler_generation() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
