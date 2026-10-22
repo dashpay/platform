@@ -564,6 +564,47 @@ mod tests {
             assert_eq!(ask_trees(&drive), ask_trees(&only_replacement));
         }
 
+        /// The same two deletions through the converter that returns a batch instead of applying
+        /// it (`convert_drive_operations_to_grove_operations` 2, protocol version 15): applied,
+        /// its batch leaves the trees deleting the two in two batches leaves.
+        #[test]
+        fn should_remove_a_shared_tree_through_the_raw_converter() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            store(&drive, &contract, &ask(2, 0xA2));
+            let transaction = drive.grove.start_transaction();
+            let batch = drive
+                .convert_drive_operations_to_grove_operations(
+                    vec![delete(&contract, &[1]), delete(&contract, &[2])],
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the conversion");
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("expected the batch to apply");
+            drive
+                .commit_transaction(transaction, &platform_version.drive)
+                .expect("expected to commit");
+
+            let (separately, contract) = market();
+            store(&separately, &contract, &ask(1, 0xA1));
+            store(&separately, &contract, &ask(2, 0xA2));
+            apply(&separately, vec![delete(&contract, &[1])]);
+            apply(&separately, vec![delete(&contract, &[2])]);
+
+            let left = ask_trees(&drive);
+            assert_eq!(left, ask_trees(&separately));
+            assert!(
+                !left
+                    .iter()
+                    .any(|path| path.iter().any(|key| key.as_slice() == OWNER.as_slice())),
+                "no tree keyed by the owner stays"
+            );
+        }
+
         /// A deletion that empties a bucket and an insert into the same bucket in one batch: the
         /// insert cancels the removal, and the `ask` trees are those of the new ask alone.
         #[test]

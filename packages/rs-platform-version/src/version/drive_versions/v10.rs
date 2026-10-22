@@ -65,8 +65,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed in v10: each operation is built against the batch's earlier ones
             apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions keeping the deeper
-            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
