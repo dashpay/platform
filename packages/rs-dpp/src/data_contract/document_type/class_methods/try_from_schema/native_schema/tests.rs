@@ -1130,6 +1130,15 @@ fn should_report_where_and_which_rule_a_schema_breaks() {
     );
     assert_eq!(refusal.keyword(), "minimum");
 
+    let root = profile_root_with(|root| {
+        root["properties"]["meta"]["properties"]["a"]
+            .as_object_mut()
+            .map(|a| a.remove("position"));
+    });
+    let refusal = native_refusal(&root).expect("expected a refusal");
+    assert_eq!(refusal.instance_path(), "/properties/meta/properties/a");
+    assert_eq!(refusal.keyword(), "required");
+
     let root = profile_root_with(|root| root["properties"]["name"]["position"] = json!(null));
     let refusal = native_refusal(&root).expect("expected a refusal");
     assert_eq!(refusal.instance_path(), "/properties/name/position");

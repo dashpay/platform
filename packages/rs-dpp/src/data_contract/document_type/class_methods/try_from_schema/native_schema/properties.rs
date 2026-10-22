@@ -295,12 +295,20 @@ impl Checker<'_> {
         if json_type == Some(&json!("object")) {
             // Each member of an object's `properties` has a `position`
             if let Some(JsonValue::Object(properties)) = map.get("properties") {
-                for (name, member) in properties {
-                    self.at(name, |c| match member.as_object() {
-                        Some(member) => c.required(member, &["position"]),
-                        None => Err(c.fail("type", format!("{member} is not of type \"object\""))),
-                    })?;
-                }
+                self.at("properties", |c| {
+                    for (name, member) in properties {
+                        c.at(name, |c| match member.as_object() {
+                            Some(member) => c.required(member, &["position"]),
+                            None => Err(c.fail_with(
+                                "type",
+                                format!("{member} is not of type \"object\""),
+                                json!({ "type": "object" }),
+                                "",
+                            )),
+                        })?;
+                    }
+                    Ok(())
+                })?;
             }
         }
         // As the meta-schema's condition reads, an object is also a schema without `type`
