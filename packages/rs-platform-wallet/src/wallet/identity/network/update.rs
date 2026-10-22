@@ -291,9 +291,8 @@ impl IdentityWallet {
                     // a network re-fetch. The local wall-clock timestamp
                     // is a placeholder — the next Platform refresh
                     // reconciles it to the authoritative on-chain block
-                    // time. `disable_keys` reuses the same derivation
-                    // breadcrumb `add_key` carries, so the disabled key
-                    // keeps its private-key linkage.
+                    // time. The disable carries no breadcrumb; the
+                    // persisters keep the one a row holds.
                     let disabled_at = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis() as u64)
@@ -589,6 +588,32 @@ mod external_key_tests {
             .clone();
         assert_eq!(cached.public_keys().get(&3), Some(&key_3()));
         assert_eq!(cached.revision(), 2);
+    }
+
+    /// Disabling a key later gives it no breadcrumb either: an external key
+    /// added without one is not given its slot's path by the disable.
+    #[tokio::test]
+    async fn should_store_a_disabled_external_key_without_a_breadcrumb() {
+        let store = Arc::new(CapturingStore::default());
+        let (_manager, wallet, identity_id) = wallet_on(store.clone()).await;
+        wallet
+            .identity()
+            .apply_landed_update(&identity_id, Some(0), vec![key_3()], &[3], vec![])
+            .await
+            .unwrap();
+        wallet
+            .identity()
+            .apply_landed_update(&identity_id, Some(0), vec![], &[], vec![3])
+            .await
+            .unwrap();
+
+        let row = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert!(
+            row.public_key.disabled_at().is_some(),
+            "the disable was stored"
+        );
+        assert_eq!(row.wallet_id, None);
+        assert_eq!(breadcrumb_of(&row), None);
     }
 
     /// An added key the caller does not declare external keeps the

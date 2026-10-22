@@ -250,9 +250,6 @@ class IdentityUpdates internal constructor(
         require(disablePublicKeyIds.all { it >= 0 }) {
             "every disabled key id must be non-negative, got $disablePublicKeyIds"
         }
-        require(externalKeyIds.all { it >= 0 }) {
-            "every external key id must be non-negative, got $externalKeyIds"
-        }
         mapNativeErrors {
             updateNative.call(
                 walletHandle,

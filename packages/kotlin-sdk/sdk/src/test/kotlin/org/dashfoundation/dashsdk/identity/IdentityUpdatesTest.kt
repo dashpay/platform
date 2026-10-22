@@ -2,13 +2,12 @@ package org.dashfoundation.dashsdk.identity
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Wrapper-seam tests for [IdentityUpdates.update]: the external key ids reach
- * the native call as given, and a negative one is refused before it.
+ * the native call as given, a negative one included (the JNI marshaller
+ * refuses it).
  */
 class IdentityUpdatesTest {
 
@@ -64,23 +63,23 @@ class IdentityUpdatesTest {
     }
 
     @Test
-    fun `update refuses a negative external key id before the native call`() = runTest {
-        var called = false
+    fun `update leaves a negative external key id to the native marshaller`() = runTest {
+        var capturedExternal: IntArray? = null
         val updates = IdentityUpdates(
-            updateNative = UpdateIdentityNativeCall { _, _, _, _, _, _ -> called = true },
+            updateNative = UpdateIdentityNativeCall { _, _, _, _, _, external ->
+                capturedExternal = external.copyOf()
+            },
         )
 
-        val failure = runCatching {
-            updates.update(
-                walletHandle = 1,
-                identityId = ByteArray(32) { 5 },
-                addPublicKeys = listOf(browserKey),
-                signerHandle = 2,
-                externalKeyIds = listOf(-1),
-            )
-        }
+        updates.update(
+            walletHandle = 1,
+            identityId = ByteArray(32) { 5 },
+            addPublicKeys = listOf(browserKey),
+            signerHandle = 2,
+            externalKeyIds = listOf(-1),
+        )
 
-        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
-        assertFalse(called)
+        // The JNI marshaller refuses it (`key_ids_from_ints`), mapped to an SDK error.
+        assertArrayEquals(intArrayOf(-1), capturedExternal)
     }
 }
