@@ -24,9 +24,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - `contract_id`: Base58-encoded contract ID
 /// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
 ///   the same as NULL)
-/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption,
-///   2=Decryption, 3=Transfer). It is checked even when `identity_ids` is empty. The SDK asks for a
-///   repeated purpose once.
+/// - `purposes`: Comma-separated list of at least one key purpose, as dpp's `Purpose` numbers it:
+///   0 (authentication), 1 (encryption), 2 (decryption), 3 (transfer), 4 (system), 5 (voting),
+///   6 (owner). It is checked even when `identity_ids` is empty. A repeated purpose is asked for
+///   once.
 ///
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
@@ -44,15 +45,15 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///   or update registers several, the reference names the last one Drive queued.)
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
 ///
-/// Only authentication, encryption and decryption keys can be bound to a contract, so
-/// `"transfer"` is always `null`. A contract or document type that does not exist answers `null`
-/// too.
+/// Only authentication, encryption and decryption keys can be bound to a contract, so any other
+/// purpose (`"transfer"`, `"system"`, `"voting"`, `"owner"`) is always `null`. A contract or
+/// document type that does not exist answers `null` too.
 ///
 /// Every requested identity ID is a top-level key, in its Base58 form with any whitespace around it
-/// dropped, and every requested purpose
-/// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) is a key under it. A purpose
-/// the proof shows no current-key reference for is `null`. A missing identity or purpose is never
-/// a valid answer, so a caller can treat one as malformed:
+/// dropped, and every requested purpose (`"authentication"`, `"encryption"`, `"decryption"`,
+/// `"transfer"`, `"system"`, `"voting"`, `"owner"`) is a key under it. A purpose the proof shows no
+/// current-key reference for is `null`. A missing identity or purpose is never a valid answer, so
+/// a caller can treat one as malformed:
 ///
 /// ```json
 /// { "<identity id>": {
@@ -61,7 +62,8 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///     "decryption": null } }
 /// ```
 ///
-/// A failed or unprovable query returns an error, never an empty object.
+/// An ID, contract ID or purpose that does not parse is `InvalidParameter`. A failed or unprovable
+/// query returns an error, never an empty object.
 ///
 /// # Safety
 /// - `sdk_handle`, `identity_ids`, `contract_id`, and `purposes` must be valid, non-null pointers.
@@ -147,20 +149,21 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         }
     };
 
-    // Parse comma-separated purposes
-    let purposes: Result<Vec<RequestedPurpose>, DashSDKError> = purposes_str
+    // Parse comma-separated purposes: each one a number dpp reads as a `Purpose`
+    let purposes: Result<Vec<Purpose>, DashSDKError> = purposes_str
         .split(',')
         .map(str::trim)
         .map(|purpose_str| {
-            let number = purpose_str.parse::<u8>().ok();
-            PURPOSES
-                .iter()
-                .find(|(n, _, _)| Some(*n) == number)
-                .map(|(_, purpose, name)| (*purpose, *name))
-                .ok_or_else(|| DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid purpose: {}. Must be 0 (Authentication), 1 (Encryption), 2 (Decryption), or 3 (Transfer)", purpose_str),
-                ))
+            purpose_str
+                .parse::<u8>()
+                .map_err(|e| e.to_string())
+                .and_then(|number| Purpose::try_from(number).map_err(|e| e.to_string()))
+                .map_err(|reason| {
+                    DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Invalid purpose {purpose_str:?}: {reason}"),
+                    )
+                })
         })
         .collect();
 
@@ -174,7 +177,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
             identities_ids.clone(),
             contract_id,
             document_type_name,
-            purposes.iter().map(|(purpose, _)| *purpose).collect(),
+            purposes.clone(),
         )
         .map_err(FFIError::from)?;
         let keys = IdentitiesContractKeys::fetch(&wrapper.sdk, query)
@@ -200,16 +203,18 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     }
 }
 
-/// A purpose the caller asked for, with its name in the JSON answer.
-type RequestedPurpose = (Purpose, &'static str);
-
-/// The purposes this query takes: the number the caller passes, and the name it is answered under.
-const PURPOSES: [(u8, Purpose, &str); 4] = [
-    (0, Purpose::AUTHENTICATION, "authentication"),
-    (1, Purpose::ENCRYPTION, "encryption"),
-    (2, Purpose::DECRYPTION, "decryption"),
-    (3, Purpose::TRANSFER, "transfer"),
-];
+/// The name a purpose is answered under in the JSON.
+fn json_name(purpose: Purpose) -> &'static str {
+    match purpose {
+        Purpose::AUTHENTICATION => "authentication",
+        Purpose::ENCRYPTION => "encryption",
+        Purpose::DECRYPTION => "decryption",
+        Purpose::TRANSFER => "transfer",
+        Purpose::SYSTEM => "system",
+        Purpose::VOTING => "voting",
+        Purpose::OWNER => "owner",
+    }
+}
 
 /// The JSON answer for the requested identities and purposes. Every requested identity is a
 /// key, and every requested purpose is a key under it: `null` when the proof shows no current-key
@@ -217,14 +222,14 @@ const PURPOSES: [(u8, Purpose, &str); 4] = [
 /// requested are left out.
 fn contract_keys_json(
     identities_ids: &[Identifier],
-    purposes: &[RequestedPurpose],
+    purposes: &[Purpose],
     keys: Option<&IdentitiesContractKeys>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut json_obj = serde_json::Map::new();
     for identity_id in identities_ids {
         let keys_by_purpose = keys.and_then(|keys| keys.get(identity_id));
         let mut purpose_obj = serde_json::Map::new();
-        for (purpose, name) in purposes {
+        for purpose in purposes {
             let key = keys_by_purpose
                 .and_then(|keys_by_purpose| keys_by_purpose.get(purpose))
                 .and_then(Option::as_ref);
@@ -240,7 +245,7 @@ fn contract_keys_json(
                 }),
                 None => serde_json::Value::Null,
             };
-            purpose_obj.insert(name.to_string(), value);
+            purpose_obj.insert(json_name(*purpose).to_string(), value);
         }
         json_obj.insert(
             identity_id.to_string(Encoding::Base58),
@@ -291,11 +296,8 @@ mod tests {
         keys
     }
 
-    fn requested_purposes() -> Vec<RequestedPurpose> {
-        vec![
-            (Purpose::ENCRYPTION, "encryption"),
-            (Purpose::DECRYPTION, "decryption"),
-        ]
+    fn requested_purposes() -> Vec<Purpose> {
+        vec![Purpose::ENCRYPTION, Purpose::DECRYPTION]
     }
 
     fn query() -> IdentitiesContractKeysQuery {
@@ -422,7 +424,7 @@ mod tests {
     fn should_leave_out_keys_that_were_not_requested() {
         let json = serde_json::Value::Object(contract_keys_json(
             &[Identifier::new(IDENTITY_A)],
-            &[(Purpose::DECRYPTION, "decryption")],
+            &[Purpose::DECRYPTION],
             Some(&proved_keys()),
         ));
         assert_eq!(
@@ -432,7 +434,7 @@ mod tests {
         // Nor does an identity the proof carries but nobody asked for.
         let json = serde_json::Value::Object(contract_keys_json(
             &[Identifier::new(IDENTITY_B)],
-            &[(Purpose::ENCRYPTION, "encryption")],
+            &[Purpose::ENCRYPTION],
             Some(&proved_keys()),
         ));
         assert_eq!(
@@ -498,7 +500,7 @@ mod tests {
     #[test]
     fn should_refuse_a_purpose_it_does_not_take() {
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        for purposes in ["4", "1,x", ""] {
+        for purposes in ["7", "256", "-1", "1,x", "1,", ""] {
             let code = unsafe {
                 error_code_of(fetch_with(
                     handle,
@@ -515,6 +517,57 @@ mod tests {
             );
         }
         destroy_mock_sdk_handle(handle);
+    }
+
+    #[test]
+    fn should_take_every_purpose_dpp_takes() {
+        let all = vec![
+            Purpose::AUTHENTICATION,
+            Purpose::ENCRYPTION,
+            Purpose::DECRYPTION,
+            Purpose::TRANSFER,
+            Purpose::SYSTEM,
+            Purpose::VOTING,
+            Purpose::OWNER,
+        ];
+        let query = IdentitiesContractKeysQuery::new(
+            vec![Identifier::new(IDENTITY_A)],
+            Identifier::new(CONTRACT),
+            None,
+            all,
+        )
+        .expect("query");
+        let handle = create_mock_sdk_handle_answering(query, Some(proved_keys()));
+        let json = unsafe {
+            json_of(fetch_with(
+                handle,
+                &base58(IDENTITY_A),
+                CONTRACT,
+                None,
+                "0,1,2,3,4,5,6",
+            ))
+        };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+        let mut names: Vec<&str> = json[base58(IDENTITY_A)]
+            .as_object()
+            .expect("purposes of identity A")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            [
+                "authentication",
+                "decryption",
+                "encryption",
+                "owner",
+                "system",
+                "transfer",
+                "voting"
+            ]
+        );
     }
 
     #[test]

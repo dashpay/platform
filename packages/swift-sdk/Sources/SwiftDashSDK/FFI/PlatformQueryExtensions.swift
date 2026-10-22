@@ -257,9 +257,9 @@ extension SDK {
     /// response.
     ///
     /// Every requested identity id is a key of the result, and every requested purpose
-    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) a key under it, `NSNull`
-    /// when the proof shows no reference. A key's value holds `id`, `type`, `data` (hex),
-    /// `purpose`, `security_level`, `read_only` and `disabled_at`.
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
     ///
     /// What the reference holds depends on the storage requirement for the purpose of the
     /// contract, or of the document type for a key bound to one (as Drive writes it from protocol
@@ -271,14 +271,14 @@ extension SDK {
     /// to that contract or document type for the purpose: Platform refuses a second one later,
     /// also once the first is disabled (if one identity create or update registers several, the
     /// reference names the last one Drive queued). Under `Multiple` there is no
-    /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
-    /// bound to a contract) and for a contract or document type that does not exist. See
-    /// `dash_sdk_identities_fetch_contract_keys`.
+    /// reference, so the answer is always `NSNull`, as it is for `"transfer"`, `"system"`,
+    /// `"voting"` and `"owner"` (such keys cannot be bound to a contract) and for a contract or
+    /// document type that does not exist. See `dash_sdk_identities_fetch_contract_keys`.
     ///
-    /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
-    /// four, and an empty array throws, also when there are no identity ids. An empty
-    /// `documentType` is the same as `nil`. No identity ids answer an empty dictionary, without a
-    /// query.
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and an empty array or a number outside that range throws, also when there
+    /// are no identity ids. An empty `documentType` is the same as `nil`. No identity ids answer
+    /// an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -292,7 +292,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(
