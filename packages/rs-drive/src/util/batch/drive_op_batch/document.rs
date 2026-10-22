@@ -652,8 +652,11 @@ impl DocumentOperationType<'_> {
                 }
             }
             // A contested insert, a withdrawal and a document history entry: built as before,
-            // after the batch's earlier operations.
-            operation => {
+            // after the batch's earlier operations. Listed rather than matched with a wildcard,
+            // so a new operation type has to decide whether it is built against them.
+            operation @ (DocumentOperationType::AddContestedDocument { .. }
+            | DocumentOperationType::AddWithdrawalDocument { .. }
+            | DocumentOperationType::DocumentHistory { .. }) => {
                 let operations = operation.into_low_level_drive_operations_after_ttl_drain(
                     drive,
                     estimated_costs_only_with_layer_info,

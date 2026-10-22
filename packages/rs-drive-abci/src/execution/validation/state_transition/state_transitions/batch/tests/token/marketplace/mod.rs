@@ -2707,6 +2707,7 @@ mod frozen {
         /// A listing by the buyer at block time `time_ms`, and its order id.
         async fn buyer_lists(&mut self, amount: u64, time_ms: u64) -> Identifier {
             let platform_version = PlatformVersion::latest();
+            let decimals = self.token_decimals();
             let nonce = self.buyer.take_nonce();
             let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.buyer.id(), nonce);
             let place = BatchTransition::new_token_place_ask_transition(
@@ -2716,6 +2717,7 @@ mod frozen {
                 0,
                 amount,
                 PRICE,
+                decimals,
                 1,
                 None,
                 &self.buyer.key,
@@ -2921,6 +2923,50 @@ mod frozen {
         assert!(
             destroy_refund >= cancel_refunds,
             "the destroy refunds {destroy_refund}, the cancels {cancel_refunds}"
+        );
+    }
+
+    /// A listing partly sold before its maker is frozen: the destroy takes what is still in
+    /// escrow (`remaining`), not what was listed. 3,000 listed and 1,000 sold leave 2,000 in
+    /// escrow; with 5,000 in the balance the destroy lowers the supply by 7,000 and records
+    /// 7,000, and the seller keeps the 1,000 it bought.
+    #[tokio::test]
+    async fn should_destroy_what_is_left_of_a_partly_filled_listing() {
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(8_000).await;
+        let order_id = market.buyer_lists(3_000, 1).await;
+        let fill = market.seller_fills_ask(order_id, 1_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert_eq!(market.escrow(order_id), Some(2_000));
+        assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
+        let seller_balance = market
+            .token_balance(market.seller.id())
+            .expect("expected the seller's balance");
+        let supply = market.supply();
+        market.freeze_buyer().await;
+
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(0));
+        assert_eq!(market.escrow(order_id), None);
+        assert_eq!(market.listing(order_id), None, "the listing is deleted");
+        assert_eq!(market.supply(), supply - 7_000);
+        assert_eq!(
+            market.token_balance(market.seller.id()),
+            Some(seller_balance),
+            "the seller keeps what it bought"
+        );
+        market.assert_supply_balanced();
+
+        let destroyed = market.history("destroyFrozenFunds");
+        assert_eq!(destroyed.len(), 1);
+        assert_eq!(
+            destroyed[0]
+                .properties()
+                .get("destroyedAmount")
+                .and_then(|amount| amount.to_integer::<u64>().ok()),
+            Some(7_000),
+            "the record counts the balance and what is left in escrow"
         );
     }
 
