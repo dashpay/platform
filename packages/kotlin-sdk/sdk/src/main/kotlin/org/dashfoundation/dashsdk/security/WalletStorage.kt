@@ -6,7 +6,6 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.UserNotAuthenticatedException
 import android.util.Log
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -1368,52 +1367,26 @@ class WalletStorage(
     private suspend fun deletePrivateKeysLocked(pubkeyHexes: Collection<String>) {
         if (pubkeyHexes.isEmpty()) return
         val normalized = pubkeyHexes.map { it.lowercase() }.toSet()
-        store.edit { prefs -> removePrivateKeyEntries(prefs, normalized) }
-    }
-
-    /**
-     * Delete [pubkeyHex]'s private key only while its stored blob is still
-     * [expectedBlob] (from [storedPrivateKeyBlob]), comparing and deleting in
-     * one DataStore edit under one [privateKeyMutex] hold, so a repair or
-     * add-key store that replaced the blob after the caller judged it is
-     * never deleted. Returns whether it deleted.
-     */
-    suspend fun deletePrivateKeyIfUnchanged(pubkeyHex: String, expectedBlob: String): Boolean =
-        privateKeyMutex.withLock {
-            val normalized = pubkeyHex.lowercase()
-            var deleted = false
-            store.edit { prefs ->
-                if (prefs[privateKeyKey(normalized)] == expectedBlob) {
-                    removePrivateKeyEntries(prefs, setOf(normalized))
-                    deleted = true
-                }
+        store.edit { prefs ->
+            for (pubkeyHex in normalized) {
+                prefs.remove(privateKeyKey(pubkeyHex))
+                prefs.remove(privateKeyFingerprintKey(pubkeyHex))
+                prefs.remove(privateKeyAliasKey(pubkeyHex))
             }
-            deleted
-        }
-
-    /** The encoded blob stored for [pubkeyHex], or null when none is. */
-    suspend fun storedPrivateKeyBlob(pubkeyHex: String): String? =
-        store.data.first()[privateKeyKey(pubkeyHex.lowercase())]
-
-    private fun removePrivateKeyEntries(prefs: MutablePreferences, normalized: Set<String>) {
-        for (pubkeyHex in normalized) {
-            prefs.remove(privateKeyKey(pubkeyHex))
-            prefs.remove(privateKeyFingerprintKey(pubkeyHex))
-            prefs.remove(privateKeyAliasKey(pubkeyHex))
-        }
-        // Keep every owner index accurate in the same atomic commit:
-        // a deleted alias must leave all wallets' index sets, or a
-        // later wallet deletion would "discover" a ghost.
-        prefs.asMap().keys
-            .filter { it.name.startsWith(PRIVKEY_OWNERS_PREFIX) }
-            .forEach { prefKey ->
-                val setKey = stringSetPreferencesKey(prefKey.name)
-                val current = prefs[setKey] ?: return@forEach
-                val next = current - normalized
-                if (next.size != current.size) {
-                    if (next.isEmpty()) prefs.remove(setKey) else prefs[setKey] = next
+            // Keep every owner index accurate in the same atomic commit:
+            // a deleted alias must leave all wallets' index sets, or a
+            // later wallet deletion would "discover" a ghost.
+            prefs.asMap().keys
+                .filter { it.name.startsWith(PRIVKEY_OWNERS_PREFIX) }
+                .forEach { prefKey ->
+                    val setKey = stringSetPreferencesKey(prefKey.name)
+                    val current = prefs[setKey] ?: return@forEach
+                    val next = current - normalized
+                    if (next.size != current.size) {
+                        if (next.isEmpty()) prefs.remove(setKey) else prefs[setKey] = next
+                    }
                 }
-            }
+        }
     }
 
     suspend fun hasPrivateKey(pubkeyHex: String): Boolean =

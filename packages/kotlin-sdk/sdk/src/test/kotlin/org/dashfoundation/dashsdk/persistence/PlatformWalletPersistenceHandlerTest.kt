@@ -90,16 +90,12 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     /** A handler over [db] wired to the test decoder — also the suite's "restart" idiom. */
-    private fun newHandler(
-        deriver: PrivateKeyDeriver? = null,
-        isPrivateKeyUsable: suspend (pubkeyHex: String) -> Boolean = { false },
-    ): PlatformWalletPersistenceHandler =
+    private fun newHandler(deriver: PrivateKeyDeriver? = null): PlatformWalletPersistenceHandler =
         PlatformWalletPersistenceHandler(
             db,
             Dispatchers.Unconfined,
             deriver,
             storedTransactionInputs = storedInputs,
-            isPrivateKeyUsable = isPrivateKeyUsable,
         )
 
     /**
@@ -1589,8 +1585,8 @@ class PlatformWalletPersistenceHandlerTest {
         // known; the stored row's owner has since been cleared (the shape a
         // pre-schema-16 row has). That owner's rejection of the entry's own
         // slot cancels the live entry, but the row with no recorded owner
-        // keeps its breadcrumb, so the repair stays open with its owner
-        // unknown: the same entry a restart rebuilds from the row.
+        // keeps its breadcrumb, so a restart rebuilds the repair with its
+        // owner unknown, and that entry no rejection cancels.
         handler = newHandler(ThrowingDeriver())
         val identityId = ByteArray(32) { 22 }
         seedIdentity(identityId)
@@ -1602,22 +1598,18 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(handler.pendingIdentityKeys.value[pubkey.toHex()]!!.ownerKnown)
 
         rejectIdentityKey(pubkey, identityId)
-        val kept = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
-        assertFalse(kept.ownerKnown)
-        assertEquals(walletId.toHex(), kept.walletIdHex)
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
         assertEquals(5, dao.getByIdentityAndKeyId(identityId.toBase58String(), 0)!!.derivationKeyIndex)
+
+        handler = newHandler(ThrowingDeriver())
+        handler.reconstructPendingIdentityKeysFromPersistence(isPrivateKeyDecryptable = { false })
+        val rebuilt = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
+        assertFalse(rebuilt.ownerKnown)
+        assertEquals(walletId.toHex(), rebuilt.walletIdHex)
 
         // Now unknown, the owner's rejection no longer cancels it.
         rejectIdentityKey(pubkey, identityId)
-        assertEquals(kept, handler.pendingIdentityKeys.value[pubkey.toHex()])
-
-        val restarted = newHandler()
-        restarted.reconstructPendingIdentityKeysFromPersistence(
-            isPrivateKeyDecryptable = { false },
-            nowMs = kept.failedAtMs,
-            reason = kept.reason,
-        )
-        assertEquals(kept, restarted.pendingIdentityKeys.value[pubkey.toHex()])
+        assertEquals(rebuilt, handler.pendingIdentityKeys.value[pubkey.toHex()])
     }
 
     /** Seed the wallet + identity rows a public-key row FKs onto, under [wallet]. */
@@ -1740,11 +1732,11 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aCancelledRepairPassesToAnotherRowOfTheSamePublicKey() = runTest {
+    fun aCancelledRepairIsRemovedAndARestartRebuildsAnotherRowOfTheSameKey() = runTest {
         // Same two scopes, but the pending map holds X's repair. A's rejection
-        // of (3, 5) cancels X's repair; Y's row is still an unresolved
-        // derivation of the key, so the repair passes to it instead of
-        // vanishing until the next restart. A rolled-back round does neither.
+        // of (3, 5) cancels X's repair and nothing more (a rolled-back round
+        // not even that). Y's row still owes a derivation of the key; the
+        // live map does not pick it up, but the next restart rebuilds it.
         handler = newHandler(ThrowingDeriver())
         val walletA = walletId
         val walletB = ByteArray(32) { 8 }
@@ -1762,39 +1754,25 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(held, handler.pendingIdentityKeys.value[pubkey.toHex()])
 
         rejectIdentityKey(pubkey, identityX, from = walletA)
-        val passed = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
-        assertEquals(walletB.toHex(), passed.walletIdHex)
-        assertEquals(identityY.toBase58String(), passed.identityIdBase58)
-        assertEquals(2, passed.identityIndex)
-        assertEquals(9, passed.keyIndex)
-        assertTrue(passed.ownerKnown)
-        assertEquals(held.reason, passed.reason)
-
-        // B's rejection of Y's own slot then cancels the last repair.
-        rejectIdentityKey(pubkey, identityY, from = walletB, slot = intArrayOf(2, 9))
         assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler = newHandler(ThrowingDeriver())
+        handler.reconstructPendingIdentityKeysFromPersistence(isPrivateKeyDecryptable = { false })
+        val rebuilt = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
+        assertEquals(identityY.toBase58String(), rebuilt.identityIdBase58)
+        assertEquals(walletB.toHex(), rebuilt.walletIdHex)
+        assertEquals(2, rebuilt.identityIndex)
+        assertEquals(9, rebuilt.keyIndex)
     }
 
     /**
-     * A keystore stand-in for the hand-off and refuted-scalar tests: one
-     * scalar per public key (the shared `privkey.<hex>` alias), persist-time
-     * stores that fail while [failStores] is set, force repairs that record
-     * their slot, and a verdict on stored scalars scripted by [wrongScalars]
-     * (a wrong scalar is deleted as it is judged, unless [failDelete]).
+     * A keystore stand-in: one scalar per public key (the shared
+     * `privkey.<hex>` alias), and persist-time stores that fail while
+     * [failStores] is set.
      */
     private class ScriptedDeriver : PrivateKeyDeriver {
         var failStores = true
         val stored = mutableSetOf<String>()
-        val forceCalls = mutableListOf<Triple<String, Int, Int>>()
-
-        /** When set, a force repair at any other (wallet hex, slot) derives another key and throws. */
-        var reproducingSlot: Triple<String, Int, Int>? = null
-
-        /** Keys whose stored scalar is the refuted slot's and does not reproduce them. */
-        val wrongScalars = mutableSetOf<String>()
-        val verdicts = mutableListOf<Triple<String, Int, Int>>()
-        var verdictThrows = false
-        val deleted = mutableListOf<String>()
 
         override fun deriveAndStore(
             walletId: ByteArray,
@@ -1805,20 +1783,7 @@ class PlatformWalletPersistenceHandlerTest {
             force: Boolean,
         ): DerivedKeyStoreResult? {
             val hex = publicKeyData.toHex()
-            if (force) {
-                val slot = Triple(walletId.toHex(), identityIndex, keyIndex)
-                forceCalls += slot
-                reproducingSlot?.let { expected ->
-                    if (slot != expected) {
-                        throw org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException(
-                            "slot $slot does not derive $hex",
-                        )
-                    }
-                }
-                stored += hex
-                return DerivedKeyStoreResult("privkey.$hex", wasNewlyCreated = true)
-            }
-            if (failStores) return null
+            if (failStores && !force) return null
             return DerivedKeyStoreResult("privkey.$hex", wasNewlyCreated = stored.add(hex))
         }
 
@@ -1826,69 +1791,16 @@ class PlatformWalletPersistenceHandlerTest {
             pubkeyHexes: Collection<String>,
             excludingWalletId: ByteArray,
         ): Set<String> = emptySet()
-
-        var failDelete = false
-
-        override fun discardStoredKeyRefutedBy(
-            walletId: ByteArray,
-            publicKeyData: ByteArray,
-            identityIndex: Int,
-            keyIndex: Int,
-            keyType: Int,
-        ): StoredKeyVerdict {
-            val hex = publicKeyData.toHex()
-            verdicts += Triple(walletId.toHex(), identityIndex, keyIndex)
-            if (verdictThrows) throw IllegalStateException("authentication window closed")
-            return when {
-                hex !in stored -> StoredKeyVerdict.ABSENT
-                hex !in wrongScalars -> StoredKeyVerdict.KEPT
-                failDelete -> throw IllegalStateException("simulated DataStore edit failure")
-                else -> {
-                    deleted += hex
-                    stored -= hex
-                    StoredKeyVerdict.DISCARDED
-                }
-            }
-        }
     }
-
-    /** A handler over [deriver] whose usability probe is [deriver]'s store. */
-    private fun scriptedHandler(deriver: ScriptedDeriver): PlatformWalletPersistenceHandler =
-        newHandler(deriver, isPrivateKeyUsable = { it in deriver.stored })
 
     /** What a restart over [deriver]'s store rebuilds for [pubkey]. */
-    private suspend fun rebuiltAfterRestart(deriver: ScriptedDeriver, pubkey: ByteArray): PlatformWalletPersistenceHandler.PendingIdentityKey? {
-        val restarted = scriptedHandler(deriver)
-        restarted.reconstructPendingIdentityKeysFromPersistence()
+    private suspend fun rebuiltAfterRestart(
+        deriver: ScriptedDeriver,
+        pubkey: ByteArray,
+    ): PlatformWalletPersistenceHandler.PendingIdentityKey? {
+        val restarted = newHandler(deriver)
+        restarted.reconstructPendingIdentityKeysFromPersistence(isPrivateKeyDecryptable = { it in deriver.stored })
         return restarted.pendingIdentityKeys.value[pubkey.toHex()]
-    }
-
-    @Test
-    fun aCancelledRepairPassesToNoRowWhoseScalarIsUsable() = runTest {
-        // Row Y holds a usable scalar of the key; row X's derive failed, so
-        // the map holds X's repair. A's rejection of X's slot cancels it, and
-        // Y owes no repair: the restart rebuild skips a usable row, and so
-        // does the hand-off, which leaves no entry.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletA = walletId
-        val walletB = ByteArray(32) { 9 }
-        val identityX = ByteArray(32) { 29 }
-        val identityY = ByteArray(32) { 30 }
-        val pubkey = ByteArray(33) { 29 }
-        seedIdentityUnder(walletA, identityX)
-        seedIdentityUnder(walletB, identityY)
-        deriver.failStores = false
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        deriver.failStores = true
-        upsertKeyAt(walletA, identityX, pubkey, 3, 5)
-        val dao = db.publicKeyDao()
-        assertNotNull(dao.getByIdentityAndKeyId(identityY.toBase58String(), 0)!!.privateKeyKeychainIdentifier)
-        assertEquals(identityX.toBase58String(), handler.pendingIdentityKeys.value[pubkey.toHex()]!!.identityIdBase58)
-
-        rejectIdentityKey(pubkey, identityX, from = walletA)
-        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
-        assertNull(rebuiltAfterRestart(deriver, pubkey))
     }
 
     @Test
@@ -1898,7 +1810,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Y's repair. A rejection persisted for X's row refutes X's row, not
         // the repair Y owes at the same coordinates.
         val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
+        handler = newHandler(deriver)
         val walletA = walletId
         val walletB = ByteArray(32) { 10 }
         val identityX = ByteArray(32) { 31 }
@@ -1920,337 +1832,42 @@ class PlatformWalletPersistenceHandlerTest {
         assertNull(dao.getByIdentityAndKeyId(identityX.toBase58String(), 0)!!.derivationKeyIndex)
         assertEquals(5, dao.getByIdentityAndKeyId(identityY.toBase58String(), 0)!!.derivationKeyIndex)
 
-        // Y's own rejection cancels it, and the repair passes to Z.
+        // Y's own rejection cancels it.
         rejectIdentityKey(pubkey, identityY, from = walletA)
-        val passed = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
-        assertEquals(identityZ.toBase58String(), passed.identityIdBase58)
-        assertEquals(rebuiltAfterRestart(deriver, pubkey)!!.copy(reason = passed.reason, failedAtMs = passed.failedAtMs), passed)
-    }
-
-    @Test
-    fun aRepairDerivesAtTheRowItsPendingEntryNames() = runTest {
-        // Rows X (3, 5) under A and Y (2, 9) under B; the map holds Y's
-        // repair. X is the first row with breadcrumbs, but the repair under
-        // B derives at Y's slot, the one its entry names.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletA = walletId
-        val walletB = ByteArray(32) { 11 }
-        val identityX = ByteArray(32) { 34 }
-        val identityY = ByteArray(32) { 35 }
-        val pubkey = ByteArray(33) { 34 }
-        seedIdentityUnder(walletA, identityX)
-        seedIdentityUnder(walletB, identityY)
-        upsertKeyAt(walletA, identityX, pubkey, 3, 5)
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        assertEquals(identityY.toBase58String(), handler.pendingIdentityKeys.value[pubkey.toHex()]!!.identityIdBase58)
-
-        handler.repairIdentityKeyDurably(walletB, pubkey, verifyRecoverable = { true })
-        assertEquals(listOf(Triple(walletB.toHex(), 2, 9)), deriver.forceCalls)
         assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
     }
-
-    @Test
-    fun aRepairDerivesAtTheLegacyRowARebuiltEntryNames() = runTest {
-        // X (wallet A, (3, 5)) is the first row of the key and holds a usable
-        // scalar. Y's row was written before schema 16 (no recorded owner),
-        // so the restart rebuild files Y's repair under its identity's wallet
-        // B with the owner unknown. A repair under B derives at Y's slot, the
-        // one the entry names; no row records B as its owner, so without the
-        // entry it would derive X's slot under B's seed, which does not
-        // reproduce the key.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletA = walletId
-        val walletB = ByteArray(32) { 18 }
-        val identityX = ByteArray(32) { 55 }
-        val identityY = ByteArray(32) { 56 }
-        val pubkey = ByteArray(33) { 55 }
-        seedIdentityUnder(walletA, identityX)
-        seedIdentityUnder(walletB, identityY)
-        deriver.failStores = false
-        upsertKeyAt(walletA, identityX, pubkey, 3, 5)
-        deriver.failStores = true
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        val dao = db.publicKeyDao()
-        val legacy = dao.getByIdentityAndKeyId(identityY.toBase58String(), 0)!!
-        dao.update(legacy.copy(derivationWalletId = null))
-
-        handler = scriptedHandler(deriver)
-        handler.reconstructPendingIdentityKeysFromPersistence()
-        val rebuilt = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
-        assertEquals(identityY.toBase58String(), rebuilt.identityIdBase58)
-        assertEquals(walletB.toHex(), rebuilt.walletIdHex)
-        assertFalse(rebuilt.ownerKnown)
-
-        deriver.reproducingSlot = Triple(walletB.toHex(), 2, 9)
-        assertEquals(
-            "privkey.${pubkey.toHex()}",
-            handler.repairIdentityKeyDurably(walletB, pubkey, verifyRecoverable = { true }),
-        )
-        assertEquals(listOf(Triple(walletB.toHex(), 2, 9)), deriver.forceCalls)
-        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
-    }
-
-    @Test
-    fun aRepairUnderAnotherWalletDerivesAtTheRowThatWalletDerived() = runTest {
-        // The map holds Y's repair, filed under B, but the host repairs under
-        // A (the wallet whose key-health view is open): the repair derives at
-        // X's slot, the one A derived, not at Y's slot under A's seed.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletA = walletId
-        val walletB = ByteArray(32) { 16 }
-        val identityX = ByteArray(32) { 51 }
-        val identityY = ByteArray(32) { 52 }
-        val pubkey = ByteArray(33) { 51 }
-        seedIdentityUnder(walletA, identityX)
-        seedIdentityUnder(walletB, identityY)
-        upsertKeyAt(walletA, identityX, pubkey, 3, 5)
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        assertEquals(walletB.toHex(), handler.pendingIdentityKeys.value[pubkey.toHex()]!!.walletIdHex)
-
-        assertEquals(
-            "privkey.${pubkey.toHex()}",
-            handler.repairIdentityKeyDurably(walletA, pubkey, verifyRecoverable = { true }),
-        )
-        assertEquals(listOf(Triple(walletA.toHex(), 3, 5)), deriver.forceCalls)
-    }
-
-    @Test
-    fun aRepairWithNoPendingEntryDerivesAtTheRowItsWalletDerived() = runTest {
-        // No repair is pending; X (under A) is the first row with breadcrumbs,
-        // but a repair under B derives at Y's slot, the one B derived.
-        val deriver = ScriptedDeriver()
-        deriver.failStores = false
-        handler = scriptedHandler(deriver)
-        val walletB = ByteArray(32) { 17 }
-        val identityX = ByteArray(32) { 53 }
-        val identityY = ByteArray(32) { 54 }
-        val pubkey = ByteArray(33) { 53 }
-        seedIdentityUnder(walletId, identityX)
-        seedIdentityUnder(walletB, identityY)
-        upsertKeyAt(walletId, identityX, pubkey, 3, 5)
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-
-        handler.repairIdentityKeyDurably(walletB, pubkey, verifyRecoverable = { true })
-        assertEquals(listOf(Triple(walletB.toHex(), 2, 9)), deriver.forceCalls)
-    }
-
-    /** Rows X (wallet A, (3, 5)) and Y (wallet B, (2, 9)) of one key whose stored scalar is the one at X's slot. */
-    private suspend fun seedTwoRowsSharingAWrongScalar(
-        deriver: ScriptedDeriver,
-        walletB: ByteArray,
-        identityX: ByteArray,
-        identityY: ByteArray,
-        pubkey: ByteArray,
-    ) {
-        seedIdentityUnder(walletId, identityX)
-        seedIdentityUnder(walletB, identityY)
-        deriver.failStores = false
-        upsertKeyAt(walletId, identityX, pubkey, 3, 5)
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        deriver.wrongScalars += pubkey.toHex()
-    }
-
-    private suspend fun identifiersOf(vararg identities: ByteArray): List<String?> =
-        identities.map {
-            db.publicKeyDao().getByIdentityAndKeyId(it.toBase58String(), 0)!!.privateKeyKeychainIdentifier
-        }
 
     private suspend fun keyIndexOf(identityId: ByteArray): Int? =
         db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!.derivationKeyIndex
 
     @Test
-    fun aRejectionDeletesAStoredScalarThatDoesNotReproduceTheKey() = runTest {
-        // An older SDK guessed (3, 5) for an external key and the persist-time
-        // store kept the scalar derived there; row Y of the key shares the
-        // alias. Rust's rejection of (3, 5) refutes the breadcrumb, and the
-        // stored scalar is the slot's, which does not reproduce the key: it is
-        // deleted, no row names it, and Y's breadcrumb owes the repair, as a
-        // restart rebuilds it.
+    fun aRejectionClearsTheBreadcrumbAndLeavesTheStoredScalar() = runTest {
+        // The rejection is applied as Rust sent it: the owner's breadcrumb at
+        // the refuted slot goes. Whatever scalar is stored for the key stays
+        // (a repair or a re-derive replaces it), and with it the identifier.
         val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletB = ByteArray(32) { 12 }
-        val identityX = ByteArray(32) { 36 }
-        val identityY = ByteArray(32) { 37 }
-        val pubkey = ByteArray(33) { 36 }
-        val hex = pubkey.toHex()
-        seedTwoRowsSharingAWrongScalar(deriver, walletB, identityX, identityY, pubkey)
-        assertEquals(listOf("privkey.$hex", "privkey.$hex"), identifiersOf(identityX, identityY))
-        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-
-        // A rolled-back round never reaches the check.
-        rejectIdentityKey(pubkey, identityX, round = false)
-        assertTrue(deriver.deleted.isEmpty())
-        assertEquals(listOf("privkey.$hex", "privkey.$hex"), identifiersOf(identityX, identityY))
-
-        rejectIdentityKey(pubkey, identityX)
-        assertEquals(listOf(Triple(walletId.toHex(), 3, 5)), deriver.verdicts)
-        assertEquals(listOf(hex), deriver.deleted)
-        assertEquals(listOf<String?>(null, null), identifiersOf(identityX, identityY))
-        assertNull(keyIndexOf(identityX))
-        val seeded = handler.pendingIdentityKeys.value[hex]!!
-        assertEquals(identityY.toBase58String(), seeded.identityIdBase58)
-        assertEquals(PlatformWalletPersistenceHandler.REFUTED_SCALAR_REASON, seeded.reason)
-        assertEquals(
-            rebuiltAfterRestart(deriver, pubkey)!!.copy(reason = seeded.reason, failedAtMs = seeded.failedAtMs),
-            seeded,
-        )
-    }
-
-    @Test
-    fun aRejectionWhoseCommitFailsAfterTheDeleteIsSettledByTheNextOne() = runTest {
-        // The wrong scalar is deleted as it is judged, inside the round's
-        // transaction; a later row's foreign key then fails the commit. The
-        // delete stands (the scalar was wrong whatever Room does), the rows
-        // keep their breadcrumb, and the next rejection finds nothing stored
-        // and applies.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletB = ByteArray(32) { 14 }
-        val identityX = ByteArray(32) { 46 }
-        val identityY = ByteArray(32) { 47 }
-        val pubkey = ByteArray(33) { 46 }
-        val hex = pubkey.toHex()
-        seedTwoRowsSharingAWrongScalar(deriver, walletB, identityX, identityY, pubkey)
-
-        handler.onChangesetBegin(walletId)
-        handler.onPersistIdentityKeyUpsert(
-            walletId, identityX, 0, 0, 0, 0, false, false, 0,
-            pubkey, ByteArray(20), false, ByteArray(32),
-            false, 0, 0, 0, ByteArray(32), null,
-            rejectedDerivations = intArrayOf(3, 5),
-        )
-        handler.onPersistIdentityKeyUpsert(
-            walletId, ByteArray(32) { 99 }, 0, 0, 0, 0, false, false, 0,
-            ByteArray(33) { 99 }, ByteArray(20), false, ByteArray(32),
-            false, 0, 0, 0, ByteArray(32), null,
-        )
-        assertTrue("not before the round ends", deriver.deleted.isEmpty())
-        assertEquals(1, handler.onChangesetEnd(walletId, success = true))
-        assertEquals(listOf(hex), deriver.deleted)
-        assertEquals(5, keyIndexOf(identityX))
-        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-
-        rejectIdentityKey(pubkey, identityX)
-        assertEquals(listOf(hex), deriver.deleted)
-        assertNull(keyIndexOf(identityX))
-        assertEquals(listOf<String?>(null, null), identifiersOf(identityX, identityY))
-        val seeded = handler.pendingIdentityKeys.value[hex]!!
-        assertEquals(identityY.toBase58String(), seeded.identityIdBase58)
-        assertEquals(
-            rebuiltAfterRestart(deriver, pubkey)!!.copy(reason = seeded.reason, failedAtMs = seeded.failedAtMs),
-            seeded,
-        )
-    }
-
-    @Test
-    fun aRejectionWhoseScalarDeleteFailsIsNotApplied() = runTest {
-        // Y stored the key's scalar; X's own derive failed, so the map holds
-        // X's repair. The scalar is the one at X's refuted slot, but deleting
-        // it fails: the rejection is not applied, so X keeps its breadcrumb and
-        // repair, Y its identifier, and the next rejection retries.
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val walletB = ByteArray(32) { 15 }
-        val identityX = ByteArray(32) { 48 }
-        val identityY = ByteArray(32) { 49 }
-        val pubkey = ByteArray(33) { 48 }
-        val hex = pubkey.toHex()
-        seedIdentityUnder(walletId, identityX)
-        seedIdentityUnder(walletB, identityY)
         deriver.failStores = false
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        deriver.failStores = true
-        upsertKeyAt(walletId, identityX, pubkey, 3, 5)
-        val held = handler.pendingIdentityKeys.value[hex]!!
-        assertEquals(identityX.toBase58String(), held.identityIdBase58)
-        deriver.wrongScalars += hex
-        deriver.failDelete = true
-
-        rejectIdentityKey(pubkey, identityX)
-        rejectIdentityKey(pubkey, identityX, round = null)
-        assertTrue(deriver.deleted.isEmpty())
-        assertEquals(5, keyIndexOf(identityX))
-        assertEquals(listOf(null, "privkey.$hex"), identifiersOf(identityX, identityY))
-        assertEquals(held, handler.pendingIdentityKeys.value[hex])
-
-        deriver.failDelete = false
-        rejectIdentityKey(pubkey, identityX)
-        assertEquals(listOf(hex), deriver.deleted)
-        assertNull(keyIndexOf(identityX))
-        assertEquals(listOf<String?>(null, null), identifiersOf(identityX, identityY))
-        val passed = handler.pendingIdentityKeys.value[hex]!!
-        assertEquals(identityY.toBase58String(), passed.identityIdBase58)
-        assertEquals(held.reason, passed.reason)
-        assertEquals(
-            rebuiltAfterRestart(deriver, pubkey)!!.copy(reason = passed.reason, failedAtMs = passed.failedAtMs),
-            passed,
-        )
-    }
-
-    @Test
-    fun aRejectionKeepsAStoredScalarThatReproducesTheKeyOrCannotBeChecked() = runTest {
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
+        handler = newHandler(deriver)
         val identityId = ByteArray(32) { 38 }
         val pubkey = ByteArray(33) { 38 }
-        val hex = pubkey.toHex()
         seedIdentityUnder(walletId, identityId)
-        deriver.failStores = false
         upsertKeyAt(walletId, identityId, pubkey, 3, 5)
 
-        // The check cannot be settled (no seed, closed authentication
-        // window): the rejection is not applied, so the breadcrumb stays for
-        // a later rejection to check again.
-        deriver.verdictThrows = true
-        deriver.wrongScalars += hex
         rejectIdentityKey(pubkey, identityId, round = null)
-        rejectIdentityKey(pubkey, identityId)
-        assertEquals(5, keyIndexOf(identityId))
-        assertEquals(listOf<String?>("privkey.$hex"), identifiersOf(identityId))
-        assertTrue(deriver.deleted.isEmpty())
-
-        // A scalar that reproduces the key stays; the breadcrumb goes.
-        deriver.verdictThrows = false
-        deriver.wrongScalars.clear()
-        rejectIdentityKey(pubkey, identityId, round = null)
-        assertNull(keyIndexOf(identityId))
-        assertEquals(listOf<String?>("privkey.$hex"), identifiersOf(identityId))
-        assertTrue(deriver.deleted.isEmpty())
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(row.derivationKeyIndex)
+        assertNull(row.derivationWalletId)
+        assertEquals("privkey.${pubkey.toHex()}", row.privateKeyKeychainIdentifier)
         assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-    }
-
-    @Test
-    fun aStandaloneRejectionDeletesAWrongScalar() = runTest {
-        val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
-        val identityId = ByteArray(32) { 39 }
-        val pubkey = ByteArray(33) { 39 }
-        seedIdentityUnder(walletId, identityId)
-        deriver.failStores = false
-        upsertKeyAt(walletId, identityId, pubkey, 3, 5)
-        deriver.wrongScalars += pubkey.toHex()
-
-        rejectIdentityKey(pubkey, identityId, round = null)
-        assertEquals(listOf(pubkey.toHex()), deriver.deleted)
-        assertEquals(listOf<String?>(null), identifiersOf(identityId))
-        // The only row lost its breadcrumb, so no repair is owed.
-        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-        assertNull(rebuiltAfterRestart(deriver, pubkey))
     }
 
     @Test
     fun aRepairRecordedAndRejectedInOneRoundIsCancelled() = runTest {
-        // One round records X's failed derive and then rejects X's slot. The
-        // key's scalar (stored by another path) is not the slot's, so it
-        // stays, and only the staged record shows the repair the rejection
-        // cancels: once the round commits, no repair is left, as a restart
-        // rebuilds none.
+        // One round records X's failed derive and then rejects X's slot: the
+        // cancel applies after the record it follows, so once the round
+        // commits no repair is left, as a restart rebuilds none.
         val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
+        handler = newHandler(deriver)
         val identityId = ByteArray(32) { 50 }
         val pubkey = ByteArray(33) { 50 }
         seedIdentityUnder(walletId, identityId)
@@ -2275,38 +1892,12 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aRejectionWithNoRepairToCancelReadsNoOtherRow() = runTest {
-        // No entry for the key and no scalar to discard: the rejection
-        // changes no pending state, so it does not scan the key's rows (the
-        // usability probe would run for row Y's identifier).
-        val deriver = ScriptedDeriver()
-        var probes = 0
-        handler = newHandler(deriver, isPrivateKeyUsable = { probes++; it in deriver.stored })
-        val walletA = walletId
-        val walletB = ByteArray(32) { 13 }
-        val identityX = ByteArray(32) { 40 }
-        val identityY = ByteArray(32) { 41 }
-        val pubkey = ByteArray(33) { 40 }
-        seedIdentityUnder(walletA, identityX)
-        seedIdentityUnder(walletB, identityY)
-        deriver.failStores = false
-        upsertKeyAt(walletA, identityX, pubkey, 3, 5)
-        upsertKeyAt(walletB, identityY, pubkey, 2, 9)
-        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
-
-        rejectIdentityKey(pubkey, identityX, from = walletA)
-        rejectIdentityKey(pubkey, identityX, from = walletA, round = null)
-        assertEquals(0, probes)
-        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityX.toBase58String(), 0)!!.derivationKeyIndex)
-    }
-
-    @Test
     fun aStandaloneUpsertWhoseWriteFailsLeavesThePendingMapUnchanged() = runTest {
         // The identity row is missing, so the row's foreign key fails the
         // standalone write. Neither the recorded failure nor the clear of an
         // existing repair may be published for a row that never landed.
         val deriver = ScriptedDeriver()
-        handler = scriptedHandler(deriver)
+        handler = newHandler(deriver)
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val missing = ByteArray(32) { 42 }
         val pubkey = ByteArray(33) { 42 }
@@ -2335,7 +1926,7 @@ class PlatformWalletPersistenceHandlerTest {
         // identifier and derivation owner belonged to the old key.
         val deriver = ScriptedDeriver()
         deriver.failStores = false
-        handler = scriptedHandler(deriver)
+        handler = newHandler(deriver)
         val identityId = ByteArray(32) { 44 }
         seedIdentityUnder(walletId, identityId)
         val oldKey = ByteArray(33) { 44 }
@@ -2359,6 +1950,96 @@ class PlatformWalletPersistenceHandlerTest {
         assertNull(after.derivationWalletId)
         assertNull(after.derivationIdentityIndex)
         assertNull(after.derivationKeyIndex)
+    }
+
+    @Test
+    fun aRestartFilesARepairUnderTheBreadcrumbsRecordedOwner() = runTest {
+        // A's breadcrumb, then a full load through B re-associates the
+        // identity with B. The rebuilt repair is A's (the recorded owner),
+        // not the identity's current wallet's: B's rejection of the slot
+        // keeps it, A's cancels it.
+        handler = newHandler(ThrowingDeriver())
+        val walletA = walletId
+        val walletB = ByteArray(32) { 19 }
+        val identityId = ByteArray(32) { 57 }
+        seedIdentity(identityId)
+        val key = ByteArray(33) { 57 }
+        handler.onChangesetBegin(walletA)
+        handler.onPersistIdentityKeyUpsert(
+            walletA, identityId, 0, 0, 0, 0, false, false, 0,
+            key, ByteArray(20), true, walletA,
+            true, 0, 7, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+        seedIdentityUnder(walletB, identityId)
+        assertTrue(walletB.contentEquals(db.identityDao().getByIdentityId(identityId)!!.walletId))
+
+        handler = newHandler(ThrowingDeriver())
+        handler.reconstructPendingIdentityKeysFromPersistence(isPrivateKeyDecryptable = { false })
+        val rebuilt = handler.pendingIdentityKeys.value[key.toHex()]!!
+        assertEquals(walletA.toHex(), rebuilt.walletIdHex)
+        assertTrue(rebuilt.ownerKnown)
+
+        rejectIdentityKey(key, identityId, from = walletB, slot = intArrayOf(0, 7))
+        assertEquals(rebuilt, handler.pendingIdentityKeys.value[key.toHex()])
+        rejectIdentityKey(key, identityId, from = walletA, slot = intArrayOf(0, 7))
+        assertNull(handler.pendingIdentityKeys.value[key.toHex()])
+    }
+
+    @Test
+    fun aStandaloneRejectionWhoseWriteFailsKeepsTheRepair() = runTest {
+        // The identity row is gone (its key row with it), so the rejection's
+        // standalone insert fails the foreign key: the cancel it carries is
+        // never published.
+        handler = newHandler(ThrowingDeriver())
+        val identityId = ByteArray(32) { 58 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 58 }
+        upsertIdentityKey(pubkey, identityId)
+        val held = handler.pendingIdentityKeys.value[pubkey.toHex()]!!
+        db.identityDao().deleteByIdentityId(identityId)
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+
+        val result = handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), false, ByteArray(32),
+            false, 0, 0, 0, ByteArray(32), null,
+            rejectedDerivations = intArrayOf(3, 5),
+        )
+        assertEquals(1, result)
+        assertEquals(held, handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun aReplacementPublicKeyDropsTheOldKeysRepairOfThatRowOnceItCommits() = runTest {
+        // The map holds the old key's repair for (identity, key 0). A new
+        // public key under the same key id leaves the old key no row to
+        // repair: its entry goes with the committed write, not before, and a
+        // rolled-back round keeps it.
+        handler = newHandler(ThrowingDeriver())
+        val identityId = ByteArray(32) { 59 }
+        seedIdentity(identityId)
+        val oldKey = ByteArray(33) { 59 }
+        val newKey = ByteArray(33) { 60 }
+        upsertIdentityKey(oldKey, identityId)
+        val held = handler.pendingIdentityKeys.value[oldKey.toHex()]!!
+        fun upsertNewKey() = handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            newKey, ByteArray(20), false, ByteArray(32),
+            false, 0, 0, 0, ByteArray(32), null,
+        )
+
+        handler.onChangesetBegin(walletId)
+        upsertNewKey()
+        handler.onChangesetEnd(walletId, success = false)
+        assertEquals(held, handler.pendingIdentityKeys.value[oldKey.toHex()])
+
+        handler.onChangesetBegin(walletId)
+        upsertNewKey()
+        assertEquals("not before the round commits", held, handler.pendingIdentityKeys.value[oldKey.toHex()])
+        handler.onChangesetEnd(walletId, success = true)
+        assertNull(handler.pendingIdentityKeys.value[oldKey.toHex()])
+        assertTrue(newKey.contentEquals(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!.publicKeyData))
     }
 
     @Test

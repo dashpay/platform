@@ -140,16 +140,6 @@ class PlatformWalletPersistenceHandler(
      */
     private val storedTransactionInputs: StoredTransactionInputs =
         NativeStoredTransactionInputs(network),
-    /**
-     * The CHEAP signing-capability check for the scalar stored under a
-     * public-key hex (production: `WalletStorage.isPrivateKeyDecryptable`).
-     * The one usability predicate behind [pendingIdentityKeys]: the restart
-     * rebuild ([reconstructPendingIdentityKeysFromPersistence]) and a live
-     * hand-off of a cancelled repair both skip a row it reports usable, so
-     * the live map is the map a restart rebuilds. The default reports
-     * nothing usable (no storage wired).
-     */
-    private val isPrivateKeyUsable: suspend (pubkeyHex: String) -> Boolean = { false },
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -1960,54 +1950,26 @@ class PlatformWalletPersistenceHandler(
                     .map { rejectedDerivations[2 * it] to rejectedDerivations[2 * it + 1] }
                     .toSet()
             }
-        // A pending repair entry for the key needs no re-derive once this
-        // rejection refutes the entry's OWN coordinates: it describes the row
-        // being upserted (same identity and key id), its recorded owner is
-        // this wallet, and its slot is among the refuted ones. The map is
-        // keyed by public key, so the entry may describe another row of the
-        // same key (another identity, key id, wallet, or slot); a rejection
-        // persisted for this row says nothing about it. An entry whose owner
-        // is unknown (rebuilt from a row with no recorded owner and filed
-        // under the identity's wallet) is never cancelled: that wallet's
-        // rejection does not show the breadcrumb was its own.
+        // Rust's rejection cancels exactly the repair it refutes: the pending
+        // entry names the row being upserted (same identity and key id), its
+        // recorded owner is the rejecting wallet, and its slot is among the
+        // rejected ones. The map is keyed by public key, so the entry may
+        // name another row of the same key (another identity, key id, wallet,
+        // or slot); a rejection persisted for this row says nothing about
+        // it. An entry whose owner is unknown (rebuilt from a row with no
+        // recorded owner and filed under the identity's wallet) is never
+        // cancelled: that wallet's rejection does not show the breadcrumb
+        // was its own.
         val pendingHex = publicKeyData.toHex()
         val identityBase58 = identityId.toBase58String()
         fun refutes(entry: PendingIdentityKey): Boolean =
             entry.ownerKnown && entry.walletIdHex == roundKey &&
                 entry.identityIdBase58 == identityBase58 && entry.keyId == keyId &&
                 (entry.identityIndex to entry.keyIndex) in refutedSlots
-        // The cancelled entry hands the key's repair to the row of the same
-        // public key a restart would rebuild it from ([successor], read once
-        // the row is written, with the rebuild's own predicate), so one row's
-        // rejection never hides another row's obligation and the live map
-        // stays the map a restart rebuilds. When the key has no stored scalar
-        // once the rejection is settled (none was stored, or a wrong one was
-        // deleted: [seedIfAbsent]), no row of the key can sign, so an absent
-        // entry is seeded from the successor as the rebuild would seed it. The change is published with the row:
-        // through the round's staged deltas when a round is open, or after
-        // the standalone write commits.
-        fun handOffPending(
-            successor: PendingIdentityKey?,
-            seedIfAbsent: Boolean,
-        ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        val cancelRefutedPending: (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
             { map ->
                 val pending = map[pendingHex]
-                when {
-                    pending != null && refutes(pending) ->
-                        if (successor == null) {
-                            map - pendingHex
-                        } else {
-                            map + (
-                                pendingHex to successor.copy(
-                                    reason = pending.reason,
-                                    failedAtMs = pending.failedAtMs,
-                                )
-                            )
-                        }
-                    pending == null && seedIfAbsent && successor != null ->
-                        map + (pendingHex to successor)
-                    else -> map
-                }
+                if (pending != null && refutes(pending)) map - pendingHex else map
             }
         val round = buffers[roundKey]
         // Every change this upsert makes to [pendingIdentityKeys] takes
@@ -2018,6 +1980,7 @@ class PlatformWalletPersistenceHandler(
         fun stageWithRow(delta: (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>) {
             if (round != null) round.pendingKeyDeltas.add(delta) else afterCommit += delta
         }
+        if (refutedSlots.isNotEmpty()) stageWithRow(cancelRefutedPending)
         val walletStillPersisted = buffers.containsKey(roundKey) ||
             runBlockingResult { database.walletDao().getByWalletId(walletId) != null }
         val deriver = privateKeyDeriver
@@ -2051,7 +2014,7 @@ class PlatformWalletPersistenceHandler(
                     // round rolls back, alias cleanup deletes the newly
                     // stored scalar, so the old watch-only row must keep
                     // its repair signal (finding de3cf44a71fc).
-                    stageWithRow(clearPendingKeyDelta(publicKeyData.toHex()))
+                    stageWithRow(clearPendingKeyDelta(pendingHex))
                 } else {
                     // NOT silent (dashpay/platform#4053): the key is being
                     // persisted watch-only, so every signature with it will
@@ -2063,7 +2026,7 @@ class PlatformWalletPersistenceHandler(
                     Log.e(
                         TAG,
                         "identity private-key derive/store FAILED — key " +
-                            "${publicKeyData.toHex()} (identity ${identityId.toBase58String()}, " +
+                            "$pendingHex (identity $identityBase58, " +
                             "keyId $keyId, slot $identityIndex/$keyIndex) is persisted " +
                             "WATCH-ONLY and cannot sign until re-derived " +
                             "(see PlatformWalletPersistenceHandler.pendingIdentityKeys): $reason",
@@ -2077,9 +2040,9 @@ class PlatformWalletPersistenceHandler(
                         recordPendingKeyDelta(
                             PendingIdentityKey(
                                 walletIdHex = keyOwnerWalletId.toHex(),
-                                identityIdBase58 = identityId.toBase58String(),
+                                identityIdBase58 = identityBase58,
                                 keyId = keyId,
-                                publicKeyHex = publicKeyData.toHex(),
+                                publicKeyHex = pendingHex,
                                 identityIndex = identityIndex,
                                 keyIndex = keyIndex,
                                 reason = reason,
@@ -2098,7 +2061,7 @@ class PlatformWalletPersistenceHandler(
         // (or a wallet wipe racing the round) can still find and delete it.
         if (deriveResult != null && deriveResult.wasNewlyCreated && buffers.containsKey(roundKey)) {
             pendingRoundAliases.getOrPut(roundKey) { mutableSetOf() }
-                .add(publicKeyData.toHex())
+                .add(pendingHex)
         }
 
         stage(walletId) { db ->
@@ -2116,51 +2079,8 @@ class PlatformWalletPersistenceHandler(
             val heldSlot = existing?.derivationIdentityIndex?.let { identity ->
                 existing.derivationKeyIndex?.let { key -> identity to key }
             }
-            val slotRefuted = heldSlot != null && heldSlot in refutedSlots &&
+            val refuted = heldSlot != null && heldSlot in refutedSlots &&
                 existing.derivationWalletId?.contentEquals(walletId) == true
-            // A scalar stored from the refuted breadcrumb (an older SDK guessed
-            // the breadcrumb of an external key, and the persist-time store
-            // does not check the derived public key) cannot sign for this key,
-            // and the signer finds scalars by public key, not through the
-            // row. So the rejection takes effect only once the deriver has
-            // settled the stored scalar: deleted when it is the slot's scalar
-            // and the slot's derived public key is not this key (as the repair
-            // path checks a derive), kept when it reproduces the key or is
-            // another one. The delete happens here, before the row commits; it
-            // is right whatever the transaction does, since the scalar is
-            // wrong for every row of the key. Unsettled (no seed, a closed
-            // authentication window, a failed delete), the breadcrumb and the
-            // identifiers stay, so the next rejection checks again.
-            val verdict: StoredKeyVerdict? = when {
-                !slotRefuted || heldSlot == null -> null
-                deriver == null -> StoredKeyVerdict.KEPT
-                else -> try {
-                    deriver.discardStoredKeyRefutedBy(
-                        walletId = walletId,
-                        publicKeyData = publicKeyData,
-                        identityIndex = heldSlot.first,
-                        keyIndex = heldSlot.second,
-                        keyType = keyType.toInt() and 0xFF,
-                    )
-                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                    throw cancellation
-                } catch (t: Throwable) {
-                    Log.w(
-                        TAG,
-                        "could not settle the stored scalar of refuted key $pendingHex " +
-                            "(slot ${heldSlot.first}/${heldSlot.second}); the rejection " +
-                            "is not applied and the next one retries",
-                        t,
-                    )
-                    null
-                }
-            }
-            val refuted = slotRefuted && verdict != null
-            val deferred = slotRefuted && verdict == null
-            // No scalar is stored for the key any more: an identifier on any of
-            // its rows names nothing, and every row of the key is unusable.
-            val scalarGone = verdict == StoredKeyVerdict.ABSENT ||
-                verdict == StoredKeyVerdict.DISCARDED
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
@@ -2220,38 +2140,23 @@ class PlatformWalletPersistenceHandler(
                 lastAccessed = now(),
             )
             if (stored == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
-            if (scalarGone) {
-                // The alias is the key's, shared by every row of it.
-                for (other in db.publicKeyDao().getByPublicKeyData(publicKeyData)) {
-                    if (other.privateKeyKeychainIdentifier != null) {
-                        db.publicKeyDao().update(other.copy(privateKeyKeychainIdentifier = null))
+            // A new public key under this key id: a pending repair filed under
+            // the old key that names this row is for a key the row no longer
+            // carries. Dropped with the row, like every other change here.
+            if (stored != null && existing == null) {
+                val replacedHex = stored.publicKeyData.toHex()
+                stageWithRow { map ->
+                    val pending = map[replacedHex]
+                    if (pending != null && pending.identityIdBase58 == identityBase58 && pending.keyId == keyId) {
+                        map - replacedHex
+                    } else {
+                        map
                     }
-                }
-            }
-            if (refutedSlots.isNotEmpty() && !deferred) {
-                // The map this upsert's delta will see when it is published:
-                // the live map with the round's earlier staged deltas applied.
-                // With no entry this rejection cancels, and no scalar gone,
-                // nothing can change, so the rows are not scanned. A deferred
-                // rejection changes nothing: its breadcrumb stays, and with it
-                // the repair a restart rebuilds.
-                val projected = round?.pendingKeyDeltas
-                    ?.fold(_pendingIdentityKeys.value) { acc, delta -> delta(acc) }
-                    ?: _pendingIdentityKeys.value
-                val cancels = projected[pendingHex]?.let(::refutes) == true
-                if (cancels || scalarGone) {
-                    val nowMs = System.currentTimeMillis()
-                    val successor = db.publicKeyDao().getByPublicKeyData(publicKeyData)
-                        .sortedBy { it.id }
-                        .firstNotNullOfOrNull { other ->
-                            pendingRepairEntry(db, other, REFUTED_SCALAR_REASON, nowMs)
-                        }
-                    stageWithRow(handOffPending(successor, seedIfAbsent = scalarGone))
                 }
             }
         }
         // Standalone path: the write above committed (a failed one threw
-        // before this line, so nothing below runs).
+        // before this line, so nothing is published).
         if (afterCommit.isNotEmpty()) {
             _pendingIdentityKeys.update { map -> afterCommit.fold(map) { acc, delta -> delta(acc) } }
         }
@@ -4065,33 +3970,16 @@ class PlatformWalletPersistenceHandler(
         // row, never from the caller. A row lacking breadcrumbs cannot be
         // safely repaired (we would have to guess the slot), so fail WITHOUT
         // clearing pending.
-        // Several rows can carry the key (identities, wallets) with different
-        // breadcrumbs. The repair derives under [walletId] (the host passes
-        // the wallet whose key-health view is open), so it derives at the row
-        // its pending entry names when that entry is filed under this wallet
-        // (after a hand-off, the successor row), then at a row this wallet
-        // derived, and only then at any row with breadcrumbs.
-        val rows = database.publicKeyDao().getByPublicKeyData(publicKeyData)
-            .filter { it.derivationIdentityIndex != null && it.derivationKeyIndex != null }
-            .sortedBy { it.id }
-        val pending = _pendingIdentityKeys.value[pubkeyHex]
-            ?.takeIf { it.walletIdHex == walletId.toHex() }
-        val breadcrumbRow = rows.firstOrNull { row ->
-            pending != null && row.identityId == pending.identityIdBase58 &&
-                row.keyId == pending.keyId &&
-                row.derivationIdentityIndex == pending.identityIndex &&
-                row.derivationKeyIndex == pending.keyIndex
-        } ?: rows.firstOrNull { it.derivationWalletId?.contentEquals(walletId) == true }
-            ?: rows.firstOrNull()
-        val breadcrumbs = breadcrumbRow?.let { row ->
-            val identityIndex = row.derivationIdentityIndex
-            val keyIndex = row.derivationKeyIndex
-            if (identityIndex != null && keyIndex != null) {
-                Triple(identityIndex, keyIndex, row.keyType.toIntOrNull() ?: 0)
-            } else {
-                null
-            }
-        } ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+        val breadcrumbs = database.publicKeyDao().getByPublicKeyData(publicKeyData)
+            .firstNotNullOfOrNull { row ->
+                val identityIndex = row.derivationIdentityIndex
+                val keyIndex = row.derivationKeyIndex
+                if (identityIndex != null && keyIndex != null) {
+                    Triple(identityIndex, keyIndex, row.keyType.toIntOrNull() ?: 0)
+                } else {
+                    null
+                }
+            } ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
                 "cannot repair identity key $pubkeyHex: no derivation breadcrumbs are " +
                     "persisted for it (derivationIdentityIndex/derivationKeyIndex are " +
                     "null) — the correct slot is unknown; pending state left intact",
@@ -4193,20 +4081,60 @@ class PlatformWalletPersistenceHandler(
      * Called by `PlatformWalletManager.loadPersistedWallets` after the Room
      * rows are loaded, before the manager is handed to the host; the wallet
      * scoping comes from each row's identity (network + wallet id), matching
-     * this handler's [network] when set. [isPrivateKeyDecryptable] defaults
-     * to the handler's [isPrivateKeyUsable], the probe a live hand-off uses.
+     * this handler's [network] when set.
      */
     internal suspend fun reconstructPendingIdentityKeysFromPersistence(
-        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean = isPrivateKeyUsable,
+        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
         nowMs: Long = System.currentTimeMillis(),
         reason: String = "reconstructed from persistence after restart",
     ) {
         val rows = database.publicKeyDao().getWithDerivationBreadcrumbs()
         if (rows.isEmpty()) return
-        // In row order, so the first row of a key seeds its entry: the row a
-        // live hand-off ([onPersistIdentityKeyUpsert]) picks as well.
-        val entries = rows.sortedBy { it.id }.mapNotNull { row ->
-            pendingRepairEntry(database, row, reason, nowMs, isPrivateKeyDecryptable)
+        val entries = mutableListOf<PendingIdentityKey>()
+        // In row order, so the same store always seeds the same entry for a
+        // key carried by several rows (the first row of the key wins).
+        for (row in rows.sortedBy { it.id }) {
+            if (row.readOnly) continue
+            val identityIndex = row.derivationIdentityIndex ?: continue
+            val keyIndex = row.derivationKeyIndex ?: continue
+            val identityIdData = row.identityIdData ?: continue
+            val identity = database.identityDao().getByIdentityId(identityIdData) ?: continue
+            val networkRaw = network?.ffiValue
+            if (networkRaw != null && identity.networkRaw != networkRaw) continue
+            // The breadcrumb's own wallet: the identity may since have been
+            // re-associated with another wallet, whose seed is another
+            // derivation. A row with no recorded owner (written before schema
+            // 16) falls back to the identity's wallet, which may be the wrong
+            // one, so its entry keeps the owner unknown and no rejection
+            // cancels it.
+            val walletId = row.derivationWalletId ?: identity.walletId ?: continue
+            val pubkeyHex = row.publicKeyData.toHex()
+            val usable = row.privateKeyKeychainIdentifier != null &&
+                try {
+                    isPrivateKeyDecryptable(pubkeyHex)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    // The probe is suspend; runCatching turned its cancellation
+                    // into `false`, marking the row pending and returning
+                    // normally so callers (loadPersistedWallets, invalidation
+                    // bookkeeping) never observed the cancellation. Rethrow to
+                    // preserve structured concurrency; only genuine probe
+                    // failures become an unusable result (dashpay/platform#4183).
+                    throw cancellation
+                } catch (_: Throwable) {
+                    false
+                }
+            if (usable) continue
+            entries += PendingIdentityKey(
+                walletIdHex = walletId.toHex(),
+                identityIdBase58 = row.identityId,
+                keyId = row.keyId,
+                publicKeyHex = pubkeyHex,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+                reason = reason,
+                failedAtMs = nowMs,
+                ownerKnown = row.derivationWalletId != null,
+            )
         }
         if (entries.isEmpty()) return
         _pendingIdentityKeys.update { map ->
@@ -4214,78 +4142,6 @@ class PlatformWalletPersistenceHandler(
                 if (entry.publicKeyHex in acc) acc else acc + (entry.publicKeyHex to entry)
             }
         }
-    }
-
-    /**
-     * The pending-repair entry [row] seeds, or null when it seeds none: it is
-     * no repair candidate ([pendingRepairCandidate]), or its private half is
-     * usable (a recorded identifier whose stored scalar [isUsable] accepts).
-     * The one predicate behind both the restart rebuild and a live hand-off,
-     * so the two agree on every row.
-     */
-    private suspend fun pendingRepairEntry(
-        db: DashDatabase,
-        row: PublicKeyEntity,
-        reason: String,
-        nowMs: Long,
-        isUsable: suspend (pubkeyHex: String) -> Boolean = isPrivateKeyUsable,
-    ): PendingIdentityKey? {
-        val entry = pendingRepairCandidate(db, row, reason, nowMs) ?: return null
-        val usable = row.privateKeyKeychainIdentifier != null &&
-            try {
-                isUsable(entry.publicKeyHex)
-            } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                // The probe is suspend; runCatching turned its cancellation
-                // into `false`, marking the row pending and returning
-                // normally so callers (loadPersistedWallets, invalidation
-                // bookkeeping) never observed the cancellation. Rethrow to
-                // preserve structured concurrency; only genuine probe
-                // failures become an unusable result (dashpay/platform#4183).
-                throw cancellation
-            } catch (_: Throwable) {
-                false
-            }
-        return if (usable) null else entry
-    }
-
-    /**
-     * The pending-repair entry [row] would seed, ignoring whether its private
-     * half is usable, or null when it cannot seed one: a read-only key, a row
-     * without derivation breadcrumbs, or one whose identity is gone or on
-     * another network than this handler's.
-     *
-     * The breadcrumb's own wallet ([PublicKeyEntity.derivationWalletId]) owns
-     * the entry: the identity may since have been re-associated with another
-     * wallet, whose seed is another derivation. A row with no recorded owner
-     * (written before schema 16) is offered for repair under the identity's
-     * wallet, which may be the wrong one, so the entry keeps its owner
-     * unknown ([PendingIdentityKey.ownerKnown]) and no rejection cancels it.
-     */
-    private suspend fun pendingRepairCandidate(
-        db: DashDatabase,
-        row: PublicKeyEntity,
-        reason: String,
-        nowMs: Long,
-    ): PendingIdentityKey? {
-        if (row.readOnly) return null
-        val identityIndex = row.derivationIdentityIndex ?: return null
-        val keyIndex = row.derivationKeyIndex ?: return null
-        val identityIdData = row.identityIdData ?: return null
-        val identity = db.identityDao().getByIdentityId(identityIdData) ?: return null
-        val networkRaw = network?.ffiValue
-        if (networkRaw != null && identity.networkRaw != networkRaw) return null
-        val walletId = row.derivationWalletId ?: identity.walletId ?: return null
-        return PendingIdentityKey(
-            walletIdHex = walletId.toHex(),
-            identityIdBase58 = row.identityId,
-            keyId = row.keyId,
-            publicKeyHex = row.publicKeyData.toHex(),
-            identityIndex = identityIndex,
-            keyIndex = keyIndex,
-            reason = reason,
-            failedAtMs = nowMs,
-            ownerKnown = row.derivationWalletId != null,
-        )
     }
 
     // ── Error / threading guards ──────────────────────────────────────
@@ -4355,10 +4211,6 @@ class PlatformWalletPersistenceHandler(
 
     companion object {
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
-
-        /** Reason of a repair seeded when a settled rejection leaves the key no stored scalar. */
-        internal const val REFUTED_SCALAR_REASON: String =
-            "no stored private key reproduces the public key"
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
         internal const val CAPABILITY_INVITATIONS: Long = 0x02
         internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
@@ -4489,33 +4341,6 @@ interface PrivateKeyDeriver {
      * the cleanup record alive until a deletion succeeds.
      */
     fun deleteUnownedStored(pubkeyHexes: Collection<String>, excludingWalletId: ByteArray): Set<String>
-
-    /**
-     * Settle the scalar stored under [publicKeyData]'s alias against a
-     * rejection of the slot ([identityIndex], [keyIndex]) on [walletId], and
-     * delete it when it provably does NOT reproduce [publicKeyData]: the
-     * slot's derived public key is not [publicKeyData] (checked as the
-     * [force] path of [deriveAndStore] checks a derive, per [keyType]) and
-     * the stored scalar is the slot's derived scalar. The delete compares
-     * against the blob that was judged, so a scalar a repair or add-key flow
-     * stored meanwhile is never deleted.
-     *
-     * Returns [StoredKeyVerdict.ABSENT] when nothing is stored,
-     * [StoredKeyVerdict.DISCARDED] after deleting a wrong scalar, and
-     * [StoredKeyVerdict.KEPT] when the slot reproduces the key or the stored
-     * scalar is another one. THROWS when it cannot settle the question (no
-     * seed to derive from, a closed authentication window, a blob replaced
-     * during the check, a failed delete): the caller then leaves the
-     * rejection unapplied so a later one retries. The default settles
-     * nothing about storage and keeps whatever is stored.
-     */
-    fun discardStoredKeyRefutedBy(
-        walletId: ByteArray,
-        publicKeyData: ByteArray,
-        identityIndex: Int,
-        keyIndex: Int,
-        keyType: Int,
-    ): StoredKeyVerdict = StoredKeyVerdict.KEPT
 }
 
 /**
@@ -4529,18 +4354,6 @@ interface PrivateKeyDeriver {
  *   already-valid scalar (rollback must leave it alone).
  */
 data class DerivedKeyStoreResult(val identifier: String, val wasNewlyCreated: Boolean)
-
-/** Outcome of [PrivateKeyDeriver.discardStoredKeyRefutedBy]. */
-enum class StoredKeyVerdict {
-    /** No scalar is stored for the key. */
-    ABSENT,
-
-    /** The stored scalar reproduces the key, or is not the refuted slot's: kept. */
-    KEPT,
-
-    /** The stored scalar was the refuted slot's, which does not reproduce the key: deleted. */
-    DISCARDED,
-}
 
 /**
  * Names a stored transaction's input outpoints for the sweep pass, which

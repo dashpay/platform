@@ -609,29 +609,6 @@ class WalletStorageUpgradeMatrixTest {
         }
         assertEquals(0, fake.legacyRsaFallbackCalls) // never fell through to the fallback
     }
-
-    // ── Compare-and-delete ──────────────────────────────────────────────
-
-    /**
-     * A refuted-scalar delete names the blob it judged: a blob a repair or
-     * add-key store wrote since is not deleted, the judged one is.
-     */
-    @Test
-    fun deletePrivateKeyIfUnchangedDeletesOnlyTheJudgedBlob() = runBlocking {
-        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
-        storage.storePrivateKey(pub, secret)
-        val judged = storage.storedPrivateKeyBlob(pub)!!
-        val replacement = ByteArray(32) { 7 }
-        storage.storePrivateKey(pub, replacement)
-        assertTrue(judged != storage.storedPrivateKeyBlob(pub))
-
-        assertFalse(storage.deletePrivateKeyIfUnchanged(pub, judged))
-        assertArrayEquals(replacement, storage.retrievePrivateKey(pub))
-
-        assertTrue(storage.deletePrivateKeyIfUnchanged(pub, storage.storedPrivateKeyBlob(pub)!!))
-        assertNull(storage.storedPrivateKeyBlob(pub))
-        assertFalse(storage.hasPrivateKey(pub))
-    }
 }
 
 /**

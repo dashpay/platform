@@ -5,7 +5,6 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.persistence.DerivedKeyStoreResult
 import org.dashfoundation.dashsdk.persistence.PrivateKeyDeriver
-import org.dashfoundation.dashsdk.persistence.StoredKeyVerdict
 import org.dashfoundation.dashsdk.persistence.toHex
 
 /**
@@ -161,56 +160,6 @@ class IdentityKeyPrivateKeyDeriver(
         // handler keeps the cleanup record alive until a deletion
         // succeeds).
         runBlocking { walletStorage.deleteUnownedPrivateKeys(pubkeyHexes, excludingWalletId) }
-
-    override fun discardStoredKeyRefutedBy(
-        walletId: ByteArray,
-        publicKeyData: ByteArray,
-        identityIndex: Int,
-        keyIndex: Int,
-        keyType: Int,
-    ): StoredKeyVerdict = runBlocking {
-        val pubkeyHex = publicKeyData.toHex()
-        // The blob being judged; the delete below fires only while it is
-        // still the stored one.
-        val blob = walletStorage.storedPrivateKeyBlob(pubkeyHex)
-            ?: return@runBlocking StoredKeyVerdict.ABSENT
-        // The same pure, lock-free keypair derive the repair path verifies
-        // with: Kotlin computes no public key itself, so the stored scalar is
-        // judged by whether it IS the refuted slot's scalar, whose public half
-        // Rust derived. A missing seed throws: unsettled.
-        val pair = IdentityNative.deriveIdentityKeyPairWithResolver(
-            networkOrd = network.ffiValue,
-            walletId = walletId,
-            resolverHandle = mnemonicResolverHandle,
-            identityIndex = identityIndex,
-            keyIndex = keyIndex,
-        )
-        val derivedPrivate = pair.getOrNull(0)
-        try {
-            check(pair.size == 2) { "keypair derive returned ${pair.size} elements" }
-            if (derivedPublicKeyMatches(pair[1], publicKeyData, keyType)) {
-                return@runBlocking StoredKeyVerdict.KEPT
-            }
-            // A closed authentication window throws here: unsettled. A blob
-            // nothing opens cannot sign at all; a repair replaces it.
-            val stored = walletStorage.retrievePrivateKey(pubkeyHex)
-                ?: return@runBlocking StoredKeyVerdict.KEPT
-            val isSlotScalar = try {
-                java.security.MessageDigest.isEqual(stored, derivedPrivate)
-            } finally {
-                stored.fill(0)
-            }
-            when {
-                !isSlotScalar -> StoredKeyVerdict.KEPT
-                walletStorage.deletePrivateKeyIfUnchanged(pubkeyHex, blob) -> StoredKeyVerdict.DISCARDED
-                else -> throw IllegalStateException(
-                    "the stored scalar of $pubkeyHex changed while it was checked",
-                )
-            }
-        } finally {
-            derivedPrivate?.fill(0)
-        }
-    }
 
     internal companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */

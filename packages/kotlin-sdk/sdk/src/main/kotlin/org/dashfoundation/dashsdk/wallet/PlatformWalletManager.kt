@@ -491,9 +491,6 @@ class PlatformWalletManager(
                 database = database,
                 privateKeyDeriver = deriver,
                 network = network,
-                // The usability probe behind pendingIdentityKeys: the restart
-                // rebuild below and a live repair hand-off share it.
-                isPrivateKeyUsable = { walletStorage.isPrivateKeyDecryptable(it) },
             )
             CoreChildren(resolver, keySigner, deriver, handler)
         } catch (constructionFailure: Throwable) {
@@ -1198,8 +1195,9 @@ class PlatformWalletManager(
         // signal recorded before a process death (or a blob stranded by a
         // Keystore keypair replacement) resurfaces on every launch.
         try {
-            // The handler's own usability probe (WalletStorage's CHEAP check).
-            persistenceHandler.reconstructPendingIdentityKeysFromPersistence()
+            persistenceHandler.reconstructPendingIdentityKeysFromPersistence(
+                isPrivateKeyDecryptable = { walletStorage.isPrivateKeyDecryptable(it) },
+            )
         } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
             // NEVER swallow structured-concurrency cancellation from the
             // suspend reconstruction — rethrow so a cancelled load propagates
