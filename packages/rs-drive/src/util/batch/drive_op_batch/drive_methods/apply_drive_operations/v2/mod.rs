@@ -29,8 +29,8 @@ impl Drive {
     /// prefunded specialized balances trees) lowered the batch's estimate of that layer. Here
     /// each operation is lowered with a map of its own, merged into the batch's keeping the
     /// costlier of two descriptions of one layer (`merge_estimated_layer`: the deeper, then at
-    /// one depth the one pricing a larger node), so the estimate does not depend on the order
-    /// of the batch's operations. Applying a batch is generation 1's.
+    /// one depth the one GroveDB's propagation estimate prices dearer), so the estimate does
+    /// not depend on the order of the batch's operations. Applying a batch is generation 1's.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -115,8 +115,8 @@ impl Drive {
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
             // An estimate lowers each operation into layer descriptions of its own and merges
             // them into the batch's, keeping the costlier of two descriptions of one layer (the
-            // deeper, then at one depth the larger node): the batch's estimate is the same
-            // whichever order its operations come in.
+            // deeper, then at one depth the one GroveDB prices dearer): the batch's estimate is
+            // the same whichever order its operations come in.
             let mut converted = match estimated_costs_only_with_layer_info.as_mut() {
                 None => drive_op.into_low_level_drive_operations_after_ttl_drain(
                     self,
@@ -135,12 +135,7 @@ impl Drive {
                         platform_version,
                     )?;
                     for (path, layer) in operation_layers.unwrap_or_default() {
-                        merge_estimated_layer(
-                            batch_layers,
-                            path,
-                            layer,
-                            &platform_version.drive.grove_version,
-                        )?;
+                        merge_estimated_layer(batch_layers, path, layer, platform_version)?;
                     }
                     converted
                 }
