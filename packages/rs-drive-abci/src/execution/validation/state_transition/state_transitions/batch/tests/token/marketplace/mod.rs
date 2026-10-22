@@ -2083,6 +2083,11 @@ mod history {
 mod frozen {
     use super::*;
     use dpp::document::DocumentV0Getters;
+    use dpp::fee::fee_result::FeeResult;
+    use drive::drive::RootTree;
+    use drive::grovedb::query_result_type::{QueryResultElement, QueryResultType};
+    use drive::grovedb::{PathQuery, Query, SizedQuery};
+    use std::collections::BTreeSet;
 
     /// The contract owner (the seller) may freeze an account and destroy its frozen funds.
     fn make_token_tradeable_and_freezable(token_configuration: &mut TokenConfiguration) {
@@ -2211,6 +2216,138 @@ mod frozen {
                 .expect("expected to fetch the supply")
                 .expect("expected the token to have a supply")
         }
+    }
+
+    /// The fee a processed batch charged its signer, which must have executed.
+    fn charged(processing_result: &StateTransitionsProcessingResult) -> FeeResult {
+        match processing_result.execution_results().as_slice() {
+            [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                fee_result.clone()
+            }
+            other => panic!("expected the batch to execute: {other:?}"),
+        }
+    }
+
+    impl Market {
+        /// Every tree and item under the token market contract's `ask` document type: its
+        /// documents and their index entries, by path.
+        fn ask_trees(&self) -> BTreeSet<Vec<Vec<u8>>> {
+            let platform_version = PlatformVersion::latest();
+            let root = vec![
+                vec![RootTree::DataContractDocuments as u8],
+                SystemDataContract::TokenMarket.id().to_vec(),
+                vec![1u8],
+                TokenOrderSide::Ask.document_type_name().as_bytes().to_vec(),
+            ];
+            let mut paths = BTreeSet::new();
+            let mut pending = vec![root];
+            while let Some(path) = pending.pop() {
+                let mut query = Query::new();
+                query.insert_all();
+                let (rows, _) = self
+                    .platform
+                    .drive
+                    .grove
+                    .query_raw(
+                        &PathQuery::new(path.clone(), SizedQuery::new(query, None, None)),
+                        true,
+                        true,
+                        true,
+                        QueryResultType::QueryKeyElementPairResultType,
+                        None,
+                        &platform_version.drive.grove_version,
+                    )
+                    .value
+                    .expect("expected to read the ask trees");
+                for row in rows.elements {
+                    let QueryResultElement::KeyElementPairResultItem((key, element)) = row else {
+                        panic!("expected a key and an element");
+                    };
+                    let mut child = path.clone();
+                    child.push(key);
+                    if element.is_any_tree() {
+                        pending.push(child.clone());
+                    }
+                    paths.insert(child);
+                }
+            }
+            paths
+        }
+
+        /// The seller destroys the buyer's frozen funds, and the fee it was charged.
+        async fn destroy_buyers_frozen_funds_charged(&mut self) -> FeeResult {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let destroy = BatchTransition::new_token_destroy_frozen_funds_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                self.buyer.id(),
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the destroy");
+            charged(&self.process_at(&destroy, &at_time(1_000_000)))
+        }
+    }
+
+    /// Two listings at one price placed in one block share their `ask` index trees: the price
+    /// bucket of `book` and `depth`, the `$createdAt` bucket of `book`, and the owner and token
+    /// buckets of `byOwner`. A destroy deletes both in one batch: each delete is built against
+    /// the other, so the trees they shared are removed. The `ask` trees left are the ones
+    /// cancelling the two listings one by one leaves, and the frozen owner gets back at least
+    /// the storage those cancels refund (the destroy also shrinks the balance it burns to 0, where
+    /// a cancel grows it). Built as separate deletes, 16 of the 24 trees stayed instead of 3, and
+    /// the refund was about half.
+    #[tokio::test]
+    async fn should_remove_and_refund_the_index_trees_destroyed_listings_shared() {
+        let mut destroyed = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        destroyed.give_buyer(10_000).await;
+        destroyed.buyer_lists(3_000, 1).await;
+        destroyed.buyer_lists(2_000, 1).await;
+        let trees_with_listings = destroyed.ask_trees();
+        destroyed.freeze_buyer().await;
+        let fee = destroyed.destroy_buyers_frozen_funds_charged().await;
+        let destroy_refund = fee
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(destroyed.buyer.id())
+            .unwrap_or_default();
+
+        let mut cancelled = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        cancelled.give_buyer(10_000).await;
+        let first = cancelled.buyer_lists(3_000, 1).await;
+        let second = cancelled.buyer_lists(2_000, 1).await;
+        assert_eq!(cancelled.ask_trees(), trees_with_listings);
+        let mut cancel_refunds = 0;
+        for order_id in [first, second] {
+            let cancel = cancelled.cancel(order_id, true).await;
+            let fee = charged(&cancelled.process(&cancel));
+            cancel_refunds += fee
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(cancelled.buyer.id())
+                .unwrap_or_default();
+        }
+
+        let trees_left = destroyed.ask_trees();
+        assert_eq!(trees_left, cancelled.ask_trees());
+        assert!(
+            trees_left.len() < trees_with_listings.len(),
+            "the shared trees are removed: {} left of {}",
+            trees_left.len(),
+            trees_with_listings.len()
+        );
+        assert!(
+            destroy_refund >= cancel_refunds,
+            "the destroy refunds {destroy_refund}, the cancels {cancel_refunds}"
+        );
     }
 
     #[tokio::test]

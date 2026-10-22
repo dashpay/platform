@@ -197,3 +197,31 @@ impl Drive {
         Ok((listings, cost))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    /// Before protocol version 15 a destroy of frozen funds reads no listings: on a chain with no
+    /// marketplace state (no escrow trees, no token market contract) the read returns none and
+    /// costs nothing.
+    #[test]
+    fn should_read_no_frozen_listings_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let (listings, cost) = drive
+            .fetch_frozen_token_listings(
+                Identifier::from([5; 32]),
+                Identifier::from([6; 32]),
+                &Epoch::new(0).expect("expected an epoch"),
+                None,
+                platform_version,
+            )
+            .expect("expected the read to be skipped");
+        assert!(listings.is_empty());
+        assert_eq!(cost, 0);
+    }
+}
