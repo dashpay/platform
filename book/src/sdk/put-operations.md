@@ -243,15 +243,6 @@ for a proof made at an earlier version or a transition without an owner);
 `put_to_platform_and_wait_for_response_with_owner_balance` return it next to
 the document. The balance is a snapshot at the proof's block: it may already
 include later transitions of the same identity.
-
-The signed producer version selects the execution-proof query layout. A client
-retaining protocol 14 verifier rules can therefore authenticate a protocol 13
-outcome without inventing a balance. A protocol 14 outcome must still prove the
-balance; verification never retries a malformed current proof as an older layout.
-An outcome signed by a protocol newer than the SDK is verified with the newest
-layout the SDK knows, so results stay verifiable after that protocol activates.
-Signature and freshness checks run before the SDK learns the producer version.
-
 `put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also
 returns the verified response metadata, whose `height` is that block, so a
 wallet keeping the balance can order it against balances it read elsewhere; it
@@ -266,6 +257,19 @@ but sets `request_user_balance` gets the owner's balance back unverified, as
 the response's `success_with_owner_balance` result, read from a Drive state at
 or past the block that executed the write; that works for any transition with
 an owner.
+
+The protocol version signed with the proof selects the layout the proof is
+checked against. Validation and decoding follow the SDK's stored version, or
+the signed version when it is newer and known to this build, also for a pinned
+SDK: a producer's version can raise those rules but never lower them. An SDK
+at protocol 14 therefore verifies an outcome produced at protocol 13, whose
+`owner_balance()` is `None`, while an outcome signed as protocol 14 must prove
+the balance: a proof without it is refused, never retried as the older layout.
+An outcome signed by a protocol newer than any this SDK build knows is checked
+with the newest layout and rules the build knows, so results stay verifiable
+after that protocol activates. The signature binds the protocol version to the
+state root, and the SDK learns the producer's version only after the signature
+and freshness checks pass.
 
 ### Timeout Handling
 

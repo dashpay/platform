@@ -404,11 +404,12 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 // Query construction follows the producer, while security checks keep the caller's
 // verifier version. Metadata is untrusted until the signature binds it to the root.
 // A producer newer than this build is read with the newest known construction rules,
-// as the verifier tables are. A wrong guess cannot authenticate data the signed root
-// does not hold, and a changed layout is expected to fail verification for answers
-// that return data. An absence answer can still verify at a location a newer protocol
-// no longer uses, so relocating such an index needs an SDK update. Reserved mock
-// versions also sit above the newest one, so their tables are never looked up.
+// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
+// data the signed root does not hold, and a changed layout is expected to fail
+// verification for answers that return data. An absence answer can still verify at a
+// location a newer protocol no longer uses, so relocating such an index needs an SDK
+// update. Reserved mock versions also sit above the newest one, so their tables are
+// never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,
 ) -> Result<&'static PlatformVersion, Error> {
