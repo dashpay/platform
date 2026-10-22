@@ -866,15 +866,19 @@ fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
     let allocations_at_14 = flags_at_14
         .epoch_index_map()
         .expect("the upgrade to 14 allocated at epoch 7");
-    let allocations_at_15 = flags_at_15
-        .epoch_index_map()
-        .expect("allocations after 15");
+    let allocations_at_15 = flags_at_15.epoch_index_map().expect("allocations after 15");
     for (epoch, allocated) in allocations_at_14 {
-        assert_eq!(allocations_at_15.get(epoch), Some(allocated), "epoch {epoch}");
+        assert_eq!(
+            allocations_at_15.get(epoch),
+            Some(allocated),
+            "epoch {epoch}"
+        );
     }
     assert!(allocations_at_15.get(&5).is_some() && allocations_at_15.get(&7).is_some());
     assert!(
-        allocations_at_15.get(&9).is_some_and(|allocated| *allocated > 0),
+        allocations_at_15
+            .get(&9)
+            .is_some_and(|allocated| *allocated > 0),
         "the bytes v3 adds are allocated at the upgrade's epoch: {flags_at_15:?}"
     );
     let Element::Item(version, Some(version_flags)) = version_item(&platform, None) else {
