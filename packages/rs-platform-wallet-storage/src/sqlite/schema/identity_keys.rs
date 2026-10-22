@@ -8,7 +8,6 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
@@ -69,65 +68,8 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
-            derivation_rejected: BTreeSet::new(),
         })
     }
-}
-
-/// The breadcrumb a stored row holds for `entry`'s key, to keep on an upsert
-/// that carries none. Only a row that passes the checks `load_state` applies
-/// (its blob agrees with its typed columns and its wallet scope) and stores
-/// the same public key gives one: a breadcrumb belongs to one key's
-/// derivation. A row that fails them, or does not decode, holds nothing to
-/// keep; the write replaces it, as it did before rows kept breadcrumbs.
-fn held_breadcrumb(
-    (blob_len, payload, typed_public_key_hash): (i64, Vec<u8>, Vec<u8>),
-    entry: &IdentityKeyEntry,
-    wallet_id: &WalletId,
-) -> Option<(Option<[u8; 32]>, IdentityKeyDerivationIndices)> {
-    let held = blob::check_size(blob_len).and_then(|()| decode_entry(&payload));
-    let held = match held {
-        Ok(held) => held,
-        Err(e) => {
-            tracing::warn!(
-                key_id = entry.key_id,
-                error = %e,
-                "identity_keys: stored row does not decode; replacing it",
-            );
-            return None;
-        }
-    };
-    let consistent = held.identity_id == entry.identity_id
-        && held.key_id == entry.key_id
-        && held.public_key.id() == entry.key_id
-        && held.public_key_hash[..] == typed_public_key_hash[..]
-        && held.public_key_hash == entry.public_key_hash
-        && held.public_key.data() == entry.public_key.data()
-        && held
-            .wallet_id
-            .is_none_or(|held_wallet_id| held_wallet_id == *wallet_id);
-    if !consistent {
-        tracing::warn!(
-            key_id = entry.key_id,
-            "identity_keys: stored row contradicts its columns or the key; replacing it",
-        );
-        return None;
-    }
-    Some((held.wallet_id, held.derivation_indices?))
-}
-
-/// Read a stored row selected as `(length(public_key_blob), public_key_blob,
-/// public_key_hash)`. The size guard runs before the payload is read, as in
-/// `load_state`; an oversized row is read as empty and replaced
-/// (`held_breadcrumb`).
-fn read_stored_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Vec<u8>, Vec<u8>)> {
-    let blob_len: i64 = row.get(0)?;
-    let payload: Vec<u8> = if blob::check_size(blob_len).is_ok() {
-        row.get(1)?
-    } else {
-        Vec::new()
-    };
-    Ok((blob_len, payload, row.get(2)?))
 }
 
 /// SQLite's extended result code for a foreign-key constraint failure
@@ -184,6 +126,12 @@ fn map_fk_violation(
 /// cross-checked against it so the typed columns and the blob stay aligned.
 /// A cross-wallet write is refused with
 /// [`WalletStorageError::IdentityKeyWalletMismatch`].
+///
+/// An upsert without a derivation breadcrumb keeps the one the same row
+/// already holds, as the Swift and Kotlin persisters do: a write that only
+/// knows the key's new state (a refresh, a raised limit, a disable) must not
+/// turn a wallet-derived key watch-only. A stored row that does not decode,
+/// or is over the blob size limit, holds nothing to keep and is replaced.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -219,17 +167,12 @@ pub fn apply(
         // 32 zero bytes instead would produce a row that matches no
         // wallet, no NULL-scoped reader, and no guard.
         let wallet_id_param = super::wallet_id_to_param(wallet_id);
-        // An entry without a derivation breadcrumb that leaves the key's
-        // origin unknown keeps the one the row already holds under this
-        // scope, as the Swift and Kotlin persisters do: an upsert that only
-        // knows the key's new state (a raised limit, a disable, a refresh)
-        // must not turn a wallet-derived key watch-only. One that refutes the
-        // coordinates the row holds (`derivation_rejected`) clears them.
         let mut stored = tx.prepare_cached(
-            "SELECT length(public_key_blob), public_key_blob, public_key_hash \
-             FROM identity_keys \
-             WHERE identity_id = ?1 AND key_id = ?2 AND wallet_id IS ?3",
+            "SELECT public_key_blob FROM identity_keys \
+             WHERE identity_id = ?1 AND key_id = ?2 AND wallet_id IS ?3 \
+               AND length(public_key_blob) <= ?4",
         )?;
+        let size_limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Typed columns and blob fields must agree so a row can never
             // diverge on disk.
@@ -242,21 +185,23 @@ pub fn apply(
                 }
             }
             let mut wire = IdentityKeyWire::from_entry(entry)?;
-            // An entry without a breadcrumb keeps the row's, unless it refutes
-            // exactly the coordinates the row holds (`derivation_rejected`).
             if wire.derivation_indices.is_none() {
-                let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
+                let held: Option<Vec<u8>> = stored
                     .query_row(
-                        params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
-                        read_stored_row,
+                        params![
+                            identity_id.as_slice(),
+                            i64::from(*key_id),
+                            wallet_id_param,
+                            size_limit
+                        ],
+                        |row| row.get(0),
                     )
                     .optional()?;
-                if let Some((wallet_id_kept, derivation_indices)) = held
-                    .and_then(|held| held_breadcrumb(held, entry, wallet_id))
-                    .filter(|(_, held)| !entry.derivation_rejected.contains(held))
-                {
-                    wire.wallet_id = wallet_id_kept;
-                    wire.derivation_indices = Some(derivation_indices);
+                if let Some(held) = held.and_then(|payload| decode_entry(&payload).ok()) {
+                    if held.derivation_indices.is_some() {
+                        wire.wallet_id = held.wallet_id;
+                        wire.derivation_indices = held.derivation_indices;
+                    }
                 }
             }
             let entry_blob = blob::encode(&wire)?;
@@ -388,15 +333,6 @@ pub fn load_state(
         cs.upserts.insert((identity_id, key_id), entry);
     }
     Ok(cs)
-}
-
-/// Encode an [`IdentityKeyEntry`] to its on-disk `public_key_blob` form via
-/// the wire type. Test-only seam so integration tests can forge a row whose
-/// blob disagrees with its typed columns without naming the crate-internal
-/// [`IdentityKeyWire`].
-#[cfg(any(test, feature = "__test-helpers"))]
-pub fn encode_entry_for_test(entry: &IdentityKeyEntry) -> Result<Vec<u8>, WalletStorageError> {
-    blob::encode(&IdentityKeyWire::from_entry(entry)?)
 }
 
 /// Build an outer `public_key_blob` payload whose inner `public_key_bincode`
@@ -691,43 +627,6 @@ mod tests {
         );
     }
 
-    /// Run `read_stored_row` over a synthetic row whose stated blob length is
-    /// `blob_len` while the payload cell actually holds `payload`.
-    fn read_synthetic_row(blob_len: i64, payload: &[u8]) -> (i64, Vec<u8>, Vec<u8>) {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.query_row(
-            "SELECT ?1, ?2, ?3",
-            params![blob_len, payload, &[0x5Au8; 20][..]],
-            read_stored_row,
-        )
-        .unwrap()
-    }
-
-    /// A stored row whose length exceeds the blob size limit is not read: the
-    /// payload comes back empty, whatever the cell holds, so the writer never
-    /// allocates an oversized buffer to look for a breadcrumb.
-    #[test]
-    fn should_read_an_oversized_stored_row_as_an_empty_payload() {
-        let blob_len = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap() + 1;
-        let (len, payload, hash) = read_synthetic_row(blob_len, &[0xDE, 0xAD, 0xBE, 0xEF]);
-        assert_eq!(len, blob_len);
-        assert!(
-            payload.is_empty(),
-            "oversized payload was read: {payload:?}"
-        );
-        assert_eq!(hash, vec![0x5Au8; 20]);
-    }
-
-    /// A stored row within the limit is read in full.
-    #[test]
-    fn should_read_a_stored_row_within_the_size_limit() {
-        let blob_len = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap();
-        let (len, payload, hash) = read_synthetic_row(blob_len, &[0xDE, 0xAD, 0xBE, 0xEF]);
-        assert_eq!(len, blob_len);
-        assert_eq!(payload, vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        assert_eq!(hash, vec![0x5Au8; 20]);
-    }
-
     /// `IdentityKeyEntry` carries no key material by construction
     /// (derive-sign-destroy removed the carried scalar; the client derives it
     /// on demand from the keychain), so the "no key material at rest outside
@@ -757,7 +656,6 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
-            derivation_rejected: BTreeSet::new(),
         };
 
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");

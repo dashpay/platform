@@ -12,7 +12,6 @@
 //! one moment an operator is removing state.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use common::{ensure_identity, ensure_wallet_meta, fresh_persister_with_mode};
 
@@ -59,7 +58,6 @@ fn delete_wallet_aborts_on_a_constraint_failure_outside_the_carve_out() {
         public_key_hash: [9u8; 20],
         wallet_id: Some(w),
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     };
     let mut keys = IdentityKeysChangeSet::default();
     keys.upserts.insert((identity_id, 1), entry);

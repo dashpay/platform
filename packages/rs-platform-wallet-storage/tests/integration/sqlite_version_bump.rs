@@ -5,7 +5,6 @@
 //! bump with none silently excluded, and the seq saturates rather than wrapping.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use std::collections::BTreeMap;
 
@@ -322,7 +321,6 @@ fn identity_key_entry(id: Identifier) -> IdentityKeyEntry {
         public_key_hash: [3u8; 20],
         wallet_id: None,
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     }
 }
 

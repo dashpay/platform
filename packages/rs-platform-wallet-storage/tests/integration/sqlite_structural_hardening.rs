@@ -7,7 +7,6 @@
 //! the truncation guards, and the compaction-marker-only load gate.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 
@@ -273,7 +272,6 @@ fn identity_key_entry_mismatch_rejected() {
         public_key_hash: [3u8; 20],
         wallet_id: Some(w),
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     };
     let mut keys = IdentityKeysChangeSet::default();
     keys.upserts.insert((key_identity, 0), entry);

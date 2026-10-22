@@ -7,7 +7,6 @@
 //! round trip does NOT quietly hand them to a wallet.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -71,7 +70,6 @@ fn key_entry(id: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     }
 }
 

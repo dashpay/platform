@@ -12,7 +12,6 @@
 //!    dispatch order writes the parent first for every FK edge.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use common::{ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, wid};
 
@@ -46,7 +45,6 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     }
 }
 

@@ -9,7 +9,6 @@
 //! projection is served instead.
 
 use crate::common;
-use std::collections::BTreeSet;
 
 use common::{ensure_wallet_meta, fresh_persister, fresh_recovery_persister, wid};
 use dashcore::hashes::Hash;
@@ -1340,7 +1339,6 @@ fn identity_key_entry(
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
-        derivation_rejected: BTreeSet::new(),
     }
 }
 
