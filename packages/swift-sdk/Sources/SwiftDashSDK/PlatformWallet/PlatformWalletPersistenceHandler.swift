@@ -4157,13 +4157,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     parent.addPublicKey(row)
                 }
             }
-            // Another public key under this key id: the row's derivation
-            // path and private-key linkage belonged to the old key and must
-            // not pass to this one.
-            if row.publicKeyData != entry.publicKeyData {
-                row.identityDerivationPath = nil
-                row.privateKeyKeychainIdentifier = nil
-            }
             // Refresh mutable fields every upsert.
             row.publicKeyData = entry.publicKeyData
             row.readOnly = entry.readOnly
@@ -4216,24 +4209,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
                     row.identityDerivationPath = path
                 }
-            } else if !entry.derivationRejected.isEmpty,
-                // The rejection was checked under this wallet's seed: a path
-                // another wallet derived is not refuted by it, and neither is
-                // one whose owner was never recorded (a legacy row), as in
-                // the Kotlin persister.
-                row.walletId == walletId,
-                let heldPath = row.identityDerivationPath,
-                entry.derivationRejected.contains(where: { rejected in
-                    identityAuthPath(walletId: walletId, indices: rejected) == heldPath
-                })
-            {
-                // Rust checked the key at these coordinates and found it does
-                // not come from there (the candidate did not reproduce it, or
-                // the caller declared it external): the path is a stale
-                // inferred one, and the signer must not derive at it. A path
-                // at other coordinates, and every path when the origin is
-                // unknown, is kept.
-                row.identityDerivationPath = nil
             }
 
             row.lastAccessed = Date()
@@ -5258,11 +5233,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
         let walletId: Data?
-        /// DIP-9 `(identity_index, key_index)` pair, present when Rust
-        /// verified the key as wallet-derivable; the client derives it on
-        /// demand from the Keychain seed at this path when it needs to sign
-        /// (no secret crosses the FFI). `nil` gives none, its meaning set by
-        /// `derivationRejected`.
+        /// DIP-9 `(identity_index, key_index)` pair. Present iff the key is
+        /// wallet-derivable; the client derives it on demand from the Keychain
+        /// seed at this path when it needs to sign (no secret crosses the FFI).
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
@@ -5274,12 +5247,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// `identity.identityPublicKeys`) and so a group bound is not
         /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
-        /// With no `derivationIndices`: the coordinates Rust checked the key
-        /// at under the persisting wallet's seed and found it does not come
-        /// from, so a stored derivation path of that wallet naming one of them
-        /// is cleared; empty when its origin is unknown, which keeps the
-        /// stored path.
-        var derivationRejected: [(identityIndex: UInt32, keyIndex: UInt32)] = []
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -10351,8 +10318,7 @@ private func persistIdentityKeysCallback(
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
                 derivationIndices: indices,
-                contractBounds: bounds,
-                derivationRejected: rejectedPairs(e)
+                contractBounds: bounds
             ))
         }
     }
@@ -10800,17 +10766,6 @@ private func persistContactsCallback(
         ignored: ignored
     )
     return 0
-}
-
-/// The rejected `[identity_index, key_index]` pairs a key entry carries.
-private func rejectedPairs(
-    _ e: IdentityKeyEntryFFI
-) -> [(identityIndex: UInt32, keyIndex: UInt32)] {
-    guard let ptr = e.rejected_derivations_ptr, e.rejected_derivations_len > 0 else {
-        return []
-    }
-    let flat = UnsafeBufferPointer(start: ptr, count: Int(e.rejected_derivations_len) * 2)
-    return stride(from: 0, to: flat.count, by: 2).map { (flat[$0], flat[$0 + 1]) }
 }
 
 /// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the
