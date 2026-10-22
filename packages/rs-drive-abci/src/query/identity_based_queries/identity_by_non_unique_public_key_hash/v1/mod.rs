@@ -3,11 +3,11 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV1;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
-    get_identity_by_non_unique_public_key_hash_response_v0, GetIdentityByNonUniquePublicKeyHashResponseV0,
+    get_identity_by_non_unique_public_key_hash_response_v1, GetIdentityByNonUniquePublicKeyHashResponseV1,
 };
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityResponse;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v1::IdentityResponse;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::{Bytes20, Bytes32};
 use dpp::serialization::PlatformSerializable;
@@ -17,16 +17,18 @@ use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
+    /// Answers a V1 request; a proved answer is one proof of the index selection
+    /// and the identity. Query-only, never reached from block execution.
     pub(super) fn query_identity_by_non_unique_public_key_hash_v1(
         &self,
-        GetIdentityByNonUniquePublicKeyHashRequestV0 {
+        GetIdentityByNonUniquePublicKeyHashRequestV1 {
             public_key_hash,
             start_after,
             prove,
-        }: GetIdentityByNonUniquePublicKeyHashRequestV0,
+        }: GetIdentityByNonUniquePublicKeyHashRequestV1,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentityByNonUniquePublicKeyHashResponseV0>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentityByNonUniquePublicKeyHashResponseV1>, Error> {
         let public_key_hash =
             check_validation_result_with_data!(Bytes20::from_vec(public_key_hash)
                 .map(|bytes| bytes.0)
@@ -54,12 +56,11 @@ impl<C> Platform<C> {
                     start_after,
                     None,
                     platform_version,
-                )?
-                .into_current()?;
+                )?;
 
-            GetIdentityByNonUniquePublicKeyHashResponseV0 {
+            GetIdentityByNonUniquePublicKeyHashResponseV1 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
+                    get_identity_by_non_unique_public_key_hash_response_v1::Result::Proof(
                         self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
                             .map(|(_, proof)| proof)?,
                     ),
@@ -84,10 +85,10 @@ impl<C> Platform<C> {
                 })
                 .transpose()?;
 
-            GetIdentityByNonUniquePublicKeyHashResponseV0 {
+            GetIdentityByNonUniquePublicKeyHashResponseV1 {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Identity(
+                    get_identity_by_non_unique_public_key_hash_response_v1::Result::Identity(
                         IdentityResponse {
                             identity: serialized_identity,
                         },
@@ -111,7 +112,7 @@ mod tests {
     fn test_invalid_public_key_hash() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
+        let request = GetIdentityByNonUniquePublicKeyHashRequestV1 {
             public_key_hash: vec![0; 8],
             start_after: None,
             prove: false,
@@ -134,7 +135,7 @@ mod tests {
         let negative_tests: Vec<&[u8]> = vec![&[0u8; 4], &[0u8; 20], &[0u8; 64]];
 
         for test in negative_tests {
-            let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
+            let request = GetIdentityByNonUniquePublicKeyHashRequestV1 {
                 public_key_hash: vec![0; 20],
                 start_after: Some(test.to_vec()),
                 prove: false,
@@ -159,7 +160,7 @@ mod tests {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
-        let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
+        let request = GetIdentityByNonUniquePublicKeyHashRequestV1 {
             public_key_hash: public_key_hash.clone(),
             start_after: None,
             prove: false,
@@ -171,7 +172,7 @@ mod tests {
 
         assert_eq!(
             result.data,
-            Some(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+            Some(GetIdentityByNonUniquePublicKeyHashResponseV1 {
                 metadata: Some(ResponseMetadata {
                     height: 0,
                     core_chain_locked_height: 0,
@@ -181,7 +182,7 @@ mod tests {
                     chain_id: "chain_id".to_string()
                 }),
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Identity(
+                    get_identity_by_non_unique_public_key_hash_response_v1::Result::Identity(
                         IdentityResponse { identity: None }
                     )
                 ),
@@ -194,7 +195,7 @@ mod tests {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
-        let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
+        let request = GetIdentityByNonUniquePublicKeyHashRequestV1 {
             public_key_hash: public_key_hash.clone(),
             start_after: None,
             prove: true,
@@ -206,9 +207,9 @@ mod tests {
 
         assert!(matches!(
             result.data,
-            Some(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+            Some(GetIdentityByNonUniquePublicKeyHashResponseV1 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(_)
+                    get_identity_by_non_unique_public_key_hash_response_v1::Result::Proof(_)
                 ),
                 metadata: Some(_),
             })

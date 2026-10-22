@@ -17,6 +17,8 @@ use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
+    /// Answers a V0 request; a proved answer carries separate index and identity
+    /// proofs. Query-only, never reached from block execution.
     pub(super) fn query_identity_by_non_unique_public_key_hash_v0(
         &self,
         GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -49,17 +51,16 @@ impl<C> Platform<C> {
         let response = if prove {
             let proof = self
                 .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
+                .prove_full_identity_by_non_unique_public_key_hash_two_proofs(
                     public_key_hash,
                     start_after,
                     None,
                     platform_version,
-                )?
-                .into_legacy()?;
+                )?;
 
             GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::LegacyProof(
+                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
                         IdentityProvedResponse {
                             grovedb_identity_public_key_hash_proof: Some(
                                 self.response_proof_v0(
@@ -118,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_invalid_public_key_hash() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
             public_key_hash: vec![0; 8],
@@ -138,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_after() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let negative_tests: Vec<&[u8]> = vec![&[0u8; 4], &[0u8; 20], &[0u8; 64]];
 
@@ -165,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -200,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, Some(13));
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -217,7 +218,7 @@ mod tests {
             result.data,
             Some(GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
-                    get_identity_by_non_unique_public_key_hash_response_v0::Result::LegacyProof(_)
+                    get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(_)
                 ),
                 metadata: Some(_),
             })
