@@ -624,6 +624,23 @@ impl Drive {
                         let data_contract_id = token_transition.data_contract_id();
                         let token_id = token_transition.token_id();
 
+                        // A marketplace transition's proof is read by its token id, so the id
+                        // must be the one its contract and position derive, as the node's
+                        // structure validation requires: a request naming one token's position
+                        // with another's id never executes, and must not borrow the evidence of
+                        // the one that did.
+                        if token_transition.is_marketplace_order()
+                            && token_id != token_transition.base().calculate_token_id()
+                        {
+                            return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
+                                "the token marketplace transition names token {} at position {} of contract {}, which derive token {}",
+                                token_id,
+                                token_transition.base().token_contract_position(),
+                                data_contract_id,
+                                token_transition.base().calculate_token_id()
+                            ))));
+                        }
+
                         let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
                             Error::Proof(ProofError::UnknownContract(format!(
                                 "unknown contract with id {} in token verification",
