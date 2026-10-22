@@ -2290,6 +2290,39 @@ mod offers {
         assert_eq!(market.offer(order_id), None);
     }
 
+    /// The genuine proof of an executed offer does not verify the same request re-signed naming
+    /// another position of a two-token contract, or another contract, with the same token id.
+    #[tokio::test]
+    async fn should_not_prove_an_offer_whose_token_id_its_contract_and_position_do_not_derive() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+        let mut two_tokens = market.contract.clone();
+        let token = market
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token")
+            .clone();
+        two_tokens.add_token(1, token);
+
+        for claimed in [
+            with_base(&place, |base| base.set_token_contract_position(1)),
+            with_base(&place, |base| {
+                base.set_data_contract_id(Identifier::from([9; 32]))
+            }),
+        ] {
+            assert_matches!(
+                market.verify_proof_of_as(&place, &claimed, &two_tokens),
+                Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+            );
+        }
+        assert_matches!(
+            market.verify_proof_of_as(&place, &place, &two_tokens),
+            Ok(StateTransitionProofResult::VerifiedDocuments(documents))
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+    }
+
     /// An offer that executed, re-sent with group information and otherwise the same, is
     /// refused rather than proved by its `bid`: a placement is never a group action.
     #[tokio::test]
