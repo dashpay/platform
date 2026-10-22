@@ -5,13 +5,10 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::{
-    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
-};
-use dpp::consensus::basic::BasicError;
+use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::errors::StateTransitionError;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{validate_state_transition_size, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use std::time::{Duration, Instant};
@@ -49,18 +46,14 @@ where
         let decoded_state_transitions = raw_state_transitions
             .iter()
             .map(|raw_state_transition| {
-                if raw_state_transition.as_ref().len() as u64
-                    > platform_version.system_limits.max_state_transition_size
-                {
-                    // The state transition is too big
-                    let consensus_error = ConsensusError::BasicError(
-                        BasicError::StateTransitionMaxSizeExceededError(
-                            StateTransitionMaxSizeExceededError::new(
-                                raw_state_transition.as_ref().len() as u64,
-                                platform_version.system_limits.max_state_transition_size,
-                            ),
-                        ),
-                    );
+                if let Err(error) = validate_state_transition_size(
+                    raw_state_transition.as_ref().len() as u64,
+                    platform_version,
+                ) {
+                    // The state transition is too big. The helper's comparison and error are
+                    // frozen, so for protocol versions 14 and later, which select this generation, the
+                    // outcome is the one it shipped with.
+                    let consensus_error: ConsensusError = error.into();
 
                     DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
                         raw: raw_state_transition.as_ref(),
@@ -161,6 +154,7 @@ where
 mod tests {
     use super::*;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::consensus::basic::BasicError;
     use dpp::identifier::Identifier;
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
@@ -288,6 +282,49 @@ mod tests {
                 invalid.error
             ),
             other => panic!("expected one InvalidEncoding, got {other:?}"),
+        }
+    }
+
+    /// The size check at the last shipped protocol version: a transaction of exactly the limit
+    /// passes it, one byte more is refused with both numbers reported as they are.
+    #[test]
+    fn should_refuse_only_a_transaction_larger_than_the_limit_at_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let max_size = platform_version.system_limits.max_state_transition_size;
+        let raw_state_transitions = vec![
+            vec![0u8; max_size as usize],
+            vec![0u8; max_size as usize + 1],
+        ];
+        let decoded: Vec<_> = platform
+            .decode_raw_state_transitions_v1(&raw_state_transitions, platform_version)
+            .into_iter()
+            .collect();
+
+        assert_eq!(decoded.len(), 2);
+        if let DecodedStateTransition::InvalidEncoding(invalid) = &decoded[0] {
+            assert!(
+                !matches!(
+                    &invalid.error,
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                ),
+                "a transaction of exactly the limit must pass the size check"
+            );
+        }
+        match &decoded[1] {
+            DecodedStateTransition::InvalidEncoding(invalid) => match &invalid.error {
+                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
+                    error,
+                )) => {
+                    assert_eq!(error.actual_size_bytes(), max_size + 1);
+                    assert_eq!(error.max_size_bytes(), max_size);
+                }
+                other => panic!("expected StateTransitionMaxSizeExceededError, got {other:?}"),
+            },
+            other => panic!("expected InvalidEncoding, got {other:?}"),
         }
     }
 

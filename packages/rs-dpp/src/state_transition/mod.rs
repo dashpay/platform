@@ -549,6 +549,12 @@ pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
 /// `max_state_transition_size`: a transition of `size_bytes` is refused when
 /// it is larger, with the error Drive reports for one.
 ///
+/// Consensus depends on this: Drive refuses oversized transitions through it
+/// at every shipped protocol version. The limit comes from `SystemLimits`;
+/// the comparison (`size_bytes > max`, so the limit itself passes) and the
+/// error's two numbers are frozen, and a change to either must be a new
+/// versioned method, not an edit here.
+///
 /// DAPI refuses an oversized transition before Drive sees it with an untyped
 /// `InvalidArgument`, so clients that need the typed error (an asset-lock
 /// flow switching from a growing InstantSend proof to a fixed-size ChainLock
@@ -2482,6 +2488,24 @@ impl StateTransitionStructureValidation for StateTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Drive refuses through this helper at every protocol version, so its boundary is pinned
+    /// here for each of them: the limit itself passes, one byte more is refused with both
+    /// numbers reported as they are.
+    #[test]
+    fn should_refuse_only_a_transition_larger_than_the_limit() {
+        for protocol_version in 1..=LATEST_VERSION {
+            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
+            let max_size = platform_version.system_limits.max_state_transition_size;
+
+            assert!(validate_state_transition_size(0, platform_version).is_ok());
+            assert!(validate_state_transition_size(max_size, platform_version).is_ok());
+            let error = validate_state_transition_size(max_size + 1, platform_version)
+                .expect_err("one byte over the limit is refused");
+            assert_eq!(error.actual_size_bytes(), max_size + 1);
+            assert_eq!(error.max_size_bytes(), max_size);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // StateTransitionSigningOptions tests
