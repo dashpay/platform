@@ -129,6 +129,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenOrderPriceError(_) => 10462,
             Self::InvalidTokenOrderFillRangeError(_) => 10463,
             Self::InvalidTokenOrderExpiryError(_) => 10464,
+            Self::InvalidTokenOrderValueError(_) => 10465,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -398,7 +399,6 @@ impl ErrorWithCode for StateError {
             Self::TokenOrderPriceLimitError(_) => 40754,
             Self::TokenOrderNotOwnedError(_) => 40755,
             Self::TokenOrderSelfFillError(_) => 40756,
-            Self::TokenOrderValueTooLargeError(_) => 40757,
             Self::TokenOrderDecimalsMismatchError(_) => 40758,
 
             // Identity Errors: 40200-40299
