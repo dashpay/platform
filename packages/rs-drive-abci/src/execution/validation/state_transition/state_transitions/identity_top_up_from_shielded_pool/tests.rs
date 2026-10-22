@@ -340,8 +340,8 @@ mod tests {
         );
         assert_matches!(
             result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::InternalError(message)]
-                if message.contains("IdentityTopUpFromShieldedPool") && message.contains("not active")
+            [StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))]
+                if error.state_transition_type().starts_with("IdentityTopUpFromShieldedPool")
         );
     }
 

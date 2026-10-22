@@ -26,9 +26,6 @@
 //! which a wrong key passes about once in 256 attempts and then returns garbage; a caller that
 //! must tell the two apart has to recognise its plaintext.
 
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef, EncryptedFor,
@@ -43,6 +40,9 @@ use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
 };
 use dpp::platform_value::{Identifier, Value};
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{RngCore, SeedableRng};
+use dpp::secp256k1::{PublicKey, SecretKey};
 use platform_encryption::{decrypt_aes_256_cbc, derive_shared_key_ecdh, encrypt_aes_256_cbc};
 use std::collections::BTreeMap;
 use std::fmt;

@@ -531,7 +531,7 @@ fn surviving_stored_input_claims(
 /// a block to the height of the block that spent it — and
 /// `collect_finalized_tombstones` evicts the row once the chainlock
 /// finality boundary reaches that height, key-wallet's
-/// `prune_finalized_observed_spends` condition verbatim. A
+/// `prune_finalized_observed_spends` condition over applied chainlocks. A
 /// MEMPOOL-CONTEXT sweep (IS-locked winner, unmined) writes the same row
 /// UNSTAMPED (`winner_mined_height` NULL), and the collector never takes
 /// an unstamped row. The in-memory model an unstamped row mirrors is not
@@ -1168,22 +1168,21 @@ fn read_sync_heights(
 
 /// Evict never-materialised sweep tombstones once the chainlock finality
 /// boundary reaches their winner's mined height — the storage-side mirror
-/// of key-wallet's `prune_finalized_observed_spends`, same condition
-/// verbatim: an entry whose spend height is at or below
-/// `min(chainlock_height, synced_height)` is safe to forget, because the
-/// spend at that height is chain-locked and every BIP158 filter below the
-/// boundary has been matched with no false negatives, so the funding
-/// transaction of the outpoint it guards — necessarily mined at or below
-/// the spend's own height — has either been delivered (materialising the
-/// row) or provably never will be. No observation-age margin: the stamp IS
-/// the winner's height, carried on the sweep event itself, so nothing here
-/// guesses when the winner mined. Rows with no stamp are never collected:
-/// a mempool-context sweep (IS-locked winner, unmined) deliberately
-/// writes its placeholder unstamped, because such a winner has no mining
-/// deadline and no watermark can prove its inputs' funding "delivered or
-/// never will be" — an unstamped row is a live hold, resolved only by the
-/// funding upsert materialising it, a later block-context sweep stamping
-/// it, or a release deleting it (see `apply_sweep`).
+/// of key-wallet's `prune_finalized_observed_spends`: an entry whose spend
+/// height is at or below `min(chainlock_height, synced_height)` is safe to
+/// forget, because the spend at that height is chain-locked and every BIP158
+/// filter below the boundary has been matched with no false negatives, so
+/// the funding transaction of the outpoint it guards — necessarily mined at
+/// or below the spend's own height — has either been delivered
+/// (materialising the row) or provably never will be. No observation-age
+/// margin: the stamp IS the winner's height, carried on the sweep event
+/// itself, so nothing here guesses when the winner mined. Rows with no stamp
+/// are never collected: a mempool-context sweep (IS-locked winner, unmined)
+/// deliberately writes its placeholder unstamped, because such a winner has
+/// no mining deadline and no watermark can prove its inputs' funding
+/// "delivered or never will be" — an unstamped row is a live hold, resolved
+/// only by the funding upsert materialising it, a later block-context sweep
+/// stamping it, or a release deleting it (see `apply_sweep`).
 ///
 /// One pass, narrowed to `is_sweep_placeholder = 1` (only the tombstone insert
 /// sets the placeholder flag, so the set is exactly the never-materialised
@@ -1194,8 +1193,14 @@ fn read_sync_heights(
 /// `spent = 0` on a placeholder is always followed by that pass in the
 /// same transaction.
 ///
-/// Like upstream, a no-op until a chainlock height has been persisted —
-/// without a finality boundary nothing can be proven final.
+/// `chainlock_height` holds applied chainlocks only. key-wallet also prunes
+/// up to the heights of the chainlocks dash-spv holds back during the
+/// initial sync, which are never persisted, so this boundary's chainlock
+/// half can trail key-wallet's: a tombstone can outlive the matching
+/// in-memory entry, which only holds the coin spent for longer.
+///
+/// A no-op until a chainlock height has been persisted — without a
+/// finality boundary nothing can be proven final.
 fn collect_finalized_tombstones(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
