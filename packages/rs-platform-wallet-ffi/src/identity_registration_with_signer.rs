@@ -687,7 +687,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                 }
             };
 
-            let pub_bytes: [u8; 33] = public_key.serialize();
+            let pub_bytes: [u8; 33] = public_key.to_compressed();
             let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
             let pub_ptr = pub_box.as_mut_ptr();
             let pub_len = pub_box.len();
@@ -696,7 +696,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
             let dash_private = DashPrivateKey {
                 compressed: true,
                 network,
-                inner: ext_priv.private_key,
+                inner: ext_priv.private_key.clone(),
             };
             let wif_cstring = match CString::new(dash_private.to_wif()) {
                 Ok(s) => s,
@@ -719,7 +719,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                 public_key: pub_ptr,
                 public_key_len: pub_len,
                 private_key_wif: wif_cstring.into_raw(),
-                private_key_bytes: ext_priv.private_key.to_secret_bytes(),
+                private_key_bytes: *ext_priv.private_key.to_bytes(),
             });
         }
         Ok(rows)

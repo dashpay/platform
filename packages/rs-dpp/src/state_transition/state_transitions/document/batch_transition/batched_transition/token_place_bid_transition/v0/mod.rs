@@ -31,6 +31,10 @@ pub struct TokenPlaceBidTransitionV0 {
     pub amount: TokenAmount,
     /// The credits offered per whole token (10 to the power of the token's decimals base units).
     pub price: Credits,
+    /// The token's decimals the price is at. A offer executes only while they are the token's:
+    /// the price is per whole token, so a change of the token's decimals between signing and
+    /// execution would otherwise reprice it.
+    pub decimals: u8,
     /// The smallest amount, in base units, a fill may take unless it takes everything still
     /// open; a fill may not leave less than this open either.
     pub min_fill: TokenAmount,
@@ -42,8 +46,8 @@ impl fmt::Display for TokenPlaceBidTransitionV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Token PlaceBid, base: {}, amount: {}, price: {}, min fill: {}, expires at: {:?}",
-            self.base, self.amount, self.price, self.min_fill, self.expires_at
+            "Token PlaceBid, base: {}, amount: {}, price: {} at {} decimals, min fill: {}, expires at: {:?}",
+            self.base, self.amount, self.price, self.decimals, self.min_fill, self.expires_at
         )
     }
 }

@@ -9,7 +9,7 @@ use dapi_grpc::platform::v0::{
 use dpp::address_funds::AddressWitness;
 use dpp::block::block_info::BlockInfo;
 use dpp::bls::SecretKey;
-use dpp::dashcore::{secp256k1, signer};
+use dpp::dashcore::signer;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::DataContract;
@@ -21,6 +21,7 @@ use dpp::identity::{
     Identity, IdentityPublicKey, IdentityV0, KeyType, PartialIdentity, Purpose, SecurityLevel,
 };
 use dpp::platform_value::{platform_value, BinaryData, Value};
+use dpp::secp256k1;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;

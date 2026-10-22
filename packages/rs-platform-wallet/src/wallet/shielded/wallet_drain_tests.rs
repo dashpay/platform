@@ -44,8 +44,8 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
     let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
         .unwrap()
         .viewing_keys();
-    let secret = dashcore::secp256k1::SecretKey::from_secret_bytes([0x11; 32]).unwrap();
-    let public = dashcore::PublicKey::new(dashcore::secp256k1::PublicKey::from_secret_key(&secret));
+    let secret = dpp::secp256k1::SecretKey::from_secret_bytes([0x11; 32]).unwrap();
+    let public = dashcore::PublicKey::new(dpp::secp256k1::PublicKey::from_secret_key(&secret));
     let transaction = Transaction {
         version: 3,
         lock_time: 0,

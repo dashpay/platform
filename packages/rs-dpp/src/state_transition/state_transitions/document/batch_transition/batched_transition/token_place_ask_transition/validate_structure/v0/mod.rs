@@ -33,6 +33,7 @@ mod tests {
             base: Default::default(),
             amount,
             price,
+            decimals: 8,
             min_fill,
             expires_at: None,
         })

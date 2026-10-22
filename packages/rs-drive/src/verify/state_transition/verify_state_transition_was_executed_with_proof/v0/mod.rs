@@ -706,12 +706,6 @@ impl Drive {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Burn(_) => Some(vec!["burnFromId", "note"]),
-                                    // The decimals are the token's when the order was placed,
-                                    // which a later conventions update may have changed; every
-                                    // term of the transition is compared.
-                                    TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_) => {
-                                        Some(vec!["decimals"])
-                                    }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
                                     TokenTransition::DirectPurchase(_) => {
                                         let purchase_cost: Credits =
@@ -1394,6 +1388,7 @@ impl Drive {
                                         if order.token_id != token_id
                                             || order.maker_id != owner_id
                                             || order.price != token_place_ask_transition.price()
+                                            || order.decimals != token_place_ask_transition.decimals()
                                             || order.amount != token_place_ask_transition.amount()
                                             // Fills lower what is open, never to 0 (a listing filled
                                             // entirely is deleted) nor above what was listed.
@@ -1462,6 +1457,8 @@ impl Drive {
                                         if order.token_id != token_id
                                             || order.maker_id != owner_id
                                             || order.price != token_place_bid_transition.price()
+                                            || order.decimals
+                                                != token_place_bid_transition.decimals()
                                             || order.amount != token_place_bid_transition.amount()
                                             || order.remaining == 0
                                             || order.remaining > order.amount

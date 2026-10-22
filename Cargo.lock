@@ -43,17 +43,6 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
-dependencies = [
- "getrandom 0.2.17",
- "once_cell",
- "version_check",
-]
-
-[[package]]
-name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
@@ -177,13 +166,13 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app-connect-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base58",
  "platform-value",
@@ -201,15 +190,6 @@ dependencies = [
  "keyring-core",
  "log",
  "security-framework",
-]
-
-[[package]]
-name = "arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
-dependencies = [
- "derive_arbitrary",
 ]
 
 [[package]]
@@ -347,9 +327,9 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.17.0"
+version = "1.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
+checksum = "faac5829c2b74c28f830747e7818ccfb684261b5f48a1118b1e2a13d36dfab13"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -357,14 +337,15 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.41.0"
+version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
+checksum = "f1622d8446a2d4b2ce0c7eefc73dd43a99779028d5ee5c2dd8073a658ba8a2bc"
 dependencies = [
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
+ "pkg-config",
 ]
 
 [[package]]
@@ -859,7 +840,7 @@ checksum = "b79834656f71332577234b50bfc009996f7449e0c056884e6a02492ded0ca2f3"
 dependencies = [
  "arrayref",
  "arrayvec",
- "constant_time_eq 0.4.2",
+ "constant_time_eq",
 ]
 
 [[package]]
@@ -872,7 +853,7 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
- "constant_time_eq 0.4.2",
+ "constant_time_eq",
  "cpufeatures 0.3.0",
 ]
 
@@ -996,28 +977,6 @@ name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
-
-[[package]]
-name = "bytecheck"
-version = "0.6.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23cdc57ce23ac53c931e88a43d06d070a6fd142f2617be5855eb75efc9beb1c2"
-dependencies = [
- "bytecheck_derive",
- "ptr_meta",
- "simdutf8",
-]
-
-[[package]]
-name = "bytecheck_derive"
-version = "0.6.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3db406d29fbcd95542e92559bed4d8ad92636d1ca8b3b72ede10b4bcc010e659"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "bytecount"
@@ -1167,9 +1126,9 @@ dependencies = [
 
 [[package]]
 name = "chacha20"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -1191,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "check-features"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "toml 0.8.23",
 ]
@@ -1367,7 +1326,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1378,15 +1337,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "concurrent-queue"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
-dependencies = [
- "crossbeam-utils",
 ]
 
 [[package]]
@@ -1449,12 +1399,6 @@ name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
-
-[[package]]
-name = "constant_time_eq"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "constant_time_eq"
@@ -1528,21 +1472,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crc"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
-dependencies = [
- "crc-catalog",
-]
-
-[[package]]
-name = "crc-catalog"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1614,9 +1543,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.18"
+version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -1709,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "bytes",
  "dash-platform-macros",
@@ -1801,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "dash-async"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "futures",
  "thiserror 2.0.18",
@@ -1812,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "dash-context-provider"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "dash-async",
  "dpp",
@@ -1824,8 +1753,8 @@ dependencies = [
 
 [[package]]
 name = "dash-network"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "cbindgen 0.29.4",
  "grovedb-bincode",
@@ -1835,8 +1764,8 @@ dependencies = [
 
 [[package]]
 name = "dash-network-seeds"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "dash-network",
 ]
@@ -1847,9 +1776,20 @@ version = "0.1.0-beta"
 source = "git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7#33fcc59e1868c803f9608e0e78ee8bddf3abcee7"
 dependencies = [
  "ambassador",
- "bitcoin-consensus-encoding 1.3.0",
  "bitcoin-internals 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "dash-types",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7)",
+ "delegate",
+ "hex-conservative 1.3.0",
+]
+
+[[package]]
+name = "dash-num"
+version = "0.1.0-beta"
+source = "git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5#d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5"
+dependencies = [
+ "ambassador",
+ "bitcoin-internals 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
  "delegate",
  "hex-conservative 1.3.0",
  "serde",
@@ -1861,26 +1801,48 @@ version = "0.1.0-beta"
 source = "git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7#33fcc59e1868c803f9608e0e78ee8bddf3abcee7"
 dependencies = [
  "aes 0.9.3",
- "base58ck 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin_hashes 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "blst",
  "cfg-if",
- "dash-num",
- "dash-types",
- "ed25519-dalek 3.0.0",
+ "dash-num 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7)",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7)",
  "ff 0.14.0",
  "group 0.14.0",
  "hex-conservative 1.3.0",
  "rand_core 0.10.1",
- "serde",
  "sha2 0.11.0",
  "subtle",
  "zeroize",
 ]
 
 [[package]]
+name = "dash-pkc"
+version = "0.1.0-beta"
+source = "git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5#d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5"
+dependencies = [
+ "aes 0.9.3",
+ "base58ck 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitcoin_hashes 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "blst",
+ "cfg-if",
+ "dash-num 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
+ "ed25519-dalek 3.0.0",
+ "ff 0.14.0",
+ "group 0.14.0",
+ "hex-conservative 1.3.0",
+ "rand_core 0.10.1",
+ "secp256k1",
+ "serde",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "dash-platform-balance-checker"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "anyhow",
  "clap",
@@ -1895,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-macros"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1904,7 +1866,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-queries"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "dapi-grpc",
  "dash-context-provider",
@@ -1921,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1969,8 +1931,8 @@ dependencies = [
 
 [[package]]
 name = "dash-spv"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2003,30 +1965,31 @@ name = "dash-types"
 version = "0.1.0-beta"
 source = "git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7#33fcc59e1868c803f9608e0e78ee8bddf3abcee7"
 dependencies = [
- "bitcoin-consensus-encoding 1.3.0",
- "bitcoin-primitives 0.103.0",
  "cfg-if",
- "dash-types-marker",
  "hex-conservative 1.3.0",
- "serde",
  "subtle",
  "zeroize",
 ]
 
 [[package]]
-name = "dash-types-marker"
+name = "dash-types"
 version = "0.1.0-beta"
-source = "git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7#33fcc59e1868c803f9608e0e78ee8bddf3abcee7"
+source = "git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5#d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5"
 dependencies = [
- "quote",
- "syn 2.0.117",
- "xxhash-rust",
+ "bitcoin-consensus-encoding 1.3.0",
+ "bitcoin-primitives 0.103.0",
+ "cfg-if",
+ "hex-conservative 1.3.0",
+ "serde",
+ "subtle",
+ "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]
 name = "dashcore"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2034,15 +1997,14 @@ dependencies = [
  "bitvec",
  "blake3",
  "dash-network",
- "dash-num",
- "dash-types",
+ "dash-num 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
  "dashcore-crypto",
  "dashcore-private",
  "dashcore_hashes",
  "grovedb-bincode",
  "grovedb-bincode-derive",
  "hex-conservative 1.3.0",
- "secp256k1",
  "serde",
  "thiserror 2.0.18",
  "tracing",
@@ -2050,34 +2012,35 @@ dependencies = [
 
 [[package]]
 name = "dashcore-crypto"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "base58ck 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin-crypto",
  "dash-network",
- "dash-pkc",
- "dash-types",
+ "dash-pkc 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
+ "dash-types 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=d9e0d241e2e06edff455f88c9cb3b9ce0d8a8ac5)",
  "dashcore-private",
  "dashcore_hashes",
+ "delegate",
  "grovedb-bincode",
  "grovedb-bincode-derive",
  "hex-conservative 1.3.0",
- "secp256k1",
  "serde",
  "thiserror 2.0.18",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
 name = "dashcore-private"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "dashcore-rpc-json",
  "hex-conservative 1.3.0",
@@ -2089,8 +2052,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "dashcore",
  "grovedb-bincode",
@@ -2104,8 +2067,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "bitcoin_hashes 0.14.101",
  "grovedb-bincode",
@@ -2116,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2126,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "app-connect-contract",
  "base58",
@@ -2234,17 +2197,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "derive_more"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2342,7 +2294,7 @@ dependencies = [
 
 [[package]]
 name = "document-history-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2364,7 +2316,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2374,7 +2326,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2387,7 +2339,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ciborium",
- "dash-pkc",
+ "dash-pkc 0.1.0-beta (git+https://github.com/dashpay/base-sdk?rev=33fcc59e1868c803f9608e0e78ee8bddf3abcee7)",
  "dash-spv",
  "dashcore",
  "dashcore-rpc",
@@ -2426,6 +2378,7 @@ dependencies = [
  "regex",
  "rust_decimal",
  "rust_decimal_macros",
+ "secp256k1",
  "serde",
  "serde_json",
  "serde_repr",
@@ -2434,12 +2387,13 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
  "zeroize",
 ]
 
 [[package]]
 name = "dpp-json-convertible-derive"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2448,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -2491,7 +2445,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -2558,7 +2512,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "dapi-grpc",
  "dash-context-provider",
@@ -2761,16 +2715,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "event-listener"
-version = "5.4.1"
+version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13b66accf52311f30a0db42147dadea9850cb48cd070028831ae5f5d4b856ab"
+checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
 dependencies = [
- "concurrent-queue",
  "parking",
  "pin-project-lite",
 ]
@@ -2822,7 +2775,7 @@ checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3196,27 +3149,14 @@ dependencies = [
 
 [[package]]
 name = "git-state"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 
 [[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
-
-[[package]]
-name = "globset"
-version = "0.4.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
-dependencies = [
- "aho-corasick",
- "bstr",
- "log",
- "regex-automata",
- "regex-syntax",
-]
 
 [[package]]
 name = "gloo-timers"
@@ -3255,8 +3195,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "axum 0.8.9",
  "blake3",
@@ -3289,7 +3229,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http",
- "zip-extensions",
+ "zip 9.0.5",
 ]
 
 [[package]]
@@ -3314,8 +3254,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-bulk-append-tree"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-bincode",
@@ -3332,8 +3272,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-commitment-tree"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-bulk-append-tree",
@@ -3349,8 +3289,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-costs"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -3359,8 +3299,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-dense-fixed-sized-merkle-tree"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-bincode",
@@ -3373,8 +3313,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-element"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "grovedb-bincode",
  "grovedb-bincode-derive",
@@ -3389,8 +3329,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -3401,8 +3341,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-merk"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "byteorder",
@@ -3427,8 +3367,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-merkle-mountain-range"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-bincode",
@@ -3440,16 +3380,16 @@ dependencies = [
 
 [[package]]
 name = "grovedb-path"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "grovedb-private-document-store"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-bulk-append-tree",
@@ -3461,8 +3401,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-query"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "byteorder",
  "ed",
@@ -3477,8 +3417,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-storage"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -3496,8 +3436,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-version"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "thiserror 2.0.18",
  "versioned-feature-core",
@@ -3505,8 +3445,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-visualize"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -3514,8 +3454,8 @@ dependencies = [
 
 [[package]]
 name = "grovedbg-types"
-version = "6.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fc7028d83114d86f88222e7ff09fc47ae75360f0#fc7028d83114d86f88222e7ff09fc47ae75360f0"
+version = "6.1.1"
+source = "git+https://github.com/dashpay/grovedb?rev=2128ea18f9b1c2f9502f99967b1b1c6485c91f8b#2128ea18f9b1c2f9502f99967b1b1c6485c91f8b"
 dependencies = [
  "serde",
  "serde_with 3.21.0",
@@ -3523,9 +3463,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3620,9 +3560,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-dependencies = [
- "ahash 0.7.8",
-]
 
 [[package]]
 name = "hashbrown"
@@ -4078,22 +4015,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ignore"
-version = "0.4.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b915661dd01db3f05050265b2477bcc6527b3792388e2749b41623cc592be67d"
-dependencies = [
- "crossbeam-deque",
- "globset",
- "log",
- "memchr",
- "regex-automata",
- "same-file",
- "walkdir",
- "winapi-util",
-]
-
-[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4190,7 +4111,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4372,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -4396,9 +4317,9 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.18.0"
-source = "git+https://github.com/dashpay/jsonschema-rs?branch=configure_regexp#aacc1ab5140daac30eb65d376852f01f5381979d"
+source = "git+https://github.com/dashpay/jsonschema-rs?rev=aacc1ab5140daac30eb65d376852f01f5381979d#aacc1ab5140daac30eb65d376852f01f5381979d"
 dependencies = [
- "ahash 0.8.12",
+ "ahash",
  "anyhow",
  "base64 0.22.1",
  "bytecount",
@@ -4436,8 +4357,8 @@ dependencies = [
 
 [[package]]
 name = "key-wallet"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "async-trait",
  "bip39",
@@ -4449,7 +4370,6 @@ dependencies = [
  "grovedb-bincode",
  "grovedb-bincode-derive",
  "hex-conservative 1.3.0",
- "secp256k1",
  "serde",
  "serde_json",
  "tracing",
@@ -4459,8 +4379,8 @@ dependencies = [
 
 [[package]]
 name = "key-wallet-ffi"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "cbindgen 0.29.4",
  "dash-network",
@@ -4469,14 +4389,13 @@ dependencies = [
  "key-wallet",
  "key-wallet-manager",
  "libc",
- "secp256k1",
  "tokio",
 ]
 
 [[package]]
 name = "key-wallet-manager"
-version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=280b3f2ccbd737ae52d14f925625286964610e30#280b3f2ccbd737ae52d14f925625286964610e30"
+version = "0.46.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
 dependencies = [
  "async-trait",
  "dashcore",
@@ -4501,7 +4420,7 @@ dependencies = [
 
 [[package]]
 name = "keyword-search-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base58",
  "platform-value",
@@ -4672,16 +4591,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lzma-rust2"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c60a23ffb90d527e23192f1246b14746e2f7f071cb84476dd879071696c18a4a"
-dependencies = [
- "crc",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "mach2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4692,7 +4601,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -4881,7 +4790,7 @@ dependencies = [
 
 [[package]]
 name = "moderation-charters-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base58",
  "platform-value",
@@ -4947,6 +4856,18 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -5133,7 +5054,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5322,16 +5243,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "hmac",
-]
-
-[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5436,7 +5347,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "platform-encryption"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "aes 0.8.4",
  "cbc",
@@ -5448,7 +5359,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "grovedb-bincode",
  "platform-version",
@@ -5456,7 +5367,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5466,7 +5377,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -5485,7 +5396,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -5493,7 +5404,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "grovedb-bincode",
  "grovedb-version",
@@ -5503,7 +5414,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5512,7 +5423,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -5553,7 +5464,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-ffi"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5581,7 +5492,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-storage"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "apple-native-keyring-store",
  "argon2",
@@ -5948,26 +5859,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ptr_meta"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0738ccf7ea06b608c10564b31debd4f5bc5e197fc8bfe088f68ae5ce81e7a4f1"
-dependencies = [
- "ptr_meta_derive",
-]
-
-[[package]]
-name = "ptr_meta_derive"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b845dbfca988fa33db069c0e230574d15a3088f147a87b64c7589eb662c9ac"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "pulldown-cmark"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6020,7 +5911,7 @@ version = "0.6.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3db184a8b66cfe87f0263a1de147a6b554c864d1767c6f7fa4eb0e5497b565"
 dependencies = [
- "ahash 0.8.12",
+ "ahash",
  "equivalent",
  "hashbrown 0.16.1",
  "parking_lot",
@@ -6048,15 +5939,16 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
 dependencies = [
  "aws-lc-rs",
  "bytes",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "lru-slab",
- "rand 0.9.4",
+ "rand 0.10.1",
+ "rand_pcg",
  "ring",
  "rustc-hash 2.1.2",
  "rustls",
@@ -6079,7 +5971,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6136,7 +6028,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20 0.10.0",
+ "chacha20 0.10.2",
  "getrandom 0.4.2",
  "rand_core 0.10.1",
 ]
@@ -6184,6 +6076,15 @@ name = "rand_core"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rand_pcg"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
+]
 
 [[package]]
 name = "rand_xorshift"
@@ -6372,15 +6273,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rend"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71fe3824f5629716b1589be05dacd749f6aa084c87e00e016714a8cdfccc997c"
-dependencies = [
- "bytecheck",
-]
-
-[[package]]
 name = "reopen"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6519,35 +6411,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rkyv"
-version = "0.7.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2297bf9c81a3f0dc96bc9521370b88f054168c29826a75e89c55ff196e7ed6a1"
-dependencies = [
- "bitvec",
- "bytecheck",
- "bytes",
- "hashbrown 0.12.3",
- "ptr_meta",
- "rend",
- "rkyv_derive",
- "seahash",
- "tinyvec",
- "uuid",
-]
-
-[[package]]
-name = "rkyv_derive"
-version = "0.7.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d7b42d4b8d06048d3ac8db0eb31bcb942cbeb709f0b5f2b2ebde398d3038f5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "rmp"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6589,7 +6452,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -6643,7 +6506,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "backon",
  "chrono",
@@ -6674,7 +6537,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dash-event-bus"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "metrics",
  "tokio",
@@ -6707,7 +6570,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-ffi"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6741,7 +6604,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-trusted-context-provider"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "arc-swap",
  "dash-async",
@@ -6764,7 +6627,7 @@ dependencies = [
 
 [[package]]
 name = "rs-unified-sdk-ffi"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "dash-network",
  "key-wallet-ffi",
@@ -6774,7 +6637,7 @@ dependencies = [
 
 [[package]]
 name = "rs-unified-sdk-jni"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "android_logger",
  "dash-network",
@@ -6837,16 +6700,16 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.42.1"
+version = "1.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be2a24f50780bc85f09cc6ac299bdf1424302742d77221106859c9d8b102126a"
+checksum = "7653272e75dcac41dc199fbea6f5797633994fafd339943c06c9af16bf29cd3a"
 dependencies = [
  "arrayvec",
  "borsh",
  "bytes",
  "num-traits",
  "rand 0.8.6",
- "rkyv",
+ "rand 0.9.4",
  "serde",
  "serde_json",
  "wasm-bindgen",
@@ -6899,7 +6762,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6912,14 +6775,14 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "rustls"
-version = "0.23.40"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -6971,7 +6834,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6982,9 +6845,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -7087,12 +6950,6 @@ name = "sdd"
 version = "3.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
-
-[[package]]
-name = "seahash"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "secp256k1"
@@ -7483,7 +7340,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7552,9 +7409,9 @@ dependencies = [
 
 [[package]]
 name = "spin"
-version = "0.9.8"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 dependencies = [
  "lock_api",
 ]
@@ -7604,7 +7461,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strategy-tests"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "dpp",
  "drive",
@@ -7783,7 +7640,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8006,7 +7863,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "token-history-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -8016,7 +7873,7 @@ dependencies = [
 
 [[package]]
 name = "token-market-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base58",
  "platform-value",
@@ -8848,7 +8705,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -8991,7 +8848,7 @@ checksum = "a8145dd1593bf0fb137dbfa85b8be79ec560a447298955877804640e40c2d6ea"
 
 [[package]]
 name = "wasm-dpp"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9015,7 +8872,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp2"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9034,7 +8891,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-drive-verify"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -9089,7 +8946,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-sdk"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -9231,7 +9088,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9603,7 +9460,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "5.0.0-rc.4"
+version = "5.0.0-rc.7"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
@@ -9805,28 +9662,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
-dependencies = [
- "aes 0.8.4",
- "arbitrary",
- "constant_time_eq 0.3.1",
- "crc32fast",
- "flate2",
- "getrandom 0.3.4",
- "hmac",
- "indexmap 2.14.0",
- "lzma-rust2",
- "memchr",
- "pbkdf2",
- "sha1",
- "zeroize",
- "zopfli",
-]
-
-[[package]]
-name = "zip"
 version = "8.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
@@ -9840,13 +9675,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "zip-extensions"
-version = "0.13.1"
+name = "zip"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9bb4da4a220bfb79c2b7bfa88466181778892ddaffaca9f06d5e9cc5de0b46f"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
- "ignore",
- "zip 6.0.0",
+ "crc32fast",
+ "flate2",
+ "indexmap 2.14.0",
+ "memchr",
+ "nix",
+ "typed-path",
+ "zopfli",
 ]
 
 [[package]]

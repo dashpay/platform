@@ -15,8 +15,6 @@ use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dash_context_provider::ContextProvider;
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, LookupHashKey};
@@ -27,6 +25,8 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -481,6 +481,25 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {
+        self.register_dpns_name_with_owner_balance_and_metadata(input)
+            .await
+            .map(|(result, _owner_balance, _metadata)| result)
+    }
+
+    /// Register a DPNS username like [`Sdk::register_dpns_name`], and also return
+    /// what the domain document's proof carries next to the document: the credit
+    /// balance of the registering identity after the registration (`None` for a
+    /// proof made before protocol version 14) and the verified metadata of that
+    /// response, whose height is the block the balance is a snapshot at.
+    ///
+    /// The domain is the registration's last write, so its balance already
+    /// includes what the preorder cost.
+    pub async fn register_dpns_name_with_owner_balance_and_metadata<
+        S: Signer<IdentityPublicKey>,
+    >(
+        &self,
+        input: RegisterDpnsNameInput<S>,
+    ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
         let identity_id = input.identity.id().to_owned();
         let DpnsRegistrationDocuments {
             dpns_contract,
@@ -557,8 +576,8 @@ impl Sdk {
             }),
             ..Default::default()
         });
-        let platform_domain_document = domain_document
-            .put_to_platform_and_wait_for_response(
+        let (platform_domain_document, owner_balance, metadata) = domain_document
+            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
                 self,
                 domain_document_type,
                 None, // entropy: generated together with the id once the nonce is known
@@ -573,11 +592,15 @@ impl Sdk {
             })?;
         debug!(%identity_id, document_id = %platform_domain_document.id(), stage = "domain", "DPNS registration: document confirmed");
 
-        Ok(RegisterDpnsNameResult {
-            preorder_document: platform_preorder_document,
-            domain_document: platform_domain_document,
-            full_domain_name: format!("{}.dash", normalized_label),
-        })
+        Ok((
+            RegisterDpnsNameResult {
+                preorder_document: platform_preorder_document,
+                domain_document: platform_domain_document,
+                full_domain_name: format!("{}.dash", normalized_label),
+            },
+            owner_balance,
+            metadata,
+        ))
     }
 
     /// The preorder `owner_id` already holds of the name `preorder_document` commits to,

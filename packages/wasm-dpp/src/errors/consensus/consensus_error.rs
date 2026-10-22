@@ -10,9 +10,9 @@ use dpp::consensus::basic::token::{
     InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
 };
 use dpp::consensus::state::token::{
-    TokenNotTradeableError, TokenOrderExpiredError, TokenOrderFillAmountError,
-    TokenOrderNotFoundError, TokenOrderNotOwnedError, TokenOrderPriceLimitError,
-    TokenOrderSelfFillError, TokenOrderValueTooLargeError,
+    TokenNotTradeableError, TokenOrderDecimalsMismatchError, TokenOrderExpiredError,
+    TokenOrderFillAmountError, TokenOrderNotFoundError, TokenOrderNotOwnedError,
+    TokenOrderPriceLimitError, TokenOrderSelfFillError, TokenOrderValueTooLargeError,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
@@ -558,6 +558,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::TokenOrderValueTooLargeError(e) => {
             generic_consensus_error!(TokenOrderValueTooLargeError, e).into()
+        }
+        StateError::TokenOrderDecimalsMismatchError(e) => {
+            generic_consensus_error!(TokenOrderDecimalsMismatchError, e).into()
         }
         StateError::IdentityInTokenConfigurationNotFoundError(e) => {
             generic_consensus_error!(IdentityInTokenConfigurationNotFoundError, e).into()

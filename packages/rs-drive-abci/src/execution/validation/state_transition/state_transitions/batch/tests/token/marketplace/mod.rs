@@ -10,7 +10,9 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Setters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
+    TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
+};
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
@@ -26,6 +28,8 @@ use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
+use drive::error::Error as DriveError;
 use simple_signer::signer::SimpleSigner;
 use std::sync::Arc;
 
@@ -218,6 +222,7 @@ impl Market {
         expires_at: Option<u64>,
     ) -> (StateTransition, Identifier) {
         let platform_version = PlatformVersion::latest();
+        let decimals = self.token_decimals();
         let nonce = self.seller.take_nonce();
         let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.seller.id(), nonce);
         let transition = BatchTransition::new_token_place_ask_transition(
@@ -227,6 +232,7 @@ impl Market {
             0,
             amount,
             price,
+            decimals,
             min_fill,
             expires_at,
             &self.seller.key,
@@ -346,6 +352,132 @@ impl Market {
     }
 
     /// The seller, the contract owner, changes the token's decimals.
+    /// The seller transfers `amount` to the buyer.
+    async fn transfer_to_buyer(&mut self, amount: u64) {
+        let platform_version = PlatformVersion::latest();
+        let nonce = self.seller.take_nonce();
+        let transfer = BatchTransition::new_token_transfer_transition(
+            self.token_id,
+            self.seller.id(),
+            self.contract.id(),
+            0,
+            amount,
+            self.buyer.id(),
+            None,
+            None,
+            None,
+            &self.seller.key,
+            nonce,
+            0,
+            &self.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the transfer");
+        self.assert_executes(&transfer, &BlockInfo::default());
+    }
+
+    /// The seller, the contract owner, freezes the buyer's token account.
+    async fn freeze_the_buyer(&mut self) {
+        let platform_version = PlatformVersion::latest();
+        let nonce = self.seller.take_nonce();
+        let freeze = BatchTransition::new_token_freeze_transition(
+            self.token_id,
+            self.seller.id(),
+            self.contract.id(),
+            0,
+            self.buyer.id(),
+            None,
+            None,
+            &self.seller.key,
+            nonce,
+            0,
+            &self.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the freeze");
+        self.assert_executes(&freeze, &BlockInfo::default());
+    }
+
+    /// A listing by the buyer at `decimals`, and its order id.
+    async fn buyer_places_ask(
+        &mut self,
+        amount: u64,
+        price: Credits,
+        decimals: u8,
+    ) -> (StateTransition, Identifier) {
+        let platform_version = PlatformVersion::latest();
+        let nonce = self.buyer.take_nonce();
+        let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.buyer.id(), nonce);
+        let transition = BatchTransition::new_token_place_ask_transition(
+            self.token_id,
+            self.buyer.id(),
+            self.contract.id(),
+            0,
+            amount,
+            price,
+            decimals,
+            1,
+            None,
+            &self.buyer.key,
+            nonce,
+            0,
+            &self.buyer.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the listing");
+        (transition, order_id)
+    }
+
+    /// A fill by the seller of up to `max_amount` of the listing `order_id`.
+    async fn seller_fills_ask(&mut self, order_id: Identifier, max_amount: u64) -> StateTransition {
+        let platform_version = PlatformVersion::latest();
+        let nonce = self.seller.take_nonce();
+        BatchTransition::new_token_fill_ask_transition(
+            self.token_id,
+            self.seller.id(),
+            self.contract.id(),
+            0,
+            order_id,
+            1,
+            max_amount,
+            u64::MAX >> 1,
+            &self.seller.key,
+            nonce,
+            0,
+            &self.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the fill")
+    }
+
+    /// The token's decimals as stored now, which a placement signs.
+    fn token_decimals(&self) -> u8 {
+        let platform_version = PlatformVersion::latest();
+        self.platform
+            .drive
+            .get_contract_with_fetch_info(
+                self.contract.id().to_buffer(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the token's contract")
+            .expect("expected the token's contract")
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token")
+            .conventions()
+            .decimals()
+    }
+
     async fn set_decimals(&mut self, decimals: u8) {
         let platform_version = PlatformVersion::latest();
         let mut conventions = self
@@ -393,6 +525,7 @@ impl Market {
             position,
             1_000,
             PRICE,
+            8,
             1,
             None,
             &self.seller.key,
@@ -495,7 +628,7 @@ impl Market {
     fn prove_and_try_verify(
         &self,
         transition: &StateTransition,
-    ) -> Result<StateTransitionProofResult, drive::error::Error> {
+    ) -> Result<StateTransitionProofResult, DriveError> {
         let platform_version = PlatformVersion::latest();
         let proof = self
             .platform
@@ -753,6 +886,135 @@ async fn should_refuse_listing_a_token_that_is_not_tradeable() {
     );
     assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
     assert_eq!(market.listing(order_id), None);
+}
+
+/// The contract owner (the seller) may change the token's conventions and freeze accounts.
+fn make_token_tradeable_with_owner_conventions_and_freezes(
+    token_configuration: &mut TokenConfiguration,
+) {
+    make_token_tradeable(token_configuration);
+    let owner_rules = ChangeControlRules::V0(ChangeControlRulesV0 {
+        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+        admin_action_takers: AuthorizedActionTakers::NoOne,
+        changing_authorized_action_takers_to_no_one_allowed: false,
+        changing_admin_action_takers_to_no_one_allowed: false,
+        self_changing_admin_action_takers_allowed: false,
+    });
+    token_configuration.set_conventions_change_rules(owner_rules.clone());
+    token_configuration.set_freeze_rules(owner_rules);
+}
+
+/// A listing's price is per whole token, so the decimals set what it is worth: 1,000 base
+/// units at 1,000,000,000 credits per whole token are 10,000 credits at 8 decimals and 1 credit
+/// at 16. A holder signs a listing at the token's 8 decimals; the identity controlling the
+/// token's conventions (the contract owner, not the holder) changes them to 16 before the
+/// listing executes. The listing is refused with `TokenOrderDecimalsMismatchError`, by check_tx
+/// and in a block, and nothing moves into escrow.
+#[tokio::test]
+async fn should_refuse_a_listing_signed_at_other_decimals() {
+    let mut market = market_with(
+        make_token_tradeable_with_owner_conventions_and_freezes,
+        dash_to_credits!(1.0),
+    );
+    market.transfer_to_buyer(5_000).await;
+    let (listing, order_id) = market.buyer_places_ask(1_000, 1_000_000_000, 8).await;
+
+    market.set_decimals(16).await;
+
+    assert_matches!(
+        market.check_tx(&listing).as_slice(),
+        [ConsensusError::StateError(StateError::TokenOrderDecimalsMismatchError(error))]
+            if error.signed_decimals() == 8 && error.token_decimals() == 16
+    );
+    assert_matches!(
+        market.process(&listing).execution_results().as_slice(),
+        [StateTransitionExecutionResult::PaidConsensusError {
+            error: error @ ConsensusError::StateError(
+                StateError::TokenOrderDecimalsMismatchError(inner)
+            ),
+            ..
+        }] if inner.token_id() == market.token_id && error.code() == 40758
+    );
+    assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
+    assert_eq!(market.escrow(order_id), None);
+    assert_eq!(market.listing(order_id), None);
+}
+
+/// A listing whose maker's account is frozen cannot be filled: the fill is refused with the
+/// maker's `IdentityTokenAccountFrozenError` and nothing moves. The frozen maker can still
+/// cancel it, and gets back what it holds in escrow.
+#[tokio::test]
+async fn should_refuse_filling_a_frozen_makers_listing_and_let_the_maker_cancel() {
+    let mut market = market_with(
+        make_token_tradeable_with_owner_conventions_and_freezes,
+        dash_to_credits!(1.0),
+    );
+    market.transfer_to_buyer(5_000).await;
+    let (place, order_id) = market.buyer_places_ask(1_000, PRICE, 8).await;
+    market.assert_executes(&place, &BlockInfo::default());
+    market.freeze_the_buyer().await;
+
+    let fill = market.seller_fills_ask(order_id, 400).await;
+    assert_matches!(
+        market.process(&fill).execution_results().as_slice(),
+        [StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(error)),
+            ..
+        }] if *error.identity_id() == market.buyer.id() && *error.token_id() == market.token_id
+    );
+    assert_eq!(market.escrow(order_id), Some(1_000));
+    assert_eq!(market.token_balance(market.buyer.id()), Some(4_000));
+    assert_eq!(
+        market.token_balance(market.seller.id()),
+        Some(BASE_SUPPLY - 5_000)
+    );
+
+    let cancel = market.cancel(order_id, true).await;
+    market.assert_executes(&cancel, &BlockInfo::default());
+    assert_eq!(market.escrow(order_id), None);
+    assert_eq!(market.listing(order_id), None);
+    assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
+}
+
+/// A buyer whose account is frozen cannot buy a listing unless the token allows transfers to
+/// frozen balances: then the fill executes and the tokens land in the frozen balance.
+#[tokio::test]
+async fn should_refuse_a_frozen_buyers_fill_unless_the_token_allows_transfers_to_frozen_balances() {
+    for allowed in [false, true] {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable_with_owner_conventions_and_freezes(token_configuration);
+                token_configuration.allow_transfer_to_frozen_balance(allowed);
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        market.freeze_the_buyer().await;
+
+        let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
+        let processing_result = market.process(&fill);
+        if allowed {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            assert_eq!(market.token_balance(market.buyer.id()), Some(400));
+            assert_eq!(market.escrow(order_id), Some(600));
+        } else {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::IdentityTokenAccountFrozenError(error)
+                    ),
+                    ..
+                }] if *error.identity_id() == market.buyer.id()
+            );
+            assert_eq!(market.token_balance(market.buyer.id()), None);
+            assert_eq!(market.escrow(order_id), Some(1_000));
+        }
+    }
 }
 
 #[tokio::test]
@@ -1210,6 +1472,7 @@ mod offers {
             expires_at: Option<u64>,
         ) -> (StateTransition, Identifier) {
             let platform_version = PlatformVersion::latest();
+            let decimals = self.token_decimals();
             let nonce = self.buyer.take_nonce();
             let order_id = TokenOrderSide::Bid.order_id(self.token_id, self.buyer.id(), nonce);
             let transition = BatchTransition::new_token_place_bid_transition(
@@ -1219,6 +1482,7 @@ mod offers {
                 0,
                 amount,
                 price,
+                decimals,
                 min_fill,
                 expires_at,
                 &self.buyer.key,
@@ -1317,6 +1581,7 @@ mod offers {
                 position,
                 1_000,
                 PRICE,
+                8,
                 1,
                 None,
                 &self.buyer.key,
@@ -1855,6 +2120,40 @@ mod offers {
         assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
     }
 
+    /// An offer's escrow is what it is worth at the decimals it was signed at: 1,000 base units
+    /// at 1,000,000,000 credits per whole token hold 10,000 credits at 8 decimals and
+    /// 100,000,000 at 4. The buyer signs at 8; the identity controlling the token's conventions
+    /// (the contract owner) changes them to 4 before the offer executes. The offer is refused
+    /// with `TokenOrderDecimalsMismatchError`, by check_tx and in a block, and none of the
+    /// buyer's credits move into escrow.
+    #[tokio::test]
+    async fn should_refuse_an_offer_signed_at_other_decimals() {
+        let mut market = market_with(
+            make_token_tradeable_with_owner_conventions_and_freezes,
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, 1_000_000_000, 1, None).await;
+
+        market.set_decimals(4).await;
+
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::StateError(StateError::TokenOrderDecimalsMismatchError(error))]
+                if error.signed_decimals() == 8 && error.token_decimals() == 4
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: error @ ConsensusError::StateError(
+                    StateError::TokenOrderDecimalsMismatchError(inner)
+                ),
+                ..
+            }] if inner.token_id() == market.token_id && error.code() == 40758
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+    }
+
     #[tokio::test]
     async fn should_refuse_selling_into_ones_own_offer() {
         let mut market = tradeable_market();
@@ -2153,8 +2452,8 @@ mod history {
 
     /// A closed order's placement is proved by its `orderPlaced` record, which holds every term
     /// of the placement. A placement with the same signer, nonce, amount and price but another
-    /// minimum fill or expiry has the same order id and record id, and does not verify against
-    /// that proof, on either side.
+    /// minimum fill, expiry or signed decimals has the same order id and record id, and does
+    /// not verify against that proof, on either side.
     #[tokio::test]
     async fn should_not_prove_a_closed_order_for_other_terms() {
         let mut market = tradeable_market();
@@ -2176,10 +2475,39 @@ mod history {
             market.seller.nonce = next;
             assert_eq!(other_id, order_id);
             assert!(
-                market.prove_and_try_verify(&other).is_err(),
+                matches!(
+                    market.prove_and_try_verify(&other),
+                    Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+                ),
                 "a listing with a minimum fill of {min_fill} and expiry {expires_at:?}"
             );
         }
+
+        // The same listing signed at other decimals.
+        let platform_version = PlatformVersion::latest();
+        let other_decimals = BatchTransition::new_token_place_ask_transition(
+            market.token_id,
+            market.seller.id(),
+            market.contract.id(),
+            0,
+            1_000,
+            PRICE,
+            2,
+            10,
+            Some(9_000),
+            &market.seller.key,
+            nonce,
+            0,
+            &market.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the listing");
+        assert!(matches!(
+            market.prove_and_try_verify(&other_decimals),
+            Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+        ));
 
         let nonce = market.buyer.nonce;
         let (place, order_id) = market.place_bid(1_000, PRICE, 10, Some(9_000)).await;
@@ -2197,7 +2525,10 @@ mod history {
             market.buyer.nonce = next;
             assert_eq!(other_id, order_id);
             assert!(
-                market.prove_and_try_verify(&other).is_err(),
+                matches!(
+                    market.prove_and_try_verify(&other),
+                    Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+                ),
                 "an offer with a minimum fill of {min_fill} and expiry {expires_at:?}"
             );
         }
@@ -2274,7 +2605,10 @@ mod history {
         );
         let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
-        assert!(market.prove_and_try_verify(&place).is_err());
+        assert_matches!(
+            market.prove_and_try_verify(&place),
+            Err(DriveError::Proof(ProofError::IncorrectProof(_)))
+        );
     }
 
     #[tokio::test]

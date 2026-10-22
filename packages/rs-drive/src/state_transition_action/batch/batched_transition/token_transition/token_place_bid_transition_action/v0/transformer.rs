@@ -7,7 +7,7 @@ use dpp::state_transition::batch_transition::token_place_bid_transition::v0::Tok
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
-use dpp::consensus::state::token::TokenOrderValueTooLargeError;
+use dpp::consensus::state::token::{TokenOrderDecimalsMismatchError, TokenOrderValueTooLargeError};
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
@@ -29,7 +29,8 @@ impl TokenPlaceBidTransitionActionV0 {
     /// token's decimals, rounded up; an offer worth more than an order holds (`i64::MAX` credits)
     /// bumps the nonce with `TokenOrderValueTooLargeError`, and one naming a token its contract
     /// does not define with `ContractHasNoTokensError` or `InvalidTokenPositionError`. The offer
-    /// records the decimals, which price every sale into it. The buyer's credits are checked with
+    /// signs the decimals its price is at and is refused with `TokenOrderDecimalsMismatchError`
+    /// unless they are the token's; it records them, and they price every sale into it. The buyer's credits are checked with
     /// the batch's fees, which count the escrow as a purchase.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_bid_transition_with_contract_lookup(
@@ -53,6 +54,7 @@ impl TokenPlaceBidTransitionActionV0 {
             base,
             amount,
             price,
+            decimals,
             min_fill,
             expires_at,
         } = value;
@@ -101,10 +103,25 @@ impl TokenPlaceBidTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
-        let decimals = match base_action.token_configuration_or_position_error() {
+        let token_decimals = match base_action.token_configuration_or_position_error() {
             Ok(token_configuration) => token_configuration.conventions().decimals(),
             Err(error) => return bump(vec![error], fee_result),
         };
+        // The offer's escrow is what it is worth at the decimals it was signed at, so they must be
+        // the token's before anything is worked out from them: a change of the token's decimals
+        // between signing and execution would otherwise reprice the offer.
+        let decimals = *decimals;
+        if decimals != token_decimals {
+            return bump(
+                vec![TokenOrderDecimalsMismatchError::new(
+                    base.token_id(),
+                    decimals,
+                    token_decimals,
+                )
+                .into()],
+                fee_result,
+            );
+        }
         let Some(escrow) = TokenOrder::order_value(*amount, *price, decimals) else {
             return bump(
                 vec![TokenOrderValueTooLargeError::new(*amount, *price, decimals).into()],
