@@ -6888,6 +6888,11 @@ export class GetIdentityByNonUniquePublicKeyHashRequest extends jspb.Message {
   getV0(): GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0 | undefined;
   setV0(value?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0): void;
 
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1 | undefined;
+  setV1(value?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1): void;
+
   getVersionCase(): GetIdentityByNonUniquePublicKeyHashRequest.VersionCase;
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashRequest.AsObject;
@@ -6902,6 +6907,7 @@ export class GetIdentityByNonUniquePublicKeyHashRequest extends jspb.Message {
 export namespace GetIdentityByNonUniquePublicKeyHashRequest {
   export type AsObject = {
     v0?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.AsObject,
+    v1?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.AsObject,
   }
 
   export class GetIdentityByNonUniquePublicKeyHashRequestV0 extends jspb.Message {
@@ -6938,9 +6944,44 @@ export namespace GetIdentityByNonUniquePublicKeyHashRequest {
     }
   }
 
+  export class GetIdentityByNonUniquePublicKeyHashRequestV1 extends jspb.Message {
+    getPublicKeyHash(): Uint8Array | string;
+    getPublicKeyHash_asU8(): Uint8Array;
+    getPublicKeyHash_asB64(): string;
+    setPublicKeyHash(value: Uint8Array | string): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashRequestV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashRequestV1): GetIdentityByNonUniquePublicKeyHashRequestV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashRequestV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashRequestV1;
+    static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashRequestV1, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashRequestV1;
+  }
+
+  export namespace GetIdentityByNonUniquePublicKeyHashRequestV1 {
+    export type AsObject = {
+      publicKeyHash: Uint8Array | string,
+      startAfter: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
@@ -6949,6 +6990,11 @@ export class GetIdentityByNonUniquePublicKeyHashResponse extends jspb.Message {
   clearV0(): void;
   getV0(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0 | undefined;
   setV0(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0): void;
+
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1 | undefined;
+  setV1(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1): void;
 
   getVersionCase(): GetIdentityByNonUniquePublicKeyHashResponse.VersionCase;
   serializeBinary(): Uint8Array;
@@ -6964,6 +7010,7 @@ export class GetIdentityByNonUniquePublicKeyHashResponse extends jspb.Message {
 export namespace GetIdentityByNonUniquePublicKeyHashResponse {
   export type AsObject = {
     v0?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.AsObject,
+    v1?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.AsObject,
   }
 
   export class GetIdentityByNonUniquePublicKeyHashResponseV0 extends jspb.Message {
@@ -6972,15 +7019,10 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
     getIdentity(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse | undefined;
     setIdentity(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse): void;
 
-    hasLegacyProof(): boolean;
-    clearLegacyProof(): void;
-    getLegacyProof(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse | undefined;
-    setLegacyProof(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse): void;
-
     hasProof(): boolean;
     clearProof(): void;
-    getProof(): Proof | undefined;
-    setProof(value?: Proof): void;
+    getProof(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse | undefined;
+    setProof(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse): void;
 
     hasMetadata(): boolean;
     clearMetadata(): void;
@@ -7001,8 +7043,7 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
   export namespace GetIdentityByNonUniquePublicKeyHashResponseV0 {
     export type AsObject = {
       identity?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.AsObject,
-      legacyProof?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.AsObject,
-      proof?: Proof.AsObject,
+      proof?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
@@ -7063,14 +7104,79 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       IDENTITY = 1,
-      LEGACY_PROOF = 2,
-      PROOF = 4,
+      PROOF = 2,
+    }
+  }
+
+  export class GetIdentityByNonUniquePublicKeyHashResponseV1 extends jspb.Message {
+    hasIdentity(): boolean;
+    clearIdentity(): void;
+    getIdentity(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse | undefined;
+    setIdentity(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentityByNonUniquePublicKeyHashResponseV1.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashResponseV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashResponseV1): GetIdentityByNonUniquePublicKeyHashResponseV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashResponseV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashResponseV1;
+    static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashResponseV1, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashResponseV1;
+  }
+
+  export namespace GetIdentityByNonUniquePublicKeyHashResponseV1 {
+    export type AsObject = {
+      identity?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class IdentityResponse extends jspb.Message {
+      hasIdentity(): boolean;
+      clearIdentity(): void;
+      getIdentity(): Uint8Array | string;
+      getIdentity_asU8(): Uint8Array;
+      getIdentity_asB64(): string;
+      setIdentity(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): IdentityResponse.AsObject;
+      static toObject(includeInstance: boolean, msg: IdentityResponse): IdentityResponse.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: IdentityResponse, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): IdentityResponse;
+      static deserializeBinaryFromReader(message: IdentityResponse, reader: jspb.BinaryReader): IdentityResponse;
+    }
+
+    export namespace IdentityResponse {
+      export type AsObject = {
+        identity: Uint8Array | string,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      IDENTITY = 1,
+      PROOF = 2,
     }
   }
 
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
