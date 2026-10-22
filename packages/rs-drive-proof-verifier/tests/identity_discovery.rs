@@ -372,7 +372,7 @@ fn should_read_nonunique_answers_signed_by_an_unknown_newer_version_with_newest_
     ));
 }
 #[test]
-fn should_reject_nonunique_wrong_hash_cursor_signature_metadata_and_unsupported_version() {
+fn should_reject_nonunique_wrong_hash_cursor_signature_and_metadata_tampering() {
     for legacy in [true, false] {
         let f = Fixture::new(producer_for(legacy));
         let response = f.response(legacy, None);
@@ -386,17 +386,28 @@ fn should_reject_nonunique_wrong_hash_cursor_signature_metadata_and_unsupported_
                 0 => m.height += 1,
                 1 => m.time_ms += 1,
                 2 => m.core_chain_locked_height += 1,
-                3 => m.protocol_version += 1,
+                // Another version answering in the same format, so only the signature can refuse it.
+                3 => {
+                    m.protocol_version = if legacy {
+                        12
+                    } else {
+                        PlatformVersion::latest().protocol_version + 1
+                    }
+                }
                 4 => m.chain_id.push('x'),
                 5 => m.protocol_version = u32::MAX,
                 6 => m.protocol_version = 0,
                 7 => m.protocol_version = PlatformVersion::latest().protocol_version + 1,
                 _ => proof(&mut changed).signature[0] ^= 1,
             }
-            assert!(
-                verify(changed, f.hash, None).is_err(),
-                "legacy={legacy}, field={field}"
-            );
+            let error = verify(changed, f.hash, None)
+                .expect_err(&format!("legacy={legacy}, field={field}"));
+            if field == 3 {
+                assert!(
+                    matches!(*error, drive_proof_verifier::Error::InvalidSignature { .. }),
+                    "legacy={legacy}: {error}"
+                );
+            }
         }
     }
 }
@@ -523,6 +534,16 @@ fn should_export_nonunique_sdk_fixtures() {
             }
         }
     }
+    // A version newer than this build, answering in the newest format.
+    let newer = PlatformVersion::latest().protocol_version + 1;
+    let f = Fixture::new(PlatformVersion::latest().protocol_version);
+    let response = f.response_signed_as(false, None, newer);
+    verify(response.clone(), f.hash, None).unwrap();
+    std::fs::write(
+        directory.join(format!("pv{newer}-current-0.bin")),
+        response.encode_to_vec(),
+    )
+    .unwrap();
 }
 
 #[test]

@@ -96,6 +96,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult;
     use dapi_grpc::Message;
     use dpp::dashcore::Network;
+    use dpp::version::PLATFORM_VERSIONS;
 
     #[test]
     fn test_query_identity_by_non_unique_public_key_hash_with_none_version() {
@@ -177,9 +178,10 @@ mod tests {
     /// Clients pick the wire format to accept from the signed version's handler generation,
     /// while the handler builds its answer from the producer generation. If the two drifted
     /// apart, that version would either fail every proved lookup or have its answers refused.
+    /// The verifier generation names the same format, so a change to one must revisit all.
     #[test]
     fn should_select_one_nonunique_proof_generation_in_every_protocol_version() {
-        for platform_version in dpp::version::PLATFORM_VERSIONS {
+        for platform_version in PLATFORM_VERSIONS {
             let handler = platform_version
                 .drive_abci
                 .query
@@ -202,7 +204,7 @@ mod tests {
                 "protocol version {}",
                 platform_version.protocol_version
             );
-            // Deployed versions keep the format their nodes already answer with.
+            // Activated versions keep the format their nodes already answer with.
             let deployed = match platform_version.protocol_version {
                 ..=13 => Some(0),
                 14 => Some(1),

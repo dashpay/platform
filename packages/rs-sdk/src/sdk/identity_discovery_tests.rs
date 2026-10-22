@@ -244,3 +244,29 @@ async fn should_refuse_nonunique_answers_in_a_format_their_signed_version_does_n
         assert_eq!(sdk.protocol_version_number(), 12);
     }
 }
+/// After a newer protocol activates, this SDK still discovers identities: the answer is
+/// read with the newest known rules, and the unknown version is not learned.
+#[tokio::test]
+async fn should_read_nonunique_answers_signed_by_an_unknown_newer_version() {
+    let newer = PlatformVersion::latest().protocol_version + 1;
+    let sdk = sdk(false, false, Network::Testnet);
+    let (found, metadata, _) = sdk
+        .verify_fetching_quorum_key::<IdentityRequest, Identity>(
+            request(None),
+            IdentityResponse::GetIdentityByNonUniquePublicKeyHash(
+                GetIdentityByNonUniquePublicKeyHashResponse::decode(
+                    std::fs::read(directory().join(format!("pv{newer}-current-0.bin")))
+                        .unwrap()
+                        .as_slice(),
+                )
+                .unwrap(),
+            ),
+            &Provider,
+            "get_identity_by_non_unique_public_key_hash",
+        )
+        .await
+        .unwrap();
+    assert_eq!(metadata.protocol_version, newer);
+    assert_eq!(found.map(|id| id.id().to_buffer()), Some([0x10; 32]));
+    assert_eq!(sdk.protocol_version_number(), 12);
+}

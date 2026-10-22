@@ -765,3 +765,36 @@ async fn should_learn_document_outcome_versions_monotonically_from_signed_produc
     newer.unwrap();
     assert_eq!(sdk.protocol_version_number(), 14);
 }
+
+/// After a newer protocol activates, this SDK still verifies document outcomes with the
+/// newest known rules, which keep requiring the owner balance, and does not learn the
+/// unknown version.
+#[tokio::test]
+async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
+    let latest = PlatformVersion::latest();
+    let newer = latest.protocol_version + 1;
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .with_initial_version(latest)
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(10)
+        .build()
+        .unwrap();
+    let provider = DocumentOutcomeProvider::new(latest.protocol_version);
+    let (request, response) = document_outcome_response(newer);
+    let (outcome, metadata, _) = sdk
+        .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+            request,
+            response,
+            &provider,
+            "wait_for_state_transition_result",
+        )
+        .await
+        .expect("newest known rules verify the newer producer's outcome");
+    assert_eq!(metadata.protocol_version, newer);
+    let outcome = outcome.unwrap();
+    assert!(outcome.is_execution_proved());
+    assert!(outcome.owner_balance().is_some());
+    assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
+}

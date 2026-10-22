@@ -403,7 +403,8 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 // Query construction follows the producer, while security checks keep the caller's
 // verifier version. Metadata is untrusted until the signature binds it to the root.
 // A producer newer than this build is read with the newest known construction rules,
-// as the verifier tables are; a wrong guess can only fail verification. Reserved
+// as the verifier tables are. A wrong guess cannot authenticate data the signed root
+// does not hold, and a changed layout is expected to fail verification. Reserved
 // mock versions also sit above the newest one, so their tables are never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,

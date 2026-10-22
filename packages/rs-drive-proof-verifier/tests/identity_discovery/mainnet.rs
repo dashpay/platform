@@ -151,8 +151,8 @@ fn verify(
     .map_err(Box::new)
 }
 
-/// A deployed protocol 13 node's answer, exactly as a 4.1 client decodes it, stays
-/// verifiable by this client under both the producer's and the newest verifier rules.
+/// A deployed protocol 13 node's answer stays verifiable by this client under both the
+/// producer's and the newest verifier rules.
 #[test]
 fn should_verify_recorded_mainnet_legacy_nonunique_answers() {
     for (name, expected) in [
@@ -216,8 +216,12 @@ fn should_refuse_altered_recorded_mainnet_legacy_answers() {
     let Some(Version::V0(v0)) = &mut relabeled.version else {
         panic!("v0")
     };
-    v0.metadata.as_mut().unwrap().protocol_version = 14;
-    assert!(verify(request.clone(), relabeled, &quorum, latest).is_err());
+    // Protocol 12 answers in the same format, so only the signature can refuse it.
+    v0.metadata.as_mut().unwrap().protocol_version = 12;
+    assert!(matches!(
+        *verify(request.clone(), relabeled, &quorum, latest).unwrap_err(),
+        drive_proof_verifier::Error::InvalidSignature { .. }
+    ));
 
     let mut other_cursor = request;
     let Some(RequestVersion::V0(v0)) = &mut other_cursor.version else {

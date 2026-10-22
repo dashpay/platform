@@ -554,7 +554,9 @@ mod signed {
     use super::*;
     use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
     use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
-        get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult,
+        get_identity_by_non_unique_public_key_hash_response_v0::{
+            IdentityProvedResponse, Result as LookupResult,
+        },
         GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
     };
     use dapi_grpc::platform::v0::{
@@ -564,6 +566,7 @@ mod signed {
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{CoreBlockHeight, DataContract};
+    use drive::drive::identity::non_unique_public_key_hash_proof::NonUniquePublicKeyHashProof;
     use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
     use tenderdash_abci::{
         proto::types::{CanonicalVote, SignedMsgType, StateId},
@@ -672,6 +675,23 @@ mod signed {
             })),
         }
     }
+    fn legacy_response(
+        mut index: Proof,
+        identity: Option<Vec<u8>>,
+        metadata: ResponseMetadata,
+        root: [u8; 32],
+    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
+        sign(&mut index, &metadata, root);
+        GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                result: Some(LookupResult::LegacyProof(IdentityProvedResponse {
+                    grovedb_identity_public_key_hash_proof: Some(index),
+                    identity_proof_bytes: identity,
+                })),
+                metadata: Some(metadata),
+            })),
+        }
+    }
     fn verify(
         response: GetIdentityByNonUniquePublicKeyHashResponse,
         hash: [u8; 20],
@@ -702,14 +722,12 @@ mod signed {
                     response(proof, metadata.clone(), fixture.root())
                 } else {
                     let legacy = v0.legacy.expect("historical wire format");
-                    let mut proof = legacy.index.expect("index proof");
-                    sign(&mut proof, &metadata, fixture.root());
-                    GetIdentityByNonUniquePublicKeyHashResponse { version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                        metadata: Some(metadata.clone()),
-                        result: Some(LookupResult::LegacyProof(dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
-                            grovedb_identity_public_key_hash_proof: Some(proof), identity_proof_bytes: legacy.identity,
-                        })),
-                    })) }
+                    legacy_response(
+                        legacy.index.expect("index proof"),
+                        legacy.identity,
+                        metadata.clone(),
+                        fixture.root(),
+                    )
                 };
                 let encoded = signed.encode_to_vec();
                 let decoded =
@@ -756,18 +774,6 @@ mod signed {
                     assert!(bytes.identity.is_none());
                 }
             }
-            let proof = fixture
-                .platform
-                .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
-                    [0xff; 20],
-                    None,
-                    None,
-                    &current_producer_version(version),
-                )
-                .expect("absent hash proof")
-                .into_current()
-                .expect("explicit current proof generation");
             let metadata = ResponseMetadata {
                 height: 100,
                 core_chain_locked_height: 1,
@@ -776,51 +782,47 @@ mod signed {
                 protocol_version: version.protocol_version,
                 chain_id: "test-chain".into(),
             };
-            assert!(verify(
-                response(
+            // Absence of an unknown hash, in the format this version answers with.
+            let signed = match fixture
+                .platform
+                .drive
+                .prove_full_identity_by_non_unique_public_key_hash([0xff; 20], None, None, version)
+                .expect("absent hash proof")
+            {
+                NonUniquePublicKeyHashProof::Current(proof) => response(
                     Proof {
                         grovedb_proof: proof,
                         ..Proof::default()
                     },
                     metadata,
-                    fixture.root()
+                    fixture.root(),
                 ),
-                [0xff; 20],
-                None,
-                PlatformVersion::latest()
-            )
-            .expect("signed absence")
-            .0
-            .is_none());
+                NonUniquePublicKeyHashProof::Legacy(legacy) => legacy_response(
+                    Proof {
+                        grovedb_proof: legacy.identity_id_public_key_hash_proof,
+                        ..Proof::default()
+                    },
+                    legacy.identity_proof,
+                    metadata,
+                    fixture.root(),
+                ),
+            };
+            assert!(verify(signed, [0xff; 20], None, PlatformVersion::latest())
+                .expect("signed absence")
+                .0
+                .is_none());
         }
     }
 
     #[tokio::test]
     async fn should_reject_unbound_roots_and_mutated_signed_metadata() {
-        let fixture = Fixture::new(PlatformVersion::get(13).expect("signed PV13"));
+        let fixture = Fixture::new(PlatformVersion::latest());
         let v0 = capture(&fixture, None).await.v0.expect("V0");
-        let proof = Proof {
-            grovedb_proof: fixture
-                .platform
-                .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
-                    fixture.hash,
-                    None,
-                    None,
-                    &current_producer_version(fixture.version),
-                )
-                .unwrap()
-                .into_current()
-                .unwrap(),
-            ..v0.legacy
-                .expect("historical server")
-                .index
-                .expect("index signature fields")
-        };
+        let proof = v0.proof.expect("single-proof server");
         let metadata = v0.metadata.expect("metadata");
         let valid = response(proof.clone(), metadata.clone(), fixture.root());
         verify(valid.clone(), fixture.hash, None, PlatformVersion::latest())
-            .expect("signed PV13 at security floor14");
+            .expect("signed single proof");
         let mut wrong_root = fixture.root();
         wrong_root[0] ^= 1;
         assert!(matches!(
@@ -842,7 +844,8 @@ mod signed {
                 unreachable!()
             };
             match field {
-                0 => metadata.protocol_version = 12,
+                // A newer version answers in the same format, so only the signature refuses it.
+                0 => metadata.protocol_version = PlatformVersion::latest().protocol_version + 1,
                 1 => metadata.height += 1,
                 2 => metadata.time_ms += 1,
                 3 => metadata.core_chain_locked_height += 1,
@@ -868,19 +871,38 @@ mod signed {
                 unreachable!()
             };
             v0.metadata.as_mut().expect("metadata").protocol_version = protocol_version;
-            assert!(
-                matches!(
-                    verify(invalid, fixture.hash, None, PlatformVersion::latest()),
-                    Err(error) if matches!(error.as_ref(), drive_proof_verifier::Error::ResponseDecodeError { .. })
-                ),
-                "unsupported query version {protocol_version} is an error, not a mock-table panic"
-            );
+            // Version 0 names no table. Unknown and reserved mock versions are read with
+            // the newest rules, never a mock table, and stay bound by the signature.
+            let error = verify(invalid, fixture.hash, None, PlatformVersion::latest())
+                .expect_err("a changed signed version is refused");
+            if protocol_version == 0 {
+                assert!(
+                    matches!(
+                        *error,
+                        drive_proof_verifier::Error::ResponseDecodeError { .. }
+                    ),
+                    "{error}"
+                );
+            } else {
+                assert!(
+                    matches!(*error, drive_proof_verifier::Error::InvalidSignature { .. }),
+                    "version {protocol_version}: {error}"
+                );
+            }
         }
     }
 
     #[tokio::test]
     async fn should_reject_signed_skipped_incomplete_and_unrelated_identity_proofs() {
-        for version in versions() {
+        // Signed single proofs come only from versions that answer with them; the
+        // client refuses them from the others before reading the proof.
+        for version in versions().into_iter().filter(|version| {
+            version
+                .drive_abci
+                .query
+                .identity_by_non_unique_public_key_hash_handler
+                == 1
+        }) {
             let fixture = Fixture::new(version);
             let first = fixture.identities[0].id().to_buffer();
             let later = fixture.identities[1].id().to_buffer();

@@ -282,7 +282,18 @@ fn should_preserve_document_outcome_verifier_security_floor() {
             panic!("v0")
         };
         v0.metadata.as_mut().unwrap().protocol_version = version;
-        assert!(verify(request.clone(), response, &provider).is_err());
+        // Version 0 names no table. A newer version is read with the newest rules, which
+        // need the owner balance this protocol 13 proof lacks; the signature covers 13.
+        let error = verify(request.clone(), response, &provider).unwrap_err();
+        if version == 0 {
+            assert!(
+                matches!(
+                    *error,
+                    drive_proof_verifier::Error::ResponseDecodeError { .. }
+                ),
+                "{error}"
+            );
+        }
     }
     let mut response = response;
     let Some(Version::V0(v0)) = &mut response.version else {
@@ -325,4 +336,19 @@ fn should_export_document_outcome_sdk_fixtures() {
         )
         .unwrap();
     }
+    // A version newer than this build, verified with the newest rules and contract.
+    let latest = PlatformVersion::latest().protocol_version;
+    let newer = latest + 1;
+    let (request, response, provider) = fixture_signed_as(latest, latest, newer);
+    verify(request.clone(), response.clone(), &provider).unwrap();
+    std::fs::write(
+        directory.join(format!("pv{newer}-request.bin")),
+        request.encode_to_vec(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join(format!("pv{newer}-response.bin")),
+        response.encode_to_vec(),
+    )
+    .unwrap();
 }

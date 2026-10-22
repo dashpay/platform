@@ -10,7 +10,8 @@ cargo test -p drive-proof-verifier --test identity_discovery should_export_nonun
 `pvN-{legacy,current}-{0,1,2}.bin` covers first match, next match, and exhaustion.
 Each version answers in one format: PV12 and PV13 in the legacy format (field 2),
 PV14 in the current format (field 4). The other combinations are signed but must be
-refused; the generator checks both outcomes before writing.
+refused; the generator checks both outcomes before writing. `pv15-current-0.bin` is
+a first match signed by a version newer than this build, read with the newest rules.
 The fixed test signing key is `[1; 32]`; `quorum-key.bin` is its public key.
 `key-hash.bin` is the requested index key. These are synthetic fixtures, never
 network trust anchors. The SDK tests replay these through the normal proof and
@@ -22,4 +23,6 @@ recorded at height 456535 by
 `match-*` is a first match (`match-identity.bin` is the identity found) and
 `absence-*` proves no identity after `[0xff; 32]`. Each `*-quorum-key.bin` is the
 public key of the quorum that signed that answer, read from the trusted quorum
-service at capture time. `tests/identity_discovery/mainnet.rs` replays them offline.
+service at capture time. Responses are stored as the SDK re-encodes the decoded
+message; the proofs inside are opaque byte fields and are kept verbatim.
+`tests/identity_discovery/mainnet.rs` replays them offline.
