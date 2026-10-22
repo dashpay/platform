@@ -16,7 +16,7 @@ use grovedb::batch::KeyInfoPath;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use crate::util::estimated_layers::insert_estimated_layer_keeping_deeper;
+use crate::util::estimated_layers::merge_estimated_layer;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
 
@@ -28,8 +28,9 @@ impl Drive {
     /// write deeper in the same layer (the token marketplace's escrows, in the Tokens and the
     /// prefunded specialized balances trees) lowered the batch's estimate of that layer. Here
     /// each operation is lowered with a map of its own, merged into the batch's keeping the
-    /// deeper of two descriptions of one layer, so the estimate does not depend on the order of
-    /// the batch's operations. Applying a batch is generation 1's.
+    /// costlier of two descriptions of one layer (`merge_estimated_layer`: the deeper, then at
+    /// one depth the one pricing a larger node), so the estimate does not depend on the order
+    /// of the batch's operations. Applying a batch is generation 1's.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -113,9 +114,9 @@ impl Drive {
             let forfeited = separates_forfeited_operations
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
             // An estimate lowers each operation into layer descriptions of its own and merges
-            // them into the batch's, keeping the deeper of two descriptions of one layer: what
-            // an operation registers never lowers what another registered, whichever comes
-            // first.
+            // them into the batch's, keeping the costlier of two descriptions of one layer (the
+            // deeper, then at one depth the larger node): the batch's estimate is the same
+            // whichever order its operations come in.
             let mut converted = match estimated_costs_only_with_layer_info.as_mut() {
                 None => drive_op.into_low_level_drive_operations_after_ttl_drain(
                     self,
@@ -134,7 +135,12 @@ impl Drive {
                         platform_version,
                     )?;
                     for (path, layer) in operation_layers.unwrap_or_default() {
-                        insert_estimated_layer_keeping_deeper(batch_layers, path, layer);
+                        merge_estimated_layer(
+                            batch_layers,
+                            path,
+                            layer,
+                            &platform_version.drive.grove_version,
+                        )?;
                     }
                     converted
                 }
@@ -232,7 +238,9 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::util::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
+    use crate::util::batch::drive_op_batch::{
+        PrefundedSpecializedBalanceOperationType, TokenOperationType,
+    };
     use crate::util::batch::{DriveOperation, IdentityOperationType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -274,6 +282,28 @@ mod tests {
                 None,
             )
             .expect("expected an estimate")
+    }
+
+    /// A token mint and a prefunded balance write both describe the root at depth 3, with
+    /// different key sizes and sum trees: the batch's estimate keeps the costlier of the two,
+    /// whichever comes first.
+    #[test]
+    fn should_estimate_two_descriptions_of_one_depth_alike_in_either_order() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(latest));
+        let mint = || {
+            DriveOperation::TokenOperation(TokenOperationType::TokenMint {
+                token_id: Identifier::from([5; 32]),
+                identity_balance_holder_id: Identifier::from([6; 32]),
+                mint_amount: 100,
+                allow_first_mint: true,
+                allow_saturation: false,
+            })
+        };
+        assert_eq!(
+            estimate(&drive, vec![mint(), deep()], latest),
+            estimate(&drive, vec![deep(), mint()], latest)
+        );
     }
 
     /// From protocol version 15 a batch's estimate does not depend on the order of its
