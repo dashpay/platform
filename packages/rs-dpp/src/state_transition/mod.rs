@@ -2214,12 +2214,12 @@ impl StateTransition {
     ///
     /// 1. `digest = double_sha256(self.signable_bytes()?)`
     /// 2. `signer.sign_ecdsa(path, digest).await` → non-recoverable
-    ///    `(secp256k1::ecdsa::Signature, secp256k1::PublicKey)`.
+    ///    `(EcdsaSignature, EcdsaPublicKey)`.
     /// 3. Recover the recovery id by trying all four candidates against the
-    ///    returned public key (libsecp256k1 normalises both signing paths to
-    ///    low-s form so the 64-byte `r||s` payload is bit-identical).
+    ///    returned public key. Byte parity requires a signer that uses the
+    ///    same deterministic nonce without low-R grinding.
     /// 4. Serialise as a 65-byte compact recoverable signature with the
-    ///    `compressed` prefix convention used by `MessageSignature` — i.e.
+    ///    `compressed` prefix convention used by Core signatures — i.e.
     ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.
     ///
     /// # Errors
@@ -2240,10 +2240,10 @@ impl StateTransition {
         path: &::key_wallet::bip32::DerivationPath,
         signer: &S,
     ) -> Result<(), ProtocolError> {
-        use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-        use dashcore::secp256k1::Message;
-        use dashcore::sign_message::MessageSignature;
+        use dashcore::crypto::ecdsa::EcdsaRecSignature;
         use dashcore::signer::double_sha;
+        use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+        use secp256k1::Message;
 
         let data = self.signable_bytes()?;
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
@@ -2262,11 +2262,11 @@ impl StateTransition {
         // stores a 65-byte recoverable compact signature, so we brute-force
         // the recovery id (0..3) by reconstructing a `RecoverableSignature`
         // and comparing the recovered public key with the one the signer
-        // returned. secp256k1 normalises both `sign_ecdsa` and
-        // `sign_ecdsa_recoverable` outputs to low-s form, so the 64-byte
-        // `r||s` payload is bit-identical to what `dashcore::signer::sign`
-        // produces.
-        let compact_64 = signature.serialize_compact();
+        // returned. Byte parity with `dashcore::signer::sign` requires the
+        // same deterministic nonce without low-R grinding, as well as low-S
+        // normalization. Core `sign_recoverable` meets that contract; `sign`
+        // performs low-R grinding and may produce different bytes.
+        let compact_64 = signature.to_bytes();
         let msg = Message::from_digest(digest);
 
         let mut found: Option<RecoverableSignature> = None;
@@ -2280,7 +2280,7 @@ impl StateTransition {
                 Err(_) => continue,
             };
             if let Ok(recovered) = candidate.recover_ecdsa(msg) {
-                if recovered == public_key {
+                if recovered == public_key.into() {
                     found = Some(candidate);
                     break;
                 }
@@ -2301,7 +2301,14 @@ impl StateTransition {
         // always passes `true` regardless of the underlying key encoding. The
         // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
         // so this is consistent.
-        let compact_65 = MessageSignature::new(recoverable, true).serialize();
+        let (recovery_id, _) = recoverable.serialize_compact();
+        let compact_65 = EcdsaRecSignature::from_parts(
+            recoverable.to_standard().into(),
+            recovery_id.to_u8(),
+            true,
+        )
+        .map_err(|e| ProtocolError::ExternalSignerError(e.to_string()))?
+        .to_bytes();
 
         if !self.set_signature(compact_65.to_vec().into()) {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -4702,9 +4709,10 @@ mod tests {
     #[tokio::test]
     async fn sign_with_core_signer_matches_sign_by_private_key_byte_for_byte() {
         use async_trait::async_trait;
-        use dashcore::secp256k1::{self, ecdsa, rand, Message, PublicKey, SecretKey};
+        use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaSignature};
         use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
         use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
+        use secp256k1::{self, rand, Message, PublicKey, SecretKey};
 
         /// Fixed-key in-memory signer used only by this test. Mirrors how a
         /// real KeychainSigner would behave: derive once, sign atomically,
@@ -4728,14 +4736,17 @@ mod tests {
                 &self,
                 _path: &DerivationPath,
                 sighash: [u8; 32],
-            ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+            ) -> Result<(EcdsaSignature, EcdsaPublicKey), Self::Error> {
                 let msg = Message::from_digest(sighash);
                 let sig = self.secret.sign_ecdsa(msg);
-                Ok((sig, self.public))
+                Ok((sig.into(), self.public.into()))
             }
 
-            async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-                Ok(self.public)
+            async fn public_key(
+                &self,
+                _path: &DerivationPath,
+            ) -> Result<EcdsaPublicKey, Self::Error> {
+                Ok(self.public.into())
             }
         }
 

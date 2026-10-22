@@ -11,9 +11,9 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::{sha256d, Hash};
-use dashcore::secp256k1::Message;
-use dashcore::sign_message::MessageSignature;
-use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
+use dashcore::{
+    sign_message, signer, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash,
+};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
@@ -491,17 +491,13 @@ impl PlatformAddress {
                 // This saves 33 bytes per witness (no need to include pubkey)
                 // at a ~4% CPU cost increase (recovery vs verify).
                 let data_hash = dashcore::signer::double_sha(signable_bytes);
-                dashcore::signer::verify_hash_signature(
-                    &data_hash,
-                    signature.as_slice(),
-                    pubkey_hash,
-                )
-                .map_err(|e| {
-                    ProtocolError::AddressWitnessError(format!(
-                        "P2PKH signature verification failed: {}",
-                        e
-                    ))
-                })?;
+                signer::verify_hash_signature(&data_hash, signature.as_slice(), pubkey_hash)
+                    .map_err(|e| {
+                        ProtocolError::AddressWitnessError(format!(
+                            "P2PKH signature verification failed: {}",
+                            e
+                        ))
+                    })?;
 
                 Ok(AddressWitnessVerificationOperations::for_p2pkh(
                     signable_bytes.len(),
@@ -551,13 +547,12 @@ impl PlatformAddress {
                 let mut signature_verifications: u16 = 0;
 
                 let signable_bytes_hash = sha256d::Hash::hash(signable_bytes).to_byte_array();
-                let msg = Message::from_digest(signable_bytes_hash);
 
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
                     signature_verifications += 1;
 
-                    let sig = MessageSignature::from_slice(valid_signatures[sig_idx].as_slice())
-                        .map(|message_signature| message_signature.signature)
+                    let sig = sign_message::from_slice(valid_signatures[sig_idx].as_slice())
+                        .and_then(|signature| signature.signature().map_err(Into::into))
                         .map_err(|e| {
                             ProtocolError::AddressWitnessError(format!(
                                 "Invalid signature format: {}",
@@ -569,7 +564,7 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if sig.to_standard().verify(msg, &pub_key.inner).is_ok() {
+                    if pub_key.inner.verify(&signable_bytes_hash, sig).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }
@@ -790,9 +785,9 @@ mod tests {
     use super::*;
     use dashcore::blockdata::opcodes::all::*;
     use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
     use dashcore::PublicKey;
     use platform_value::BinaryData;
+    use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
     /// All non-mainnet networks share the `tdash` HRP (DIP-0018), so an address parsed from a
     /// bech32m string can only ever report Mainnet or Testnet — never Devnet/Regtest. Network
@@ -857,7 +852,9 @@ mod tests {
         let (secret_key, public_key) = create_keypair(seed);
 
         // Create PrivateKey from the secret key
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
+        let private_key =
+            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Testnet)
+                .expect("valid test secret key");
 
         // Derive address using From<&PrivateKey>
         let address_from_private = PlatformAddress::from(&private_key);

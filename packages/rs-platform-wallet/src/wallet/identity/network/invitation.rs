@@ -481,8 +481,8 @@ mod tests {
                 _sighash: [u8; 32],
             ) -> Result<
                 (
-                    dashcore::secp256k1::ecdsa::Signature,
-                    dashcore::secp256k1::PublicKey,
+                    dashcore::crypto::ecdsa::EcdsaSignature,
+                    dashcore::crypto::ecdsa::EcdsaPublicKey,
                 ),
                 Self::Error,
             > {
@@ -492,7 +492,7 @@ mod tests {
             async fn public_key(
                 &self,
                 _path: &key_wallet::DerivationPath,
-            ) -> Result<key_wallet::bip32::PublicKey, Self::Error> {
+            ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
                 unreachable!("the durability gate must fire before any key derivation")
             }
         }

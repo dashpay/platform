@@ -14,6 +14,8 @@
 extern crate core;
 
 pub use dashcore;
+/// Low-level ECDSA primitives used by Platform signature validation.
+pub use secp256k1;
 
 #[cfg(feature = "core_key_wallet")]
 pub use key_wallet;
