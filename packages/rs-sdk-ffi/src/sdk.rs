@@ -873,7 +873,9 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> FFINe
 /// Add known contracts to the SDK's local contract cache
 ///
 /// This preloads data contracts into the cache the SDK's context provider
-/// reads, avoiding network calls for these contracts.
+/// reads, avoiding network calls for these contracts. A contract not newer
+/// than the cached one with the same id is ignored, so a stale stored copy
+/// cannot replace a newer contract.
 ///
 /// # Safety
 /// - `handle` must be a valid SDK handle created with `dash_sdk_create_trusted`,

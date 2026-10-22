@@ -106,15 +106,12 @@ impl LocalContextResolver {
         known.remove(id).is_some()
     }
 
-    /// Add multiple data contracts to the known contracts cache
+    /// Add multiple data contracts to the known contracts cache, each through
+    /// [`Self::add_known_contract_if_newer`]. A copy preloaded from storage
+    /// never replaces a newer version the cache already holds.
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
-        let mut known = self
-            .known_contracts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
         for contract in contracts {
-            let id = contract.id();
-            known.insert(id, Arc::new(contract));
+            self.add_known_contract_if_newer(contract);
         }
     }
 
@@ -347,6 +344,7 @@ impl ContractSource for LocalContextResolver {
 mod tests {
     use std::sync::Arc;
 
+    use dash_context_provider::routing::ContractSource;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::prelude::{DataContract, Identifier};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -416,5 +414,66 @@ mod tests {
         resolver.add_known_contract_if_newer(newer);
         let kept = resolver.add_known_contract_if_newer(older);
         assert_eq!(kept.version(), 2);
+    }
+
+    /// Apps preload contracts from their own storage into the cache proof
+    /// verification reads. A stored copy older than the one the cache holds,
+    /// for example one registered after a proven fetch, must not replace it,
+    /// or later proofs and documents would use the obsolete schema.
+    #[test]
+    fn should_not_downgrade_a_cached_contract_when_preloading_contracts() {
+        let resolver = LocalContextResolver::new();
+        let mut registered = app_contract();
+        registered.set_version(2);
+        let id = registered.id();
+        resolver.register_data_contract(Arc::new(registered));
+        let cached = resolver
+            .get_known_contract(&id)
+            .expect("registered contract");
+
+        let mut older = app_contract();
+        older.set_version(1);
+        resolver.add_known_contracts(vec![older]);
+        let after_older = resolver.get_known_contract(&id).expect("cached contract");
+        assert_eq!(
+            after_older.version(),
+            2,
+            "an older preload downgraded the cache"
+        );
+
+        let mut same_version = app_contract();
+        same_version.set_version(2);
+        resolver.add_known_contracts(vec![same_version]);
+        assert!(
+            Arc::ptr_eq(
+                &cached,
+                &resolver.get_known_contract(&id).expect("cached contract")
+            ),
+            "an equal version must keep the cached body"
+        );
+
+        let mut newer = app_contract();
+        newer.set_version(3);
+        resolver.add_known_contracts(vec![newer]);
+        assert_eq!(
+            resolver
+                .get_known_contract(&id)
+                .map(|contract| contract.version()),
+            Some(3),
+            "a newer preload must still replace the cached contract"
+        );
+
+        let mut newest = app_contract();
+        newest.set_version(5);
+        let mut stale = app_contract();
+        stale.set_version(4);
+        resolver.add_known_contracts(vec![newest, stale]);
+        assert_eq!(
+            resolver
+                .get_known_contract(&id)
+                .map(|contract| contract.version()),
+            Some(5),
+            "a later, older copy in the same batch must not win"
+        );
     }
 }

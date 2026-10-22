@@ -271,7 +271,8 @@ impl TrustedHttpContextProvider {
         self
     }
 
-    /// Set known contracts that will be served immediately without fallback
+    /// Set known contracts that will be served immediately without fallback.
+    /// A contract not newer than a cached one with the same id is ignored.
     pub fn with_known_contracts(self, contracts: Vec<DataContract>) -> Self {
         self.local.add_known_contracts(contracts);
         self
@@ -306,7 +307,8 @@ impl TrustedHttpContextProvider {
         self.local.remove_known_contract(id)
     }
 
-    /// Add multiple data contracts to the known contracts cache
+    /// Add multiple data contracts to the known contracts cache. A contract
+    /// not newer than a cached one with the same id is ignored.
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
         self.local.add_known_contracts(contracts);
     }
