@@ -169,11 +169,19 @@ async fn check(network: Network, id: &str, require_positive: bool) {
 
 /// Records authenticated mainnet answers in the legacy format as offline replay vectors.
 /// Run it only to refresh them; the replay test in drive-proof-verifier needs no network.
+/// It rewrites committed files, so running the live checks with `--ignored` skips it
+/// unless `DASH_SDK_CAPTURE_MAINNET_VECTORS=1` is set.
 #[tokio::test]
-#[ignore = "requires live mainnet; rewrites drive-proof-verifier's mainnet vectors"]
+#[ignore = "requires live mainnet and DASH_SDK_CAPTURE_MAINNET_VECTORS=1; rewrites drive-proof-verifier's mainnet vectors"]
 async fn should_capture_mainnet_legacy_nonunique_vectors() {
     use dapi_grpc::Message;
     use dash_context_provider::ContextProvider;
+    if std::env::var_os("DASH_SDK_CAPTURE_MAINNET_VECTORS").is_none() {
+        eprintln!(
+            "skipped: set DASH_SDK_CAPTURE_MAINNET_VECTORS=1 to rewrite the recorded mainnet vectors"
+        );
+        return;
+    }
     let network = Network::Mainnet;
     let provider =
         TrustedHttpContextProvider::new(network, None, NonZeroUsize::new(100).unwrap()).unwrap();

@@ -22,7 +22,8 @@ signature verifier.
 
 `mainnet/` holds real answers from mainnet protocol 13 nodes in the legacy format,
 recorded at height 456535 by
-`rs-sdk/tests/identity_discovery_live.rs::should_capture_mainnet_legacy_nonunique_vectors`:
+`rs-sdk/tests/identity_discovery_live.rs::should_capture_mainnet_legacy_nonunique_vectors`
+(`DASH_SDK_CAPTURE_MAINNET_VECTORS=1 cargo test -p dash-sdk --test identity_discovery_live capture -- --ignored`):
 `match-*` is a first match (`match-identity.bin` is the identity found) and
 `absence-*` proves no identity after `[0xff; 32]`. Each `*-quorum-key.bin` is the
 public key of the quorum that signed that answer, read from the trusted quorum
