@@ -587,9 +587,72 @@ impl DocumentOperationType<'_> {
                     )?;
                 batch_operations.extend(operations);
             }
-            // A contested insert, a withdrawal, a document history entry and a group of
-            // operations for one document type: built as before, after the batch's earlier
-            // operations.
+            // A group of operations for one document type: each built against the batch's
+            // operations so far, the group's earlier ones included.
+            DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } => {
+                let DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract,
+                    document_type,
+                } = document_operations;
+                for document_operation in operations {
+                    let operations = match document_operation {
+                        DocumentOperation::AddOperation {
+                            owned_document_info,
+                            override_document,
+                        } => drive.add_document_for_contract_operations_without_ttl_drain(
+                            DocumentAndContractInfo {
+                                owned_document_info,
+                                contract,
+                                document_type,
+                            },
+                            override_document,
+                            block_info,
+                            &mut Some(&mut *batch_operations),
+                            estimated_costs_only_with_layer_info,
+                            transaction,
+                            platform_version,
+                        )?,
+                        DocumentOperation::UpdateOperation(UpdateOperationInfo {
+                            document,
+                            serialized_document,
+                            owner_id,
+                            storage_flags,
+                        }) => {
+                            let document_info =
+                                if let Some(serialized_document) = serialized_document {
+                                    DocumentRefAndSerialization((
+                                        document,
+                                        serialized_document,
+                                        storage_flags,
+                                    ))
+                                } else {
+                                    DocumentRefInfo((document, storage_flags))
+                                };
+                            drive.update_document_for_contract_operations_without_ttl_drain(
+                                DocumentAndContractInfo {
+                                    owned_document_info: OwnedDocumentInfo {
+                                        document_info,
+                                        owner_id,
+                                    },
+                                    contract,
+                                    document_type,
+                                },
+                                block_info,
+                                &mut Some(&mut *batch_operations),
+                                estimated_costs_only_with_layer_info,
+                                transaction,
+                                platform_version,
+                            )?
+                        }
+                    };
+                    batch_operations.extend(operations);
+                }
+            }
+            // A contested insert, a withdrawal and a document history entry: built as before,
+            // after the batch's earlier operations.
             operation => {
                 let operations = operation.into_low_level_drive_operations_after_ttl_drain(
                     drive,

@@ -89,7 +89,9 @@ pub struct SystemLimits {
     /// a single GroveDB batch. Within one such batch the ordinary document Add/Update/Delete
     /// conversions are blind to each other: the check that decides whether an index group tree
     /// has become empty and should be removed sees committed state plus only the operations of
-    /// its own conversion.
+    /// its own conversion. From protocol version 15, `apply_drive_operations` 2 builds every
+    /// operation against the batch's operations built before it, so this blindness is gone
+    /// there; protocol version 14 and earlier keep it.
     ///
     /// While the cap is 1, no two document operations can share a GroveDB batch *by way of a
     /// batch state transition*, so on that route the blindness has nothing to act on. Raise it
@@ -151,9 +153,10 @@ pub struct SystemLimits {
     ///   then start refusing batches that fee validation would have executed. Recheck the
     ///   inequality rather than assuming it.
     ///
-    /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
-    /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
-    /// first and make them pass.
+    /// Five cases in `rs-drive`'s `batched_group_drain` suite specify the group drain this cap
+    /// guards against; they run at protocol version 15, whose batch application removes the
+    /// hazard, and the phantom group generation 1 leaves is characterized at 14. The other
+    /// dependencies above still stand: raising the cap needs them resolved, not just these five.
     pub max_transitions_in_documents_batch: u16,
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,

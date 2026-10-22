@@ -337,6 +337,9 @@ mod tests {
 
     mod batch_document_writes {
         use crate::drive::{Drive, RootTree};
+        use crate::util::batch::drive_op_batch::{
+            DocumentOperation, DocumentOperationsForContractDocumentType,
+        };
         use crate::util::batch::{DocumentOperationType, DriveOperation};
         use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
         use crate::util::object_size_info::{
@@ -523,6 +526,42 @@ mod tests {
                     .any(|path| path.iter().any(|key| key.as_slice() == OWNER.as_slice())),
                 "no tree keyed by the owner stays"
             );
+        }
+
+        /// The same with the insert sent as a group of operations for one document type: a
+        /// group's operations are built against the batch's earlier ones too.
+        #[test]
+        fn should_insert_through_a_group_into_a_tree_an_earlier_deletion_empties() {
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            let replacement = ask(2, 0xA1);
+            apply(
+                &drive,
+                vec![
+                    delete(&contract, &[1]),
+                    DriveOperation::DocumentOperation(
+                        DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                            document_operations: DocumentOperationsForContractDocumentType {
+                                operations: vec![DocumentOperation::AddOperation {
+                                    owned_document_info: OwnedDocumentInfo {
+                                        document_info: DocumentRefInfo((&replacement, None)),
+                                        owner_id: Some(OWNER),
+                                    },
+                                    override_document: false,
+                                }],
+                                contract: &contract,
+                                document_type: contract
+                                    .document_type_for_name("ask")
+                                    .expect("expected the ask type"),
+                            },
+                        },
+                    ),
+                ],
+            );
+
+            let (only_replacement, contract) = market();
+            store(&only_replacement, &contract, &replacement);
+            assert_eq!(ask_trees(&drive), ask_trees(&only_replacement));
         }
 
         /// A deletion that empties a bucket and an insert into the same bucket in one batch: the

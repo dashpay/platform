@@ -446,4 +446,59 @@ mod tests {
         ));
         assert!(is_history_of(&operations[3], AMOUNT + 500));
     }
+
+    /// Generation 1 in a group, with listings: a proposal that does not perform yet records
+    /// the group action with everything the destroy will take (the balance and the listings'
+    /// escrow) and destroys nothing; the signature that completes it closes the action,
+    /// destroys the holding, deletes the listings and records the total.
+    #[test]
+    fn should_record_the_listings_in_a_group_action_at_protocol_version_15() {
+        let latest = PlatformVersion::latest();
+        let listings = || vec![listing(1, 300), listing(2, 200)];
+
+        let operations = convert(action(Some(in_group(true)), false, listings()), latest);
+        assert_eq!(operations.len(), 2, "{operations:?}");
+        assert!(is_nonce(&operations[0]));
+        assert!(matches!(
+            &operations[1],
+            GroupOperation(GroupOperationType::AddGroupAction {
+                initialize_with_insert_action_info: Some(GroupAction::V0(GroupActionV0 {
+                    event: GroupActionEvent::TokenEvent(TokenEvent::DestroyFrozenFunds(
+                        frozen,
+                        destroyed,
+                        _
+                    )),
+                    ..
+                })),
+                closes_group_action: false,
+                ..
+            }) if *frozen == Identifier::from(FROZEN) && *destroyed == AMOUNT + 500
+        ));
+
+        let operations = convert(action(Some(in_group(false)), true, listings()), latest);
+        assert_eq!(operations.len(), 5, "{operations:?}");
+        assert!(is_nonce(&operations[0]));
+        assert!(matches!(
+            &operations[1],
+            GroupOperation(GroupOperationType::AddGroupAction {
+                initialize_with_insert_action_info: None,
+                closes_group_action: true,
+                ..
+            })
+        ));
+        assert!(matches!(
+            &operations[2],
+            TokenOperation(TokenOperationType::TokenDestroyFrozenHolding {
+                balance_amount: AMOUNT,
+                listings,
+                ..
+            }) if *listings == vec![(Identifier::from([1; 32]), 300), (Identifier::from([2; 32]), 200)]
+        ));
+        assert!(matches!(
+            &operations[3],
+            DocumentOperation(DocumentOperationType::DeleteDocuments { document_ids, .. })
+                if *document_ids == vec![Identifier::from([1; 32]), Identifier::from([2; 32])]
+        ));
+        assert!(is_history_of(&operations[4], AMOUNT + 500));
+    }
 }
