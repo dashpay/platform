@@ -59,6 +59,8 @@ pub use protocol_compatibility::{
     ProtocolCompatibility, ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
 };
 #[cfg(all(test, feature = "mocks"))]
+pub(crate) mod put_test_support;
+#[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
 
 /// Metadata needed to select the rules for interpreting a proved response.

@@ -127,6 +127,8 @@ pub unsafe extern "C" fn dash_sdk_get_protocol_compatibility(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+    use crate::{dash_sdk_error_free, dash_sdk_string_free};
     use std::ffi::CStr;
 
     #[test]
@@ -145,7 +147,7 @@ mod tests {
         assert_eq!(value["verifiedProtocolVersion"], 99);
         assert_eq!(value["generation"], 7);
         assert_eq!(value["newerProtocolAvailable"], true);
-        unsafe { crate::dash_sdk_string_free(result.data.cast()) };
+        unsafe { dash_sdk_string_free(result.data.cast()) };
     }
 
     #[test]
@@ -165,13 +167,12 @@ mod tests {
                 unsafe { (*result.error).code },
                 DashSDKErrorCode::InvalidParameter
             );
-            unsafe { crate::dash_sdk_error_free(result.error) };
+            unsafe { dash_sdk_error_free(result.error) };
         }
     }
 
     #[test]
     fn should_publish_pending_check_generation_synchronously() {
-        use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
         let handle = create_mock_sdk_handle();
         unsafe {
             let mut generation = 0;
@@ -187,12 +188,12 @@ mod tests {
             assert_eq!(json["generation"], generation);
             assert_eq!(json["status"], "checking");
             assert_eq!(json["newerProtocolAvailable"], false);
-            crate::dash_sdk_string_free(snapshot.data.cast());
+            dash_sdk_string_free(snapshot.data.cast());
 
             let invalid = dash_sdk_begin_protocol_compatibility_check(handle, std::ptr::null_mut());
             assert!(!invalid.error.is_null());
             assert_eq!((*invalid.error).code, DashSDKErrorCode::InvalidParameter);
-            crate::dash_sdk_error_free(invalid.error);
+            dash_sdk_error_free(invalid.error);
             destroy_mock_sdk_handle(handle);
         }
     }

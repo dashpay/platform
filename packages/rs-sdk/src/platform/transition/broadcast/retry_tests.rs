@@ -2,13 +2,19 @@
 
 use super::*;
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::tonic::metadata::MetadataValue;
 use dapi_grpc::tonic::Status;
+use dpp::consensus::signature::IdentityNotFoundError;
+use dpp::prelude::Identifier;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
 use rs_dapi_client::{ConnectionPool, DapiClient, Uri};
 use std::collections::VecDeque;
+use std::io;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -229,4 +235,115 @@ async fn should_keep_concurrent_broadcast_observations_separate() {
     );
     assert!(ambiguous.0.possibly_accepted);
     assert!(!refused.0.possibly_accepted);
+}
+
+fn consensus_refusal() -> Status {
+    let consensus: ConsensusError = IdentityNotFoundError::new(Identifier::from([1; 32])).into();
+    let bytes = consensus
+        .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+        .unwrap();
+    let mut status = Status::invalid_argument("owner unavailable on this node");
+    status.metadata_mut().insert_bin(
+        "dash-serialized-consensus-error-bin",
+        MetadataValue::from_bytes(&bytes),
+    );
+    status
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_return_consensus_rejection_after_connection_establishment_fails() {
+    // tonic wraps failures from its connector before mapping them to Unavailable.
+    // Preserve that source through real inner retries and SDK error conversion.
+    let connect_error = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+        io::ErrorKind::ConnectionRefused,
+        "connection refused",
+    )))));
+    assert_eq!(connect_error.code(), Code::Unavailable);
+    let (outcome, sent, executions) = retrying_broadcast(
+        &signed_transition(),
+        vec![
+            Attempt::Error(connect_error),
+            Attempt::Error(consensus_refusal()),
+        ],
+        1,
+    )
+    .await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(executions, 1);
+    let result: Result<(), Error> = wait_after_broadcast(outcome, async {
+        panic!("a connection failure never submitted the first request")
+    })
+    .await;
+    assert!(matches!(
+        result,
+        Err(Error::Protocol(ProtocolError::ConsensusError(error)))
+            if matches!(*error, ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(_)))
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_keep_real_ambiguity_despite_a_later_state_dependent_consensus_rejection() {
+    let (outcome, sent, executions) = retrying_broadcast(
+        &signed_transition(),
+        vec![
+            Attempt::Error(Status::unavailable("acknowledgement lost")),
+            Attempt::Error(consensus_refusal()),
+        ],
+        1,
+    )
+    .await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(executions, 1);
+    assert_eq!(
+        wait_after_broadcast(outcome, async { Ok(42) })
+            .await
+            .unwrap(),
+        42
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_treat_exact_dapi_processing_rejection_as_local_to_its_attempt() {
+    let (refused, sent, executions) = retrying_broadcast(
+        &signed_transition(),
+        vec![
+            Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
+            Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
+        ],
+        1,
+    )
+    .await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(executions, 1);
+    let result: Result<(), Error> = wait_after_broadcast(refused, async {
+        panic!("both attempts returned the exact local processing refusal")
+    })
+    .await;
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains(DAPI_PROCESSING_REJECTION));
+
+    for ambiguous in [
+        Status::unavailable("acknowledgement lost"),
+        Status::internal("Failed checking state transition: connection reset"),
+    ] {
+        let (outcome, sent, executions) = retrying_broadcast(
+            &signed_transition(),
+            vec![
+                Attempt::Error(ambiguous),
+                Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
+            ],
+            1,
+        )
+        .await;
+        assert_eq!(sent.len(), 2);
+        assert_eq!(executions, 1);
+        assert_eq!(
+            wait_after_broadcast(outcome, async { Ok(42) })
+                .await
+                .unwrap(),
+            42
+        );
+    }
 }

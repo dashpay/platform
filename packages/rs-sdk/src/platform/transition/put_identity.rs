@@ -88,8 +88,9 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 
     /// Creates an identity using an asset-lock signer and waits for
-    /// confirmation. `AlreadyExists` from the broadcast is resolved by the
-    /// wait, as in the private-key variant.
+    /// confirmation. An ambiguous broadcast acknowledgement (including
+    /// `AlreadyExists`) is resolved by waiting for the same signed transition's
+    /// verified result, as in the private-key variant.
     ///
     /// Signer-driven counterpart to
     /// [`Self::put_to_platform_and_wait_for_response_with_private_key`].

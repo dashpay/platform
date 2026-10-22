@@ -185,12 +185,13 @@ impl Sdk {
     pub(super) fn observe_compatible_metadata(&self, version: u32) {
         let mut state = self.compatibility_lock();
         if let Some(generation) = self.compatibility_check_generation {
-            if state.generation != generation || state.state != ProtocolCompatibilityState::Checking
+            if state.generation == generation && state.state == ProtocolCompatibilityState::Checking
             {
-                return;
+                state.attempt_verified = true;
             }
-            state.attempt_verified = true;
         }
+        // A superseded query still authenticates network evidence for this SDK
+        // instance. Only its attempt state is stale, not the verified metadata.
         state.verified_version = Some(
             state
                 .verified_version
@@ -205,6 +206,7 @@ mod tests {
     use crate::platform::transition::broadcast::BroadcastStateTransition;
     use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
     use crate::platform::Query;
+    use crate::sdk::SdkInstance;
     use crate::SdkBuilder;
     use dapi_grpc::platform::v0::BroadcastStateTransitionResponse;
     use dapi_grpc::platform::v0::{GetEpochsInfoRequest, ResponseMetadata};
@@ -324,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn should_timeout_while_a_query_is_pending_and_cancel_that_query() {
         let sdk = sdk();
-        let super::super::SdkInstance::Mock { dapi, .. } = &sdk.inner else {
+        let SdkInstance::Mock { dapi, .. } = &sdk.inner else {
             panic!("mock")
         };
         let _blocked_transport = dapi.lock().await;
@@ -342,7 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_ignore_superseded_success_error_and_unknown_version_results() {
+    async fn should_retain_superseded_evidence_without_overwriting_the_latest_check() {
         let mut sdk = sdk();
         let old = sdk.begin_protocol_compatibility_check();
         let mut old_query = sdk.clone();
@@ -353,7 +355,11 @@ mod tests {
             sdk.protocol_compatibility().state,
             ProtocolCompatibilityState::Checking
         );
-        assert_eq!(sdk.protocol_compatibility().verified_protocol_version, None);
+        assert_eq!(
+            sdk.protocol_compatibility().verified_protocol_version,
+            Some(PlatformVersion::latest().protocol_version + 1)
+        );
+        assert!(!sdk.protocol_compatibility.lock().unwrap().attempt_verified);
         assert_eq!(
             sdk.refresh_protocol_compatibility(old).await.generation,
             current
@@ -366,6 +372,34 @@ mod tests {
             sdk.protocol_compatibility().state,
             ProtocolCompatibilityState::Checked
         );
+    }
+
+    #[tokio::test]
+    async fn should_keep_late_evidence_when_the_latest_check_fails() {
+        let sdk = sdk();
+        let old = sdk.begin_protocol_compatibility_check();
+        let mut old_query = sdk.clone();
+        old_query.compatibility_check_generation = Some(old);
+        let current = sdk.begin_protocol_compatibility_check();
+        let failed = sdk.refresh_protocol_compatibility(current).await;
+        assert_eq!(
+            failed.state,
+            ProtocolCompatibilityState::Unavailable {
+                reason: ProtocolCompatibilityUnavailableReason::CheckFailed,
+            }
+        );
+        verified(&old_query, PlatformVersion::latest().protocol_version + 1);
+        let observed = sdk.protocol_compatibility();
+        assert_eq!(observed.generation, current);
+        assert_eq!(observed.state, failed.state);
+        assert!(observed.newer_protocol_available());
+        assert!(!sdk.protocol_compatibility.lock().unwrap().attempt_verified);
+        assert_eq!(
+            observed.effective_protocol_version,
+            failed.effective_protocol_version
+        );
+        verified(&old_query, 13);
+        assert_eq!(sdk.protocol_compatibility(), observed);
     }
 
     #[tokio::test]
@@ -458,9 +492,9 @@ mod tests {
         assert_eq!(sdk.version().protocol_version, 13);
     }
     #[tokio::test]
-    async fn informational_checks_never_gate_the_real_broadcast_path() {
+    async fn should_never_gate_the_real_broadcast_path_on_informational_checks() {
         for phase in 0..4 {
-            let sdk = crate::SdkBuilder::new_mock()
+            let sdk = SdkBuilder::new_mock()
                 .with_height_tolerance(None)
                 .build()
                 .unwrap();
@@ -483,7 +517,7 @@ mod tests {
             }
             let transition = StateTransition::Batch(BatchTransitionV0::default().into());
             let request = transition.broadcast_request_for_state_transition().unwrap();
-            let crate::sdk::SdkInstance::Mock { dapi, .. } = &sdk.inner else {
+            let SdkInstance::Mock { dapi, .. } = &sdk.inner else {
                 panic!("mock")
             };
             dapi.lock()

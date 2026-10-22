@@ -216,9 +216,10 @@ The lifecycle uses a monotonic clock and the transport's timer on both native
 and browser WASM targets; browsers do not require a Tokio timer runtime.
 One proved genesis-epoch query supplies the network version through the normal
 proof, quorum-signature and freshness verification path. Transport retries use
-the existing configuration within that total budget. A superseded attempt's
-late result is discarded. Applications can coalesce duplicate refresh requests
-and check at startup, foreground return, or manual retry; operations do not need
+the existing configuration within that total budget. A superseded attempt cannot
+overwrite the current check state, but its proof-verified metadata still contributes
+to the highest observed version. Applications can coalesce duplicate refresh
+requests and check at startup, foreground return, or manual retry; operations do not need
 a compatibility refresh before each request.
 
 A failed proof, unavailable quorum key or timeout only makes the latest check

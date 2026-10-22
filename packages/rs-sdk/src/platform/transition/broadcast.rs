@@ -10,7 +10,7 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
-use dapi_grpc::tonic::Code;
+use dapi_grpc::tonic::{Code, ConnectError};
 use dash_context_provider::ContextProviderError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
@@ -32,6 +32,7 @@ use rs_dapi_client::DapiClientError;
 use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use std::error::Error as StdError;
 use std::future::Future;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -39,6 +40,10 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
+// rs-dapi emits this only after finding the transition in neither the local
+// mempool nor chain and successfully re-running CheckTx. It refuses this attempt;
+// it cannot rule out acceptance by another node during an earlier attempt.
+const DAPI_PROCESSING_REJECTION: &str = "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.";
 
 #[cfg(test)]
 pub(super) mod retry_tests;
@@ -245,6 +250,13 @@ pub(super) struct BroadcastOutcome {
     possibly_accepted: bool,
 }
 
+impl BroadcastOutcome {
+    /// The final relay error, retained for legacy combined APIs with a specific fallback.
+    pub(super) fn error(&self) -> Option<&Error> {
+        self.result.as_ref().err()
+    }
+}
+
 impl From<Result<(), Error>> for BroadcastOutcome {
     fn from(result: Result<(), Error>) -> Self {
         let possibly_accepted = result
@@ -297,6 +309,33 @@ pub(super) async fn broadcast_with_observation(
             }
         }
     }
+    outcome
+}
+
+/// Observe one executor invocation, including its existing transport retries.
+/// Raw-dispatch convenience APIs retain their retry budget and nonce-cache policy.
+pub(super) async fn execute_broadcast_with_observation(
+    transition: &StateTransition,
+    sdk: &Sdk,
+    settings: RequestSettings,
+) -> BroadcastOutcome {
+    let request = match transition.broadcast_request_for_state_transition() {
+        Ok(request) => request,
+        Err(error) => return Err(error).into(),
+    };
+    let possibly_accepted = AtomicBool::new(false);
+    let result = sdk
+        .execute_with_transport_error_observer(request, settings, &|error| {
+            if transport_broadcast_may_have_been_accepted(error) {
+                possibly_accepted.store(true, Ordering::Relaxed);
+            }
+        })
+        .await
+        .into_inner()
+        .map(|_| ())
+        .map_err(Error::from);
+    let mut outcome = BroadcastOutcome::from(result);
+    outcome.possibly_accepted |= possibly_accepted.load(Ordering::Relaxed);
     outcome
 }
 
@@ -373,6 +412,20 @@ fn broadcast_may_have_been_accepted(error: &Error) -> bool {
 
 fn transport_broadcast_may_have_been_accepted(error: &TransportError) -> bool {
     let TransportError::Grpc(status) = error;
+    // tonic preserves its typed connector failure through Status's source chain.
+    // DNS, TCP and TLS establishment errors happen before this request is sent.
+    // A bare Unavailable (including one received from a node) does not carry
+    // that guarantee: it can also mean a lost acknowledgement after dispatch.
+    let mut source = status.source();
+    while let Some(error) = source {
+        if error.is::<ConnectError>() {
+            return false;
+        }
+        source = error.source();
+    }
+    if status.code() == Code::Internal && status.message() == DAPI_PROCESSING_REJECTION {
+        return false;
+    }
     // DAPI maps Tenderdash's confirmation timeout to this exact status.
     // Other ResourceExhausted responses are mempool-full or rate-limit
     // refusals and must not be treated as a possibly accepted submission.
@@ -716,7 +769,7 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test]
-    async fn ambiguous_broadcast_still_waits_for_verified_result() {
+    async fn should_wait_for_verified_result_after_ambiguous_broadcast() {
         let errors = [
             Error::AlreadyExists("tx already exists in cache".into()),
             Error::TimeoutReached(Duration::from_secs(10), "lost acknowledgement".into()),
@@ -781,7 +834,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cache_hit_never_substitutes_for_a_valid_proof() {
+    async fn should_never_substitute_cache_hit_for_a_valid_proof() {
         for wait_error in [
             Error::InvalidProvedResponse("bad signature".into()),
             Error::ExecutionNotProved("affected-state snapshot only".into()),
@@ -801,7 +854,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn definite_broadcast_rejection_does_not_poll_result_wait() {
+    async fn should_not_poll_result_wait_after_definite_broadcast_rejection() {
         for error in [
             missing_owner(owner_id()),
             Error::DapiClientError(DapiClientError::NoAvailableAddresses),
