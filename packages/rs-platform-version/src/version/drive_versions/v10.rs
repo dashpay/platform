@@ -2,6 +2,10 @@ use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CO
 use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
+use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_identity_method_versions::{
+    DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
+};
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
@@ -23,7 +27,9 @@ use crate::version::drive_versions::{
 /// * **Escrow fee estimates** — the offers' escrow key sits a level below the other keys of the
 ///   prefunded specialized balances layer, so `estimated_cost_for_prefunded_specialized_balance_update`
 ///   2 and `add_estimation_costs_for_contract_fee_pot_update` 1 keep a deeper description of that
-///   layer another write of the batch registered, rather than lowering it to their keys' level.
+///   layer another write of the batch registered, rather than lowering it to their keys' level;
+///   likewise the listings' escrow key sits deeper in the Tokens layer than the balances key, and
+///   `for_token_balances` 1 keeps a deeper description of the Tokens layer.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -38,6 +44,13 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
                 ..DRIVE_CONTRACT_METHOD_VERSIONS_V4.fee_pots
             },
             ..DRIVE_CONTRACT_METHOD_VERSIONS_V4
+        },
+        identity: DriveIdentityMethodVersions {
+            cost_estimation: DriveIdentityCostEstimationMethodVersions {
+                for_token_balances: 1, // changed in v10: keeps a deeper Tokens layer description
+                ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
+            },
+            ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description

@@ -44,9 +44,8 @@ impl Drive {
 
         // The escrow key sits deeper in the Tokens Merk than the balances key the token balance
         // estimation describes at level 0, and a batch moving tokens into or out of escrow writes
-        // both. The balance estimation overwrites what it finds and belongs to every earlier
-        // protocol version's fees, so the escrow operations register theirs after it
-        // (`TokenPlaceInOrderEscrow`, `TokenReleaseFromOrderEscrow`).
+        // both. From protocol version 15 the token balance estimation keeps this deeper
+        // description too (`for_token_balances` 1), whichever registers first.
         insert_estimated_layer_keeping_deeper(
             estimated_costs_only_with_layer_info,
             KeyInfoPath::from_known_path(tokens_root_path()),
