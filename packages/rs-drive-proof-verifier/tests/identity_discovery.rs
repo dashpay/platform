@@ -727,9 +727,15 @@ fn should_not_read_two_proofs_packed_into_a_v1_proof() {
     );
 }
 
+/// Rewrites the committed vectors, so running the suite with `--ignored` skips it
+/// unless `DASH_SDK_EXPORT_NONUNIQUE_VECTORS=1` is set.
 #[test]
-#[ignore = "regenerates deterministic signed SDK compatibility fixtures"]
+#[ignore = "requires DASH_SDK_EXPORT_NONUNIQUE_VECTORS=1; regenerates deterministic signed SDK compatibility fixtures"]
 fn should_export_nonunique_sdk_fixtures() {
+    if std::env::var("DASH_SDK_EXPORT_NONUNIQUE_VECTORS").as_deref() != Ok("1") {
+        eprintln!("skipped: set DASH_SDK_EXPORT_NONUNIQUE_VECTORS=1 to rewrite the vectors");
+        return;
+    }
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/identity-discovery");
     std::fs::create_dir_all(&directory).unwrap();
