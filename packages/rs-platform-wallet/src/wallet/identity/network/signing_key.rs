@@ -394,6 +394,11 @@ pub(super) mod tests {
     }
 
     impl CapturingStore {
+        /// Every changeset stored so far, removed from the record.
+        pub(crate) fn take(&self) -> Vec<crate::changeset::PlatformWalletChangeSet> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
+
         /// The last key row stored for `key_id`.
         pub(crate) fn stored_key(
             &self,

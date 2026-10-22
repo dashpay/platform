@@ -533,14 +533,26 @@ impl IdentityWallet {
 #[cfg(test)]
 mod tests {
     use super::super::identity_handle::{
-        derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
+        derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash,
+        derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
+    use super::super::signing_key::tests::CapturingStore;
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
+    use crate::changeset::IdentityKeyDerivationIndices;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::PlatformWalletManager;
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+    use std::sync::Arc;
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture the
     /// FFI-side derive tests and the `identity_handle` tests use, so the
@@ -697,6 +709,121 @@ mod tests {
                     "load master probe must equal the discovery master probe at the same slot"
                 );
             }
+        }
+    }
+
+    /// A load that finds an identity the wallet does not hold yet stores it
+    /// and its keys, each with the breadcrumb verified against the seed, as
+    /// one changeset. No snapshot of the identity or its keys reaches the
+    /// store ahead of the breadcrumbs, so a store that fails between two
+    /// writes cannot leave watch-only key rows behind.
+    #[tokio::test]
+    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let identity_id = Identifier::from([0x5A; 32]);
+        // Registered at index 0 the way registration does it: MASTER, HIGH
+        // and CRITICAL auth keys at key ids 0..=2, all from the seed.
+        let levels = [
+            SecurityLevel::MASTER,
+            SecurityLevel::HIGH,
+            SecurityLevel::CRITICAL,
+        ];
+        let public_keys = (0u32..)
+            .zip(levels)
+            .map(|(key_id, security_level)| {
+                let derived =
+                    derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, key_id)
+                        .unwrap();
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id: key_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(derived.public_key.to_vec()),
+                    disabled_at: None,
+                }
+                .into();
+                (key_id, key)
+            })
+            .collect();
+        let on_chain = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys,
+            balance: 1_000_000,
+            revision: 1,
+        });
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let probe =
+            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(on_chain))
+            .await
+            .unwrap();
+        let store = Arc::new(CapturingStore::default());
+        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let wallet_id = wallet.wallet_id();
+        store.take();
+
+        wallet
+            .identity()
+            .load_identity_by_index_from_master(0, &master)
+            .await
+            .unwrap()
+            .expect("the identity at index 0 is found");
+
+        let stored = store.take();
+        let identity_changesets: Vec<_> = stored
+            .iter()
+            .filter(|changeset| changeset.identities.is_some() || changeset.identity_keys.is_some())
+            .collect();
+        assert_eq!(
+            identity_changesets.len(),
+            1,
+            "the identity and its keys go out together: {identity_changesets:?}"
+        );
+        let changeset = identity_changesets[0];
+        assert!(
+            changeset
+                .identities
+                .as_ref()
+                .is_some_and(|identities| identities.identities.contains_key(&identity_id)),
+            "the changeset carries the identity"
+        );
+        let upserts = &changeset
+            .identity_keys
+            .as_ref()
+            .expect("the changeset carries the keys")
+            .upserts;
+        assert_eq!(upserts.len(), 3);
+        for key_id in 0..3 {
+            let row = &upserts[&(identity_id, key_id)];
+            assert_eq!(row.wallet_id, Some(wallet_id));
+            assert_eq!(
+                row.derivation_indices,
+                Some(IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: key_id,
+                }),
+                "key {key_id} carries its breadcrumb"
+            );
         }
     }
 }
