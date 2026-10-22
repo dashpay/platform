@@ -125,7 +125,7 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    // V021 drops Core history; the next SPV start rescans it from birth.
+    // V021 drops mined Core history; the next SPV start rescans it from birth.
     for table in ["core_utxos", "core_transactions"] {
         let sql = format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1");
         assert_eq!(count(conn, &sql, &full), 0, "{table}");
@@ -244,7 +244,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
         assert_eq!(schema_version(&conn), 13);
     }
 
-    // Checked at V018: V021 then drops Core history for a rescan.
+    // Checked at V018: V021 then drops mined Core history for a rescan.
     let mut conn = Connection::open(&path).unwrap();
     mig::runner()
         .set_target(refinery::Target::Version(18))

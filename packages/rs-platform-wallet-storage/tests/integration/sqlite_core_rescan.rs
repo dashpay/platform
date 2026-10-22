@@ -1,6 +1,6 @@
 #![cfg(feature = "sqlite")]
 
-//! A wallet whose Core history was wiped (what V021 does to an older store)
+//! A wallet whose mined Core history was wiped (what V021 does to an older store)
 //! rebuilds it by rescanning from its birth height. These tests drive that
 //! rescan through the real manager, event adapter, store and load replay.
 
@@ -9,7 +9,7 @@ use crate::common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use common::{chain_lock, mine, persist_events, registration};
+use common::{chain_lock, mine, persist_events, registration, Manager};
 use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
@@ -19,11 +19,13 @@ use key_wallet::managed_account::transaction_record::{TransactionDirection, Tran
 use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::ManagedWalletInfo;
+use key_wallet::Wallet;
 use platform_wallet::changeset::{
     AssetLockChangeSet, AssetLockEntry, ClientStartState, CoreChangeSet, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
-use platform_wallet::key_wallet_manager::WalletManager;
+use platform_wallet::key_wallet_manager::{WalletEvent, WalletInterface, WalletManager};
 use platform_wallet::test_support::core_fixtures::{
     foreign_address, outside, pay, spend_of, wallet_with_receive_address,
 };
@@ -31,6 +33,7 @@ use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use platform_wallet_storage::sqlite::schema::blob;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::RwLock;
 
 /// Blocks the rescan finds, in chain order: a funding payment, a spend of its
@@ -128,6 +131,18 @@ async fn rescan(
         .unwrap()
 }
 
+/// Undo V021 on the store at `path`, so its next open replays V021 over the
+/// history it holds, as on a store upgraded from before V021.
+fn rewind_v021(path: &std::path::Path) {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .execute_batch(
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 21;",
+        )
+        .unwrap();
+}
+
 /// The record the store holds for `tx`. Wallet-level accounting lives here:
 /// the in-memory account record keeps upstream's account-local view (an asset
 /// lock with no change reads `Outgoing` there, live or reloaded alike).
@@ -170,7 +185,7 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
     }
 }
 
-/// R3: a wallet upgraded from V018. V021 drops its Core history but keeps
+/// R3: a wallet upgraded from V018. V021 drops its mined Core history but keeps
 /// `last_processed_height` and the ChainLock, both above that history, so the
 /// rescan replays every historical block below a ChainLock the loaded wallet
 /// already holds: key-wallet's ChainLocked path, not the ordinary block one.
@@ -212,13 +227,9 @@ async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_cha
         )
         .unwrap()
     };
+    rewind_v021(&path);
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 21;",
-        )
-        .unwrap();
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM core_transactions", [], |row| {
                 row.get(0)
@@ -430,4 +441,136 @@ async fn should_keep_unconsumed_asset_locks_when_a_wiped_wallet_loads_and_rescan
         rows,
         "the rescan leaves the rows untouched"
     );
+}
+
+/// The coins `info` can spend, in outpoint order.
+fn spendable(info: &ManagedWalletInfo) -> Vec<OutPoint> {
+    let mut coins: Vec<_> = info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .keys()
+        .copied()
+        .collect();
+    coins.sort();
+    coins
+}
+
+/// A manager holding `wallet` with `wallet_info`, and its event receiver.
+fn manager_of(
+    wallet: Wallet,
+    wallet_info: ManagedWalletInfo,
+) -> (Manager, UnboundedReceiver<WalletEvent>) {
+    let mut manager = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let events = manager.take_persistence_receiver().unwrap();
+    let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+    info.core_wallet = wallet_info;
+    manager.insert_wallet(wallet, info).unwrap();
+    (Arc::new(RwLock::new(manager)), events)
+}
+
+/// R4: a V019 store holding unmined spends of a confirmed funding. A block
+/// rescan redelivers the funding but never the spends, so V021 keeps their
+/// evidence for the load to authenticate: an InstantSend-locked spend and a
+/// signed pending send keep their inputs reserved, a forged claim is
+/// released. Nothing is redelivered from the mempool or InstantSend.
+#[tokio::test]
+async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
+    let (persister, _dir, path) = common::fresh_persister();
+    let (wallet, info, address) = wallet_with_receive_address();
+    let wallet_id = wallet.wallet_id;
+    persister
+        .store(wallet_id, registration(&wallet, None))
+        .unwrap();
+    let funding = spend_of(
+        &[outside(41)],
+        vec![
+            pay(100_000, &address),
+            pay(50_000, &address),
+            pay(30_000, &address),
+        ],
+    );
+    let coin = |vout| OutPoint::new(funding.txid(), vout);
+    let locked = spend_of(
+        &[coin(0)],
+        vec![pay(60_000, &foreign_address(7)), pay(39_000, &address)],
+    );
+    let signed = common::authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(&[coin(1)], vec![pay(49_000, &foreign_address(6))]),
+    );
+    let forged = spend_of(&[coin(2)], vec![pay(29_000, &foreign_address(5))]);
+    let lock = dashcore::InstantLock {
+        txid: locked.txid(),
+        inputs: vec![coin(0)],
+        ..Default::default()
+    };
+    let (manager, mut events) = manager_of(wallet, info);
+    let persister = Arc::new(persister);
+    mine(&manager, wallet_id, funding.clone(), 100).await;
+    for (tx, lock) in [(&locked, Some(lock)), (&signed, None), (&forged, None)] {
+        let mut guard = manager.write().await;
+        assert!(
+            guard
+                .process_mempool_transaction(tx, lock)
+                .await
+                .is_relevant
+        );
+    }
+    persist_events(&manager, &persister, &mut events).await;
+    drop((manager, events, persister));
+    rewind_v021(&path);
+
+    let persister = Arc::new(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
+    let loaded = persister
+        .load()
+        .unwrap()
+        .wallets
+        .remove(&wallet_id)
+        .unwrap();
+    let (manager, mut events) = manager_of(loaded.wallet, loaded.wallet_info);
+    // The complete block rescan: the funding is the only mined transaction.
+    mine(&manager, wallet_id, funding.clone(), 100).await;
+    persist_events(&manager, &persister, &mut events).await;
+    let live = spendable(
+        &manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .unwrap()
+            .core_wallet,
+    );
+    drop((manager, events, persister));
+    let reloaded = SqlitePersister::open(SqlitePersisterConfig::new(&path))
+        .unwrap()
+        .load()
+        .unwrap();
+
+    let mut expected = vec![coin(2), OutPoint::new(locked.txid(), 1)];
+    expected.sort();
+    assert_eq!(live, expected, "the rescanned wallet reserves both spends");
+    assert_eq!(
+        spendable(&reloaded.wallets[&wallet_id].wallet_info),
+        expected,
+        "the reload keeps both reservations"
+    );
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // The rescan records the funding again; the forged spend is gone.
+    let records = [
+        (&funding, true),
+        (&locked, true),
+        (&signed, true),
+        (&forged, false),
+    ];
+    for (tx, kept) in records {
+        let stored: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM core_transactions WHERE wallet_id = ?1 \
+                 AND txid = ?2 AND record_blob IS NOT NULL)",
+                rusqlite::params![wallet_id.as_slice(), tx.txid().as_byte_array().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, kept, "record of {}", tx.txid());
+    }
 }

@@ -482,7 +482,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // 4. Upgrade through V018 (applies V013's purge; V021 then drops Core
+    // 4. Upgrade through V018 (applies V013's purge; V021 then drops mined Core
     //    history for a rescan).
     mig::runner()
         .set_target(refinery::Target::Version(18))
@@ -636,7 +636,7 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
         .expect("re-enable foreign keys");
 
     // 4. The rebuild must complete rather than abort on the orphans (checked
-    //    at V018: V021 then drops Core history for a rescan).
+    //    at V018: V021 then drops mined Core history for a rescan).
     mig::runner()
         .set_target(refinery::Target::Version(18))
         .run(&mut conn)
