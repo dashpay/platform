@@ -1048,6 +1048,25 @@
         "minimum": 1,
         "description": "The order's price in credits per whole token",
         "position": 4
+      },
+      "minFill": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The least a fill takes unless it takes everything left, in base units",
+        "position": 5
+      },
+      "expiresAt": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "When the order expires, in milliseconds since the epoch; absent for an order that does not expire",
+        "position": 6
+      },
+      "decimals": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 16,
+        "description": "The token's decimals when the order was placed: its price is per whole token at this scale",
+        "position": 7
       }
     },
     "required": [
@@ -1056,6 +1075,8 @@
       "side",
       "amount",
       "price",
+      "minFill",
+      "decimals",
       "$createdAt",
       "$createdAtBlockHeight"
     ],
@@ -1172,6 +1193,13 @@
         "minimum": 0,
         "description": "The credits the fill moved between buyer and seller",
         "position": 5
+      },
+      "decimals": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 16,
+        "description": "The decimals the order was placed at, which priced the fill",
+        "position": 6
       }
     },
     "required": [
@@ -1181,6 +1209,7 @@
       "makerId",
       "amount",
       "credits",
+      "decimals",
       "$createdAt",
       "$createdAtBlockHeight"
     ],

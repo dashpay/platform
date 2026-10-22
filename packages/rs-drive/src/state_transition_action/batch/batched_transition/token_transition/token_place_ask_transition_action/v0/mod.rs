@@ -24,6 +24,8 @@ pub struct TokenPlaceAskTransitionActionV0 {
     pub min_fill: TokenAmount,
     /// The block time from which the listing can no longer be filled
     pub expires_at: Option<TimestampMillis>,
+    /// The token's decimals when the listing is placed, which price its fills
+    pub decimals: u8,
     /// The listing's `ask` document, stamped with the block that places it
     pub order_document: Document,
     /// The token market contract, whose `ask` document records the listing
@@ -52,6 +54,9 @@ pub trait TokenPlaceAskTransitionActionAccessorsV0 {
 
     /// The block time from which the listing can no longer be filled
     fn expires_at(&self) -> Option<TimestampMillis>;
+
+    /// The token's decimals when the listing is placed, which price its fills
+    fn decimals(&self) -> u8;
 
     /// The listing's `ask` document
     fn order_document(&self) -> &Document;
@@ -102,6 +107,10 @@ impl TokenPlaceAskTransitionActionAccessorsV0 for TokenPlaceAskTransitionActionV
 
     fn expires_at(&self) -> Option<TimestampMillis> {
         self.expires_at
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
     }
 
     fn order_document(&self) -> &Document {

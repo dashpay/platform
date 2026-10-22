@@ -9,6 +9,7 @@ use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
+    TimestampMillis,
 };
 #[cfg(feature = "serde-conversion")]
 use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
@@ -216,7 +217,18 @@ pub enum TokenEvent {
     /// - `TokenOrderSide`: Whether the order is a listing or an offer.
     /// - `TokenAmount`: The amount listed or wanted, in base units.
     /// - `Credits`: The price, in credits per whole token.
-    OrderPlaced(Identifier, TokenOrderSide, TokenAmount, Credits),
+    /// - `TokenAmount`: The least a fill takes unless it takes everything left.
+    /// - `Option<TimestampMillis>`: When the order expires, if it does.
+    /// - `u8`: The token's decimals when the order was placed, which price every fill of it.
+    OrderPlaced(
+        Identifier,
+        TokenOrderSide,
+        TokenAmount,
+        Credits,
+        TokenAmount,
+        Option<TimestampMillis>,
+        u8,
+    ),
 
     /// Event representing a fill of a token marketplace order (protocol version 15).
     ///
@@ -225,7 +237,15 @@ pub enum TokenEvent {
     /// - `Identifier`: The order's maker.
     /// - `TokenAmount`: The amount the fill took, in base units.
     /// - `Credits`: The credits the fill moved between buyer and seller.
-    OrderFilled(Identifier, TokenOrderSide, Identifier, TokenAmount, Credits),
+    /// - `u8`: The decimals the order was placed at, which priced the fill.
+    OrderFilled(
+        Identifier,
+        TokenOrderSide,
+        Identifier,
+        TokenAmount,
+        Credits,
+        u8,
+    ),
 
     /// Event representing a cancel of a token marketplace order (protocol version 15).
     ///
@@ -396,23 +416,35 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
             }
-            TokenEvent::OrderPlaced(order_id, side, amount, price) => {
-                let mut m = serializer.serialize_map(Some(5))?;
+            TokenEvent::OrderPlaced(
+                order_id,
+                side,
+                amount,
+                price,
+                min_fill,
+                expires_at,
+                decimals,
+            ) => {
+                let mut m = serializer.serialize_map(Some(8))?;
                 m.serialize_entry("$type", "orderPlaced")?;
                 m.serialize_entry("orderId", order_id)?;
                 m.serialize_entry("side", side)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("price", &SafeU64(price))?;
+                m.serialize_entry("minFill", &SafeU64(min_fill))?;
+                m.serialize_entry("expiresAt", &expires_at.as_ref().map(SafeU64))?;
+                m.serialize_entry("decimals", decimals)?;
                 m.end()
             }
-            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => {
-                let mut m = serializer.serialize_map(Some(6))?;
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => {
+                let mut m = serializer.serialize_map(Some(7))?;
                 m.serialize_entry("$type", "orderFilled")?;
                 m.serialize_entry("orderId", order_id)?;
                 m.serialize_entry("side", side)?;
                 m.serialize_entry("maker", maker)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("credits", &SafeU64(credits))?;
+                m.serialize_entry("decimals", decimals)?;
                 m.end()
             }
             TokenEvent::OrderCancelled(order_id, side) => {
@@ -477,6 +509,9 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut side: Option<TokenOrderSide> = None;
                 let mut maker: Option<Identifier> = None;
                 let mut price: Option<u64> = None;
+                let mut min_fill: Option<u64> = None;
+                let mut expires_at: Option<u64> = None;
+                let mut decimals: Option<u8> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
@@ -502,6 +537,11 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "side" => side = Some(map.next_value()?),
                         "maker" => maker = Some(map.next_value()?),
                         "price" => price = Some(map.next_value::<U64Safe>()?.0),
+                        "minFill" => min_fill = Some(map.next_value::<U64Safe>()?.0),
+                        "expiresAt" => {
+                            expires_at = map.next_value::<Option<U64Safe>>()?.map(|value| value.0)
+                        }
+                        "decimals" => decimals = Some(map.next_value()?),
                         _ => {
                             let _: IgnoredAny = map.next_value()?;
                         }
@@ -593,6 +633,9 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         side.ok_or_else(|| A::Error::missing_field("side"))?,
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         price.ok_or_else(|| A::Error::missing_field("price"))?,
+                        min_fill.ok_or_else(|| A::Error::missing_field("minFill"))?,
+                        expires_at,
+                        decimals.ok_or_else(|| A::Error::missing_field("decimals"))?,
                     )),
                     "orderFilled" => Ok(TokenEvent::OrderFilled(
                         order_id.ok_or_else(|| A::Error::missing_field("orderId"))?,
@@ -600,6 +643,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         maker.ok_or_else(|| A::Error::missing_field("maker"))?,
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         credits.ok_or_else(|| A::Error::missing_field("credits"))?,
+                        decimals.ok_or_else(|| A::Error::missing_field("decimals"))?,
                     )),
                     "orderCancelled" => Ok(TokenEvent::OrderCancelled(
                         order_id.ok_or_else(|| A::Error::missing_field("orderId"))?,
@@ -857,15 +901,31 @@ impl fmt::Display for TokenEvent {
                 "Direct purchase of {} into the token pool for {} credits",
                 amount, credits
             ),
-            TokenEvent::OrderPlaced(order_id, side, amount, price) => write!(
+            TokenEvent::OrderPlaced(
+                order_id,
+                side,
+                amount,
+                price,
+                min_fill,
+                expires_at,
+                decimals,
+            ) => write!(
                 f,
-                "Order {} placed: {} of {} at {} credits per whole token",
-                order_id, side, amount, price
+                "Order {} placed: {} of {} at {} credits per whole token of {} decimals, fills of at least {}{}",
+                order_id,
+                side,
+                amount,
+                price,
+                decimals,
+                min_fill,
+                expires_at
+                    .map(|expires_at| format!(", expiring at {}", expires_at))
+                    .unwrap_or_default()
             ),
-            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => write!(
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => write!(
                 f,
-                "Order {} ({}) of {} filled: {} for {} credits",
-                order_id, side, maker, amount, credits
+                "Order {} ({}) of {} filled: {} for {} credits at {} decimals",
+                order_id, side, maker, amount, credits, decimals
             ),
             TokenEvent::OrderCancelled(order_id, side) => {
                 write!(f, "Order {} ({}) cancelled", order_id, side)
@@ -1165,21 +1225,40 @@ impl TokenEvent {
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
             ]),
-            TokenEvent::OrderPlaced(order_id, side, amount, price) => BTreeMap::from([
-                ("tokenId".to_string(), token_id.into()),
-                ("orderId".to_string(), order_id.into()),
-                ("side".to_string(), (side as u8).into()),
-                ("amount".to_string(), amount.into()),
-                ("price".to_string(), price.into()),
-            ]),
-            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => BTreeMap::from([
-                ("tokenId".to_string(), token_id.into()),
-                ("orderId".to_string(), order_id.into()),
-                ("side".to_string(), (side as u8).into()),
-                ("makerId".to_string(), maker.into()),
-                ("amount".to_string(), amount.into()),
-                ("credits".to_string(), credits.into()),
-            ]),
+            TokenEvent::OrderPlaced(
+                order_id,
+                side,
+                amount,
+                price,
+                min_fill,
+                expires_at,
+                decimals,
+            ) => {
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("orderId".to_string(), order_id.into()),
+                    ("side".to_string(), (side as u8).into()),
+                    ("amount".to_string(), amount.into()),
+                    ("price".to_string(), price.into()),
+                    ("minFill".to_string(), min_fill.into()),
+                    ("decimals".to_string(), decimals.into()),
+                ]);
+                if let Some(expires_at) = expires_at {
+                    properties.insert("expiresAt".to_string(), expires_at.into());
+                }
+                properties
+            }
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => {
+                BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("orderId".to_string(), order_id.into()),
+                    ("side".to_string(), (side as u8).into()),
+                    ("makerId".to_string(), maker.into()),
+                    ("amount".to_string(), amount.into()),
+                    ("credits".to_string(), credits.into()),
+                    ("decimals".to_string(), decimals.into()),
+                ])
+            }
             TokenEvent::OrderCancelled(order_id, side) => BTreeMap::from([
                 ("tokenId".to_string(), token_id.into()),
                 ("orderId".to_string(), order_id.into()),

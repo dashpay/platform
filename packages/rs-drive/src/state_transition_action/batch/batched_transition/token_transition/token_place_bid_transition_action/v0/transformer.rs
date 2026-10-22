@@ -138,6 +138,7 @@ impl TokenPlaceBidTransitionActionV0 {
                     price: *price,
                     min_fill: *min_fill,
                     expires_at: *expires_at,
+                    decimals,
                     escrow,
                     order_document,
                     token_market_contract: drive

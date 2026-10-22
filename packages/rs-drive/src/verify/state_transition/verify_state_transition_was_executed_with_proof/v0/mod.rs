@@ -706,6 +706,12 @@ impl Drive {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Burn(_) => Some(vec!["burnFromId", "note"]),
+                                    // The decimals are the token's when the order was placed,
+                                    // which a later conventions update may have changed; every
+                                    // term of the transition is compared.
+                                    TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_) => {
+                                        Some(vec!["decimals"])
+                                    }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
                                     TokenTransition::DirectPurchase(_) => {
                                         let purchase_cost: Credits =
