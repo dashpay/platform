@@ -1352,9 +1352,9 @@ impl Drive {
                                 // executed, and its proof must not borrow a group action's
                                 // evidence (which may stand without the placement's record).
                                 if token_transition.base().using_group_info().is_some() {
-                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
-                                        "a token listing placement carries group action information, which no executed placement has (token place ask)"
-                                    ))));
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(
+                                        "a token listing placement carries group action information, which no executed placement has (token place ask)".to_string(),
+                                    )));
                                 }
                                 let order_id = TokenOrderSide::Ask.order_id(
                                     token_id,
@@ -1430,9 +1430,9 @@ impl Drive {
                                 // executed, and its proof must not borrow a group action's
                                 // evidence (which may stand without the placement's record).
                                 if token_transition.base().using_group_info().is_some() {
-                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
-                                        "a token offer placement carries group action information, which no executed placement has (token place bid)"
-                                    ))));
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(
+                                        "a token offer placement carries group action information, which no executed placement has (token place bid)".to_string(),
+                                    )));
                                 }
                                 let order_id = TokenOrderSide::Bid.order_id(
                                     token_id,
