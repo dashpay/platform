@@ -304,46 +304,51 @@ async fn should_keep_real_ambiguity_despite_a_later_state_dependent_consensus_re
 
 #[tokio::test(start_paused = true)]
 async fn should_treat_exact_dapi_processing_rejection_as_local_to_its_attempt() {
-    let (refused, sent, executions) = retrying_broadcast(
-        &signed_transition(),
-        vec![
-            Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
-            Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
-        ],
-        1,
-    )
-    .await;
-    assert_eq!(sent.len(), 2);
-    assert_eq!(executions, 1);
-    let result: Result<(), Error> = wait_after_broadcast(refused, async {
-        panic!("both attempts returned the exact local processing refusal")
-    })
-    .await;
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains(DAPI_PROCESSING_REJECTION));
-
-    for ambiguous in [
-        Status::unavailable("acknowledgement lost"),
-        Status::internal("Failed checking state transition: connection reset"),
+    for rejection in [
+        DAPI_PROCESSING_REJECTION.to_owned(),
+        format!("Internal error: {DAPI_PROCESSING_REJECTION}"),
     ] {
-        let (outcome, sent, executions) = retrying_broadcast(
+        let (refused, sent, executions) = retrying_broadcast(
             &signed_transition(),
             vec![
-                Attempt::Error(ambiguous),
-                Attempt::Error(Status::internal(DAPI_PROCESSING_REJECTION)),
+                Attempt::Error(Status::internal(&rejection)),
+                Attempt::Error(Status::internal(&rejection)),
             ],
             1,
         )
         .await;
         assert_eq!(sent.len(), 2);
         assert_eq!(executions, 1);
-        assert_eq!(
-            wait_after_broadcast(outcome, async { Ok(42) })
-                .await
-                .unwrap(),
-            42
-        );
+        let result: Result<(), Error> = wait_after_broadcast(refused, async {
+            panic!("both attempts returned the exact local processing refusal")
+        })
+        .await;
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains(DAPI_PROCESSING_REJECTION));
+
+        for ambiguous in [
+            Status::unavailable("acknowledgement lost"),
+            Status::internal("Failed checking state transition: connection reset"),
+        ] {
+            let (outcome, sent, executions) = retrying_broadcast(
+                &signed_transition(),
+                vec![
+                    Attempt::Error(ambiguous),
+                    Attempt::Error(Status::internal(&rejection)),
+                ],
+                1,
+            )
+            .await;
+            assert_eq!(sent.len(), 2);
+            assert_eq!(executions, 1);
+            assert_eq!(
+                wait_after_broadcast(outcome, async { Ok(42) })
+                    .await
+                    .unwrap(),
+                42
+            );
+        }
     }
 }

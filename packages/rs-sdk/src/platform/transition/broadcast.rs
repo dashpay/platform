@@ -423,7 +423,13 @@ fn transport_broadcast_may_have_been_accepted(error: &TransportError) -> bool {
         }
         source = error.source();
     }
-    if status.code() == Code::Internal && status.message() == DAPI_PROCESSING_REJECTION {
+    if status.code() == Code::Internal
+        && status
+            .message()
+            .strip_prefix("Internal error: ")
+            .unwrap_or(status.message())
+            == DAPI_PROCESSING_REJECTION
+    {
         return false;
     }
     // DAPI maps Tenderdash's confirmation timeout to this exact status.
