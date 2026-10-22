@@ -19,7 +19,11 @@ use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTrad
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::Credits;
+use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::{Identity, IdentityPublicKey};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
@@ -716,6 +720,45 @@ async fn should_move_listed_tokens_into_escrow_and_record_the_listing() {
     assert_eq!(
         TokenOrder::from_document(document, TokenOrderSide::Ask).expect("expected an order"),
         listing
+    );
+}
+
+/// `transition` with group action information on its one token transition, which no executed
+/// placement carries: the node refuses it on a placement.
+fn with_group_info(transition: &StateTransition) -> StateTransition {
+    let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition.clone() else {
+        panic!("expected a batch of token transitions");
+    };
+    let BatchedTransition::Token(token_transition) = &mut batch.transitions[0] else {
+        panic!("expected a token transition");
+    };
+    token_transition
+        .base_mut()
+        .set_using_group_info(Some(GroupStateTransitionInfo {
+            group_contract_position: 0,
+            action_id: Identifier::from([3; 32]),
+            action_is_proposer: false,
+        }));
+    StateTransition::Batch(BatchTransition::V1(batch))
+}
+
+/// A placement is never a group action: the node refuses group information on it. A listing
+/// that executed, re-sent with group information and otherwise the same, is refused rather
+/// than proved by its `ask`; the listing itself still proves.
+#[tokio::test]
+async fn should_not_prove_a_listing_carrying_group_information() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+
+    assert_matches!(
+        market.prove_and_try_verify(&with_group_info(&place)),
+        Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+    );
+    assert_matches!(
+        market.prove_and_verify(&place),
+        StateTransitionProofResult::VerifiedDocuments(documents)
+            if documents.get(&order_id).is_some_and(Option::is_some)
     );
 }
 

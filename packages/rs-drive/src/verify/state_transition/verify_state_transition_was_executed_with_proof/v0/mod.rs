@@ -1342,6 +1342,15 @@ impl Drive {
                             // amount down to 1) and change nothing else. A listing filled entirely
                             // is gone, and its document no longer proves the placement.
                             TokenTransition::PlaceAsk(token_place_ask_transition) => {
+                                // A placement is never a group action: the node refuses group
+                                // information on it, so a transition carrying some was not
+                                // executed, and its proof must not borrow a group action's
+                                // evidence (which may stand without the placement's record).
+                                if token_transition.base().using_group_info().is_some() {
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(
+                                        "a token listing placement carries group action information, which no executed placement has (token place ask)".to_string(),
+                                    )));
+                                }
                                 let order_id = TokenOrderSide::Ask.order_id(
                                     token_id,
                                     owner_id,
