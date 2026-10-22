@@ -10,8 +10,11 @@ cargo test -p drive-proof-verifier --test identity_discovery should_export_nonun
 `pvN-{legacy,current}-{0,1,2}.bin` covers first match, next match, and exhaustion.
 Each version answers in one format: PV12 and PV13 in the legacy format (field 2),
 PV14 in the current format (field 4). The other combinations are signed but must be
-refused; the generator checks both outcomes before writing. `pv15-current-0.bin` is
-a first match signed by a version newer than this build, read with the newest rules.
+refused; the generator checks both outcomes before writing. `newer-current-0.bin` is
+a first match signed by protocol version 1000, far above any real version, so it is
+read with the newest known rules whatever the latest version is.
+`../document-outcome/newer-{request,response}.bin` is the same for a protocol 14
+document outcome; it uses `pv14-contract.bin`.
 The fixed test signing key is `[1; 32]`; `quorum-key.bin` is its public key.
 `key-hash.bin` is the requested index key. These are synthetic fixtures, never
 network trust anchors. The SDK tests replay these through the normal proof and

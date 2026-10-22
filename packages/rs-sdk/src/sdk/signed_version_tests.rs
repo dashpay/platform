@@ -679,13 +679,22 @@ fn document_outcome_response(
     BroadcastStateTransitionRequest,
     WaitForStateTransitionResultResponse,
 ) {
+    document_outcome_vectors(&format!("pv{version}"))
+}
+
+fn document_outcome_vectors(
+    prefix: &str,
+) -> (
+    BroadcastStateTransitionRequest,
+    WaitForStateTransitionResultResponse,
+) {
     (
         BroadcastStateTransitionRequest::decode(
-            document_outcome_vector(&format!("pv{version}-request.bin")).as_slice(),
+            document_outcome_vector(&format!("{prefix}-request.bin")).as_slice(),
         )
         .unwrap(),
         WaitForStateTransitionResultResponse::decode(
-            document_outcome_vector(&format!("pv{version}-response.bin")).as_slice(),
+            document_outcome_vector(&format!("{prefix}-response.bin")).as_slice(),
         )
         .unwrap(),
     )
@@ -772,7 +781,6 @@ async fn should_learn_document_outcome_versions_monotonically_from_signed_produc
 #[tokio::test]
 async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
     let latest = PlatformVersion::latest();
-    let newer = latest.protocol_version + 1;
     let sdk = SdkBuilder::new_mock()
         .with_network(Network::Testnet)
         .with_initial_version(latest)
@@ -781,8 +789,8 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
         .with_trusted_initial_height(10)
         .build()
         .unwrap();
-    let provider = DocumentOutcomeProvider::new(latest.protocol_version);
-    let (request, response) = document_outcome_response(newer);
+    let provider = DocumentOutcomeProvider::new(14);
+    let (request, response) = document_outcome_vectors("newer");
     let (outcome, metadata, _) = sdk
         .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
             request,
@@ -792,7 +800,10 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
         )
         .await
         .expect("newest known rules verify the newer producer's outcome");
-    assert_eq!(metadata.protocol_version, newer);
+    assert!(
+        metadata.protocol_version > latest.protocol_version,
+        "the vector must stay signed by a version this build does not know"
+    );
     let outcome = outcome.unwrap();
     assert!(outcome.is_execution_proved());
     assert!(outcome.owner_balance().is_some());

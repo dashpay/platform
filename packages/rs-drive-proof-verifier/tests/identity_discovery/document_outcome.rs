@@ -1,5 +1,5 @@
 //! Genuine signed document outcomes on either side of the owner-balance wire change.
-use super::{signed, Provider};
+use super::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
     wait_for_state_transition_result_response_v0::Result as WaitResult, Version,
     WaitForStateTransitionResultResponseV0,
@@ -336,18 +336,12 @@ fn should_export_document_outcome_sdk_fixtures() {
         )
         .unwrap();
     }
-    // A version newer than this build, verified with the newest rules and contract.
-    let latest = PlatformVersion::latest().protocol_version;
-    let newer = latest + 1;
-    let (request, response, provider) = fixture_signed_as(latest, latest, newer);
+    // A version newer than any build over the protocol 14 layout; it uses the pv14 contract.
+    let (request, response, provider) = fixture_signed_as(14, 14, NEWER_PROTOCOL_VERSION);
     verify(request.clone(), response.clone(), &provider).unwrap();
+    std::fs::write(directory.join("newer-request.bin"), request.encode_to_vec()).unwrap();
     std::fs::write(
-        directory.join(format!("pv{newer}-request.bin")),
-        request.encode_to_vec(),
-    )
-    .unwrap();
-    std::fs::write(
-        directory.join(format!("pv{newer}-response.bin")),
+        directory.join("newer-response.bin"),
         response.encode_to_vec(),
     )
     .unwrap();

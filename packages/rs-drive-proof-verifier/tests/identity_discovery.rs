@@ -32,6 +32,10 @@ use tenderdash_abci::{
     signatures::{Hashable, Signable},
 };
 
+/// A protocol version far above any real one. Recorded vectors signed with it stay newer
+/// than every build, so the SDK tests replaying them never depend on the latest version.
+const NEWER_PROTOCOL_VERSION: u32 = 1_000;
+
 struct Fixture {
     drive: Drive,
     producer: &'static PlatformVersion,
@@ -507,7 +511,9 @@ fn should_export_nonunique_sdk_fixtures() {
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/identity-discovery");
     std::fs::create_dir_all(&directory).unwrap();
-    for version in [12, 13, PlatformVersion::latest().protocol_version] {
+    // The versions on either side of the wire change, fixed so that re-running on a later
+    // branch rewrites the same files the SDK tests read.
+    for version in [12, 13, 14] {
         let f = Fixture::new(version);
         std::fs::write(directory.join("key-hash.bin"), f.hash).unwrap();
         std::fs::write(
@@ -534,13 +540,12 @@ fn should_export_nonunique_sdk_fixtures() {
             }
         }
     }
-    // A version newer than this build, answering in the newest format.
-    let newer = PlatformVersion::latest().protocol_version + 1;
-    let f = Fixture::new(PlatformVersion::latest().protocol_version);
-    let response = f.response_signed_as(false, None, newer);
+    // A version newer than any build, answering in the single-proof format.
+    let f = Fixture::new(14);
+    let response = f.response_signed_as(false, None, NEWER_PROTOCOL_VERSION);
     verify(response.clone(), f.hash, None).unwrap();
     std::fs::write(
-        directory.join(format!("pv{newer}-current-0.bin")),
+        directory.join("newer-current-0.bin"),
         response.encode_to_vec(),
     )
     .unwrap();
