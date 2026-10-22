@@ -283,8 +283,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //   - Bumping the matching `FeatureVersionBounds.max_version`
     //     to 1 in `rs-platform-version`.
     //   - Implementing the v1 dispatch arm in `drive-abci`.
-    const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
-    const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
+    const VERSIONED_AT_V1_REQUESTS: [&str; 2] =
+        ["GetDocumentsRequest", "GetDocumentHistoryRequest"];
+    const VERSIONED_AT_V1_RESPONSES: [&str; 2] =
+        ["GetDocumentsResponse", "GetDocumentHistoryResponse"];
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
