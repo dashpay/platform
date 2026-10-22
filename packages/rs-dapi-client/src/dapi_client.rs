@@ -1119,6 +1119,8 @@ impl DapiClient {
     /// for local request refusal, address exhaustion or client construction
     /// errors, where the request has not been dispatched. It cannot change the
     /// returned result, retry budget, address selection or banning policy.
+    // Keep the established execute() result and error layout unchanged.
+    #[allow(clippy::result_large_err)]
     pub async fn execute_with_transport_error_observer<R>(
         &self,
         request: R,
