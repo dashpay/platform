@@ -6,8 +6,6 @@ use dpp::consensus::state::token::{
     TokenOrderPriceLimitError, TokenOrderSelfFillError,
 };
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_fill_ask_transition::v0::TokenFillAskTransitionV0;
@@ -28,10 +26,10 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 
 impl TokenFillAskTransitionActionV0 {
     /// Converts a borrowed `TokenFillAskTransitionV0` into an action: reads the listing, and
-    /// works out the amount the fill takes and the credits the buyer pays. A listing that is not
-    /// open for this token, the buyer's own listing, an expired listing, a fill range the
-    /// listing cannot meet and a cost above the buyer's limit each bump the nonce with their
-    /// error instead.
+    /// works out the amount the fill takes and the credits the buyer pays. A token its contract
+    /// does not define, a listing that is not open for this token, the buyer's own listing, an
+    /// expired listing, a fill range the listing cannot meet and a cost above the buyer's limit
+    /// each bump the nonce with their error instead.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_ask_transition_with_contract_lookup(
         drive: &Drive,
@@ -102,6 +100,12 @@ impl TokenFillAskTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
+        // Refused with the token base rules' error before anything is read for a token the
+        // contract does not define.
+        if let Err(error) = base_action.token_configuration_or_position_error() {
+            return bump(vec![error], fee_result);
+        }
+
         let token_market_contract = drive.token_market_contract_fetch_info(platform_version)?;
         let (order_document, read_cost) = drive.fetch_token_order_document(
             &token_market_contract.contract,
@@ -156,8 +160,9 @@ impl TokenFillAskTransitionActionV0 {
                 fee_result,
             );
         };
-        let decimals = base_action.token_configuration()?.conventions().decimals();
-        let credits = order.fill_credits(fill_amount, decimals)?;
+        // Priced at the decimals the token had when the listing was placed, which the listing
+        // records: a later change to the token's decimals does not reprice it.
+        let credits = order.fill_credits(fill_amount)?;
         if credits > *max_total_price {
             return bump(
                 vec![TokenOrderPriceLimitError::new(*order_id, credits, *max_total_price).into()],

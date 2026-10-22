@@ -110,27 +110,39 @@ impl TokenPlaceAskTransitionWasm {
         self.0.set_base(base.into())
     }
 
+    // Each integer setter converts with `try_to_u64` and leaves the transition unchanged when the
+    // value is out of range, rather than letting the ABI narrow it to another valid term.
     #[wasm_bindgen(setter = amount)]
-    pub fn set_amount(&mut self, amount: TokenAmount) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = price)]
-    pub fn set_price(&mut self, price: Credits) {
-        self.0.set_price(price)
+    pub fn set_price(&mut self, price: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_price(try_to_u64(price, "price")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = minFill)]
-    pub fn set_min_fill(&mut self, #[wasm_bindgen(js_name = "minFill")] min_fill: TokenAmount) {
-        self.0.set_min_fill(min_fill)
+    pub fn set_min_fill(
+        &mut self,
+        #[wasm_bindgen(js_name = "minFill")] min_fill: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.0.set_min_fill(try_to_u64(min_fill, "minFill")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = expiresAt)]
     pub fn set_expires_at(
         &mut self,
-        #[wasm_bindgen(js_name = "expiresAt")] expires_at: Option<TimestampMillis>,
-    ) {
-        self.0.set_expires_at(expires_at)
+        #[wasm_bindgen(js_name = "expiresAt")] expires_at: Option<js_sys::BigInt>,
+    ) -> WasmDppResult<()> {
+        let expires_at = expires_at
+            .map(|value| try_to_u64(&value, "expiresAt"))
+            .transpose()?;
+        self.0.set_expires_at(expires_at);
+        Ok(())
     }
 }
 

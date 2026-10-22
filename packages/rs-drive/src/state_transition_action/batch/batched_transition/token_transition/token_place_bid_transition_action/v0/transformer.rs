@@ -27,7 +27,9 @@ impl TokenPlaceBidTransitionActionV0 {
     /// Converts a borrowed `TokenPlaceBidTransitionV0` into an action. The offer's order id
     /// follows from the token, the buyer and the nonce, and its escrow is what it is worth at the
     /// token's decimals, rounded up; an offer worth more than an order holds (`i64::MAX` credits)
-    /// bumps the nonce with `TokenOrderValueTooLargeError`. The buyer's credits are checked with
+    /// bumps the nonce with `TokenOrderValueTooLargeError`, and one naming a token its contract
+    /// does not define with `ContractHasNoTokensError` or `InvalidTokenPositionError`. The offer
+    /// records the decimals, which price every sale into it. The buyer's credits are checked with
     /// the batch's fees, which count the escrow as a purchase.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_bid_transition_with_contract_lookup(
@@ -99,7 +101,10 @@ impl TokenPlaceBidTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
-        let decimals = base_action.token_configuration()?.conventions().decimals();
+        let decimals = match base_action.token_configuration_or_position_error() {
+            Ok(token_configuration) => token_configuration.conventions().decimals(),
+            Err(error) => return bump(vec![error], fee_result),
+        };
         let Some(escrow) = TokenOrder::order_value(*amount, *price, decimals) else {
             return bump(
                 vec![TokenOrderValueTooLargeError::new(*amount, *price, decimals).into()],
@@ -120,6 +125,7 @@ impl TokenPlaceBidTransitionActionV0 {
             min_fill: *min_fill,
             expires_at: *expires_at,
             escrow,
+            decimals,
         }
         .new_document(block_info)?;
 

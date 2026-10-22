@@ -68,6 +68,13 @@ the token's supply, and the credits offered never exceed the credits on Platform
 an order is a signed 8-byte value, so a partial fill rewrites an order without changing its stored
 size.
 
+An order's price is in credits per whole token, and each order records the token's decimals when
+it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
+token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
+open offer pays. The `book` and `depth` indexes order by price alone: after a token changes its
+decimals, orders placed before and after the change are priced at different scales until the older
+ones close, and a client comparing them scales each by its own `decimals`.
+
 Only the marketplace transitions write orders. A document transition cannot create one
 (`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
 types stay mutable and deletable so the documents carry a revision and storage flags: the order's
@@ -99,7 +106,9 @@ A listing's id follows from the token, the seller and the transition's identity 
 
 ### Price and partial fills
 
-`price` is in credits per whole token, 10 to the power of the token's decimals base units. A fill
+`price` is in credits per whole token, 10 to the power of the token's decimals base units. The
+listing records those decimals when it is placed and every fill prices it at them, so a later
+change to the token's decimals does not change what the rest of the listing costs. A fill
 takes as much as it may: everything open, up to `maxAmount`. A listing never keeps less than
 `minFill` open, so a fill that would leave less takes less, leaving exactly `minFill`; a fill
 that does not take everything open takes at least `minFill`. A `minFill` equal to `amount` makes
@@ -121,8 +130,9 @@ The rounding favours the seller and is never more than one credit per fill.
 
 | Rule | Refused with |
 |---|---|
-| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount` | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463) |
+| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, `expiresAt` at most `i64::MAX` | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderExpiryError` (10464) |
 | A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
+| The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
 | The order is open, for this token | `TokenOrderNotFoundError` (40751) |
 | A listing's `expiresAt` is after the block, and a fill comes before it | `TokenOrderExpiredError` (40752) |
@@ -135,8 +145,9 @@ The rounding favours the seller and is never more than one credit per fill.
 | The token is not paused (to place or fill) | `TokenIsPausedError` |
 | The seller's account is not frozen (to place or fill), nor the buyer's unless the token allows transfers to frozen balances | `IdentityTokenAccountFrozenError` |
 
-The state rules are paid: a refused transition bumps the signer's nonce and charges the work that
-ran. The rules that read nothing beyond the contract and the block (a tradeable token, a listing's
+The rules on a transition's own fields (the first two rows) are checked before anything is read and
+refused unpaid. The state rules are paid: a refused transition bumps the signer's nonce and charges
+the work that ran. The rules that read nothing beyond the contract and the block (a tradeable token, a listing's
 value and its expiry) run with the batch's advanced structure, so check_tx refuses them too. A cancel has no rule beyond ownership, so an order can always be withdrawn, also when the
 token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
 checked with the batch's fees, which count a fill's cost like a direct purchase.
@@ -168,7 +179,8 @@ an offer.
 | `TokenFillBid` | `orderId`, `minAmount`, `maxAmount`, `minTotalReceived` | Moves part or all of the amount still wanted from the seller to the buyer, and its price from the escrow to the seller |
 
 An offer holds what it is worth, its amount at its price rounded up, and its `escrow` property
-says what is left. Each sale is paid the change in the offer's running total rounded down, so the
+says what is left. Like a listing it records the token's decimals when it is placed, and its
+escrow and every sale into it are worked out at them. Each sale is paid the change in the offer's running total rounded down, so the
 payments never add up past the escrow; when the offer closes, by a sale that takes everything
 still wanted or by a cancel, whatever is left goes back to the buyer:
 
@@ -183,6 +195,8 @@ as it does for a listing, and a sale is refused when it would be paid less than
 
 | Rule | Refused with |
 |---|---|
+| The terms of a listing (amount, price, minimum fill, expiry), and a sale's fill range | The listing's basic errors (10458, 10462 to 10464), unpaid |
+| The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or sell into) | `TokenNotTradeableError` (40750), in check_tx too |
 | An offer is worth at most `i64::MAX` credits | `TokenOrderValueTooLargeError` (40757), in check_tx too |
 | An offer's `expiresAt` is after the block, and a sale comes before it | `TokenOrderExpiredError` (40752) |
@@ -193,7 +207,8 @@ as it does for a listing, and a sale is refused when it would be paid less than
 
 The buyer's credits are checked with the batch's fees, which count the escrow like a purchase. The
 buyer pays the storage of the `bid` and gets it back when the offer closes. A `TokenPlaceBid` is
-proven by its `bid` document, and a `TokenFillBid` by the seller's token balance.
+proven by its `bid` document, whose terms, untouched `remaining` and escrow (what the offer is
+worth at its decimals) the client checks, and a `TokenFillBid` by the seller's token balance.
 
 ## History
 
