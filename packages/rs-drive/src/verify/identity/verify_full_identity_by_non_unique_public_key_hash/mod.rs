@@ -51,8 +51,10 @@ impl Drive {
     ///
     /// # Versioning
     ///
-    /// - Generations 0 and 1 select the historical and current proof layouts.
-    ///   Unsupported verifier versions return `UnknownVersionMismatch`.
+    /// - The wire encoding of `proof` selects the decoder: legacy separate proofs use
+    ///   the historical verifier, raw bytes the current one. The verifier slot only
+    ///   gates known generations: 0 and 1 accept either encoding, and any other value
+    ///   returns `UnknownVersionMismatch`.
     pub fn verify_full_identity_by_non_unique_public_key_hash<'a>(
         proof: impl Into<NonUniquePublicKeyHashProofRef<'a>>,
         public_key_hash: [u8; 20],

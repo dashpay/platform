@@ -14,8 +14,12 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 };
 
 /// V2 is protocol version 14's identity-method table. It differs from V1 in
-/// its contract-bound key indexing and withdrawal methods:
+/// its contract-bound key indexing, withdrawal and non-unique key lookup methods:
 ///
+/// * `prove.prove_full_identity_by_non_unique_public_key_hash` 0 -> 1: one complete
+///   proof of the first matching identity after the cursor and its index prefix,
+///   answered at response field 4. v0 keeps the separate index and identity proofs
+///   protocol 13 nodes answer with at field 2.
 /// * `contract_info.add_potential_contract_info_for_contract_bounded_key` 0 -> 1 and
 ///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
 ///   write and refresh contract-bound authentication-key references. Both v0s preserve the

@@ -8,9 +8,11 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 /// Version 3 of the Drive verify method versions.
 ///
 /// Changed from v2:
-/// - `verify_full_identity_by_non_unique_public_key_hash` 0 → 1: one complete
-///   first-after index/identity proof. The client may still explicitly verify
-///   the historical wire encoding using v0 and the retained security rules.
+/// - `verify_full_identity_by_non_unique_public_key_hash` 0 → 1: names the
+///   single-proof generation that protocol 14 answers with. Drive picks the decoder
+///   from the wire encoding, and generations 0 and 1 both accept either encoding,
+///   so this bump changes no verification result; it keeps the slot in step with
+///   the handler and producer generations.
 /// - `verify_state_transition_was_executed_with_proof` 0 → 1. Feature version 1
 ///   verifies a document batch proof that carries the owner's credit balance
 ///   next to the document (one strict verification of the merged query);

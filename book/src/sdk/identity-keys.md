@@ -471,6 +471,12 @@ checks and authenticated version learning apply after successful verification.
 The response generation follows committed current protocol state, so lock-in of
 protocol 14 still returns the protocol 13 encoding until activation. Unproved
 response field 1 and request version 0 are unchanged.
+
+4.1.x clients understand only field 2. They keep working against protocol 13
+nodes, including 5.0 nodes until protocol 14 activates on mainnet. From then on
+every node answers in field 4, which those clients drop as an unknown field: each
+proved lookup fails as a missing proof, is retried and bans the node it asked.
+Update clients before protocol 14 activates on mainnet.
 For a legacy response, `fetch_with_metadata_and_proof` returns the signed index
 `Proof`; independent replay of the full verification needs both original blobs.
 

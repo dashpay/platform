@@ -933,10 +933,9 @@ mod tests {
             .is_some());
     }
 
-    /// The app-connect contract only comes into existence through the upgrade to protocol
-    /// version 14 (or a version-14 genesis). Driven through real blocks: absent while the
-    /// chain still runs 13, written by the activation block, served by the system contract
-    /// cache from 14 only, and still there after Drive is closed and reopened.
+    /// Asserts the proved non-unique identity lookup answers in the format of the
+    /// committed protocol version: field 2 up to 13 (including lock-in of 14), field 4
+    /// once 14 is active, verified without changing the stored root.
     fn assert_nonunique_lookup_generation(
         platform: &Platform<MockCoreRPCLike>,
         hash: [u8; 20],
@@ -1020,6 +1019,10 @@ mod tests {
         );
     }
 
+    /// The app-connect contract only comes into existence through the upgrade to protocol
+    /// version 14 (or a version-14 genesis). Driven through real blocks: absent while the
+    /// chain still runs 13, written by the activation block, served by the system contract
+    /// cache from 14 only, and still there after Drive is closed and reopened.
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn run_chain_v13_to_v14_registers_the_app_connect_contract() {

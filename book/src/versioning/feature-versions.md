@@ -490,7 +490,7 @@ diff:
 ```rust
 // packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v2.rs
 
-/// Differs from v1 in two slots.
+/// Differs from v1 in three slots.
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
 /// rather than 0: the ranked and boolean-`HAVING` routing gate. ...
 pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryVersions {
