@@ -346,6 +346,9 @@ struct SwiftExampleAppApp: App {
         store.invalidatePendingSpvStarts()
         let generation = store.spvStartGeneration
 
+        // See `CoreContentView.startSync`: never start into a Pause that is
+        // still tearing the client down.
+        await store.awaitPendingSpvStop()
         do {
             try await CoreSpvLauncher.start(
                 network: network,

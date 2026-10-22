@@ -88,22 +88,62 @@ final class WalletManagerStore: ObservableObject {
     /// Stop `manager`'s SPV client after cancelling any in-flight
     /// `CoreSpvLauncher.start`. The blessed path for every user-visible
     /// or programmatic SPV stop of the active manager: it bumps the
-    /// generation first, so a start suspended in peer resolution can't
-    /// resume and revive sync after the stop. Best-effort stop (`try?`),
-    /// matching the raw call sites it replaces.
+    /// generation first, synchronously, so a start suspended in peer
+    /// resolution can't resume and revive sync after the stop. The stop
+    /// itself goes through the SDK's async `stopSpv()`: a start already
+    /// admitted by the SDK (past the generation check, awaiting the native
+    /// start) cannot be cancelled, and the blocking `stopSpv()` would be
+    /// refused while it runs; the async one queues behind it on the SDK's
+    /// SPV lifecycle queue and stops the client that start brings up.
+    /// Best-effort (errors are logged, not surfaced), matching the raw
+    /// call sites it replaces.
     func stopSpvCancellingPendingStarts(_ manager: PlatformWalletManager) {
-        stopSpvCancellingPendingStarts(stop: { try? manager.stopSpv() })
+        stopSpvCancellingPendingStarts(stop: { try await manager.stopSpv() })
     }
 
     /// Testable core of `stopSpvCancellingPendingStarts(_:)`: the actual
     /// stop is injected so a unit test can assert the generation was
     /// already bumped by the time `stop` runs (pinning the
-    /// invalidate-before-stop ordering) without a real, network-locked
+    /// invalidate-before-stop ordering) and that a stop overlapping an
+    /// admitted start runs after it, without a real, network-locked
     /// `PlatformWalletManager`. The public overload supplies the real
-    /// `try? manager.stopSpv()`.
-    func stopSpvCancellingPendingStarts(stop: () -> Void) {
+    /// `try await manager.stopSpv()`. The generation is bumped before this
+    /// returns; the stop runs on a task that starts in order after it.
+    func stopSpvCancellingPendingStarts(stop: @escaping @MainActor () async throws -> Void) {
         invalidatePendingSpvStarts()
-        stop()
+        isStoppingSpv = true
+        let task = Task { @MainActor in
+            do {
+                try await stop()
+            } catch {
+                print("stopSpvCancellingPendingStarts: stop failed: \(error)")
+            }
+        }
+        pendingSpvStop = task
+        Task { @MainActor in
+            await task.value
+            // A later Pause replaced the tracked stop; it clears the flag.
+            guard pendingSpvStop == task else { return }
+            pendingSpvStop = nil
+            isStoppingSpv = false
+        }
+    }
+
+    /// Whether a stop issued by `stopSpvCancellingPendingStarts` is still
+    /// running. The native stop removes the client before its teardown
+    /// finishes, so `spvIsRunning` turns false while the SDK still counts
+    /// the stop in flight and refuses a start; the Start button is disabled
+    /// on this instead, and start actions await `awaitPendingSpvStop()`.
+    @Published private(set) var isStoppingSpv = false
+
+    /// The stop `isStoppingSpv` reports; `nil` once it completed.
+    private var pendingSpvStop: Task<Void, Never>?
+
+    /// Suspend until the tracked stop, if any, has completed, so a start
+    /// issued right after a Pause runs after it instead of being refused
+    /// by the SDK while the stop is in flight.
+    func awaitPendingSpvStop() async {
+        await pendingSpvStop?.value
     }
 
     /// Per-network managers. Lazily populated on first activation

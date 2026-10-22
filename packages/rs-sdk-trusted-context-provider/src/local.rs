@@ -409,7 +409,8 @@ mod tests {
         let resolver = LocalContextResolver::new();
         let mut newer = app_contract();
         newer.set_version(2);
-        let older = app_contract();
+        let mut older = app_contract();
+        older.set_version(1);
 
         resolver.add_known_contract_if_newer(newer);
         let kept = resolver.add_known_contract_if_newer(older);
