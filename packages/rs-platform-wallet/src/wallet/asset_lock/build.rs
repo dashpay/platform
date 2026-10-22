@@ -1590,6 +1590,7 @@ mod tests {
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::wallet::ManagedWalletInfo;
     use key_wallet::wallet::Wallet;
@@ -1613,6 +1614,7 @@ mod tests {
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+    use crate::wallet::asset_lock::AssetLockFunding;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
@@ -2201,37 +2203,13 @@ mod tests {
         assert!(persistence.stored_outpoints().contains(&out_point));
     }
 
-    /// Broadcaster that refuses every transaction definitively.
-    struct RejectingBroadcaster;
-
-    #[async_trait]
-    impl TransactionBroadcaster for RejectingBroadcaster {
-        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
-            Err(BroadcastError::Rejected {
-                reason: "simulated rejection".to_owned(),
-            })
-        }
-    }
-
-    /// Broadcaster whose every send ends without a verdict.
-    struct MaybeSentBroadcaster;
-
-    #[async_trait]
-    impl TransactionBroadcaster for MaybeSentBroadcaster {
-        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
-            Err(BroadcastError::MaybeSent {
-                reason: "simulated timeout".to_owned(),
-            })
-        }
-    }
-
     /// A lock whose broadcast ends without a verdict was reported to the
     /// observer, and its row stays tracked and stored, so the caller can
     /// resume it by the outpoint it was given.
     #[tokio::test]
     async fn should_keep_a_reported_lock_whose_broadcast_may_have_been_sent() {
         let (manager, signer, persistence) =
-            coinjoin_funded_asset_lock_manager(Arc::new(MaybeSentBroadcaster)).await;
+            coinjoin_funded_asset_lock_manager(Arc::new(AlwaysMaybeSentBroadcaster)).await;
         let seen = Mutex::new(Vec::new());
         let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
 
@@ -2267,7 +2245,7 @@ mod tests {
     #[tokio::test]
     async fn should_report_a_lock_whose_broadcast_is_then_rejected() {
         let (manager, signer, persistence) =
-            coinjoin_funded_asset_lock_manager(Arc::new(RejectingBroadcaster)).await;
+            coinjoin_funded_asset_lock_manager(Arc::new(AlwaysRejectedBroadcaster)).await;
         let seen = Mutex::new(Vec::new());
         let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
 
@@ -2285,6 +2263,66 @@ mod tests {
             )
             .await
             .expect_err("a rejected broadcast must fail the call");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(persistence.removed_outpoints(), seen);
+    }
+
+    /// The funding resolver every fund-from-asset-lock flow calls hands the
+    /// observer to the builder for an amount from the wallet balance: the
+    /// rejected lock was reported once, with the outpoint whose row was
+    /// removed again.
+    #[tokio::test]
+    async fn should_report_the_lock_built_for_a_wallet_balance_funding() {
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysRejectedBroadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        manager
+            .resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .err()
+            .expect("a rejected broadcast must fail the funding");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(persistence.removed_outpoints(), seen);
+    }
+
+    /// The same resolver hands the observer to the builder for a whole-account
+    /// drain (the CoinJoin → shielded path).
+    #[tokio::test]
+    async fn should_report_the_lock_built_for_an_account_drain_funding() {
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::new(AlwaysRejectedBroadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        manager
+            .resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::DrainAccountBalance {
+                    account: AssetLockFundingAccount::CoinJoin { account_index: 0 },
+                    minimum_lock_duffs: Some(1),
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .err()
+            .expect("a rejected broadcast must fail the funding");
 
         let seen = seen.into_inner().unwrap();
         assert_eq!(seen.len(), 1);

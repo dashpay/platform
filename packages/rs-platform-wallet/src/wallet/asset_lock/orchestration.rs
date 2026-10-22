@@ -125,8 +125,11 @@ pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_
 /// once the transaction is signed, before the lock's row is persisted or the
 /// lock is broadcast. A caller that watches persisted lock rows uses it to
 /// tell its own new lock apart from rows the wallet re-inserts during
-/// recovery; it must record the outpoint before returning. The ordering
-/// covers persisted rows only.
+/// recovery; it must record the outpoint before returning, durably if that
+/// distinction has to survive a restart. The ordering covers persisted rows
+/// only, and only for calls that pass an observer: a fresh lock from a call
+/// that passes none (identity registration and top-up, a generic funded
+/// proof, a wallet drain over FFI) also appears as a row nobody reported.
 ///
 /// It runs while the wallet serializes asset-lock builds, so it must not
 /// block and must not call back into the wallet: another build would wait
@@ -138,7 +141,11 @@ pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_
 ///   row is queued best-effort afterwards. The callback does not run when
 ///   the wallet is gone at tracking. A lock whose broadcast then fails is
 ///   removed again after a definite rejection; otherwise it stays tracked
-///   and can be resumed by its outpoint.
+///   and can be resumed by its outpoint (a resume may then find it already
+///   consumed). Both hold in memory; on disk they hold only when the
+///   best-effort row store or removal succeeded, so after a restart a
+///   failed store can leave no row for a broadcast lock, or the row of a
+///   removed one.
 /// - For a wallet drain (`DrainWalletBalance`) the callback runs before the
 ///   row is stored durably and before the lock is tracked. If that store
 ///   fails, the lock is not tracked and is recovered by resuming the drain

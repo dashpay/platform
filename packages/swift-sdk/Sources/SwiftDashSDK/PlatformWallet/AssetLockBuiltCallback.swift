@@ -42,11 +42,19 @@ public struct AssetLockBuiltOutPoint: Hashable, Sendable {
 /// transaction is signed and before the lock's row is persisted or the lock
 /// is broadcast — so no persisted row for the lock exists before the handler
 /// has returned. It does not run when the build itself fails. It does run
-/// for a lock whose broadcast then fails: after a definite rejection the
-/// lock is removed again, otherwise it stays tracked and can be resumed by
-/// its outpoint. Record the outpoint in thread-safe state before returning —
-/// a hop to another actor would let the row arrive first. Keep it short and
-/// do not call back into the wallet from it.
+/// for a lock whose broadcast then fails: a thrown
+/// `PlatformWalletError.transactionBroadcastRejected` means the lock was
+/// removed again; any other error leaves it tracked and resumable by its
+/// outpoint (a resume may find it already consumed). Both hold for this
+/// session: the row store and removal behind them are best-effort, so after
+/// a restart a failed store can leave no row for a broadcast lock, or the
+/// row of a removed one.
+///
+/// Record the outpoint in thread-safe state before returning — a hop to
+/// another actor would let the row arrive first — and durably if it has to
+/// survive a restart. Keep it short and do not call any wallet or SDK
+/// function from it: it runs on the SDK's runtime thread, where a blocking
+/// FFI call aborts the process.
 public typealias AssetLockBuiltHandler = @Sendable (AssetLockBuiltOutPoint) -> Void
 
 /// Box that carries an `AssetLockBuiltHandler` across the C ABI as an
