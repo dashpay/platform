@@ -147,10 +147,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
 ///    escrow key sits two levels into the prefunded specialized balances layer, below the keys
 ///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
-///    deeper description of that layer another write of the batch registered.
+///    deeper description of that layer another write of the batch registered; and
+///    `apply_drive_operations` 2 merges each operation's estimated layer descriptions into the
+///    batch's keeping the deeper one, so an estimate does not depend on the operations' order.
 ///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
 ///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
-///    placed, which prices its fills: registered at genesis from this version and
+///    placed, which prices its fills and keys its `book` and `depth` index entries
+///    (`tokenId`, `decimals`, `price`) so prices of different scales never mix: registered at
+///    genesis from this version and
 ///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.

@@ -41,13 +41,13 @@ the buyer's side, and `escrow`.
 
 Both types have the same three:
 
-- `book` (`tokenId`, `price`, `$createdAt`): the order book of a token, by
-  price and then by age. Prices are per whole token at each order's own
-  `decimals`: after a token changes its decimals, orders placed before and
-  after the change are priced at different scales until the older ones close,
-  and a client comparing them scales each by its `decimals`.
-- `depth` (`tokenId`, `price`): keeps a sum per price, and over any range of
-  prices, of what is open: the base units of the asks (`remaining`) and the
+- `book` (`tokenId`, `decimals`, `price`, `$createdAt`): the order book of a
+  token, by price and then by age, for one scale of price. Prices are per whole
+  token at each order's own `decimals`, so a query names the token's current
+  decimals; after a token changes its decimals, the orders placed before the
+  change sit apart, under the old decimals, until they close.
+- `depth` (`tokenId`, `decimals`, `price`): keeps a sum per price, and over any
+  range of prices at one scale, of what is open: the base units of the asks (`remaining`) and the
   credits of the bids (`escrow`). Each side sums what it holds in escrow, which
   the token's supply bounds for asks and the credits on Platform bound for bids,
   so the sums cannot overflow.

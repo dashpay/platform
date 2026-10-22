@@ -11,6 +11,9 @@
             "tokenId": "asc"
           },
           {
+            "decimals": "asc"
+          },
+          {
             "price": "asc"
           },
           {
@@ -23,6 +26,9 @@
         "properties": [
           {
             "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
           },
           {
             "price": "asc"
@@ -119,6 +125,9 @@
             "tokenId": "asc"
           },
           {
+            "decimals": "asc"
+          },
+          {
             "price": "asc"
           },
           {
@@ -131,6 +140,9 @@
         "properties": [
           {
             "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
           },
           {
             "price": "asc"

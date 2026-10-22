@@ -1468,6 +1468,26 @@ mod token_market_tests {
                 .get(ask::indexes::DEPTH)
                 .unwrap_or_else(|| panic!("{name} has a depth index"));
             assert_eq!(depth.summable.as_deref(), Some(summed));
+            // Prices are per whole token at each order's decimals, so the book and the depth
+            // sums are kept apart per scale: a query names the token and the decimals.
+            let index_properties = |index_name: &str| -> Vec<String> {
+                document_type
+                    .indexes()
+                    .get(index_name)
+                    .unwrap_or_else(|| panic!("{name} has a {index_name} index"))
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect()
+            };
+            assert_eq!(
+                index_properties(ask::indexes::DEPTH),
+                ["tokenId", "decimals", "price"]
+            );
+            assert_eq!(
+                index_properties(ask::indexes::BOOK),
+                ["tokenId", "decimals", "price", "$createdAt"]
+            );
         }
     }
 
