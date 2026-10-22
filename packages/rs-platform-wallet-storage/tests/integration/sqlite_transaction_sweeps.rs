@@ -2524,8 +2524,9 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
 // stores the winner's own mined height; `collect_finalized_tombstones`
 // deletes it exactly when `min(chainlock_height, synced_height)` reaches
 // that height — upstream's `prune_finalized_observed_spends` condition
-// verbatim, no observation-age margin. These tests drive both the creation
-// gate and the collector through ordinary `core_state::apply` rounds.
+// over applied chainlocks, no observation-age margin. These tests drive both
+// the creation gate and the collector through ordinary `core_state::apply`
+// rounds.
 
 fn chain_lock_at(height: u32) -> dashcore::ephemerealdata::chain_lock::ChainLock {
     use dashcore::bls_sig_utils::BLSSignature;
@@ -2607,11 +2608,11 @@ fn seed_tombstone(
 
 /// A block-context placeholder stores the WINNER'S mined height and is
 /// collected exactly when `min(chainlock_height, synced_height)` reaches
-/// it — upstream's `prune_finalized_observed_spends` condition verbatim,
-/// no observation-age margin. At that boundary the funding transaction of
-/// the outpoint (necessarily mined at or below the winner's height) has
-/// been filter-scanned with no false negatives, so an unmaterialised row
-/// is provably not the wallet's coin.
+/// it — upstream's `prune_finalized_observed_spends` condition over applied
+/// chainlocks, no observation-age margin. At that boundary the funding
+/// transaction of the outpoint (necessarily mined at or below the winner's
+/// height) has been filter-scanned with no false negatives, so an
+/// unmaterialised row is provably not the wallet's coin.
 #[test]
 fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -2866,8 +2867,7 @@ fn a_funding_output_arriving_after_a_mempool_sweep_and_restart_lands_spent() {
 }
 
 /// Synced height alone is not finality: with no chainlock ever persisted
-/// the collector must not run, mirroring upstream's "no-op until a
-/// chainlock has been applied".
+/// the collector must not run.
 #[test]
 fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
     let (persister, _tmp, _path) = fresh_persister();

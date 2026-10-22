@@ -119,7 +119,7 @@ impl PlatformWallet {
                         "failed to derive private key at {path}: {e}"
                     ))
                 })?;
-                Zeroizing::new(derived.private_key.to_secret_bytes())
+                derived.private_key.to_bytes()
             }
             None => {
                 // Resident key-bearing wallet — derive from its own root.
@@ -131,15 +131,15 @@ impl PlatformWallet {
                         "failed to derive private key at {path} from resident wallet: {e}"
                     ))
                 })?;
-                Zeroizing::new(secret_key.to_secret_bytes())
+                secret_key.to_bytes()
             }
         };
 
         // Build the network-aware compressed WIF. `SecretKey::from_secret_bytes`
         // over the just-derived bytes is infallible, but map its error
         // rather than unwrap to keep the boundary panic-free.
-        let secret_key =
-            dashcore::secp256k1::SecretKey::from_secret_bytes(*secret_bytes).map_err(|e| {
+        let secret_key = dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&secret_bytes)
+            .map_err(|e| {
                 PlatformWalletError::KeyDerivation(format!(
                     "derived private key bytes were not a valid secp256k1 scalar: {e}"
                 ))

@@ -25,7 +25,7 @@
 //! ## Why the recovery id is found by trial
 //!
 //! [`Signer`] is a *plain*-ECDSA interface: `sign_ecdsa` hands back a
-//! non-recoverable [`ecdsa::Signature`] plus the compressed public key, which is
+//! non-recoverable [`EcdsaSignature`] plus the compressed public key, which is
 //! all a P2PKH `scriptSig` needs. The recovery id is not recoverable from that
 //! pair analytically, so it is found by trying all four candidates and keeping
 //! the one that recovers the signer's own public key — exactly what dashj's
@@ -44,10 +44,9 @@
 use std::str::FromStr;
 
 use dashcore::address::Payload;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaRecSignature};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use dashcore::secp256k1::Message;
-use dashcore::sign_message::{signed_msg_hash, MessageSignature};
+use dashcore::sign_message::{self, signed_msg_hash};
 use dashcore::{Address as DashAddress, AddressType, PublicKey as DashPublicKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{Signer, SignerMethod};
@@ -274,16 +273,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             });
         }
 
-        let digest = Message::from_digest(hash.to_byte_array());
-        let compact = signature.serialize_compact();
-
         let recoverable = RECOVERY_IDS
             .into_iter()
-            .filter_map(|id| RecoveryId::try_from(id).ok())
-            .filter_map(|recid| RecoverableSignature::from_compact(&compact, recid).ok())
+            .filter_map(|id| EcdsaRecSignature::from_parts(signature, id as u8, true).ok())
             .find(|candidate| {
-                candidate
-                    .recover_ecdsa(digest)
+                EcdsaPublicKey::recover(hash.as_byte_array(), candidate)
                     .is_ok_and(|recovered| recovered == public_key)
             })
             .ok_or_else(|| PlatformWalletError::MessageSigningFailed {
@@ -291,7 +285,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 reason: "no recovery id in 0..=3 recovers the signing public key".to_string(),
             })?;
 
-        Ok(MessageSignature::new(recoverable, true).to_base64())
+        Ok(sign_message::to_base64(recoverable))
     }
 }
 
@@ -300,8 +294,8 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use dashcore::secp256k1::{ecdsa, PublicKey};
-    use dashcore::sign_message::{signed_msg_hash, MessageSignature};
+    use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
+    use dashcore::sign_message::{self, signed_msg_hash};
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::signer::{Signer, SignerMethod, TransactionCategory};
     use key_wallet::DerivationPath;
@@ -344,15 +338,18 @@ mod tests {
     /// Verify `signature_base64` against `address` the way an external verifier
     /// would: decode, re-derive the digest from the message alone, recover.
     fn verifies_for(signature_base64: &str, address: &DashAddress) -> bool {
-        MessageSignature::from_base64(signature_base64)
-            .expect("signature is valid base64 of a 65-byte recoverable signature")
-            .is_signed_by_address(address, signed_msg_hash(MESSAGE))
-            .expect("P2PKH address is a supported verification target")
+        sign_message::is_signed_by_address(
+            &sign_message::from_base64(signature_base64)
+                .expect("signature is valid base64 of a 65-byte recoverable signature"),
+            address,
+            signed_msg_hash(MESSAGE),
+        )
+        .expect("P2PKH address is a supported verification target")
     }
 
     /// **Cross-implementation parity.** A signature produced by dashj
     /// (`ECKeyTest.verifyMessage`) must verify under this crate's
-    /// `signed_msg_hash` + `MessageSignature`, proving the two agree on the
+    /// `signed_msg_hash` + `sign_message`, proving the two agree on the
     /// `"\x19DarkCoin Signed Message:\n"` prefix, the varint length prefix, the
     /// double-SHA256, the 65-byte header encoding, and the compressed-key flag.
     ///
@@ -398,10 +395,13 @@ mod tests {
             .expect("the empty message is signable");
 
         assert!(
-            MessageSignature::from_base64(&signature)
-                .expect("valid base64 of a 65-byte recoverable signature")
-                .is_signed_by_address(&address, signed_msg_hash(""))
-                .expect("P2PKH address is a supported verification target"),
+            sign_message::is_signed_by_address(
+                &sign_message::from_base64(&signature)
+                    .expect("valid base64 of a 65-byte recoverable signature"),
+                &address,
+                signed_msg_hash("")
+            )
+            .expect("P2PKH address is a supported verification target"),
             "a signature over the empty message must verify against signed_msg_hash(\"\")"
         );
     }
@@ -538,7 +538,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             panic!(
                 "sign_ecdsa must never be reached on a signer that does not advertise \
                  SignerMethod::Digest — sign_message is required to refuse first"
@@ -568,7 +568,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Err(format!(
                 "{}no private key stored for this derivation path",
                 crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
@@ -624,7 +624,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Err(format!(
                 "remote signer reported: {}oops",
                 crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX

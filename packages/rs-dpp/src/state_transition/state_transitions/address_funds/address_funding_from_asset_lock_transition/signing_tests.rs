@@ -14,10 +14,10 @@
 use std::collections::{BTreeMap, HashMap};
 
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dashcore::{OutPoint, PublicKey};
 use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;
+use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
 use crate::identity::signer::Signer;
@@ -202,9 +202,10 @@ async fn try_from_asset_lock_with_signer_and_private_key_signs_multiple_inputs()
 #[tokio::test]
 async fn try_from_asset_lock_with_signers_produces_matching_signature() {
     use async_trait::async_trait;
-    use dashcore::secp256k1::{ecdsa, Message};
+    use dashcore::ecdsa::{EcdsaPublicKey, EcdsaSignature};
     use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
     use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
+    use secp256k1::Message;
 
     /// Fixed-key in-memory `key_wallet::signer::Signer`. Mirrors how the
     /// Swift KeychainSigner behaves: derive once, sign atomically. Path
@@ -227,13 +228,13 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
             &self,
             _path: &DerivationPath,
             sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, RawPublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, EcdsaPublicKey), Self::Error> {
             let msg = Message::from_digest(sighash);
-            Ok((self.secret.sign_ecdsa(msg), self.public))
+            Ok((self.secret.sign_ecdsa(msg).into(), self.public.into()))
         }
 
-        async fn public_key(&self, _path: &DerivationPath) -> Result<RawPublicKey, Self::Error> {
-            Ok(self.public)
+        async fn public_key(&self, _path: &DerivationPath) -> Result<EcdsaPublicKey, Self::Error> {
+            Ok(self.public.into())
         }
     }
 

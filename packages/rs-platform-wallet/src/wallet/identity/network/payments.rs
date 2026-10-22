@@ -2333,8 +2333,8 @@ mod tests {
             sighash: [u8; 32],
         ) -> Result<
             (
-                dashcore::secp256k1::ecdsa::Signature,
-                dashcore::secp256k1::PublicKey,
+                dashcore::crypto::ecdsa::EcdsaSignature,
+                dashcore::crypto::ecdsa::EcdsaPublicKey,
             ),
             String,
         > {
@@ -2342,23 +2342,24 @@ mod tests {
                 .wallet
                 .derive_extended_private_key(path)
                 .map_err(|e| e.to_string())?;
-            let msg = dashcore::secp256k1::Message::from_digest(sighash);
-            let sig = xprv.private_key.sign_ecdsa(msg);
-            let pk = dashcore::secp256k1::PublicKey::from_secret_key(&xprv.private_key);
+            let sig = xprv
+                .private_key
+                .sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?;
+            let pk = xprv.private_key.public_key();
             Ok((sig, pk))
         }
 
         async fn public_key(
             &self,
             path: &key_wallet::bip32::DerivationPath,
-        ) -> Result<dashcore::secp256k1::PublicKey, String> {
+        ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, String> {
             let xprv = self
                 .wallet
                 .derive_extended_private_key(path)
                 .map_err(|e| e.to_string())?;
-            Ok(dashcore::secp256k1::PublicKey::from_secret_key(
-                &xprv.private_key,
-            ))
+            Ok(xprv.private_key.public_key())
         }
     }
 
@@ -2510,8 +2511,8 @@ mod tests {
     ) -> Identity {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityPublicKey, SecurityLevel};
-        let data = dashcore::secp256k1::PublicKey::from_secret_key(
-            &dashcore::secp256k1::SecretKey::from_secret_bytes([0x37u8; 32]).expect("secret"),
+        let data = dpp::secp256k1::PublicKey::from_secret_key(
+            &dpp::secp256k1::SecretKey::from_secret_bytes([0x37u8; 32]).expect("secret"),
         )
         .serialize()
         .to_vec();
@@ -11137,8 +11138,8 @@ mod tests {
             contract_bounds: None,
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
-            data: dashcore::secp256k1::PublicKey::from_secret_key(
-                &dashcore::secp256k1::SecretKey::from_secret_bytes([0x24u8; 32]).expect("secret"),
+            data: dpp::secp256k1::PublicKey::from_secret_key(
+                &dpp::secp256k1::SecretKey::from_secret_bytes([0x24u8; 32]).expect("secret"),
             )
             .serialize()
             .to_vec()
@@ -11405,9 +11406,9 @@ mod tests {
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
 
         // The contact's encryption keypair (the "sender" of the request).
-        let contact_secret = dashcore::secp256k1::SecretKey::from_secret_bytes([0x42u8; 32])
+        let contact_secret = dpp::secp256k1::SecretKey::from_secret_bytes([0x42u8; 32])
             .expect("valid contact secret");
-        let contact_public = dashcore::secp256k1::PublicKey::from_secret_key(&contact_secret);
+        let contact_public = dpp::secp256k1::PublicKey::from_secret_key(&contact_secret);
 
         // Our side, through the production provider.
         let ours = provider
@@ -11422,7 +11423,8 @@ mod tests {
             .await
             .expect("our xpub at the legacy key id")
             .public_key;
-        let theirs = platform_encryption::derive_shared_key_ecdh(&contact_secret, &our_public);
+        let theirs =
+            platform_encryption::derive_shared_key_ecdh(&contact_secret, &our_public.into());
         assert_eq!(
             ours.as_slice(),
             theirs.as_slice(),
@@ -11498,8 +11500,8 @@ mod tests {
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: dashcore::secp256k1::PublicKey::from_secret_key(
-                    &dashcore::secp256k1::SecretKey::from_secret_bytes([byte; 32]).expect("secret"),
+                data: dpp::secp256k1::PublicKey::from_secret_key(
+                    &dpp::secp256k1::SecretKey::from_secret_bytes([byte; 32]).expect("secret"),
                 )
                 .serialize()
                 .to_vec()
@@ -11675,7 +11677,7 @@ mod tests {
             async fn ecdh_shared_secret(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-                _peer: &dashcore::secp256k1::PublicKey,
+                _peer: &dpp::secp256k1::PublicKey,
             ) -> Result<zeroize::Zeroizing<[u8; 32]>, crate::error::PlatformWalletError>
             {
                 Ok(zeroize::Zeroizing::new([0u8; 32]))
@@ -11683,15 +11685,13 @@ mod tests {
             async fn export_auto_accept_private_key(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError>
-            {
+            ) -> Result<dpp::secp256k1::SecretKey, crate::error::PlatformWalletError> {
                 unimplemented!("auto-accept QR is a send-path method, not exercised by the drain")
             }
             async fn export_invitation_private_key(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError>
-            {
+            ) -> Result<dpp::secp256k1::SecretKey, crate::error::PlatformWalletError> {
                 unimplemented!(
                     "invitation create is a send-path method, not exercised by the drain"
                 )
