@@ -491,6 +491,32 @@ impl Market {
     }
 
     /// Proves the executed transition the way the node answers a wait, and verifies the proof
+    /// the way the SDK does, returning the verifier's error rather than panicking on it.
+    fn prove_and_try_verify(
+        &self,
+        transition: &StateTransition,
+    ) -> Result<StateTransitionProofResult, drive::error::Error> {
+        let platform_version = PlatformVersion::latest();
+        let proof = self
+            .platform
+            .drive
+            .prove_state_transition(transition, None, platform_version)
+            .expect("expected to prove the executed batch")
+            .into_data()
+            .expect("expected proof bytes");
+        let contract = Arc::new(self.contract.clone());
+        let lookup = |_id: &Identifier| Ok(Some(Arc::clone(&contract)));
+        Drive::verify_state_transition_was_executed_with_proof(
+            transition,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .map(|(_, outcome)| outcome.into_result())
+    }
+
+    /// Proves the executed transition the way the node answers a wait, and verifies the proof
     /// the way the SDK does.
     fn prove_and_verify(&self, transition: &StateTransition) -> StateTransitionProofResult {
         let platform_version = PlatformVersion::latest();
@@ -557,6 +583,42 @@ async fn should_move_listed_tokens_into_escrow_and_record_the_listing() {
     assert_eq!(
         TokenOrder::from_document(document, TokenOrderSide::Ask).expect("expected an order"),
         listing
+    );
+}
+
+/// A client waiting for its listing may ask for the proof after the listing was filled. Its
+/// `ask` still proves the placement after a partial fill: the order id is the transition's
+/// alone, and the document holds its terms with less open. A listing filled entirely is gone:
+/// its `orderPlaced` record, which the token keeps as it keeps transfer history, proves it then.
+#[tokio::test]
+async fn should_prove_a_listing_after_it_is_partly_filled() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+    let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
+    market.assert_executes(&fill, &BlockInfo::default());
+
+    let StateTransitionProofResult::VerifiedDocuments(documents) = market.prove_and_verify(&place)
+    else {
+        panic!("expected the listing's document to be proved");
+    };
+    let order = TokenOrder::from_document(
+        documents
+            .get(&order_id)
+            .and_then(Option::as_ref)
+            .expect("expected the proof to hold the listing"),
+        TokenOrderSide::Ask,
+    )
+    .expect("expected an order");
+    assert_eq!((order.amount, order.remaining), (1_000, 600));
+
+    let fill = market.fill_ask(order_id, 1, 600, 6_000).await;
+    market.assert_executes(&fill, &BlockInfo::default());
+    assert_matches!(
+        market.prove_and_verify(&place),
+        StateTransitionProofResult::VerifiedTokenActionWithDocument(document)
+            if document.properties().get("orderId")
+                == Some(&dpp::platform_value::Value::Identifier(order_id.to_buffer()))
     );
 }
 
@@ -1367,6 +1429,45 @@ mod offers {
         );
     }
 
+    /// An offer's `bid` still proves its placement after a sale into it: the order id is the
+    /// transition's alone, and the document holds its terms with less open and the escrow less
+    /// what was paid. An offer filled entirely is gone: its `orderPlaced` record proves it then.
+    #[tokio::test]
+    async fn should_prove_an_offer_after_it_is_partly_filled() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+        let sale = market.fill_bid(order_id, 1, 400, 4_000, false).await;
+        market.executes(&sale);
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            market.prove_and_verify(&place)
+        else {
+            panic!("expected the offer's document to be proved");
+        };
+        let order = TokenOrder::from_document(
+            documents
+                .get(&order_id)
+                .and_then(Option::as_ref)
+                .expect("expected the proof to hold the offer"),
+            TokenOrderSide::Bid,
+        )
+        .expect("expected an order");
+        assert_eq!(
+            (order.amount, order.remaining, order.escrow),
+            (1_000, 600, 6_000)
+        );
+
+        let sale = market.fill_bid(order_id, 1, 600, 1, false).await;
+        market.executes(&sale);
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(document)
+                if document.properties().get("orderId")
+                    == Some(&dpp::platform_value::Value::Identifier(order_id.to_buffer()))
+        );
+    }
+
     #[tokio::test]
     async fn should_sell_into_part_of_an_offer_and_then_the_rest() {
         let mut market = tradeable_market();
@@ -2035,6 +2136,32 @@ mod history {
             property(&cancelled[0], "side").to_integer::<u8>().ok(),
             Some(1)
         );
+    }
+
+    /// A closed order of a token that keeps no transfer history leaves nothing that proves its
+    /// placement: the verification refuses rather than take the order's absence for it. An
+    /// order still open is proved by its document, history or not.
+    #[tokio::test]
+    async fn should_not_prove_a_closed_order_of_a_token_without_history() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration
+                    .keeps_history_mut()
+                    .set_keeps_transfer_history(false);
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedDocuments(documents)
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert!(market.prove_and_try_verify(&place).is_err());
     }
 
     #[tokio::test]
