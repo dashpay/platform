@@ -1398,6 +1398,15 @@ impl Drive {
                             // sales too: they leave `remaining` lower and the escrow at what the
                             // offer is worth less what was paid for what is filled.
                             TokenTransition::PlaceBid(token_place_bid_transition) => {
+                                // A placement is never a group action: the node refuses group
+                                // information on it, so a transition carrying some was not
+                                // executed, and its proof must not borrow a group action's
+                                // evidence (which may stand without the placement's record).
+                                if token_transition.base().using_group_info().is_some() {
+                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(
+                                        "a token offer placement carries group action information, which no executed placement has (token place bid)".to_string(),
+                                    )));
+                                }
                                 let order_id = TokenOrderSide::Bid.order_id(
                                     token_id,
                                     owner_id,

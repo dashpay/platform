@@ -1632,6 +1632,30 @@ mod offers {
             .expect("expected to build the offer")
         }
 
+        /// The seller, the contract owner, freezes `identity_id`'s token account.
+        async fn freeze_account(&mut self, identity_id: Identifier) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let freeze = BatchTransition::new_token_freeze_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                identity_id,
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the freeze");
+            self.executes(&freeze);
+        }
+
         fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
             self.platform
                 .drive
@@ -2184,6 +2208,116 @@ mod offers {
         );
         assert_eq!(market.credit_escrow(order_id), None);
         assert_eq!(market.offer(order_id), None);
+    }
+
+    /// An offer that executed, re-sent with group information and otherwise the same, is
+    /// refused rather than proved by its `bid`: a placement is never a group action.
+    #[tokio::test]
+    async fn should_not_prove_an_offer_carrying_group_information() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+
+        assert_matches!(
+            market.prove_and_try_verify(&with_group_info(&place)),
+            Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+        );
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedDocuments(documents)
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+    }
+
+    /// A sale into an offer moves the seller's tokens to the offer's maker. The seller, who
+    /// signs, must not be frozen, whatever the token allows; the maker, who receives, may be
+    /// frozen only when the token allows transfers to frozen balances. A refused sale names the
+    /// frozen participant and moves nothing.
+    #[tokio::test]
+    async fn should_apply_each_frozen_account_rule_to_its_side_of_a_sale() {
+        for allowed in [false, true] {
+            // A frozen maker (the buyer).
+            let mut market = market_with(
+                |token_configuration: &mut TokenConfiguration| {
+                    make_token_tradeable_with_owner_conventions_and_freezes(token_configuration);
+                    token_configuration.allow_transfer_to_frozen_balance(allowed);
+                },
+                dash_to_credits!(1.0),
+            );
+            let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+            market.executes(&place);
+            market.freeze_account(market.buyer.id()).await;
+            let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
+            let processing_result = market.process(&sale);
+            if allowed {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                assert_eq!(market.token_balance(market.buyer.id()), Some(400));
+                assert_eq!(market.credit_escrow(order_id), Some(6_000));
+            } else {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::IdentityTokenAccountFrozenError(error)
+                        ),
+                        ..
+                    }] if *error.identity_id() == market.buyer.id()
+                );
+                assert_eq!(market.token_balance(market.buyer.id()), None);
+                assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+                assert_eq!(market.credit_escrow(order_id), Some(10_000));
+            }
+
+            // A frozen seller, refused either way.
+            let mut market = market_with(
+                |token_configuration: &mut TokenConfiguration| {
+                    make_token_tradeable_with_owner_conventions_and_freezes(token_configuration);
+                    token_configuration.allow_transfer_to_frozen_balance(allowed);
+                },
+                dash_to_credits!(1.0),
+            );
+            let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+            market.executes(&place);
+            market.freeze_account(market.seller.id()).await;
+            let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
+            assert_matches!(
+                market.process(&sale).execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::IdentityTokenAccountFrozenError(error)
+                    ),
+                    ..
+                }] if *error.identity_id() == market.seller.id()
+            );
+            assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+            assert_eq!(market.token_balance(market.buyer.id()), None);
+            assert_eq!(market.credit_escrow(order_id), Some(10_000));
+        }
+    }
+
+    /// A frozen buyer can still cancel its offer and get back what it holds in escrow.
+    #[tokio::test]
+    async fn should_let_a_frozen_buyer_cancel_its_offer() {
+        let mut market = market_with(
+            make_token_tradeable_with_owner_conventions_and_freezes,
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+        market.freeze_account(market.buyer.id()).await;
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let cancel = market.cancel_bid(order_id, false).await;
+        let fee = market.executes(&cancel);
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            change_for(&fee, market.buyer.id(), 10_000)
+        );
     }
 
     #[tokio::test]
