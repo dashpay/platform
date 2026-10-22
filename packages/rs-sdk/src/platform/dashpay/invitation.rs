@@ -187,11 +187,17 @@ pub enum InvitationError {
     /// `identity_id` is that identity when the claim's own lookup found it,
     /// and `None` when the refusal came from Platform after the broadcast
     /// (a node that had not seen the identity yet answered the lookup).
+    /// `rejection` is then Platform's refusal itself (consensus error 40207,
+    /// or 10501 before protocol v11), kept for its consensus code.
     #[error(
         "a key of this claim is already registered to {}",
         key_owner(identity_id)
     )]
-    KeysAlreadyRegistered { identity_id: Option<Identifier> },
+    KeysAlreadyRegistered {
+        identity_id: Option<Identifier>,
+        #[source]
+        rejection: Option<Error>,
+    },
 
     /// The claim's identity lookups could not be verified yet: the trusted
     /// quorum source is not ready (see [`Error::is_quorum_source_unavailable`]).
@@ -753,9 +759,9 @@ fn preflight_keys_map(keys_map: &BTreeMap<u32, IdentityPublicKey>) -> Result<(),
     // The transition carries each key's own id, not its map position, so a
     // key filed under another slot is refused: the map's keys are then no
     // longer a promise that the ids are unique. Two keys sharing an id would
-    // be refused by Platform with the same consensus code as a key
-    // registered elsewhere (10501 before protocol v7), which the claim reads
-    // as `KeysAlreadyRegistered`.
+    // be refused by Platform with 10501, the code a key registered elsewhere
+    // also got before protocol v11, which the claim reads as
+    // `KeysAlreadyRegistered`.
     if let Some((slot, key)) = keys_map.iter().find(|(slot, key)| key.id() != **slot) {
         return Err(InvitationError::Invalid(format!(
             "keys_map entry {slot} holds key id {}",
@@ -866,7 +872,9 @@ impl Sdk {
     ) -> Result<(InvitationClaimStatus, Option<Identity>), InvitationError> {
         let funding = inspect_invitation_funding(self, invitation).await?;
         let prospective_identity_id = identity_id_for_out_point(funding.out_point);
-        let claimed = Identity::fetch(self, prospective_identity_id).await?;
+        let claimed = Identity::fetch(self, prospective_identity_id)
+            .await
+            .map_err(lookup_failure)?;
         let status = InvitationClaimStatus {
             prospective_identity_id,
             amount_duffs: funding.credit_output_duffs,
@@ -1066,19 +1074,23 @@ where
     keys_taken_on_broadcast(submit().await)
 }
 
-/// Whether `identity` holds `master_key`: an ECDSA key with the same key data.
+/// Whether `identity` holds `master_key`: a key of the same signing type
+/// (ECDSA or BLS) with the same key data.
 ///
 /// This is how a claimant recognizes the identity its own earlier claim
 /// created, both in the claim's preflight and in the claim status. Only the
-/// key data counts, not the purpose, security level or bounds, because Platform
-/// accepts an ECDSA key into an identity only with a signature made by its
-/// private key: nobody else can put our key into their identity. A hash-only
-/// key type proves nothing and never matches.
+/// key type and data count, not the purpose, security level or bounds,
+/// because Platform accepts an ECDSA or BLS key into an identity only with a
+/// signature made by its private key: nobody else can put our key into their
+/// identity. A hash-only key type proves nothing and never matches.
 pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPublicKey) -> bool {
-    master_key.key_type() == KeyType::ECDSA_SECP256K1
-        && identity.public_keys().values().any(|key| {
-            key.key_type() == KeyType::ECDSA_SECP256K1 && key.data() == master_key.data()
-        })
+    matches!(
+        master_key.key_type(),
+        KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381
+    ) && identity
+        .public_keys()
+        .values()
+        .any(|key| key.key_type() == master_key.key_type() && key.data() == master_key.data())
 }
 
 /// Look the claim up before it is broadcast, so that it is never sent when
@@ -1089,10 +1101,12 @@ pub fn identity_holds_master_key(identity: &Identity, master_key: &IdentityPubli
 /// invitation's identity first:
 /// 1. it exists and holds `master_key` → [`InvitationError::ClaimedByThisWallet`];
 /// 2. it exists otherwise → [`InvitationError::AlreadyClaimed`];
-/// 3. a key hash names the invitation's identity → as in 1 and 2 (the lookup
-///    by id failed or reached a node that had not seen it yet); any other
-///    identity → [`InvitationError::KeysAlreadyRegistered`];
-/// 4. a lookup failed → [`InvitationError::NotReady`] when any failed
+/// 3. any key hash names the invitation's identity → as in 1 and 2 (the
+///    lookup by id failed or reached a node that had not seen it yet),
+///    whatever the other key hashes found;
+/// 4. a key hash names another identity →
+///    [`InvitationError::KeysAlreadyRegistered`] (the first such identity);
+/// 5. a lookup failed → [`InvitationError::NotReady`] when any failed
 ///    lookup could not be verified yet, else [`InvitationError::Sdk`].
 ///
 /// Nothing is adopted or recorded here.
@@ -1121,6 +1135,7 @@ where
     // A failed lookup by id does not stop the key-hash answers from
     // deciding: one of them may name the invitation's identity or a taken key.
     let mut lookup_error = None;
+    let mut foreign_owner = None;
     match claimed {
         Ok(Some(identity)) => return Err(claimed_by(&identity, master_key)),
         Ok(None) => {}
@@ -1134,10 +1149,10 @@ where
             Ok(Some(identity)) if identity.id() == prospective_identity_id => {
                 return Err(claimed_by(&identity, master_key));
             }
+            // A later key hash may still name the invitation's identity,
+            // which decides first.
             Ok(Some(identity)) => {
-                return Err(InvitationError::KeysAlreadyRegistered {
-                    identity_id: Some(identity.id()),
-                });
+                foreign_owner.get_or_insert(identity.id());
             }
             Ok(None) => {}
             // Keep "not verified yet" over any other failure: it is the one
@@ -1151,6 +1166,12 @@ where
                 }
             }
         }
+    }
+    if let Some(identity_id) = foreign_owner {
+        return Err(InvitationError::KeysAlreadyRegistered {
+            identity_id: Some(identity_id),
+            rejection: None,
+        });
     }
     match lookup_error {
         Some(error) => Err(lookup_failure(error)),
@@ -1183,9 +1204,10 @@ fn lookup_failure(error: Error) -> InvitationError {
 
 /// Platform refused the broadcast claim because one of its keys is already
 /// registered to another identity: 40207 (`DuplicatedIdentityPublicKeyIdStateError`),
-/// or 10501 (`DuplicatedIdentityPublicKeyIdBasicError`) before protocol v7.
+/// or 10501 (`DuplicatedIdentityPublicKeyIdBasicError`) before protocol v11.
 /// That refusal is final for these keys, so it becomes
-/// [`InvitationError::KeysAlreadyRegistered`]. 10501 is also Platform's answer
+/// [`InvitationError::KeysAlreadyRegistered`], which keeps the refusal for
+/// its consensus code. 10501 is also Platform's answer
 /// to two keys sharing an id inside one transition, which
 /// [`preflight_keys_map`] refuses before anything is sent.
 fn keys_taken_on_broadcast(
@@ -1193,7 +1215,10 @@ fn keys_taken_on_broadcast(
 ) -> Result<Identity, InvitationError> {
     match result {
         Err(InvitationError::Sdk(error)) if is_identity_key_already_registered(&error) => {
-            Err(InvitationError::KeysAlreadyRegistered { identity_id: None })
+            Err(InvitationError::KeysAlreadyRegistered {
+                identity_id: None,
+                rejection: Some(error),
+            })
         }
         other => other,
     }
@@ -2402,8 +2427,8 @@ mod tests {
         ));
     }
 
-    /// Our identity is recognized by the master key's data alone, whatever
-    /// the key's other fields; a hash-only key never matches.
+    /// Our identity is recognized by the master key's type and data alone,
+    /// whatever the key's other fields; a hash-only key never matches.
     #[test]
     fn should_recognize_our_identity_by_the_master_key_data() {
         let master = test_key(0, 1);
@@ -2424,6 +2449,18 @@ mod tests {
         assert!(!identity_holds_master_key(
             &identity_with_keys([(0, hash_only)].into()),
             &master
+        ));
+
+        // A BLS master key is signed into its identity too; the same bytes
+        // under another key type are not the same key.
+        let mut bls_master = test_key(0, 1);
+        bls_master.set_key_type(KeyType::BLS12_381);
+        let bls_identity = identity_with_keys([(0, bls_master.clone())].into());
+        assert!(identity_holds_master_key(&bls_identity, &bls_master));
+        assert!(!identity_holds_master_key(&bls_identity, &master));
+        assert!(!identity_holds_master_key(
+            &identity_with_keys([(0, test_key(0, 1))].into()),
+            &bls_master
         ));
     }
 
@@ -2559,7 +2596,7 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id) })
+                Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id), .. })
                     if id == Identifier::new([3; 32])
             ));
         }
@@ -2579,7 +2616,8 @@ mod tests {
             assert!(matches!(
                 result,
                 Err(InvitationError::KeysAlreadyRegistered {
-                    identity_id: Some(_)
+                    identity_id: Some(_),
+                    ..
                 })
             ));
         }
@@ -2619,6 +2657,24 @@ mod tests {
             ));
         }
 
+        /// A key hash that names the invitation's identity decides whatever
+        /// an earlier key hash found: the order the keys were submitted in
+        /// does not turn our claim into "keys taken".
+        #[tokio::test]
+        async fn should_put_the_invitations_identity_before_an_earlier_taken_key() {
+            for by_id in [Ok(None), Err(timeout())] {
+                let (result, _) = preflight(by_id, |hash| {
+                    Ok(Some(if hash == OUR_HASH { theirs() } else { ours() }))
+                })
+                .await;
+                assert!(matches!(
+                    result,
+                    Err(InvitationError::ClaimedByThisWallet { identity_id })
+                        if identity_id == ours().id()
+                ));
+            }
+        }
+
         /// A refused preflight never reaches the submission (which signs and
         /// broadcasts), and Platform's refusal of taken keys is typed.
         #[tokio::test]
@@ -2643,7 +2699,10 @@ mod tests {
             .await;
             assert!(matches!(
                 taken,
-                Err(InvitationError::KeysAlreadyRegistered { identity_id: None })
+                Err(InvitationError::KeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: Some(_),
+                })
             ));
 
             let claimed = claim_unless_refused(async { Ok(()) }, || async { Ok(ours()) }).await;
@@ -2668,7 +2727,8 @@ mod tests {
             assert!(matches!(
                 result,
                 Err(InvitationError::KeysAlreadyRegistered {
-                    identity_id: Some(_)
+                    identity_id: Some(_),
+                    ..
                 })
             ));
         }
@@ -2722,6 +2782,7 @@ mod tests {
             DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyIdBasicError,
         };
         use dpp::consensus::basic::BasicError;
+        use dpp::consensus::codes::ErrorWithCode;
         use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
         use dpp::consensus::state::state_error::StateError;
         use dpp::consensus::ConsensusError;
@@ -2743,10 +2804,15 @@ mod tests {
                     DuplicatedIdentityPublicKeyIdBasicError::new(vec![0]),
                 )),
             ] {
-                assert!(matches!(
-                    keys_taken_on_broadcast(Err(refused(error))),
-                    Err(InvitationError::KeysAlreadyRegistered { identity_id: None })
-                ));
+                let code = error.code();
+                // The refusal stays with the typed outcome, for its consensus code.
+                match keys_taken_on_broadcast(Err(refused(error))) {
+                    Err(InvitationError::KeysAlreadyRegistered {
+                        identity_id: None,
+                        rejection: Some(rejection),
+                    }) => assert_eq!(rejection.consensus_error().map(|e| e.code()), Some(code)),
+                    other => panic!("expected taken keys, got {other:?}"),
+                }
             }
         }
 

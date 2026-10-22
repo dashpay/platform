@@ -109,12 +109,17 @@ pub enum PlatformWalletError {
     /// A key of the claim is already registered to another identity, so
     /// Platform would refuse the claim and charge the voucher. `identity_id`
     /// is that identity when the claim's lookup found it, `None` when
-    /// Platform refused the broadcast.
+    /// Platform refused the broadcast; `rejection` is then that refusal,
+    /// kept for its consensus code.
     #[error("{}", match identity_id {
         Some(id) => format!("a key of this invitation claim is already registered to identity {id}"),
         None => "a key of this invitation claim is already registered to another identity".to_string(),
     })]
-    InvitationKeysAlreadyRegistered { identity_id: Option<Identifier> },
+    InvitationKeysAlreadyRegistered {
+        identity_id: Option<Identifier>,
+        #[source]
+        rejection: Option<dash_sdk::Error>,
+    },
 
     /// The claim's identity lookups could not be verified yet (the trusted
     /// quorum source is not ready). Nothing was broadcast; retry once synced.
@@ -1083,9 +1088,13 @@ impl From<InvitationError> for PlatformWalletError {
             InvitationError::AlreadyClaimed { identity_id } => {
                 Self::InvitationAlreadyClaimed { identity_id }
             }
-            InvitationError::KeysAlreadyRegistered { identity_id } => {
-                Self::InvitationKeysAlreadyRegistered { identity_id }
-            }
+            InvitationError::KeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            } => Self::InvitationKeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            },
             InvitationError::NotReady(error) => Self::InvitationNotReady(error),
             InvitationError::Sdk(error) => Self::Sdk(error),
         }
@@ -1163,12 +1172,18 @@ impl PlatformWalletError {
     ///
     /// `None` for the variants that stringified their cause, and for the
     /// typed promotions (`AddressNonceMismatch`, `DocumentNotForSale`, …),
-    /// which keep the values they need and have FFI codes of their own.
+    /// which keep the values they need and have FFI codes of their own. The
+    /// exception is [`Self::InvitationKeysAlreadyRegistered`] refused after
+    /// the broadcast, which keeps Platform's refusal beside its own code.
     pub fn consensus_error(&self) -> Option<&ConsensusError> {
         match self {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
                 source.consensus_error()
             }
+            Self::InvitationKeysAlreadyRegistered {
+                rejection: Some(source),
+                ..
+            } => source.consensus_error(),
             _ => None,
         }
     }
@@ -1909,8 +1924,9 @@ mod invitation_error_mapping_tests {
             assert!(matches!(
                 PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
                     identity_id: owner,
+                    rejection: None,
                 }),
-                PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id } if identity_id == owner
+                PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id, .. } if identity_id == owner
             ));
         }
         assert!(matches!(

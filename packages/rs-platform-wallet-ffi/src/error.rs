@@ -770,6 +770,20 @@ impl PlatformWalletFFIResult {
         }
     }
 
+    /// Platform's own verdict, for the variants that still hold the SDK
+    /// error it arrived in (`Sdk`, `TokenOperationFailed`, and
+    /// `InvitationKeysAlreadyRegistered` refused after the broadcast). It
+    /// rides alongside the code already chosen rather than replacing it, so a
+    /// host that branches on a dedicated code keeps seeing exactly what it
+    /// saw before and one that wants the rejection itself no longer has to
+    /// recognize it by its rendered text.
+    fn with_consensus_of(self, error: &PlatformWalletError) -> Self {
+        match error.consensus_error() {
+            Some(consensus_error) => self.with_consensus_error(consensus_error),
+            None => self,
+        }
+    }
+
     /// Stamp Platform's own rejection onto an already-built result.
     ///
     /// Leaves `code` and `message` alone: the numeric result code is the host
@@ -894,7 +908,7 @@ fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIRe
             })
             .to_string(),
         )),
-        PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id } => Some((
+        PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id, .. } => Some((
             PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
             serde_json::json!({
                 "identityId": identity_id.map(|id| id.to_string(Encoding::Base58)),
@@ -918,7 +932,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // stable JSON detail object; everything else keeps Display as the
         // message.
         if let Some((code, detail)) = error_json_detail(&error) {
-            return PlatformWalletFFIResult::err(code, detail);
+            return PlatformWalletFFIResult::err(code, detail).with_consensus_of(&error);
         }
         // Map the typed wallet error variants explicitly so they
         // don't flatten to ErrorUnknown at the FFI boundary. The
@@ -1197,17 +1211,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // mid-string and is deliberately not matched.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        let result = PlatformWalletFFIResult::err(code, error.to_string());
-        // Platform's own verdict, for the variants that still hold the SDK
-        // error it arrived in (`Sdk`, `TokenOperationFailed`). It rides
-        // alongside the code chosen above rather than replacing it, so a host
-        // that branches on a dedicated code keeps seeing exactly what it saw
-        // before and one that wants the rejection itself no longer has to
-        // recognize it by its rendered text.
-        match error.consensus_error() {
-            Some(consensus_error) => result.with_consensus_error(consensus_error),
-            None => result,
-        }
+        PlatformWalletFFIResult::err(code, error.to_string()).with_consensus_of(&error)
     }
 }
 
@@ -2254,6 +2258,7 @@ mod tests {
             (
                 PlatformWalletError::InvitationKeysAlreadyRegistered {
                     identity_id: Some(id),
+                    rejection: None,
                 },
                 PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
                 63,
@@ -2307,13 +2312,16 @@ mod tests {
         };
         assert_eq!(
             detail(PlatformWalletError::InvitationKeysAlreadyRegistered {
-                identity_id: Some(id)
+                identity_id: Some(id),
+                rejection: None,
             })["identityId"],
             id.to_string(Encoding::Base58)
         );
         assert!(
-            detail(PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id: None })
-                ["identityId"]
+            detail(PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: None,
+                rejection: None,
+            })["identityId"]
                 .is_null()
         );
         assert_eq!(
@@ -2620,6 +2628,36 @@ mod tests {
             Identifier::from([2u8; 32]),
             1_758_140_722_000,
         ))
+    }
+
+    /// Platform's refusal of a claim whose keys are taken keeps code 63 and
+    /// its JSON detail, and carries the refusal's consensus code beside them.
+    #[test]
+    fn should_carry_the_consensus_code_of_a_taken_keys_refusal() {
+        use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+        use dpp::consensus::state::state_error::StateError;
+
+        let refusal =
+            ConsensusError::StateError(StateError::DuplicatedIdentityPublicKeyIdStateError(
+                DuplicatedIdentityPublicKeyIdStateError::new(vec![0]),
+            ));
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: None,
+                rejection: Some(broadcast_rejection(refusal)),
+            }
+            .into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered
+        );
+        assert_eq!(message_of(&result), r#"{"identityId":null}"#);
+        assert_eq!(result.consensus_code, 40207);
+        assert_eq!(
+            result.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::State
+        );
     }
 
     /// The wait-stream shape a state rejection arrives in: accepted by

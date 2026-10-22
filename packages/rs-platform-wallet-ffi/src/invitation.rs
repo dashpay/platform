@@ -327,18 +327,18 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            // SAFETY: see the fn-level safety doc — the caller pins
-            // `signer_handle` for the duration of this call.
-            let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity_wallet
-                .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
-                .await
-        })
+    // Release the wallet storage before the claim's lookups and broadcast.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the caller pins
+        // `signer_handle` for the duration of this call.
+        let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity_wallet
+            .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let identity = unwrap_result_or_return!(result);
     let id_bytes: [u8; 32] = identity.id().to_buffer();
     unsafe {

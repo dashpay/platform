@@ -61,8 +61,8 @@ mod contacts;
 mod dashpay_view;
 mod invitation;
 pub use invitation::{
-    Invitation, InvitationClaimStatus, InvitationClaimantKey, MAX_INVITATION_DUFFS,
-    MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    Invitation, InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS,
+    MIN_INVITATION_DUFFS,
 };
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;

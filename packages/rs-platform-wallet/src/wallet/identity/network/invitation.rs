@@ -50,10 +50,14 @@ fn has_resident_keys(wallet: &key_wallet::Wallet) -> bool {
     !wallet.is_external_signable() && !wallet.is_watch_only()
 }
 
+fn wallet_not_found() -> PlatformWalletError {
+    PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
+}
+
 /// Where [`IdentityWallet::invitation_claimed_by_this_wallet`] gets this
 /// wallet's master key from.
 #[derive(Clone, Copy)]
-pub enum InvitationClaimantKey<'a> {
+pub(crate) enum InvitationClaimantKey<'a> {
     /// Derive it from the in-process wallet (a wallet with resident private
     /// keys).
     ResidentWallet,
@@ -330,7 +334,7 @@ impl IdentityWallet {
     /// [`Self::invitation_claim_status`], plus the identity that claimed the
     /// invitation when there is one. Pass it to
     /// [`Self::invitation_claimed_by_this_wallet`] to tell whose claim it was.
-    pub async fn invitation_claim_status_with_identity(
+    pub(crate) async fn invitation_claim_status_with_identity(
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<(InvitationClaimStatus, Option<Identity>), PlatformWalletError> {
@@ -456,7 +460,7 @@ impl IdentityWallet {
     /// - The master key cannot be derived (`key` is
     ///   [`InvitationClaimantKey::Unavailable`], or the derivation fails) →
     ///   `None`: unknown.
-    pub async fn invitation_claimed_by_this_wallet(
+    pub(crate) async fn invitation_claimed_by_this_wallet(
         &self,
         claimed: Option<&Identity>,
         identity_index: u32,
@@ -488,25 +492,32 @@ impl IdentityWallet {
         identity_index: u32,
         key: InvitationClaimantKey<'_>,
     ) -> Result<Option<IdentityPublicKey>, PlatformWalletError> {
-        if matches!(key, InvitationClaimantKey::Unavailable) {
-            return Ok(None);
-        }
-        let wm = self.wallet_manager.read().await;
-        let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
-        })?;
         let public_key: [u8; 33] = match key {
             InvitationClaimantKey::Unavailable => return Ok(None),
             InvitationClaimantKey::Master(master) => {
+                // Only the network comes from the manager; the derivation
+                // runs after its read guard is released.
+                let network = {
+                    let wm = self.wallet_manager.read().await;
+                    wm.get_wallet(&self.wallet_id)
+                        .ok_or_else(wallet_not_found)?
+                        .network
+                };
                 derive_ecdsa_identity_auth_keypair_from_master(
                     master,
-                    wallet.network,
+                    network,
                     identity_index,
                     MASTER_KEY_INDEX,
                 )?
                 .public_key
             }
+            // The resident key material lives in the wallet the manager
+            // holds, so this derivation runs under its read guard.
             InvitationClaimantKey::ResidentWallet => {
+                let wm = self.wallet_manager.read().await;
+                let wallet = wm
+                    .get_wallet(&self.wallet_id)
+                    .ok_or_else(wallet_not_found)?;
                 let (_path, _private, public_key) = derive_identity_auth_keypair(
                     wallet,
                     wallet.network,
