@@ -398,9 +398,11 @@ impl SpvRuntime {
     /// `Skipped`) fails with [`PlatformWalletError::QuorumNotVerified`]; that
     /// is usually transient, for example a freshly mined quorum whose
     /// work-block list has not arrived yet. A quorum dash-spv does not hold,
-    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`].
-    /// [`PlatformWalletError::quorum_lookup_context_error`] maps either to
-    /// the SDK error class a context provider reports.
+    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`], and a
+    /// `quorum_type` that names no LLMQ type with
+    /// [`PlatformWalletError::InvalidParameter`].
+    /// [`PlatformWalletError::quorum_lookup_context_error`] maps each to the
+    /// SDK error class a context provider reports.
     ///
     /// A caller that accepts unverified keys uses
     /// [`Self::get_quorum_public_key_with_status`].
@@ -439,18 +441,30 @@ impl SpvRuntime {
     /// other status is a key dash-spv holds but has not verified, which must
     /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
     /// that.
+    ///
+    /// A `quorum_type` that names no LLMQ type, any value above 255
+    /// included, fails with [`PlatformWalletError::InvalidParameter`]
+    /// rather than aliasing another quorum type.
     pub async fn get_quorum_public_key_with_status(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
     ) -> Result<SpvQuorumPublicKey, PlatformWalletError> {
+        let llmq_type = match u8::try_from(quorum_type).map(LLMQType::from) {
+            Ok(LLMQType::LlmqtypeUnknown) | Err(_) => {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "quorum type {quorum_type} is not an LLMQ type"
+                )));
+            }
+            Ok(llmq_type) => llmq_type,
+        };
+
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
             "SPV Client not started".to_string(),
         ))?;
 
-        let llmq_type = LLMQType::from(quorum_type as u8);
         let qh = quorum_lookup_key(quorum_hash);
 
         let quorum = client
@@ -1449,6 +1463,44 @@ mod tests {
             matches!(invalid, Err(PlatformWalletError::SpvError(_))),
             "an Invalid quorum is not found, got {invalid:?}"
         );
+    }
+
+    /// A caller-supplied type that names no LLMQ type must fail instead of
+    /// aliasing another quorum family: 262 would otherwise wrap onto the held
+    /// type 6 quorum and hand back its key, and 7 or 255 would search the
+    /// quorums dash-spv files under an unknown type.
+    #[tokio::test]
+    async fn should_reject_a_quorum_type_above_one_byte() {
+        use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
+
+        let (runtime, _storage) = offline_runtime().await;
+        hold_quorum(&runtime, LLMQEntryVerificationStatus::Verified).await;
+
+        for quorum_type in [0, 7, 255, 6 + 256, u32::MAX] {
+            let with_status = runtime
+                .get_quorum_public_key_with_status(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(with_status, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {with_status:?}"
+            );
+
+            let verified = runtime
+                .get_quorum_public_key(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(verified, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {verified:?}"
+            );
+        }
     }
 
     /// Drive the production startup path and wait for upstream `run` to return.
