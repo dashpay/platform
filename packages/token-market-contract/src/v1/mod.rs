@@ -13,6 +13,7 @@ pub mod document_types {
             pub const REMAINING: &str = "remaining";
             pub const MIN_FILL: &str = "minFill";
             pub const EXPIRES_AT: &str = "expiresAt";
+            pub const DECIMALS: &str = "decimals";
         }
 
         pub mod indexes {
@@ -35,6 +36,7 @@ pub mod document_types {
             pub const MIN_FILL: &str = "minFill";
             pub const EXPIRES_AT: &str = "expiresAt";
             pub const ESCROW: &str = "escrow";
+            pub const DECIMALS: &str = "decimals";
         }
 
         pub mod indexes {

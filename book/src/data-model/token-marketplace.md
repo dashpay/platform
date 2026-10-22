@@ -68,6 +68,13 @@ the token's supply, and the credits offered never exceed the credits on Platform
 an order is a signed 8-byte value, so a partial fill rewrites an order without changing its stored
 size.
 
+An order's price is in credits per whole token, and each order records the token's decimals when
+it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
+token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
+open offer pays. The `book` and `depth` indexes order by price alone: after a token changes its
+decimals, orders placed before and after the change are priced at different scales until the older
+ones close, and a client comparing them scales each by its own `decimals`.
+
 Only the marketplace transitions write orders. A document transition cannot create one
 (`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
 types stay mutable and deletable so the documents carry a revision and storage flags: the order's
