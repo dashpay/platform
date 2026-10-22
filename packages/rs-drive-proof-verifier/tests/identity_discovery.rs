@@ -565,3 +565,5 @@ fn should_reject_unknown_legacy_nonunique_verifier_generation() {
 
 #[path = "identity_discovery/document_outcome.rs"]
 mod document_outcome;
+#[path = "identity_discovery/mainnet.rs"]
+mod mainnet;

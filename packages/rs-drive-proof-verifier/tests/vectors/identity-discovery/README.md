@@ -15,3 +15,11 @@ The fixed test signing key is `[1; 32]`; `quorum-key.bin` is its public key.
 `key-hash.bin` is the requested index key. These are synthetic fixtures, never
 network trust anchors. The SDK tests replay these through the normal proof and
 signature verifier.
+
+`mainnet/` holds real answers from mainnet protocol 13 nodes in the legacy format,
+recorded at height 456535 by
+`rs-sdk/tests/identity_discovery_live.rs::should_capture_mainnet_legacy_nonunique_vectors`:
+`match-*` is a first match (`match-identity.bin` is the identity found) and
+`absence-*` proves no identity after `[0xff; 32]`. Each `*-quorum-key.bin` is the
+public key of the quorum that signed that answer, read from the trusted quorum
+service at capture time. `tests/identity_discovery/mainnet.rs` replays them offline.

@@ -166,3 +166,95 @@ async fn check(network: Network, id: &str, require_positive: bool) {
     );
     println!("{network:?} fully verified identity discovery passed for {checked} key hashes");
 }
+
+/// Records authenticated mainnet answers in the legacy format as offline replay vectors.
+/// Run it only to refresh them; the replay test in drive-proof-verifier needs no network.
+#[tokio::test]
+#[ignore = "requires live mainnet; rewrites drive-proof-verifier's mainnet vectors"]
+async fn should_capture_mainnet_legacy_nonunique_vectors() {
+    use dapi_grpc::Message;
+    use dash_context_provider::ContextProvider;
+    let network = Network::Mainnet;
+    let provider =
+        TrustedHttpContextProvider::new(network, None, NonZeroUsize::new(100).unwrap()).unwrap();
+    let sdk = SdkBuilder::new_mainnet()
+        .with_context_provider(provider)
+        .build()
+        .unwrap();
+    let id = Identifier::from_string(
+        "5EwNaBtXG6fKafCix4gr9FEGGX7gHUjwdHEhmR8Bx8zd",
+        Encoding::Base58,
+    )
+    .unwrap();
+    let identity = Identity::fetch(&sdk, id).await.unwrap().unwrap();
+    let hash = identity
+        .public_keys()
+        .values()
+        .find(|key| !key.key_type().is_unique_key_type())
+        .expect("fixture identity has a non-unique key")
+        .public_key_hash()
+        .unwrap();
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/identity-discovery/mainnet");
+    std::fs::create_dir_all(&directory).unwrap();
+    for (name, after) in [("match", None), ("absence", Some([0xff; 32]))] {
+        let request: GetIdentityByNonUniquePublicKeyHashRequest =
+            GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: hash.to_vec(),
+                start_after: after.map(|a: [u8; 32]| a.to_vec()),
+                prove: true,
+            }
+            .into();
+        let response = sdk
+            .execute(request.clone(), RequestSettings::default())
+            .await
+            .unwrap()
+            .inner;
+        let Some(Version::V0(v0)) = &response.version else {
+            panic!("missing version")
+        };
+        let Some(LookupResult::LegacyProof(legacy)) = &v0.result else {
+            panic!("mainnet must answer in the legacy format")
+        };
+        let proof = legacy
+            .grovedb_identity_public_key_hash_proof
+            .clone()
+            .unwrap();
+        let provider = sdk.context_provider().unwrap();
+        let (found, metadata, _) = <Identity as FromProof<
+            GetIdentityByNonUniquePublicKeyHashRequest,
+        >>::maybe_from_proof_with_metadata(
+            request.clone(),
+            response.clone(),
+            network,
+            PlatformVersion::latest(),
+            &provider,
+        )
+        .unwrap();
+        assert_eq!(metadata.protocol_version, 13);
+        assert_eq!(found.is_some(), after.is_none());
+        let quorum_hash: [u8; 32] = proof.quorum_hash.clone().try_into().unwrap();
+        let quorum_key = provider
+            .get_quorum_public_key(
+                proof.quorum_type,
+                quorum_hash,
+                metadata.core_chain_locked_height,
+            )
+            .unwrap();
+        let write = |suffix: &str, bytes: &[u8]| {
+            std::fs::write(directory.join(format!("{name}-{suffix}.bin")), bytes).unwrap()
+        };
+        write("request", &request.encode_to_vec());
+        write("response", &response.encode_to_vec());
+        write("quorum-key", &quorum_key);
+        if let Some(found) = found {
+            write("identity", &found.id().to_buffer());
+        }
+        println!(
+            "captured {name}: height={} protocol={} quorum={}",
+            metadata.height,
+            metadata.protocol_version,
+            hex::encode(quorum_hash)
+        );
+    }
+}
