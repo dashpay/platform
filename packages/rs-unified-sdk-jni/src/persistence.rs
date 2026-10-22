@@ -1536,44 +1536,13 @@ unsafe extern "C" fn tramp_persist_identity_keys(
     })
 }
 
-/// `onPersistIdentityKeyUpsert`'s JNI descriptor. The `ZJZJ` before the
-/// final `[I` is the key usage limits pair (`hasTotalBudget`,
-/// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `[I` is
-/// `rejectedDerivations`, flat `[identityIndex, keyIndex]` pairs. Bound at the `call_method` site and in
+/// `onPersistIdentityKeyUpsert`'s JNI descriptor. The trailing `ZJZJ` is the
+/// key usage limits pair (`hasTotalBudget`, `totalBudget`, `hasExpiresAt`,
+/// `expiresAt`). Bound at the `call_method` site and in
 /// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves
 /// the table up front, while the call site only resolves when a key is
 /// first persisted.
-const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ[I)I";
-
-/// The `rejectedDerivations` payload of `onPersistIdentityKeyUpsert`: the
-/// `pairs` rejected `[identity_index, key_index]` pairs at `ptr`, flat, as
-/// `2 * pairs` ints. Null or zero pairs is empty. Each index crosses as its
-/// bit pattern, the cast the same call applies to the entry's own
-/// `identity_index` / `key_index`, so a rejected pair compares equal to the
-/// coordinates Kotlin stored for the key. A payload whose length does not fit
-/// a jint is refused rather than truncated.
-///
-/// # Safety
-/// When `ptr` is non-null and `pairs` non-zero, `ptr` must point at
-/// `2 * pairs` `u32`s, valid for the callback window.
-unsafe fn rejected_derivation_ints(
-    ptr: *const u32,
-    pairs: usize,
-) -> Result<Vec<i32>, jni::errors::Error> {
-    if ptr.is_null() || pairs == 0 {
-        return Ok(Vec::new());
-    }
-    let len = pairs
-        .checked_mul(2)
-        .filter(|len| i32::try_from(*len).is_ok())
-        .ok_or(jni::errors::Error::JniCall(
-            jni::errors::JniError::InvalidArguments,
-        ))?;
-    Ok(std::slice::from_raw_parts(ptr, len)
-        .iter()
-        .map(|&v| v as i32)
-        .collect())
-}
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I";
 
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
@@ -1587,11 +1556,6 @@ unsafe fn persist_identity_key_upsert(
     let key_wallet_id = env.byte_array_from_slice(&e.wallet_id)?;
     let cb_id = env.byte_array_from_slice(&e.contract_bounds_id)?;
     let cb_doctype = cstr_opt(env, e.contract_bounds_document_type)?;
-    let rejected_ints =
-        rejected_derivation_ints(e.rejected_derivations_ptr, e.rejected_derivations_len)?;
-    // Fits a jint: `rejected_derivation_ints` refuses a longer payload.
-    let rejected = env.new_int_array(rejected_ints.len() as i32)?;
-    env.set_int_array_region(&rejected, 0, &rejected_ints)?;
     env.call_method(
         bridge,
         "onPersistIdentityKeyUpsert",
@@ -1620,7 +1584,6 @@ unsafe fn persist_identity_key_upsert(
             JValue::Long(e.total_budget as i64),
             JValue::Bool(e.expires_at_is_some as u8),
             JValue::Long(e.expires_at as i64),
-            (&rejected).into(),
         ],
     )?
     .i()
@@ -5218,50 +5181,6 @@ mod tests {
             method_descriptor(&names(&["[B", "int", "int", "[B", "int"]), "int"),
             WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR
         );
-    }
-
-    /// The rejected pairs cross flat, in order; null or zero pairs is
-    /// empty; an index past `i32::MAX` crosses as its bit pattern, as the
-    /// entry's own `identity_index` / `key_index` do.
-    #[test]
-    fn should_flatten_rejected_derivation_pairs_into_the_int_array_payload() {
-        let pairs = [3u32, 7, 0x8000_0000, u32::MAX];
-        unsafe {
-            assert_eq!(
-                rejected_derivation_ints(ptr::null(), 0).unwrap(),
-                Vec::<i32>::new()
-            );
-            assert_eq!(
-                rejected_derivation_ints(ptr::null(), 2).unwrap(),
-                Vec::<i32>::new()
-            );
-            assert_eq!(
-                rejected_derivation_ints(pairs.as_ptr(), 0).unwrap(),
-                Vec::<i32>::new()
-            );
-            assert_eq!(
-                rejected_derivation_ints(pairs.as_ptr(), 1).unwrap(),
-                vec![3, 7]
-            );
-            assert_eq!(
-                rejected_derivation_ints(pairs.as_ptr(), 2).unwrap(),
-                vec![3, 7, i32::MIN, -1]
-            );
-        }
-    }
-
-    /// A pair count whose flat length overflows `usize` or a jint is refused
-    /// before anything is read, rather than wrapped into a short slice.
-    #[test]
-    fn should_refuse_a_rejected_derivation_payload_longer_than_a_jint() {
-        // Never dereferenced: the length check comes first.
-        let dangling = ptr::NonNull::<u32>::dangling().as_ptr() as *const u32;
-        for pairs in [usize::MAX, usize::MAX / 2 + 1, i32::MAX as usize / 2 + 1] {
-            assert!(
-                unsafe { rejected_derivation_ints(dangling, pairs) }.is_err(),
-                "{pairs}"
-            );
-        }
     }
 
     #[test]

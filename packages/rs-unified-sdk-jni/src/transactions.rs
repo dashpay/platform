@@ -132,49 +132,6 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 
 // ── Identity update (add / disable keys) ──────────────────────────────
 
-/// Read a JVM `int[]` of key ids into `Vec<u32>`. A null or empty array is
-/// no ids; an array that cannot be read, or a negative entry (it would
-/// bit-cast to a bogus huge key id), throws and returns `None`. jni 0.21 has no `convert_int_array`, so the
-/// length is read first, then the region into an owned buffer.
-fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u32>> {
-    if ids.is_null() {
-        return Some(Vec::new());
-    }
-    match env.get_array_length(ids) {
-        Ok(0) => Some(Vec::new()),
-        Ok(len) => {
-            let mut buf = vec![0i32; len as usize];
-            if env.get_int_array_region(ids, 0, &mut buf).is_err() {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "keyIds could not be read");
-                return None;
-            }
-            match key_ids_from_ints(buf) {
-                Ok(ids) => Some(ids),
-                Err(message) => {
-                    throw_sdk_exception(env, 1, message);
-                    None
-                }
-            }
-        }
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "keyIds could not be read");
-            None
-        }
-    }
-}
-
-/// The key ids a JVM `int[]` carried, or the message to throw: a negative
-/// entry would bit-cast to a bogus huge key id, so it is refused rather than
-/// cast.
-fn key_ids_from_ints(ints: Vec<i32>) -> Result<Vec<u32>, &'static str> {
-    if ints.iter().any(|&i| i < 0) {
-        return Err("keyIds must be non-negative");
-    }
-    Ok(ints.into_iter().map(|i| i as u32).collect())
-}
-
 /// The revision `updateIdentity` pins, or the message to throw: `None`
 /// without `hasRevision` (whatever `revision` holds), and a negative
 /// `revision` with it is refused rather than bit-cast to a huge one.
@@ -226,13 +183,12 @@ fn update_revision_arg(has_revision: bool, revision: i64) -> Result<Option<u64>,
 ///
 /// `disablePublicKeyIds` is a JVM `int[]` of key ids to disable (may be
 /// empty). At least one of add / disable must be non-empty for the FFI to
-/// build a transition. `externalKeyIds` is a JVM `int[]` (may be empty) of
-/// the added keys that do not come from the wallet's derivation; they are
-/// stored without derivation coordinates. With `hasRevision`, the update
-/// must carry `revision`, and one the cached identity would give another
-/// revision is refused before anything is signed
-/// (`platform_wallet_update_identity_with_signer_at_revision`). Returns nothing on success (throws on error) — Room
-/// learns of the change through the persistence changeset.
+/// build a transition. With `hasRevision`, the update must carry `revision`,
+/// and one the cached identity would give another revision is refused
+/// before anything is signed
+/// (`platform_wallet_update_identity_with_signer_at_revision`). Returns
+/// nothing on success (throws on error) — Room learns of the change through
+/// the persistence changeset.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentity(
     mut env: JNIEnv,
@@ -242,7 +198,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     add_pubkeys_blob: JByteArray,
     disable_public_key_ids: jni::objects::JIntArray,
     signer_handle: jlong,
-    external_key_ids: jni::objects::JIntArray,
     has_revision: jni::sys::jboolean,
     revision: jlong,
 ) {
@@ -258,12 +213,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         };
 
-        // Read the disable and external ids (JVM int[] → Vec<u32>).
-        let Some(disable_ids) = read_key_ids(env, &disable_public_key_ids) else {
-            return;
-        };
-        let Some(external_ids) = read_key_ids(env, &external_key_ids) else {
-            return;
+        // Read the disable ids (a JVM int[] → Vec<u32>). A null int[] is a
+        // legitimate "no disables"; jni 0.21 has no `convert_int_array`, so
+        // read the length then the region into an owned buffer.
+        let disable_ids: Vec<u32> = if disable_public_key_ids.is_null() {
+            Vec::new()
+        } else {
+            match env.get_array_length(&disable_public_key_ids) {
+                Ok(len) if len > 0 => {
+                    let mut buf = vec![0i32; len as usize];
+                    if env
+                        .get_int_array_region(&disable_public_key_ids, 0, &mut buf)
+                        .is_err()
+                    {
+                        let _ = env.exception_clear();
+                        Vec::new()
+                    } else {
+                        // Reject negative entries before the sign-losing
+                        // cast — a negative int would otherwise bit-cast
+                        // to a bogus huge u32 key id.
+                        if buf.iter().any(|&i| i < 0) {
+                            throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                            return;
+                        }
+                        buf.into_iter().map(|i| i as u32).collect()
+                    }
+                }
+                _ => {
+                    let _ = env.exception_clear();
+                    Vec::new()
+                }
+            }
         };
 
         if decoded.is_empty() && disable_ids.is_empty() {
@@ -275,24 +255,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         }
 
-        // Build the FFI rows referencing the owned buffers in `decoded`.
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
-
-        let rows = if ffi_rows.is_empty() {
-            ptr::null()
-        } else {
-            ffi_rows.as_ptr()
-        };
-        let external = if external_ids.is_empty() {
-            ptr::null()
-        } else {
-            external_ids.as_ptr()
-        };
-        let disable = if disable_ids.is_empty() {
-            ptr::null()
-        } else {
-            disable_ids.as_ptr()
-        };
         let revision = match update_revision_arg(has_revision != 0, revision) {
             Ok(revision) => revision,
             Err(message) => {
@@ -300,35 +262,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                 return;
             }
         };
+
+        // Build the FFI rows referencing the owned buffers in `decoded`.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+        let rows = if ffi_rows.is_empty() {
+            ptr::null()
+        } else {
+            ffi_rows.as_ptr()
+        };
+        let disable = if disable_ids.is_empty() {
+            ptr::null()
+        } else {
+            disable_ids.as_ptr()
+        };
+
         let result = unsafe {
-            if let Some(revision) = revision {
-                platform_wallet_ffi::platform_wallet_update_identity_with_signer_at_revision(
+            match revision {
+                Some(revision) => {
+                    platform_wallet_ffi::platform_wallet_update_identity_with_signer_at_revision(
+                        wallet_handle as Handle,
+                        id.as_ptr(),
+                        rows,
+                        ffi_rows.len(),
+                        disable,
+                        disable_ids.len(),
+                        revision,
+                        signer_handle as *mut SignerHandle,
+                    )
+                }
+                None => platform_wallet_ffi::platform_wallet_update_identity_with_signer(
                     wallet_handle as Handle,
                     id.as_ptr(),
                     rows,
                     ffi_rows.len(),
-                    external,
-                    external_ids.len(),
-                    disable,
-                    disable_ids.len(),
-                    revision,
-                    signer_handle as *mut SignerHandle,
-                )
-            } else {
-                platform_wallet_ffi::platform_wallet_update_identity_with_signer(
-                    wallet_handle as Handle,
-                    id.as_ptr(),
-                    rows,
-                    ffi_rows.len(),
-                    external,
-                    external_ids.len(),
                     disable,
                     disable_ids.len(),
                     signer_handle as *mut SignerHandle,
-                )
+                ),
             }
         };
-        // `decoded` / `ffi_rows` / `external_ids` / `disable_ids` own the buffers the pointers
+        // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
         take_pwffi_error(env, result);
     })
@@ -1028,22 +1001,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn should_take_non_negative_key_ids_and_refuse_a_negative_one() {
-        assert_eq!(key_ids_from_ints(vec![]), Ok(vec![]));
-        assert_eq!(
-            key_ids_from_ints(vec![0, 7, i32::MAX]),
-            Ok(vec![0, 7, i32::MAX as u32])
-        );
-        for ints in [vec![-1], vec![3, i32::MIN], vec![0, -7, 2]] {
-            assert_eq!(
-                key_ids_from_ints(ints.clone()),
-                Err("keyIds must be non-negative"),
-                "{ints:?}"
-            );
-        }
-    }
 
     #[test]
     fn should_pin_a_revision_only_with_has_revision_and_refuse_a_negative_one() {
