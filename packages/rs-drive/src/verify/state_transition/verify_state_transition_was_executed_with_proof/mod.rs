@@ -77,6 +77,26 @@ impl Drive {
     /// `query_platform_version` selects whether the query includes an owner balance.
     /// All proof validation and decoding still use `platform_version`. The caller
     /// must authenticate the producer version together with the resulting root.
+    ///
+    /// The generation is chosen by the producer's version, so the generations of this
+    /// method may differ only in the layout the producer proved. A stricter check
+    /// belongs under the caller's `platform_version`, which an older producer cannot
+    /// lower.
+    ///
+    /// # Parameters
+    ///
+    /// - `state_transition`, `block_info`, `proof`, `known_contracts_provider_fn`: as for
+    ///   [`Self::verify_state_transition_was_executed_with_proof`].
+    /// - `query_platform_version`: the version the producer signed, which selects the
+    ///   proof layout.
+    /// - `platform_version`: the caller's version, which selects every other rule. Its
+    ///   generation of this method must be one this build knows.
+    ///
+    /// # Returns
+    ///
+    /// The root hash of the proof and the verified outcome, as for
+    /// [`Self::verify_state_transition_was_executed_with_proof`]. An unknown generation
+    /// in either version is reported as [`DriveError::UnknownVersionMismatch`].
     pub fn verify_state_transition_was_executed_with_proof_for_query_version(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -171,7 +191,7 @@ mod tests {
     /// The producer's version only picks the layout: a verifier generation this build does
     /// not know is refused even when the producer's generation is known, and the reverse.
     #[test]
-    fn test_verify_for_query_version_rejects_unknown_generations() {
+    fn should_reject_unknown_verifier_or_producer_generation() {
         let mut unknown = PlatformVersion::latest().clone();
         unknown
             .drive

@@ -732,9 +732,11 @@ async fn should_verify_signed_document_outcome_layouts_without_lowering_security
 async fn should_not_learn_document_outcome_versions_from_stale_or_tampered_responses() {
     for stale in [false, true] {
         let provider = DocumentOutcomeProvider::new(13);
+        // Seeded below both the signed version and the tampered one, so learning either
+        // would show.
         let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
-            .with_initial_version(PlatformVersion::get(12).unwrap())
+            .with_initial_version(PlatformVersion::get(11).unwrap())
             .with_time_tolerance(None)
             .with_height_tolerance(Some(1))
             .with_trusted_initial_height(if stale { 100 } else { 10 })
@@ -747,8 +749,16 @@ async fn should_not_learn_document_outcome_versions_from_stale_or_tampered_respo
             };
             v0.metadata.as_mut().unwrap().protocol_version = 12;
         }
-        assert!(sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(request, response, &provider, "wait_for_state_transition_result").await.is_err());
-        assert_eq!(sdk.protocol_version_number(), 12);
+        let error = sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(request, response, &provider, "wait_for_state_transition_result").await.unwrap_err();
+        if stale {
+            assert!(matches!(error, Error::StaleNode(_)), "{error}");
+        } else {
+            assert!(
+                matches!(error, Error::Proof(ProofError::InvalidSignature { .. })),
+                "{error}"
+            );
+        }
+        assert_eq!(sdk.protocol_version_number(), 11);
     }
 }
 

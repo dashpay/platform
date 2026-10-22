@@ -40,6 +40,11 @@ use drive_proof_verifier::FromProof;
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use std::sync::Arc;
 
+/// The first protocol whose document proofs carry the owner balance. Proofs made with
+/// protocol 13 rules use a state built at this version: contracts written for later
+/// protocols can use property types that protocol 13 cannot parse.
+const FIRST_OWNER_BALANCE_VERSION: u32 = 14;
+
 struct ContractProvider(Arc<DataContract>);
 impl ContextProvider for ContractProvider {
     fn get_data_contract(
@@ -228,8 +233,12 @@ fn should_verify_document_outcome_signed_by_an_unknown_newer_version_with_newest
     assert!(outcome.owner_balance().is_some());
 
     // The newest rules apply, not the oldest: the owner balance is still required.
-    let (request, response, provider) = fixture_signed_as(latest, 13, newer);
-    assert!(verify(request, response, &provider).is_err());
+    let (request, response, provider) = fixture_signed_as(FIRST_OWNER_BALANCE_VERSION, 13, newer);
+    let error = verify(request, response, &provider).unwrap_err();
+    assert!(
+        matches!(*error, drive_proof_verifier::Error::GroveDBError { .. }),
+        "{error}"
+    );
 
     // The newer version is still bound by the signature.
     let (request, mut response, provider) = fixture_signed_as(latest, latest, newer);
@@ -244,12 +253,17 @@ fn should_verify_document_outcome_signed_by_an_unknown_newer_version_with_newest
 }
 #[test]
 fn should_reject_current_document_outcome_missing_owner_balance() {
-    let (request, response, provider) = fixture(14, 13);
-    assert!(verify(request, response, &provider).is_err());
+    let (request, response, provider) = fixture(FIRST_OWNER_BALANCE_VERSION, 13);
+    // Correctly signed: the proof check itself refuses the missing balance.
+    let error = verify(request, response, &provider).unwrap_err();
+    assert!(
+        matches!(*error, drive_proof_verifier::Error::GroveDBError { .. }),
+        "{error}"
+    );
 }
 #[test]
 fn should_reject_document_outcome_producer_version_tampering() {
-    let (request, mut response, provider) = fixture(14, 13);
+    let (request, mut response, provider) = fixture(FIRST_OWNER_BALANCE_VERSION, 13);
     let Some(Version::V0(v0)) = &mut response.version else {
         panic!("v0")
     };
@@ -258,6 +272,31 @@ fn should_reject_document_outcome_producer_version_tampering() {
         *verify(request, response, &provider).unwrap_err(),
         drive_proof_verifier::Error::InvalidSignature { .. }
     ));
+}
+/// The producer's version picks the layout only. Every check inside it keeps the verifier's
+/// tables, so an older producer cannot bring back rules the verifier no longer applies.
+#[test]
+fn should_check_document_outcomes_with_the_verifier_tables_not_the_producers() {
+    let (request, response, provider) = fixture(13, 13);
+    let mut verifier = PlatformVersion::latest().clone();
+    verifier.drive.methods.verify.single_document.verify_proof = 255;
+    let error = StateTransitionProofOutcome::maybe_from_proof(
+        request,
+        response,
+        Network::Testnet,
+        &verifier,
+        &provider,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            drive_proof_verifier::Error::DriveError { error }
+                if error.contains("SingleDocumentDriveQuery::verify_proof")
+                    && error.contains("received: 255")
+        ),
+        "{error}"
+    );
 }
 #[test]
 fn should_preserve_document_outcome_verifier_security_floor() {

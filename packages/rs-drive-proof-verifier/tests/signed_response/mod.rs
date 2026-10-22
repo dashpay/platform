@@ -4,10 +4,6 @@
 //! The quorum key is derived from the fixed secret `[1; 32]`. Recorded vectors made with it are
 //! synthetic fixtures, never network trust anchors.
 
-// Each integration-test binary compiles its own copy of this module and uses
-// a different subset of it.
-#![allow(dead_code)]
-
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
