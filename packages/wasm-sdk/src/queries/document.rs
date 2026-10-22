@@ -27,6 +27,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::serialization;
+use wasm_dpp2::utils::IntoWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -211,7 +212,7 @@ export interface DocumentHistoryQuery {
   /** Inclusive lower time bound. Supply exactly one selector. */
   startAtMs?: bigint | number;
   /** Complete exclusive cursor returned by a previous page. */
-  startAfter?: { timeMs: bigint | number; revision: bigint | number };
+  startAfter?: { timeMs: bigint | number; revision: bigint | number } | DocumentHistoryEntry;
   startAtRevision?: bigint | number;
   revision?: bigint | number;
   /** Maximum ten entries. A single revision requires limit one. */
@@ -226,6 +227,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DocumentHistoryQuery")]
     pub type DocumentHistoryQueryJs;
+
+    #[wasm_bindgen(method, getter = startAfter)]
+    fn start_after(this: &DocumentHistoryQueryJs) -> JsValue;
 }
 
 #[derive(Deserialize)]
@@ -271,7 +275,7 @@ struct DocumentHistoryQueryInput {
     document_type_name: String,
     document_id: IdentifierWasm,
     start_at_ms: Option<u64>,
-    start_after: Option<DocumentHistoryCursorInput>,
+    start_after: Option<serde::de::IgnoredAny>,
     start_at_revision: Option<u64>,
     revision: Option<u64>,
     limit: Option<u32>,
@@ -287,11 +291,18 @@ struct DocumentHistoryCursorInput {
 fn parse_document_history_query(
     query: DocumentHistoryQueryJs,
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
-    let input: DocumentHistoryQueryInput =
-        deserialize_required_query(query, "Query object is required", "document history query")?;
+    let input: DocumentHistoryQueryInput = deserialize_required_query(
+        query.clone(),
+        "Query object is required",
+        "document history query",
+    )?;
+    let start_after = input
+        .start_after
+        .map(|_| parse_document_history_cursor(query.start_after()))
+        .transpose()?;
     let filters = [
         input.start_at_ms.is_some(),
-        input.start_after.is_some(),
+        start_after.is_some(),
         input.start_at_revision.is_some(),
         input.revision.is_some(),
     ];
@@ -302,7 +313,7 @@ fn parse_document_history_query(
     }
     let filter = if let Some(time) = input.start_at_ms {
         DocumentHistoryFilter::StartAtTime(time)
-    } else if let Some(cursor) = input.start_after {
+    } else if let Some(cursor) = start_after {
         DocumentHistoryFilter::StartAfter {
             time_ms: cursor.time_ms,
             revision: cursor.revision,
@@ -321,6 +332,19 @@ fn parse_document_history_query(
     })
 }
 
+fn parse_document_history_cursor(
+    value: JsValue,
+) -> Result<DocumentHistoryCursorInput, WasmSdkError> {
+    if let Ok(entry) = value.to_wasm::<DocumentHistoryEntryWasm>("DocumentHistoryEntry") {
+        return Ok(DocumentHistoryCursorInput {
+            time_ms: entry.time_ms,
+            revision: entry.revision,
+        });
+    }
+    serialization::from_object(value)
+        .map_err(|error| WasmSdkError::invalid_argument(format!("Invalid history cursor: {error}")))
+}
+
 #[wasm_bindgen(js_name = "DocumentHistoryEntry")]
 #[derive(Clone)]
 pub struct DocumentHistoryEntryWasm {
@@ -328,6 +352,8 @@ pub struct DocumentHistoryEntryWasm {
     revision: u64,
     document: DocumentWasm,
 }
+
+wasm_dpp2::impl_wasm_type_info!(DocumentHistoryEntryWasm, DocumentHistoryEntry);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1742,6 +1768,115 @@ mod history_wasm_tests {
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
+
+    fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms,
+                revision,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        Array::from(&Reflect::get(&result, &"entries".into()).unwrap()).get(0)
+    }
+
+    fn history_query_with_cursor(cursor: &JsValue) -> DocumentHistoryQueryJs {
+        let query = js_sys::JSON::parse(
+            r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
+        )
+        .unwrap();
+        Reflect::set(&query, &"startAfter".into(), cursor).unwrap();
+        query.unchecked_into()
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_a_returned_history_entry_as_the_next_page_cursor() {
+        let time_ms = (1u64 << 53) + 1;
+        let revision = 22;
+        let entry = returned_history_entry(time_ms, revision);
+        for _ in 0..2 {
+            let query = parse_document_history_query(history_query_with_cursor(&entry))
+                .expect("the last returned entry is a valid cursor for the next page");
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter { time_ms, revision }
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_plain_history_cursors_with_numbers_and_exact_bigints() {
+        for (cursor, time_ms) in [
+            (
+                js_sys::JSON::parse(r#"{"timeMs":2000,"revision":22}"#).unwrap(),
+                2000,
+            ),
+            (
+                serialization::to_object(&DocumentHistoryCursorInputForTest {
+                    time_ms: (1u64 << 53) + 1,
+                    revision: 22,
+                })
+                .unwrap(),
+                (1u64 << 53) + 1,
+            ),
+        ] {
+            let query = parse_document_history_query(history_query_with_cursor(&cursor)).unwrap();
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter {
+                    time_ms,
+                    revision: 22
+                }
+            );
+        }
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DocumentHistoryCursorInputForTest {
+        time_ms: u64,
+        revision: u64,
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_history_cursor_pointer_and_constructor_impostors() {
+        let entry = returned_history_entry(2000, 22);
+        let pointer = Reflect::get(&entry, &"__wbg_ptr".into()).unwrap();
+        let constructor = Reflect::get(&entry, &"constructor".into()).unwrap();
+        for copy_constructor in [false, true] {
+            let impostor = js_sys::Object::new();
+            Reflect::set(&impostor, &"__wbg_ptr".into(), &pointer).unwrap();
+            if copy_constructor {
+                Reflect::set(&impostor, &"constructor".into(), &constructor).unwrap();
+            }
+            assert!(parse_document_history_query(history_query_with_cursor(&impostor)).is_err());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_a_freed_history_cursor_and_accept_a_later_live_entry() {
+        let entry = returned_history_entry(2000, 22);
+        let free = Reflect::get(&entry, &"free".into())
+            .unwrap()
+            .dyn_into::<js_sys::Function>()
+            .unwrap();
+        free.call0(&entry).unwrap();
+        assert!(parse_document_history_query(history_query_with_cursor(&entry)).is_err());
+
+        let live_entry = returned_history_entry(2000, 23);
+        let query = parse_document_history_query(history_query_with_cursor(&live_entry)).unwrap();
+        assert_eq!(
+            query.filter,
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 23
+            }
+        );
+    }
 
     #[wasm_bindgen_test]
     fn should_export_the_history_proof_as_one_proof_object() {

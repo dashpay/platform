@@ -210,6 +210,34 @@ describe('DocumentsFacade', () => {
     });
   });
 
+  (['history', 'historyWithProof'] as const).forEach((method) => {
+    it(`should forward a returned history entry unchanged as the ${method} cursor`, async () => {
+      const entry = { timeMs: BigInt(1000), revision: BigInt(2), document };
+      const data = { entries: [entry], lifecycle: undefined };
+      const stub = method === 'history'
+        ? getDocumentHistoryStub : getDocumentHistoryWithProofInfoStub;
+      stub.resolves(method === 'history' ? data : { data, proof: {}, metadata: {} });
+      const query: wasmSDKPackage.DocumentHistoryQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        startAtMs: BigInt(0),
+      };
+      const response = await client.documents[method](query);
+      const page = 'data' in response ? response.data : response;
+      const nextQuery: wasmSDKPackage.DocumentHistoryQuery = {
+        ...query,
+        startAtMs: undefined,
+        startAfter: page.entries[0],
+      };
+
+      await client.documents[method](nextQuery);
+
+      expect(stub.secondCall).to.have.been.calledWithExactly(nextQuery);
+      expect(stub.secondCall.args[0].startAfter).to.equal(entry);
+    });
+  });
+
   describe('get()', () => {
     it('should fetch a single document by ID', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
