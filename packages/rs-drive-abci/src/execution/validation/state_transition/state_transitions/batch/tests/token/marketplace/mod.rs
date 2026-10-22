@@ -2300,7 +2300,11 @@ mod history {
         TokenKeepsHistoryRulesV0Getters, TokenKeepsHistoryRulesV0Setters,
     };
     use dpp::document::DocumentV0Getters;
+    use dpp::group::GroupStateTransitionInfo;
     use dpp::platform_value::Value;
+    use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use drive::query::DriveDocumentQuery;
 
     impl Market {
@@ -2551,6 +2555,58 @@ mod history {
                 "an offer with a minimum fill of {min_fill} and expiry {expires_at:?}"
             );
         }
+    }
+
+    /// `transition` with group action information on its one token transition, which no
+    /// executed placement carries: the node refuses it on a placement.
+    fn with_group_info(transition: &StateTransition) -> StateTransition {
+        let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition.clone() else {
+            panic!("expected a batch of token transitions");
+        };
+        let BatchedTransition::Token(token_transition) = &mut batch.transitions[0] else {
+            panic!("expected a token transition");
+        };
+        token_transition
+            .base_mut()
+            .set_using_group_info(Some(GroupStateTransitionInfo {
+                group_contract_position: 0,
+                action_id: Identifier::from([3; 32]),
+                action_is_proposer: false,
+            }));
+        StateTransition::Batch(BatchTransition::V1(batch))
+    }
+
+    /// A placement is never a group action. A placement carrying group action information,
+    /// with every other term of one that executed, is refused rather than proved, while its
+    /// order is open and once it has closed (where a group action's evidence could otherwise
+    /// stand in for the missing placement record), on either side.
+    #[tokio::test]
+    async fn should_not_prove_a_placement_carrying_group_information() {
+        let mut market = tradeable_market();
+        let refused = |market: &Market, transition: &StateTransition| {
+            assert_matches!(
+                market.prove_and_try_verify(&with_group_info(transition)),
+                Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+            );
+        };
+
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        refused(&market, &place);
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        refused(&market, &place);
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        refused(&market, &place);
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        refused(&market, &place);
     }
 
     /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
