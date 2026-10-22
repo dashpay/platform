@@ -549,6 +549,11 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
             json!({ "type": ["string", "number"] }),
             json!(true),
         ),
+        (
+            "a list of one type",
+            json!({ "type": ["string"] }),
+            json!(1),
+        ),
         ("enum", json!({ "enum": ["a", "b"] }), json!("c")),
         ("const", json!({ "const": 3 }), json!(4)),
         (
@@ -695,6 +700,29 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
                 "required": ["b"],
             })),
             json!({ "value": { "a": 1 } }),
+        ),
+        (
+            "a byte array through a reference",
+            referenced(json!({ "type": "array", "byteArray": true })),
+            json!({ "value": [256] }),
+        ),
+        (
+            "a byte array through a reference to a reference",
+            referenced(json!({ "type": "array", "byteArray": true })),
+            json!({ "nested": [1, "a"] }),
+        ),
+        (
+            "a byte array inside a referenced object",
+            referenced(json!({
+                "type": "object",
+                "properties": { "bytes": { "type": "array", "byteArray": true } },
+            })),
+            json!({ "value": { "bytes": [300] } }),
+        ),
+        (
+            "a byte array of no array through a reference",
+            referenced(json!({ "byteArray": true })),
+            json!({ "value": "ab" }),
         ),
     ]);
     let mut differences = Vec::new();
