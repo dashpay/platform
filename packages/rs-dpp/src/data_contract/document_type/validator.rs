@@ -1,13 +1,23 @@
+#[cfg(feature = "validation-schema")]
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::validation::JsonSchemaValidator;
 use std::ops::Deref;
+#[cfg(feature = "validation-schema")]
+use std::sync::{Arc, OnceLock};
 
 /// DocumentType requires all fields to implement PartialEq and Clone
 /// JsonSchemaLazyValidator builds on demand with schema from DocumentType
 /// so there is no need to compare or clone it. We just reset it and it will
 /// re-build on the next validation
-
+///
+/// Beside the `jsonschema` validator it holds the native one, built on demand the same
+/// way: `None` once built when the document type's schema has no validation schema, whose
+/// documents the `jsonschema` validator then checks.
 #[derive(Debug)]
-pub struct StatelessJsonSchemaLazyValidator(JsonSchemaValidator);
+pub struct StatelessJsonSchemaLazyValidator(
+    JsonSchemaValidator,
+    #[cfg(feature = "validation-schema")] OnceLock<Option<Arc<DocumentSchemaValidator>>>,
+);
 
 impl Default for StatelessJsonSchemaLazyValidator {
     fn default() -> Self {
@@ -17,7 +27,17 @@ impl Default for StatelessJsonSchemaLazyValidator {
 
 impl StatelessJsonSchemaLazyValidator {
     pub fn new() -> Self {
-        Self(JsonSchemaValidator::new())
+        Self(
+            JsonSchemaValidator::new(),
+            #[cfg(feature = "validation-schema")]
+            OnceLock::new(),
+        )
+    }
+
+    /// The native validator, once built.
+    #[cfg(feature = "validation-schema")]
+    pub(crate) fn native(&self) -> &OnceLock<Option<Arc<DocumentSchemaValidator>>> {
+        &self.1
     }
 }
 
@@ -42,6 +62,6 @@ impl Clone for StatelessJsonSchemaLazyValidator {
     }
 
     fn clone_from(&mut self, _source: &Self) {
-        self.0 = JsonSchemaValidator::new();
+        *self = StatelessJsonSchemaLazyValidator::new();
     }
 }

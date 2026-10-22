@@ -80,7 +80,10 @@ fn text_value(text: &str) -> Value {
 /// Whether the existing validator, compiling `schema` as the document validator compiles a
 /// document schema, accepts `document`.
 #[cfg(feature = "validation")]
-fn existing_validator_accepts(schema: &serde_json::Value, document: &serde_json::Value) -> bool {
+pub(super) fn existing_validator_accepts(
+    schema: &serde_json::Value,
+    document: &serde_json::Value,
+) -> bool {
     JsonSchemaValidator::new()
         .compile_and_validate(schema, document, PlatformVersion::latest())
         .expect("expected the schema to compile")
@@ -91,7 +94,7 @@ fn existing_validator_accepts(schema: &serde_json::Value, document: &serde_json:
 /// document schema of a contract loaded from state. Registration compiles it under a
 /// smaller regex size limit.
 #[cfg(feature = "validation")]
-fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
+pub(super) fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
     JsonSchemaValidator::new()
         .compile_and_validate(schema, &serde_json::json!({}), PlatformVersion::latest())
         .is_ok()
@@ -99,7 +102,7 @@ fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
 
 /// `root` as the JSON the existing validator compiles.
 #[cfg(feature = "validation")]
-fn validating_json(root: &Value) -> serde_json::Value {
+pub(super) fn validating_json(root: &Value) -> serde_json::Value {
     root.try_to_validating_json()
         .expect("expected the schema to convert")
 }
@@ -687,7 +690,7 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
 /// `defs` added to its `$defs`, registered with full validation at the latest protocol
 /// version.
 #[cfg(feature = "validation")]
-fn registered(properties: Value, defs: Value) -> DataContract {
+pub(super) fn registered(properties: Value, defs: Value) -> DataContract {
     let platform_version = PlatformVersion::latest();
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
@@ -2443,7 +2446,7 @@ fn should_match_the_existing_validator_on_references_below_plain_name_ids() {
 
 /// A small deterministic generator, so that the generated cases are the same on every run.
 #[cfg(feature = "validation")]
-struct Cases(u64);
+pub(super) struct Cases(pub(super) u64);
 
 #[cfg(feature = "validation")]
 impl Cases {
@@ -2455,22 +2458,22 @@ impl Cases {
         self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
 
-    fn below(&mut self, bound: usize) -> usize {
+    pub(super) fn below(&mut self, bound: usize) -> usize {
         (self.next() % bound as u64) as usize
     }
 
-    fn chance(&mut self, percent: u64) -> bool {
+    pub(super) fn chance(&mut self, percent: u64) -> bool {
         self.next() % 100 < percent
     }
 
-    fn pick(&mut self, values: &[serde_json::Value]) -> serde_json::Value {
+    pub(super) fn pick(&mut self, values: &[serde_json::Value]) -> serde_json::Value {
         values[self.below(values.len())].clone()
     }
 }
 
 /// The values the generated schemas compare with and the generated documents carry.
 #[cfg(feature = "validation")]
-fn generated_values() -> Vec<serde_json::Value> {
+pub(super) fn generated_values() -> Vec<serde_json::Value> {
     use serde_json::json;
     vec![
         json!(null),
@@ -2513,7 +2516,7 @@ fn generated_values() -> Vec<serde_json::Value> {
 /// them, `depth` levels deep, whose `$ref`s reach the first `definitions` of the generated
 /// definitions.
 #[cfg(feature = "validation")]
-fn generated_schema(
+pub(super) fn generated_schema(
     cases: &mut Cases,
     values: &[serde_json::Value],
     depth: usize,

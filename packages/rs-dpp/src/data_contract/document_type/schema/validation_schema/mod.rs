@@ -77,12 +77,14 @@ use url::Url;
 mod keyword;
 #[cfg(test)]
 mod tests;
+mod validate;
 
 pub use keyword::{
     AnnotationKeyword, AnyKeyword, ArrayKeyword, CheckedBy, FormatKeyword, NumberKeyword,
     ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
     StringKeyword,
 };
+pub use validate::{DocumentSchemaValidator, SchemaViolation};
 
 /// A JSON Schema simple type.
 #[derive(
@@ -622,10 +624,20 @@ static CONTROL_ESCAPE: Lazy<regex::Regex> =
 /// limit, so every pattern the document schema reaches directly also compiles here; one a
 /// `$ref` target holds is compiled only when a document reaches it, under the default.
 fn compiles_as_validator_pattern(pattern: &str) -> bool {
+    validator_regex(pattern).is_some()
+}
+
+/// `pattern` compiled as the JSON Schema validator compiles it (see
+/// [`compiles_as_validator_pattern`]), `None` when it does not compile.
+fn validator_regex(pattern: &str) -> Option<regex::Regex> {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
-        let letter = captures[0].as_bytes()[2].to_ascii_uppercase();
-        char::from(letter - 64).to_string()
+        captures
+            .get(0)
+            .and_then(|escape| escape.as_str().as_bytes().get(2))
+            .and_then(|letter| letter.to_ascii_uppercase().checked_sub(64))
+            .map(|control| char::from(control).to_string())
+            .unwrap_or_default()
     });
     let mut converted = String::with_capacity(controlled.len());
     let mut chars = controlled.chars();
@@ -652,7 +664,7 @@ fn compiles_as_validator_pattern(pattern: &str) -> bool {
             None => converted.push(current),
         }
     }
-    regex::Regex::new(&converted).is_ok()
+    regex::Regex::new(&converted).ok()
 }
 
 /// What building a schema reaches besides its nodes.

@@ -1,6 +1,6 @@
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
+use crate::version::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v4::DOCUMENT_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
@@ -89,7 +89,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6,
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: native document validation
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
