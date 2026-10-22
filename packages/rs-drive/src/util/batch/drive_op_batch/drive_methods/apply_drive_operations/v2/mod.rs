@@ -29,8 +29,8 @@ impl Drive {
     /// prefunded specialized balances trees) lowered the batch's estimate of that layer. Here
     /// each operation is lowered with a map of its own, merged into the batch's keeping the
     /// costlier of two descriptions of one layer (`merge_estimated_layer`: the deeper, then at
-    /// one depth the one pricing a larger node), so the estimate does not depend on the order
-    /// of the batch's operations.
+    /// one depth the one GroveDB's propagation estimate prices dearer), so the estimate does
+    /// not depend on the order of the batch's operations.
     ///
     /// Each operation is also built against the operations of its GroveDB batch built before it
     /// ([`DriveOperation::append_low_level_drive_operations_after_ttl_drain`]): a document
@@ -123,8 +123,8 @@ impl Drive {
             // it, and appended to them: a document deletion sees the batch's other writes as
             // pending. An estimate lowers each operation into layer descriptions of its own and
             // merges them into the batch's, keeping the costlier of two descriptions of one layer
-            // (the deeper, then at one depth the larger node): the batch's estimate is the same
-            // whichever order its operations come in.
+            // (the deeper, then at one depth the one GroveDB prices dearer): the batch's estimate
+            // is the same whichever order its operations come in.
             let batch_operations = if forfeited {
                 &mut forfeited_low_level_operations
             } else {
@@ -150,12 +150,7 @@ impl Drive {
                         platform_version,
                     )?;
                     for (path, layer) in operation_layers.unwrap_or_default() {
-                        merge_estimated_layer(
-                            batch_layers,
-                            path,
-                            layer,
-                            &platform_version.drive.grove_version,
-                        )?;
+                        merge_estimated_layer(batch_layers, path, layer, platform_version)?;
                     }
                 }
             }
