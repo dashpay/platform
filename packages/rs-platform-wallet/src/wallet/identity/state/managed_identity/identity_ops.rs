@@ -567,6 +567,17 @@ impl ManagedIdentity {
         if keys.is_empty() {
             return Ok(());
         }
+        self.store_keys_with_snapshot(keys, persister)
+    }
+
+    /// Layer `keys` in memory and store them with the identity's scalar
+    /// snapshot as one changeset, even when `keys` is empty (the snapshot
+    /// alone, e.g. a landed revision). The store's failure is returned.
+    pub fn store_keys_with_snapshot(
+        &mut self,
+        keys: Vec<KeyWithBreadcrumb>,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
         let keys_cs = self.layer_keys(keys);
         let cs = crate::changeset::PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),

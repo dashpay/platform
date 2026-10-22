@@ -271,10 +271,14 @@ impl IdentityWallet {
     /// A cache already refreshed to `transition_revision` or past it (a
     /// fetch answered between the update's snapshot and this step) holds the
     /// update as Platform has it, on-chain `disabled_at` included, and
-    /// whatever later updates did: the payload is not applied over it. A
-    /// refresh stores the keys it adds without a breadcrumb, so the added
-    /// keys are stored here from the cache's own copies with the breadcrumb
-    /// the update gives them.
+    /// whatever later updates did: the payload is not applied over it. The
+    /// fetch that put it there may not have been stored (a failed mobile
+    /// round leaves the fold in memory), so the update's keys are stored
+    /// here from the cache's own copies, with the scalar snapshot, as one
+    /// fallible write: an added key with the breadcrumb the update gives it
+    /// (a refresh stores its rows without one), a disabled key without one
+    /// (the persisters keep what the row holds). The snapshot is stored even
+    /// when no key matched.
     async fn apply_landed_update(
         &self,
         identity_id: &Identifier,
@@ -294,7 +298,8 @@ impl IdentityWallet {
         };
 
         if managed.identity.revision() >= transition_revision {
-            let keys = added_keys
+            let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+            let mut keys: Vec<KeyWithBreadcrumb> = added_keys
                 .into_iter()
                 .map(|key| KeyWithBreadcrumb {
                     breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, key.id())),
@@ -306,11 +311,23 @@ impl IdentityWallet {
                         .unwrap_or(key),
                 })
                 .collect();
-            return managed.add_keys(keys, &self.persister).map_err(|e| {
-                PlatformWalletError::Persistence(format!(
-                    "identity key not persisted after update: {e}"
-                ))
-            });
+            keys.extend(
+                disabled_ids
+                    .iter()
+                    .filter(|id| !added_ids.contains(id))
+                    .filter_map(|id| managed.identity.public_keys().get(id).cloned())
+                    .map(|key| KeyWithBreadcrumb {
+                        key,
+                        breadcrumb: None,
+                    }),
+            );
+            return managed
+                .store_keys_with_snapshot(keys, &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "identity key not persisted after update: {e}"
+                    ))
+                });
         }
 
         // The identity is at the transition's revision now, so a
@@ -746,6 +763,53 @@ mod update_identity_at_revision_tests {
         assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
         let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
         assert!(stored.derivation_indices.is_some());
+    }
+
+    /// A disable-only update at 5 whose confirmation finds the cache already
+    /// at 5 with the disable (a concurrent fetch's fold whose store failed):
+    /// the disabled key and the scalar snapshot are stored now, so a restart
+    /// does not bring the key back active. With no key matched, the snapshot
+    /// is still stored.
+    #[tokio::test]
+    async fn should_store_a_disable_the_cache_already_holds_when_the_confirmation_comes_back() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let mut key = managed.identity.public_keys()[&1].clone();
+            key.set_disabled_at(7);
+            managed.identity.add_public_key(key);
+        }
+        store.take();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap();
+        let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
+        assert_eq!(stored.public_key.disabled_at(), Some(7), "the cache's copy");
+        assert_eq!(stored.derivation_indices, None);
+        let changesets = store.take();
+        assert_eq!(changesets.len(), 1);
+        assert!(
+            changesets[0].identities.is_some(),
+            "with the scalar snapshot"
+        );
+
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![9])
+            .await
+            .unwrap();
+        let changesets = store.take();
+        assert_eq!(changesets.len(), 1, "the snapshot alone");
+        assert!(changesets[0].identities.is_some());
     }
 }
 
