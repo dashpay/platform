@@ -842,8 +842,8 @@ mod tests {
         // the `is_allowed` gate is the second line of defence for a decodable transition.
         assert_matches!(
             result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::InternalError(message)]
-                if message.contains("ShieldFromIdentity") && message.contains("not active")
+            [StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))]
+                if error.state_transition_type().starts_with("ShieldFromIdentity")
         );
     }
 

@@ -1366,6 +1366,7 @@ impl Drive {
                                 if order.token_id != token_id
                                     || order.maker_id != owner_id
                                     || order.price != token_place_ask_transition.price()
+                                    || order.decimals != token_place_ask_transition.decimals()
                                     || order.amount != token_place_ask_transition.amount()
                                     // Fills lower what is open, never to 0 (a listing filled
                                     // entirely is deleted) nor above what was listed.

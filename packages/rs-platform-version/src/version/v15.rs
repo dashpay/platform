@@ -168,8 +168,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    contract and the block (a tradeable token, a listing's value and expiry) run with the batch
 ///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
 ///    A listing's terms, its expiry included (at most `i64::MAX`, `InvalidTokenOrderExpiryError`
-///    10464), are checked with the transition's structure, unpaid. A listing records the token's
-///    decimals and its fills are priced at them; a listing of a token its contract does not
+///    10464), are checked with the transition's structure, unpaid. A listing signs the decimals
+///    its price is at and is refused unless they are the token's (`TokenOrderDecimalsMismatchError`
+///    40758, with the batch `advanced_structure`); it records them and its fills are priced at them; a listing of a token its contract does not
 ///    define bumps the nonce with the token base rules' error. Their structure and state
 ///    validations and their high-level operation converters are 0 in every table, which only this
 ///    version reaches.

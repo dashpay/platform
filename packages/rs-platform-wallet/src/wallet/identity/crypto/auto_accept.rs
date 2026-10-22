@@ -25,8 +25,8 @@
 //! `m/9'/coin'/16'/timestamp'` (all segments hardened)
 
 use dashcore::hashes::{sha256, Hash, HashEngine};
-use dashcore::secp256k1::{ecdsa::Signature, Message, SecretKey};
 use dpp::prelude::Identifier;
+use dpp::secp256k1::{ecdsa::Signature, Message, SecretKey};
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::dip9::{
     DASH_COIN_TYPE, DASH_TESTNET_COIN_TYPE, FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT,
@@ -115,7 +115,7 @@ pub fn derive_auto_accept_private_key(
         PlatformWalletError::InvalidIdentityData(format!("Failed to derive auto-accept key: {}", e))
     })?;
 
-    let secret_bytes = zeroize::Zeroizing::new(ext_priv.private_key.to_secret_bytes());
+    let secret_bytes = ext_priv.private_key.to_bytes();
 
     SecretKey::from_secret_bytes(*secret_bytes).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
@@ -219,7 +219,7 @@ pub fn auto_accept_proof_expiry(proof_bytes: &[u8]) -> Option<u32> {
 /// check clock-free makes it deterministically testable; the acceptance path
 /// pairs the two.)
 pub fn verify_auto_accept_proof_with_pubkey(
-    pubkey: &dashcore::secp256k1::PublicKey,
+    pubkey: &dpp::secp256k1::PublicKey,
     proof_bytes: &[u8],
     sender_id: &Identifier,
     recipient_id: &Identifier,
@@ -265,7 +265,7 @@ pub fn verify_auto_accept_proof(
         return Ok(false);
     };
     let secret_key = derive_auto_accept_private_key(wallet, network, timestamp)?;
-    let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&secret_key);
+    let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&secret_key);
     Ok(verify_auto_accept_proof_with_pubkey(
         &pubkey,
         proof_bytes,
@@ -318,7 +318,7 @@ pub fn decode_auto_accept_key_blob(blob: &[u8]) -> Result<(SecretKey, u32), Plat
         return Err(invalid("auto-accept key size must be 32"));
     }
     let secret_key = <[u8; 32]>::try_from(&blob[6..KEY_BLOB_LEN])
-        .map_err(|_| dashcore::secp256k1::Error::InvalidSecretKey)
+        .map_err(|_| dpp::secp256k1::Error::InvalidSecretKey)
         .and_then(SecretKey::from_secret_bytes)
         .map_err(|e| invalid(format!("invalid auto-accept private key: {e}")))?;
     Ok((secret_key, expiry))
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(proof.len(), 70);
         assert_eq!(auto_accept_proof_expiry(&proof), Some(expiry));
 
-        let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&owner_key);
+        let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&owner_key);
         assert!(
             verify_auto_accept_proof_with_pubkey(&pubkey, &proof, &scanner, &owner, account_ref),
             "owner verifies the scanner's proof against its own re-derived pubkey"
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn verify_with_pubkey_rejects_truncated_and_no_expiry() {
         let key = SecretKey::from_secret_bytes([0x05u8; 32]).unwrap();
-        let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&key);
+        let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&key);
         let (s, r) = test_ids();
         assert!(!verify_auto_accept_proof_with_pubkey(
             &pubkey, &[0u8; 3], &s, &r, 0

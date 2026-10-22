@@ -1,5 +1,7 @@
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{
+    supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof,
+};
 use crate::{types::TokenPreProgrammedDistributions, ContextProvider, Error};
 use dapi_grpc::platform::v0::{
     get_token_pre_programmed_distributions_request, GetTokenPreProgrammedDistributionsRequest,
@@ -43,6 +45,8 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
                     error: "token_id must be 32 bytes".into(),
                 })?;
 
+        // The start time and recipient, copied into a start for each limit the proof is
+        // verified against
         let start_at = match req_v0.start_at_info {
             Some(start_at_info) => {
                 let start_at_recipient = match start_at_info.start_recipient {
@@ -60,10 +64,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
                     None => None,
                 };
 
-                Some(QueryPreProgrammedDistributionStartAt {
-                    start_at_time: start_at_info.start_time_ms,
-                    start_at_recipient,
-                })
+                Some((start_at_info.start_time_ms, start_at_recipient))
             }
             None => None,
         };
@@ -84,15 +85,23 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
+        let grovedb_proof = supported_grovedb_proof_bytes(&proof)?;
         let (root_hash, result): ([u8; 32], TokenPreProgrammedDistributions) =
-            Drive::verify_token_pre_programmed_distributions(
-                supported_grovedb_proof_bytes(&proof)?,
-                token_id,
-                start_at,
-                limit,
-                false,
-                platform_version,
-            )
+            verify_page_drive_proves(limit, |limit| {
+                Drive::verify_token_pre_programmed_distributions(
+                    grovedb_proof,
+                    token_id,
+                    start_at.map(|(start_at_time, start_at_recipient)| {
+                        QueryPreProgrammedDistributionStartAt {
+                            start_at_time,
+                            start_at_recipient,
+                        }
+                    }),
+                    limit,
+                    false,
+                    platform_version,
+                )
+            })
             .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
