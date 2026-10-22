@@ -1869,9 +1869,11 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         );
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_870_440)
+                // The estimate is apply_drive_operations 2's (protocol version 15), which merges
+                // each operation's layer descriptions keeping the costlier.
+                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2182,7 +2184,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             ),
             "closing-mint-group" => (
                 "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "48ab51da4fd56c45d283520a94aa331d237c12ef6f0476f611abc108b5eed0a4",
+                "92c8c4f60bc675077798bafa6d4d7845b4bacf3a9016042104fcd660e66e2eb8",
             ),
             "open-burn-group" => (
                 "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
@@ -2190,7 +2192,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             ),
             "closing-burn-group" => (
                 "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "9be0c78721144addacf1791b9eda826ded336971b5f06f7e91b82b245c4d5ce8",
+                "bed612267ff30a8c929e29e1d79d552fc3c4b77a57e91f13214cf7d7c53bec1f",
             ),
             _ => unreachable!("enumerated characterization case"),
         };
