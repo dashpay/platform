@@ -22,10 +22,7 @@ const REFERS_TO_KEYS: [&str; 14] = [
 ];
 
 impl Checker<'_> {
-    /// A `refersTo` declaration: its keys, their placement and the shape of each. The
-    /// grammar of `findBy`, `where`, `constraints` and the operands' leaves is left to the
-    /// document type parser, which refuses at least what the meta-schema refused there,
-    /// but for at most 30 values in a `where` `in`.
+    /// A `refersTo` declaration: its keys, their placement and the grammar of each.
     pub(super) fn refers_to(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
         self.closed(map, &REFERS_TO_KEYS)?;
@@ -42,8 +39,8 @@ impl Checker<'_> {
         if has("constraints") || has("consume") {
             self.required(map, &["findBy"])?;
             if has("inList") {
-                return Err(self.fail(
-                    "not",
+                return Err(self.not_error(
+                    json!({ "required": ["inList"] }),
                     "a refersTo with constraints or consume takes no inList",
                 ));
             }
@@ -92,7 +89,7 @@ impl Checker<'_> {
                 (true, false) | (false, true) => {}
                 _ => {
                     return Err(self.fail(
-                        "oneOf",
+                        "oneOfNotValid",
                         "an identityPublicKey refersTo takes exactly one of keyIdProperty and identityProperty",
                     ))
                 }
@@ -145,7 +142,7 @@ impl Checker<'_> {
                         return Ok(());
                     }
                 }
-                Err(self.fail("oneOf", format!("{value} is not a contract id")))
+                Err(self.fail("oneOfNotValid", format!("{value} is not a contract id")))
             }
             "documentType" => {
                 self.string_of_length(value, 1, Some(64))?;
@@ -214,10 +211,8 @@ impl Checker<'_> {
                 let map = self.object(value)?;
                 self.property_count(map, Some(1), Some(10))?;
                 for (name, source) in map {
-                    self.at(name, |c| {
-                        c.name_of_length(name, 1, 256)?;
-                        c.find_by_source(source)
-                    })?;
+                    self.name_of_length(name, 1, 256)?;
+                    self.at(name, |c| c.find_by_source(source))?;
                 }
                 Ok(())
             }
@@ -225,18 +220,25 @@ impl Checker<'_> {
                 let map = self.object(value)?;
                 self.property_count(map, Some(1), Some(10))?;
                 for (name, condition) in map {
-                    self.at(name, |c| {
-                        let named = name.chars().count() <= 256
-                            && (is_path(name)
-                                || matches!(name.as_str(), "$ownerId" | "$creatorId" | "$id"));
-                        if !named {
-                            return Err(c.name_error(
-                                name,
-                                "is not a property path, $ownerId, $creatorId or $id",
-                            ));
-                        }
-                        c.where_condition(condition)
-                    })?;
+                    if name.chars().count() > 256 {
+                        return Err(self.name_error(
+                            name,
+                            "maxLength",
+                            json!({ "maxLength": 256 }),
+                            format!("\"{name}\" is longer than 256 characters"),
+                        ));
+                    }
+                    if !(is_path(name)
+                        || matches!(name.as_str(), "$ownerId" | "$creatorId" | "$id"))
+                    {
+                        return Err(self.name_error(
+                            name,
+                            "anyOf",
+                            json!({}),
+                            format!("\"{name}\" is not valid under any of the given schemas"),
+                        ));
+                    }
+                    self.at(name, |c| c.where_condition(condition))?;
                 }
                 Ok(())
             }
@@ -418,23 +420,14 @@ impl Checker<'_> {
                     }
                 }
                 "contains" => {
-                    if c.short_string_admitted(operand, |text| text == "$ownerId" || is_path(text))
-                    {
+                    let text = c.string_of_length(operand, 1, Some(256))?;
+                    if text == "$ownerId" || is_path(text) {
                         Ok(())
                     } else {
-                        Err(c.fail(
-                            "pattern",
-                            format!("{operand} is not a property path or $ownerId"),
-                        ))
+                        Err(c.pattern_error(operand, OWNER_OR_PATH_PATTERN))
                     }
                 }
-                "containsAll" => {
-                    if c.short_string_admitted(operand, is_path) {
-                        Ok(())
-                    } else {
-                        Err(c.fail("pattern", format!("{operand} is not a property path")))
-                    }
-                }
+                "containsAll" => c.path(operand),
                 _ => Ok(()),
             })?;
         }
@@ -460,10 +453,7 @@ impl Checker<'_> {
         if scalar {
             Ok(())
         } else {
-            Err(self.fail(
-                "type",
-                format!("{value} is not of types \"boolean\", \"integer\", \"string\""),
-            ))
+            Err(self.type_error(value, &["integer", "boolean", "string"]))
         }
     }
 
@@ -484,12 +474,9 @@ impl Checker<'_> {
                 let map = c.object(valid_when)?;
                 c.property_count(map, Some(1), Some(1))?;
                 for (name, function) in map {
-                    c.at(name, |c| {
-                        if !(name.chars().count() <= 256 && is_path(name)) {
-                            return Err(c.name_error(name, "is not a property path"));
-                        }
-                        c.find_by_function(function)
-                    })?;
+                    c.name_of_length(name, 1, 256)?;
+                    c.name_matching(name, PATH_PATTERN, is_path(name))?;
+                    c.at(name, |c| c.find_by_function(function))?;
                 }
                 Ok(())
             })?;

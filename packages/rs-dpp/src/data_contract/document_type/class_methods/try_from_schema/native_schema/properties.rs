@@ -80,24 +80,15 @@ impl Checker<'_> {
     pub(super) fn property_map(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
         for (name, schema) in map {
-            self.at(name, |c| {
-                if !is_word(name) {
-                    return Err(c.fail_with(
-                        "propertyNames",
-                        format!("\"{name}\" is not a property name"),
-                        json!({ "pattern": "^[a-zA-Z0-9_]{1,64}$" }),
-                        name,
-                    ));
-                }
-                c.property_schema(schema)
-            })?;
+            self.name_matching(name, WORD_PATTERN, is_word(name))?;
+            self.at(name, |c| c.property_schema(schema))?;
         }
         self.property_count(map, Some(1), Some(100))
     }
 
     pub(super) fn property_schema(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
-        self.closed(map, &PROPERTY_SCHEMA_KEYS)?;
+        self.closed_to_unevaluated(map, &PROPERTY_SCHEMA_KEYS)?;
         for (key, keyword) in map {
             self.at(key, |c| c.property_keyword(key, keyword))?;
         }
@@ -252,7 +243,10 @@ impl Checker<'_> {
             self.required(map, &["type"])?;
             self.member_constant(map, "type", json!("string"))?;
             if has("$ref") {
-                return Err(self.fail("not", "generatedFrom is not allowed beside a $ref"));
+                return Err(self.not_error(
+                    json!({ "required": ["$ref"] }),
+                    "generatedFrom is not allowed beside a $ref",
+                ));
             }
         }
         if let Some(refers_to) = map.get("refersTo") {
@@ -417,9 +411,12 @@ impl Checker<'_> {
                 "refersTo" => {
                     c.refers_to(keyword)?;
                     if keyword.get("type") == Some(&json!("identityPublicKey")) {
-                        return Err(
-                            c.fail("not", "an element may not refer to an identity public key")
-                        );
+                        return c.at("type", |c| {
+                            Err(c.not_error(
+                                json!({ "const": "identityPublicKey" }),
+                                "an element may not refer to an identity public key",
+                            ))
+                        });
                     }
                     Ok(())
                 }

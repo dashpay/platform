@@ -1196,3 +1196,263 @@ fn should_name_the_document_schema_uri_the_base_schema_adds() {
     let root = profile_root_with(|_| {});
     assert_eq!(root["$schema"], json!(DOCUMENT_SCHEMA_URI));
 }
+
+/// The first error of the meta-schema check on `root`, as that check returned it.
+fn meta_schema_error(root: &JsonValue) -> Option<JsonSchemaError> {
+    let meta_schema = select_document_meta_schema(3, "native schema tests")
+        .expect("expected the document meta-schema");
+    let error = meta_schema
+        .validate(root)
+        .err()
+        .and_then(|mut errors| errors.next())
+        .map(JsonSchemaError::from);
+    error
+}
+
+#[test]
+fn should_refuse_with_the_keyword_location_and_parameters_of_the_meta_schema_check() {
+    let cases: Vec<(&str, RootChange)> = vec![
+        (
+            "a null flag",
+            Box::new(|root| root["documentsMutable"] = json!(null)),
+        ),
+        (
+            "an unknown root key",
+            Box::new(|root| root["documentMutable"] = json!(true)),
+        ),
+        (
+            "a MASTER security level",
+            Box::new(|root| root["signatureSecurityLevelRequirement"] = json!(0)),
+        ),
+        (
+            "a dotted summed property",
+            Box::new(|root| root["documentsSummable"] = json!("a.b")),
+        ),
+        (
+            "a hyphenated property name",
+            Box::new(|root| {
+                root["properties"]["a-b"] =
+                    json!({ "type": "string", "maxLength": 1, "position": 9 })
+            }),
+        ),
+        (
+            "an unknown property keyword",
+            Box::new(|root| root["properties"]["name"]["nullable"] = json!(true)),
+        ),
+        (
+            "a pattern without maxLength",
+            Box::new(|root| root["properties"]["score"]["pattern"] = json!("^a")),
+        ),
+        (
+            "an identifier of 20 bytes",
+            Box::new(|root| root["properties"]["avatar"]["minItems"] = json!(20)),
+        ),
+        (
+            "items beside byteArray",
+            Box::new(|root| root["properties"]["avatar"]["items"] = json!({ "type": "integer" })),
+        ),
+        (
+            "an element keyword elements do not take",
+            Box::new(|root| root["properties"]["tags"]["items"]["const"] = json!("a")),
+        ),
+        (
+            "a nested property without position",
+            Box::new(|root| {
+                root["properties"]["meta"]["properties"]["a"]
+                    .as_object_mut()
+                    .map(|a| a.remove("position"));
+            }),
+        ),
+        (
+            "a duplicate enum member",
+            Box::new(|root| root["properties"]["kind"]["enum"] = json!(["a", "a"])),
+        ),
+        (
+            "a descending index property",
+            Box::new(|root| root["indices"][1]["properties"][0]["score"] = json!("desc")),
+        ),
+        (
+            "an index without a name",
+            Box::new(|root| {
+                root["indices"][1]
+                    .as_object_mut()
+                    .map(|index| index.remove("name"));
+            }),
+        ),
+        (
+            "a non-boolean unique",
+            Box::new(|root| root["indices"][0]["unique"] = json!("yes")),
+        ),
+        (
+            "an unknown refersTo key",
+            Box::new(|root| {
+                root["properties"]["avatar"]["refersTo"] = json!({ "type": "identity", "extra": 1 })
+            }),
+        ),
+        (
+            "a contract id beside an identity reference",
+            Box::new(|root| {
+                root["properties"]["avatar"]["refersTo"] = json!({
+                    "type": "identity",
+                    "contractId": "6hVQW16jyvZyGSQk2YVty4ND6bgFXozizYWnPt753uW5",
+                })
+            }),
+        ),
+        (
+            "an empty definitions map",
+            Box::new(|root| root["$defs"] = json!({})),
+        ),
+        (
+            "a token amount past 48 bits",
+            Box::new(|root| {
+                root["tokenCost"] =
+                    json!({ "create": { "tokenPosition": 0, "amount": 281474976710656_u64 } })
+            }),
+        ),
+        (
+            "a negative maxLength",
+            Box::new(|root| root["properties"]["meta"]["properties"]["a"]["maxLength"] = json!(-1)),
+        ),
+        (
+            "a zero multipleOf",
+            Box::new(|root| root["properties"]["score"]["multipleOf"] = json!(0)),
+        ),
+        (
+            "an unknown countable mode",
+            Box::new(|root| root["indices"][0]["countable"] = json!("sometimes")),
+        ),
+        (
+            "an uncompilable pattern",
+            Box::new(|root| root["properties"]["name"]["pattern"] = json!("[")),
+        ),
+        (
+            "a repeated type",
+            Box::new(|root| root["properties"]["name"]["type"] = json!(["string", "string"])),
+        ),
+        (
+            "an identityPublicKey reference without a key property",
+            Box::new(|root| {
+                root["properties"]["score"]["refersTo"] = json!({ "type": "identityPublicKey" })
+            }),
+        ),
+        (
+            "an element reference to an identity public key",
+            Box::new(|root| {
+                root["properties"]["tags"]["items"] = json!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": IDENTIFIER_MEDIA_TYPE,
+                    "refersTo": { "type": "identityPublicKey", "keyIdProperty": "score" },
+                })
+            }),
+        ),
+        (
+            "generatedFrom beside a $ref",
+            Box::new(|root| {
+                root["properties"]["label"]["type"] = json!("string");
+                root["properties"]["label"]["generatedFrom"] = json!({
+                    "function": "sys.stringTransformations.lowercase",
+                    "params": ["name"],
+                });
+            }),
+        ),
+        (
+            "a where value of no kind",
+            Box::new(|root| {
+                root["properties"]["avatar"]["refersTo"] = json!({
+                    "type": "permanentDocument",
+                    "documentType": "post",
+                    "findBy": { "author": "$ownerId" },
+                    "where": { "kind": 5 },
+                })
+            }),
+        ),
+        (
+            "a rule name with a hyphen",
+            Box::new(|root| root["propertyConstraints"] = json!({ "a-b": { "present": "name" } })),
+        ),
+        (
+            "an equality of three operands",
+            Box::new(|root| {
+                root["propertyConstraints"] = json!({ "r": { "equal": ["score", 1, 2] } })
+            }),
+        ),
+        (
+            "an ifThen of three conditions",
+            Box::new(|root| {
+                let condition = json!({ "present": "name" });
+                root["propertyConstraints"] =
+                    json!({ "r": { "ifThen": [condition, condition, condition] } })
+            }),
+        ),
+        (
+            "a summed path that is no path",
+            Box::new(|root| {
+                root["propertyConstraints"] =
+                    json!({ "r": { "lessThan": [{ "sumOf": ["post", "a-b"] }, 5] } })
+            }),
+        ),
+        (
+            "a counted filter key that is no path",
+            Box::new(|root| {
+                root["propertyConstraints"] =
+                    json!({ "r": { "lessThan": [{ "countOf": ["post", { "a-b": "name" }] }, 5] } })
+            }),
+        ),
+        (
+            "an operand of no expression type",
+            Box::new(|root| root["propertyConstraints"] = json!({ "r": { "equal": [1.5, 1] } })),
+        ),
+        (
+            "an empty findBy key",
+            Box::new(|root| {
+                root["properties"]["avatar"]["refersTo"] = json!({
+                    "type": "permanentDocument",
+                    "documentType": "post",
+                    "findBy": { "": "." },
+                })
+            }),
+        ),
+        (
+            "a token contract id byte past 255",
+            Box::new(|root| {
+                let mut contract_id = vec![json!(1); 32];
+                contract_id[0] = json!(256);
+                root["tokenCost"] = json!({
+                    "create": { "contractId": contract_id, "tokenPosition": 0, "amount": 1 },
+                })
+            }),
+        ),
+    ];
+    let mut differences = Vec::new();
+    for (case, change) in cases {
+        let root = profile_root_with(change);
+        let expected =
+            meta_schema_error(&root).unwrap_or_else(|| panic!("{case}: the meta-schema admits it"));
+        let refusal = native_refusal(&root).unwrap_or_else(|| panic!("{case}: admitted"));
+        let shape = |error: &JsonSchemaError| {
+            // A property name's error nests the name's own error in its parameters, which the
+            // native checks give but for its location in the meta-schema
+            let mut params = error.params().clone();
+            if let Value::Map(params) = &mut params {
+                params.retain(|(key, _)| key.as_text() != Some("schemaPath"));
+            }
+            (
+                error.keyword().to_string(),
+                error.instance_path().to_string(),
+                params,
+                error.property_name().to_string(),
+            )
+        };
+        if shape(&refusal) != shape(&expected) {
+            differences.push(format!(
+                "{case}:\n  native {:?}\n  meta   {:?}",
+                shape(&refusal),
+                shape(&expected)
+            ));
+        }
+    }
+    assert!(differences.is_empty(), "{}", differences.join("\n"));
+}

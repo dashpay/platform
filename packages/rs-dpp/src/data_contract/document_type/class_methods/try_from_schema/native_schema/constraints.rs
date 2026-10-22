@@ -168,10 +168,7 @@ impl Checker<'_> {
                             if item.as_number().is_some_and(is_integer) || item.is_string() {
                                 Ok(())
                             } else {
-                                Err(c.fail(
-                                    "type",
-                                    format!("{item} is not of types \"integer\", \"string\""),
-                                ))
+                                Err(c.type_error(item, &["integer", "string"]))
                             }
                         }),
                         "add" | "multiply" | "min" | "max" => c.expressions(operand),
@@ -207,7 +204,7 @@ impl Checker<'_> {
                                 if is_path(text) {
                                     Ok(())
                                 } else {
-                                    Err(c.fail("pattern", format!("{item} is not a property path")))
+                                    Err(c.pattern_error(item, PATH_PATTERN))
                                 }
                             }
                             _ => c.aggregate_filter(item),
@@ -218,10 +215,7 @@ impl Checker<'_> {
                 }
                 Ok(())
             }
-            _ => Err(self.fail(
-                "type",
-                format!("{value} is not of types \"integer\", \"object\", \"string\""),
-            )),
+            _ => Err(self.type_error(value, &["integer", "string", "object"])),
         }
     }
 
@@ -260,10 +254,10 @@ impl Checker<'_> {
                     || TIMESTAMP_PROPERTIES.contains(&text)
                     || is_path(text)
             };
-            if admitted {
-                Ok(())
-            } else {
-                Err(c.fail("pattern", format!("{item} is not a property path")))
+            match (admitted, index) {
+                (true, _) => Ok(()),
+                (false, 0) => Err(c.pattern_error(item, PATH_PATTERN)),
+                (false, _) => Err(c.pattern_error(item, REFERENCED_PROPERTY_PATTERN)),
             }
         })
     }
@@ -274,32 +268,26 @@ impl Checker<'_> {
         let map = self.object(value)?;
         self.property_count(map, Some(1), None)?;
         for (name, filter) in map {
-            self.at(name, |c| {
-                if !(name == "$ownerId" || is_path(name)) {
-                    return Err(c.name_error(name, "is not a property path or $ownerId"));
-                }
-                match filter {
-                    JsonValue::Number(number) if is_integer(number) => Ok(()),
-                    JsonValue::String(text) => {
-                        if matches!(text.as_str(), "$ownerId" | "$id") || is_path(text) {
-                            Ok(())
-                        } else {
-                            Err(c.fail(
-                                "pattern",
-                                format!("{filter} is not a property path, $ownerId or $id"),
-                            ))
-                        }
+            self.name_matching(
+                name,
+                OWNER_OR_PATH_PATTERN,
+                name == "$ownerId" || is_path(name),
+            )?;
+            self.at(name, |c| match filter {
+                JsonValue::Number(number) if is_integer(number) => Ok(()),
+                JsonValue::String(text) => {
+                    if matches!(text.as_str(), "$ownerId" | "$id") || is_path(text) {
+                        Ok(())
+                    } else {
+                        Err(c.pattern_error(filter, OWNER_ID_OR_PATH_PATTERN))
                     }
-                    JsonValue::Object(constant) => {
-                        c.closed(constant, &["const"])?;
-                        c.required(constant, &["const"])?;
-                        c.member(constant, "const", |c, text| c.string(text).map(drop))
-                    }
-                    _ => Err(c.fail(
-                        "type",
-                        format!("{filter} is not of types \"integer\", \"object\", \"string\""),
-                    )),
                 }
+                JsonValue::Object(constant) => {
+                    c.closed(constant, &["const"])?;
+                    c.required(constant, &["const"])?;
+                    c.member(constant, "const", |c, text| c.string(text).map(drop))
+                }
+                _ => Err(c.type_error(filter, &["integer", "string", "object"])),
             })?;
         }
         Ok(())

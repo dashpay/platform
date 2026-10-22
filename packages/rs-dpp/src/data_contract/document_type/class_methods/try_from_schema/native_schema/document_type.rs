@@ -173,12 +173,8 @@ impl Checker<'_> {
             "propertyConstraints" | "deleteConstraints" => {
                 let map = self.object(value)?;
                 for (name, rule) in map {
-                    self.at(name, |c| {
-                        if !is_word(name) {
-                            return Err(c.name_error(name, "is not a rule name"));
-                        }
-                        c.constraint(rule)
-                    })?;
+                    self.name_matching(name, WORD_PATTERN, is_word(name))?;
+                    self.at(name, |c| c.constraint(rule))?;
                 }
                 self.property_count(map, Some(1), None)
             }
@@ -205,20 +201,19 @@ impl Checker<'_> {
     fn root_properties(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
         for (name, schema) in map {
-            self.at(name, |c| {
-                if SYSTEM_PROPERTIES.contains(&name.as_str()) {
-                    return Ok(());
-                }
-                if !is_word(name) {
-                    return Err(c.fail_with(
-                        "propertyNames",
-                        format!("\"{name}\" is not a property name"),
-                        json!({ "pattern": "^[a-zA-Z0-9_]{1,64}$" }),
-                        name,
-                    ));
-                }
-                c.property_schema(schema)
-            })?;
+            if SYSTEM_PROPERTIES.contains(&name.as_str()) {
+                continue;
+            }
+            if !is_word(name) {
+                // A word, or one of the system names
+                return Err(self.name_error(
+                    name,
+                    "oneOfNotValid",
+                    json!({}),
+                    format!("\"{name}\" is not valid under any of the schemas listed in the 'oneOf' keyword"),
+                ));
+            }
+            self.at(name, |c| c.property_schema(schema))?;
         }
         self.property_count(map, Some(1), Some(100))
     }
@@ -319,10 +314,19 @@ impl Checker<'_> {
                     c.item_count(items, Some(32), Some(32))?;
                     // `byteArray`, as the meta-schema check applied it
                     for (index, item) in items.iter().enumerate() {
-                        if !item.as_u64().is_some_and(|byte| byte <= u64::from(u8::MAX)) {
-                            return c.at(index, |c| {
-                                Err(c.fail("type", format!("{item} is not a byte")))
-                            });
+                        match item.as_u64() {
+                            None => return c.at(index, |c| Err(c.type_error(item, &["integer"]))),
+                            Some(byte) if byte > u64::from(u8::MAX) => {
+                                return c.at(index, |c| {
+                                    Err(c.fail_with(
+                                        "maximum",
+                                        format!("{item} is greater than the maximum of 255"),
+                                        json!({ "maximum": u8::MAX }),
+                                        "",
+                                    ))
+                                })
+                            }
+                            Some(_) => {}
                         }
                     }
                     Ok(())

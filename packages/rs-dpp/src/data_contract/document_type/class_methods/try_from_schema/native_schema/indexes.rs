@@ -97,14 +97,14 @@ impl Checker<'_> {
                         c.property_count(property, Some(1), Some(1))?;
                         for (name, order) in property {
                             if name.len() > MAX_INDEX_PROPERTY_NAME_BYTES {
-                                return Err(c.fail_with(
-                                    "propertyNames",
+                                return Err(c.name_error(
+                                    name,
+                                    "maxBytes",
+                                    json!({ "maxBytes": MAX_INDEX_PROPERTY_NAME_BYTES }),
                                     format!(
                                         "the index property name \"{name}\" is longer than \
                                          {MAX_INDEX_PROPERTY_NAME_BYTES} bytes"
                                     ),
-                                    json!({ "maxLength": MAX_INDEX_PROPERTY_NAME_BYTES }),
-                                    name,
                                 ));
                             }
                             c.at(name, |c| {
@@ -153,7 +153,7 @@ impl Checker<'_> {
                 if value.is_boolean() {
                     return Ok(());
                 }
-                self.within("oneOf", value, |c| {
+                self.within("oneOfNotValid", value, |c| {
                     c.string(value)?;
                     c.one_of_strings(
                         value,
@@ -169,7 +169,7 @@ impl Checker<'_> {
                 if value.is_boolean() {
                     return Ok(());
                 }
-                self.within("oneOf", value, |c| {
+                self.within("oneOfNotValid", value, |c| {
                     let map = c.object(value)?;
                     c.closed(map, &["at"])?;
                     c.required(map, &["at"])?;
@@ -192,12 +192,12 @@ impl Checker<'_> {
                 }
                 self.member(map, "phase", |c, phase| c.integer(phase, Some(0), None))
             }
-            "terminal" => self.within("oneOf", value, |c| c.names_or_one(value)),
+            "terminal" => self.within("oneOfNotValid", value, |c| c.names_or_one(value)),
             "skipIfAbsent" => {
                 if value.is_boolean() {
                     return Ok(());
                 }
-                self.within("oneOf", value, |c| c.names(value))
+                self.within("oneOfNotValid", value, |c| c.names(value))
             }
             "summableOffCountIndex" => self.string_of_length(value, 1, Some(32)).map(drop),
             _ => Ok(()),

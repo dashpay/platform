@@ -42,6 +42,22 @@ mod references;
 #[cfg(test)]
 mod tests;
 
+/// The meta-schema's pattern of a name: 1 to 64 ASCII letters, digits and underscores.
+const WORD_PATTERN: &str = "^[a-zA-Z0-9_]{1,64}$";
+
+/// The meta-schema's pattern of a property path: names joined by dots.
+const PATH_PATTERN: &str = "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$";
+
+/// The meta-schema's pattern of a property path or `$ownerId`.
+const OWNER_OR_PATH_PATTERN: &str = "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$";
+
+/// The meta-schema's pattern of a property path, `$ownerId` or `$id`.
+const OWNER_ID_OR_PATH_PATTERN: &str =
+    "^(\\$ownerId|\\$id|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$";
+
+/// The meta-schema's pattern of what a rule may read of a referenced document.
+const REFERENCED_PROPERTY_PATTERN: &str = "^(\\$id|\\$ownerId|\\$creatorId|\\$(created|updated|transferred)At(BlockHeight|CoreBlockHeight)?|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$";
+
 /// The system timestamps a rule or a `where` bound may read.
 const TIMESTAMP_PROPERTIES: [&str; 9] = [
     "$createdAt",
@@ -141,6 +157,46 @@ impl Checker<'_> {
         )))
     }
 
+    /// The error of a value of none of `types`, with the parameter the meta-schema check gave:
+    /// the type, or the list of them in alphabetical order.
+    fn type_error(&self, value: &JsonValue, types: &[&str]) -> ProtocolError {
+        let mut types = types.to_vec();
+        types.sort_unstable();
+        let (described, param) = match types.as_slice() {
+            [single] => (format!("\"{single}\""), json!(single)),
+            types => (
+                types
+                    .iter()
+                    .map(|single| format!("\"{single}\""))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                json!(types),
+            ),
+        };
+        let plural = if types.len() == 1 { "" } else { "s" };
+        self.fail_with(
+            "type",
+            format!("{value} is not of type{plural} {described}"),
+            json!({ "type": param }),
+            "",
+        )
+    }
+
+    /// The error of a string that does not match `pattern`, one of the meta-schema's.
+    fn pattern_error(&self, value: &JsonValue, pattern: &str) -> ProtocolError {
+        self.fail_with(
+            "pattern",
+            format!("{value} does not match \"{pattern}\""),
+            json!({ "pattern": pattern }),
+            "",
+        )
+    }
+
+    /// The error of a value the meta-schema's `not` refuses, with the schema it negates.
+    fn not_error(&self, negated: JsonValue, message: &str) -> ProtocolError {
+        self.fail_with("not", message, json!({ "not": negated }), "")
+    }
+
     // ---- primitives, as the meta-schema check read them ----
 
     fn object<'v>(
@@ -149,26 +205,26 @@ impl Checker<'_> {
     ) -> Result<&'v JsonMap<String, JsonValue>, ProtocolError> {
         value
             .as_object()
-            .ok_or_else(|| self.fail("type", format!("{value} is not of type \"object\"")))
+            .ok_or_else(|| self.type_error(value, &["object"]))
     }
 
     fn array<'v>(&self, value: &'v JsonValue) -> Result<&'v Vec<JsonValue>, ProtocolError> {
         value
             .as_array()
-            .ok_or_else(|| self.fail("type", format!("{value} is not of type \"array\"")))
+            .ok_or_else(|| self.type_error(value, &["array"]))
     }
 
     fn string<'v>(&self, value: &'v JsonValue) -> Result<&'v str, ProtocolError> {
         value
             .as_str()
-            .ok_or_else(|| self.fail("type", format!("{value} is not of type \"string\"")))
+            .ok_or_else(|| self.type_error(value, &["string"]))
     }
 
     fn boolean(&self, value: &JsonValue) -> Checked {
         if value.is_boolean() {
             Ok(())
         } else {
-            Err(self.fail("type", format!("{value} is not of type \"boolean\"")))
+            Err(self.type_error(value, &["boolean"]))
         }
     }
 
@@ -176,14 +232,14 @@ impl Checker<'_> {
         if value.is_number() {
             Ok(())
         } else {
-            Err(self.fail("type", format!("{value} is not of type \"number\"")))
+            Err(self.type_error(value, &["number"]))
         }
     }
 
     /// An integer, as the meta-schema check read one, from `minimum` to `maximum`.
     fn integer(&self, value: &JsonValue, minimum: Option<i64>, maximum: Option<i64>) -> Checked {
         let Some(number) = value.as_number().filter(|number| is_integer(number)) else {
-            return Err(self.fail("type", format!("{value} is not of type \"integer\"")));
+            return Err(self.type_error(value, &["integer"]));
         };
         if let Some(minimum) = minimum {
             if number_below(number, minimum) {
@@ -297,21 +353,33 @@ impl Checker<'_> {
         }
     }
 
-    /// No key of `map` outside `allowed`.
+    /// No key of `map` outside `allowed`, as the meta-schema's `additionalProperties: false`.
     fn closed(&self, map: &JsonMap<String, JsonValue>, allowed: &[&str]) -> Checked {
-        let unexpected: Vec<&String> = map
-            .keys()
-            .filter(|key| !allowed.contains(&key.as_str()))
-            .collect();
-        match unexpected.first() {
-            None => Ok(()),
-            Some(first) => Err(self.fail_with(
-                "additionalProperties",
-                format!("additional properties are not allowed ({unexpected:?} were unexpected)"),
-                json!({ "additionalProperties": unexpected }),
-                first,
-            )),
+        let unexpected = unexpected_keys(map, allowed);
+        if unexpected.is_empty() {
+            return Ok(());
         }
+        Err(self.fail_with(
+            "additionalProperties",
+            format!("additional properties are not allowed ({unexpected:?} were unexpected)"),
+            json!({ "additionalProperties": unexpected }),
+            "",
+        ))
+    }
+
+    /// No key of `map` outside `allowed`, as the meta-schema's `unevaluatedProperties: false`,
+    /// which closes a property schema.
+    fn closed_to_unevaluated(&self, map: &JsonMap<String, JsonValue>, allowed: &[&str]) -> Checked {
+        let unexpected = unexpected_keys(map, allowed);
+        if unexpected.is_empty() {
+            return Ok(());
+        }
+        Err(self.fail_with(
+            "unevaluatedProperties",
+            format!("unevaluated properties are not allowed ({unexpected:?} were unexpected)"),
+            json!({ "unexpected": unexpected }),
+            "",
+        ))
     }
 
     fn required(&self, map: &JsonMap<String, JsonValue>, names: &[&str]) -> Checked {
@@ -425,12 +493,7 @@ impl Checker<'_> {
         if is_word(text) {
             Ok(())
         } else {
-            Err(self.fail_with(
-                "pattern",
-                format!("{value} does not match \"^[a-zA-Z0-9_]{{1,64}}$\""),
-                json!({ "pattern": "^[a-zA-Z0-9_]{1,64}$" }),
-                "",
-            ))
+            Err(self.pattern_error(value, WORD_PATTERN))
         }
     }
 
@@ -440,12 +503,7 @@ impl Checker<'_> {
         if is_path(text) {
             Ok(())
         } else {
-            Err(self.fail_with(
-                "pattern",
-                format!("{value} is not a property path"),
-                json!({ "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$" }),
-                "",
-            ))
+            Err(self.pattern_error(value, PATH_PATTERN))
         }
     }
 
@@ -482,25 +540,63 @@ impl Checker<'_> {
 
     // ---- names and choices ----
 
-    /// A property name or key of `minimum` to `maximum` characters.
-    fn name_of_length(&self, name: &str, minimum: usize, maximum: usize) -> Checked {
-        if (minimum..=maximum).contains(&name.chars().count()) {
-            Ok(())
-        } else {
-            Err(self.name_error(
-                name,
-                &format!("is not {minimum} to {maximum} characters long"),
-            ))
-        }
-    }
-
-    fn name_error(&self, name: &str, problem: &str) -> ProtocolError {
+    /// The meta-schema's `propertyNames` error on the object in hand: its key `name` breaks
+    /// `keyword` with `params`. The error of the name alone is nested as the meta-schema
+    /// check nested it, but for the meta-schema location it also gave.
+    fn name_error(
+        &self,
+        name: &str,
+        keyword: &str,
+        params: JsonValue,
+        message: String,
+    ) -> ProtocolError {
         self.fail_with(
             "propertyNames",
-            format!("\"{name}\" {problem}"),
-            json!({}),
-            name,
+            message,
+            json!({
+                "instancePath": self.instance_path(),
+                "instance": name,
+                "params": params,
+                "keyword": keyword,
+                "propertyName": "",
+            }),
+            "",
         )
+    }
+
+    /// `name`, a key of the object in hand, of `minimum` to `maximum` characters.
+    fn name_of_length(&self, name: &str, minimum: usize, maximum: usize) -> Checked {
+        let length = name.chars().count();
+        if length < minimum {
+            return Err(self.name_error(
+                name,
+                "minLength",
+                json!({ "minLength": minimum }),
+                format!("\"{name}\" is shorter than {minimum} characters"),
+            ));
+        }
+        if length > maximum {
+            return Err(self.name_error(
+                name,
+                "maxLength",
+                json!({ "maxLength": maximum }),
+                format!("\"{name}\" is longer than {maximum} characters"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `name`, a key of the object in hand, matching `pattern`, which `matches` says.
+    fn name_matching(&self, name: &str, pattern: &str, matches: bool) -> Checked {
+        if matches {
+            return Ok(());
+        }
+        Err(self.name_error(
+            name,
+            "pattern",
+            json!({ "pattern": pattern }),
+            format!("\"{name}\" does not match \"{pattern}\""),
+        ))
     }
 
     /// The error of a value no branch of a choice admits.
@@ -517,6 +613,13 @@ impl Checker<'_> {
             .as_str()
             .is_some_and(|text| (1..=256).contains(&text.chars().count()) && admits(text))
     }
+}
+
+/// The keys of `map` outside `allowed`.
+fn unexpected_keys<'m>(map: &'m JsonMap<String, JsonValue>, allowed: &[&str]) -> Vec<&'m String> {
+    map.keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .collect()
 }
 
 /// Words joined by dots, as the meta-schema's property path pattern reads them.
@@ -566,13 +669,7 @@ fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
                 (Some(left), _, Some(right), _) => left == right,
                 (_, Some(left), _, Some(right)) => left == right,
                 _ => match (left.as_f64(), right.as_f64()) {
-                    (Some(left), Some(right)) => {
-                        if let Some(right_integer) = right.fract().eq(&0.).then_some(right) {
-                            left == right_integer
-                        } else {
-                            left == right
-                        }
-                    }
+                    (Some(left), Some(right)) => left == right,
                     _ => false,
                 },
             }
