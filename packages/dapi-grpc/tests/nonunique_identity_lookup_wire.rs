@@ -6,8 +6,11 @@ use dapi_grpc::{platform::v0::GetIdentityByNonUniquePublicKeyHashResponse, Messa
 
 #[test]
 fn should_decode_the_two_proof_v0_answer_4_1_nodes_send() {
-    // V0, result field 2, a nested index Proof whose GroveDB bytes are [1, 2].
-    let wire = [0x0a, 0x08, 0x12, 0x06, 0x0a, 0x04, 0x0a, 0x02, 1, 2];
+    // V0, result field 2: an index Proof whose GroveDB bytes are [1, 2], and identity
+    // proof bytes [3, 4].
+    let wire = [
+        0x0a, 0x0c, 0x12, 0x0a, 0x0a, 0x04, 0x0a, 0x02, 1, 2, 0x12, 0x02, 3, 4,
+    ];
     let response = GetIdentityByNonUniquePublicKeyHashResponse::decode(&wire[..]).unwrap();
     let Some(Version::V0(v0)) = &response.version else {
         panic!("response version 0")
@@ -15,8 +18,14 @@ fn should_decode_the_two_proof_v0_answer_4_1_nodes_send() {
     let Some(V0Result::Proof(proved)) = &v0.result else {
         panic!("field 2 is the two-proof answer")
     };
-    assert!(proved.grovedb_identity_public_key_hash_proof.is_some());
-    assert_eq!(proved.identity_proof_bytes, None);
+    assert_eq!(
+        proved
+            .grovedb_identity_public_key_hash_proof
+            .as_ref()
+            .map(|proof| proof.grovedb_proof.as_slice()),
+        Some(&[1, 2][..])
+    );
+    assert_eq!(proved.identity_proof_bytes.as_deref(), Some(&[3, 4][..]));
     assert_eq!(response.encode_to_vec(), wire);
 }
 

@@ -1799,7 +1799,9 @@ mod signed {
     /// The SDK pages through three identities. A fresh SDK has verified no answer yet, so it
     /// asks for the first page in V0; once it has verified that protocol 14 answer it asks
     /// for the rest in V1. wasm-drive-verify reads single proofs only, so its vectors take
-    /// every page from a V1 answer, and they must equal the committed fixture.
+    /// every page from a V1 answer, and they must equal the committed fixture. The vectors
+    /// are made at protocol 14, the first version that serves V1, so that later branches
+    /// rewrite the same files.
     #[tokio::test]
     async fn should_export_deterministic_sdk_vectors() {
         let temporary = TempDir::new().expect("scratch export");
@@ -1807,7 +1809,7 @@ mod signed {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| temporary.path().to_path_buf());
         std::fs::create_dir_all(&destination).expect("scratch vector directory");
-        let fixture = Fixture::new(PlatformVersion::latest());
+        let fixture = Fixture::new(PlatformVersion::get(14).expect("protocol 14"));
         let mut after = None;
         let mut direct_vectors = Vec::new();
         for page in 0..4 {

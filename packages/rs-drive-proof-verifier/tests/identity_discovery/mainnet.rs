@@ -205,8 +205,9 @@ fn should_refuse_altered_recorded_mainnet_v0_answers() {
     let (request, response, quorum) = replay("match");
     let latest = PlatformVersion::latest();
 
-    let mut altered = response.clone();
-    let Some(Version::V0(v0)) = &mut altered.version else {
+    // A truncated identity proof no longer decodes.
+    let mut truncated = response.clone();
+    let Some(Version::V0(v0)) = &mut truncated.version else {
         panic!("v0")
     };
     let Some(LookupResult::Proof(proved)) = &mut v0.result else {
@@ -215,7 +216,33 @@ fn should_refuse_altered_recorded_mainnet_v0_answers() {
     let identity_proof = proved.identity_proof_bytes.as_mut().unwrap();
     let last = identity_proof.len() - 1;
     identity_proof[last] ^= 1;
-    assert!(verify(request.clone(), altered, &quorum, latest).is_err());
+    let error = verify(request.clone(), truncated, &quorum, latest).unwrap_err();
+    assert!(
+        matches!(&*error, drive_proof_verifier::Error::GroveDBError { error, .. } if error.contains("unable to decode proof")),
+        "{error}"
+    );
+
+    // A changed byte of the identity's own data still decodes, but no longer hashes to
+    // the signed root.
+    let mut altered = response.clone();
+    let Some(Version::V0(v0)) = &mut altered.version else {
+        panic!("v0")
+    };
+    let Some(LookupResult::Proof(proved)) = &mut v0.result else {
+        panic!("two proofs")
+    };
+    let identity_proof = proved.identity_proof_bytes.as_mut().unwrap();
+    let id = vector("match-identity");
+    let at = identity_proof
+        .windows(id.len())
+        .position(|window| window == id.as_slice())
+        .expect("the identity proof names the identity");
+    identity_proof[at + id.len() / 2] ^= 1;
+    let error = verify(request.clone(), altered, &quorum, latest).unwrap_err();
+    assert!(
+        matches!(&*error, drive_proof_verifier::Error::GroveDBError { error, .. } if error.contains("invalid proof")),
+        "{error}"
+    );
 
     let mut relabeled = response.clone();
     let Some(Version::V0(v0)) = &mut relabeled.version else {
@@ -233,5 +260,11 @@ fn should_refuse_altered_recorded_mainnet_v0_answers() {
         panic!("v0")
     };
     v0.start_after = Some(vec![0xff; 32]);
-    assert!(verify(other_cursor, response, &quorum, latest).is_err());
+    let error = verify(other_cursor, response, &quorum, latest).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("must bind its first eligible identity or prove absence"),
+        "{error}"
+    );
 }

@@ -5,9 +5,11 @@ const protobufMessages = require('../../clients/platform/v0/nodejs/platform_pbjs
 const driveMessages = require('../../clients/drive/v0/nodejs/drive_pbjs');
 
 const name = 'GetIdentityByNonUniquePublicKeyHashResponse';
-// Response V0 (tag 1) with result field 2: the index proof without an identity proof,
-// exactly as 4.1 nodes send it.
-const v0Wire = Buffer.from([0x0a, 0x08, 0x12, 0x06, 0x0a, 0x04, 0x0a, 0x02, 1, 2]);
+// Response V0 (tag 1) with result field 2: the index proof and the identity proof bytes,
+// exactly as 4.1 nodes send a match.
+const v0Wire = Buffer.from([
+  0x0a, 0x0c, 0x12, 0x0a, 0x0a, 0x04, 0x0a, 0x02, 1, 2, 0x12, 0x02, 3, 4,
+]);
 // Response V1 (tag 2) with result field 2: one Proof.
 const v1Wire = Buffer.from([0x12, 0x06, 0x12, 0x04, 0x0a, 0x02, 1, 2]);
 // Response V0 with a Proof at field 4, as the 5.0 prereleases sent it.
@@ -20,6 +22,7 @@ describe('non-unique identity proof wire format', () => {
     proof.setGrovedbProof(Buffer.from([1, 2]));
     const proved = new nodeMessages[name][v0Name].IdentityProvedResponse();
     proved.setGrovedbIdentityPublicKeyHashProof(proof);
+    proved.setIdentityProofBytes(Buffer.from([3, 4]));
     const v0 = new nodeMessages[name][v0Name]();
     v0.setProof(proved);
     const response = new nodeMessages[name]();
@@ -31,7 +34,7 @@ describe('non-unique identity proof wire format', () => {
       Buffer.from(web.getGrovedbIdentityPublicKeyHashProof().getGrovedbProof_asU8()),
       Buffer.from([1, 2]),
     );
-    assert.equal(web.hasIdentityProofBytes(), false);
+    assert.deepEqual(Buffer.from(web.getIdentityProofBytes_asU8()), Buffer.from([3, 4]));
     [protobufMessages, driveMessages].forEach((messages) => {
       const Response = messages.org.dash.platform.dapi.v0[name];
       const decoded = Response.decode(v0Wire);
@@ -39,6 +42,7 @@ describe('non-unique identity proof wire format', () => {
         Buffer.from(decoded.v0.proof.grovedbIdentityPublicKeyHashProof.grovedbProof),
         Buffer.from([1, 2]),
       );
+      assert.deepEqual(Buffer.from(decoded.v0.proof.identityProofBytes), Buffer.from([3, 4]));
       assert.deepEqual(Buffer.from(Response.encode(decoded).finish()), v0Wire);
     });
   });

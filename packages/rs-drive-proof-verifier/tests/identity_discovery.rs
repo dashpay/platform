@@ -35,6 +35,7 @@ use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
 };
+use Lookup::{V0, V1};
 
 /// A protocol version far above any real one. Recorded vectors signed with it stay newer
 /// than every build, so the SDK tests replaying them never depend on the latest version.
@@ -47,7 +48,6 @@ enum Lookup {
     V0,
     V1,
 }
-use Lookup::{V0, V1};
 
 struct Fixture {
     drive: Drive,
@@ -806,7 +806,12 @@ fn should_not_read_two_proofs_packed_into_a_v1_proof() {
     let mut two = f.response(V0, None);
     let packed = two_proofs(&mut two).encode_to_vec();
     signed_proof(&mut response).grovedb_proof = packed;
-    assert!(verify(response, f.hash, None).is_err());
+    // The packed message is not a GroveDB proof, so it does not decode as one.
+    let error = verify(response, f.hash, None).expect_err("two proofs packed into V1");
+    assert!(
+        matches!(&*error, Error::GroveDBError { error, .. } if error.contains("unable to decode proof")),
+        "{error}"
+    );
 }
 
 #[test]

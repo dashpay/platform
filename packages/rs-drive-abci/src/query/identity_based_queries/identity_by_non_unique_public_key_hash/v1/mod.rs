@@ -109,7 +109,7 @@ mod tests {
     use dpp::dashcore::Network;
 
     #[test]
-    fn test_invalid_public_key_hash() {
+    fn should_reject_an_invalid_public_key_hash() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityByNonUniquePublicKeyHashRequestV1 {
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_start_after() {
+    fn should_reject_an_invalid_start_after() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let negative_tests: Vec<&[u8]> = vec![&[0u8; 4], &[0u8; 20], &[0u8; 64]];
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_not_found() {
+    fn should_answer_an_unknown_key_with_no_identity() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_absence_proof() {
+    fn should_prove_an_unknown_key_absent() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
