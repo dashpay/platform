@@ -3,6 +3,7 @@ use crate::drive::{non_unique_key_hashes_sub_tree_path_vec, Drive};
 use crate::error::{proof::ProofError, Error};
 use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, GroveDb};
@@ -43,7 +44,7 @@ impl Drive {
                 })?
             }
             _ => return Err(Error::Proof(ProofError::CorruptedProof(
-                "legacy non-unique proof must bind its first eligible identity or prove absence"
+                "two-proof non-unique answer must bind its first eligible identity or prove absence"
                     .to_owned(),
             ))),
         };
@@ -54,7 +55,7 @@ impl Drive {
         let (identity_root, _) = GroveDb::verify_query(proof, &query, grove_version)?;
         if identity_root != root {
             return Err(Error::Proof(ProofError::CorruptedProof(
-                "legacy index and identity proof roots differ".to_owned(),
+                "two-proof index and identity proof roots differ".to_owned(),
             )));
         }
         // Strict producer-query completeness above precedes the shared identity decoder.
@@ -73,12 +74,19 @@ impl Drive {
             )?;
         if decoded_root != root {
             return Err(Error::Proof(ProofError::CorruptedProof(
-                "legacy identity decoder root differs from index root".to_owned(),
+                "two-proof identity decoder root differs from index root".to_owned(),
             )));
         }
         let identity = identity.ok_or(Error::Proof(ProofError::IncompleteProof(
             "non-unique index references a missing full identity",
         )))?;
+        // The decoder read the identity under the producer's tables; it must be the one
+        // the strictly checked index entry names.
+        if identity.id().to_buffer() != id {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "two-proof identity differs from the identity its index entry names".to_owned(),
+            )));
+        }
         Ok((root, Some(identity)))
     }
 
@@ -123,7 +131,6 @@ impl Drive {
     /// This function is marked with `#[inline(always)]` to hint the compiler to
     /// aggressively inline it for performance optimization.
     #[inline(always)]
-    #[rustfmt::skip]
     fn verify_full_identity_by_non_unique_public_key_hash_two_proofs_unguarded(
         proof: &IdentityAndNonUniquePublicKeyHashDoubleProof,
         public_key_hash: [u8; 20],
@@ -173,7 +180,6 @@ mod tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
-    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 

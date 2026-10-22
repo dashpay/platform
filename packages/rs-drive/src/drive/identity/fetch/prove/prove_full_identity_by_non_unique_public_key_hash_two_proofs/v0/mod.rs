@@ -69,7 +69,7 @@ mod tests {
     use rand::SeedableRng;
 
     /// Request V0 is served at every protocol version, so the two proofs must verify
-    /// under the mainnet protocol 13 tables and the latest ones alike.
+    /// under the protocol 13 tables (the last without V1) and the latest ones alike.
     fn served_versions() -> [&'static PlatformVersion; 2] {
         [
             PlatformVersion::get(13).expect("protocol 13"),

@@ -81,7 +81,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::drive::DriveError;
 
     #[test]
     fn test_verify_full_identity_by_non_unique_public_key_hash_two_proofs_unknown_version() {
