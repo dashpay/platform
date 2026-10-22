@@ -171,15 +171,17 @@ pub enum PlatformWalletFFIResultCode {
     /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
     /// where a spend WAS broadcast and must NOT be retried.
     ErrorShieldedNoRecordedAnchor = 19,
-    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A core
+    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A Core
     /// transaction broadcast (send-to-addresses, DashPay payment, or
     /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
     /// may already be on the network (transport timeout after delivery,
     /// partial peer send, or an internal multi-node retry whose earlier
     /// attempt may have delivered). The wallet intentionally KEEPS the spent
     /// inputs' UTXO reservation, so an immediate retry fails at input
-    /// selection instead of double-spending; the reservation TTL or a sync
-    /// observing the transaction reconciles the outcome. The host must NOT
+    /// selection instead of double-spending; observing the spend reconciles
+    /// the outcome. Also covers address-funded identity top-ups whose result
+    /// could not be verified after possible acceptance, without Core UTXO
+    /// reservations. The host must reconcile the original operation and NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
