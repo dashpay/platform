@@ -5,6 +5,7 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
+pub mod v7;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPContractVersions {
@@ -159,7 +160,9 @@ pub struct DocumentTypeSchemaVersions {
     /// comparisons between integer expressions over the document's
     /// properties) onto the document type, and checks the properties they
     /// read. `None` on versions that predate the keyword: they ignore it
-    /// entirely, exactly as they parsed before it existed.
+    /// entirely, exactly as they parsed before it existed. 0 matches the
+    /// documents a `countOf` or `sumOf` totals by integer, string or
+    /// identifier keys; 1 (protocol version 15) by byte array keys too.
     pub parse_property_constraints: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
