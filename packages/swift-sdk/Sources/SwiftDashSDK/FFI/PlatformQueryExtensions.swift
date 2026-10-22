@@ -276,9 +276,9 @@ extension SDK {
     /// `dash_sdk_identities_fetch_contract_keys`.
     ///
     /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
-    /// four, and an empty array throws when there are identity ids to ask about. An empty
-    /// `documentType` is the same as `nil`. No identity ids answer an empty dictionary, whatever
-    /// `purposes` holds.
+    /// four, and an empty array throws, also when there are no identity ids. An empty
+    /// `documentType` is the same as `nil`. No identity ids answer an empty dictionary, without a
+    /// query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,

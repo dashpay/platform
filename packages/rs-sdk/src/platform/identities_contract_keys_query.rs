@@ -18,6 +18,18 @@ use crate::Error;
 /// sends, and has the proof verified against, the same request whatever repeats it was given. A
 /// `GetIdentitiesContractKeysRequest` built by hand goes out as it is; Drive and the proof check
 /// then both read it as sent.
+///
+/// A query for no identities asks about nothing: [`Fetch::fetch`] and
+/// [`Fetch::fetch_with_settings`] answer it with an empty map, whatever its purposes, and send
+/// nothing. [`Fetch::fetch_with_metadata`] and [`Fetch::fetch_with_metadata_and_proof`] have no
+/// response to take metadata and a proof from, so they send it and are refused, as every node
+/// refuses a proof of nothing (see [`TransportRequest::names_nothing`]). A query for identities
+/// but no purpose is refused the same way by every fetch.
+///
+/// [`Fetch::fetch`]: crate::platform::Fetch::fetch
+/// [`Fetch::fetch_with_settings`]: crate::platform::Fetch::fetch_with_settings
+/// [`Fetch::fetch_with_metadata`]: crate::platform::Fetch::fetch_with_metadata
+/// [`Fetch::fetch_with_metadata_and_proof`]: crate::platform::Fetch::fetch_with_metadata_and_proof
 #[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentitiesContractKeysQuery {
@@ -67,6 +79,12 @@ impl IdentitiesContractKeysQuery {
             })),
         }
     }
+}
+
+/// Whether `request` asks about no identity, so that nothing needs to be sent for it; see
+/// [`IdentitiesContractKeysQuery`].
+pub(crate) fn asks_about_no_identity(request: &GetIdentitiesContractKeysRequest) -> bool {
+    matches!(&request.version, Some(V0(v0)) if v0.identities_ids.is_empty())
 }
 
 /// `items` in the order they first appear, each once.
@@ -198,6 +216,79 @@ mod tests {
             panic!("a v0 request");
         };
         assert!(sent.prove);
+    }
+
+    fn query_for(
+        identities_ids: Vec<Identifier>,
+        purposes: Vec<Purpose>,
+    ) -> IdentitiesContractKeysQuery {
+        IdentitiesContractKeysQuery::new(identities_ids, Identifier::from([3; 32]), None, purposes)
+            .expect("valid query")
+    }
+
+    /// The mock knows no request, so anything sent fails and is counted.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_answer_no_identities_with_an_empty_map_and_send_nothing() {
+        use crate::platform::Fetch;
+        use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+
+        let mut sdk = crate::Sdk::new_mock();
+        for purposes in [vec![Purpose::ENCRYPTION], vec![]] {
+            let query = query_for(vec![], purposes);
+            let keys = IdentitiesContractKeys::fetch(&sdk, query.clone())
+                .await
+                .expect("an answer for no identities");
+            assert_eq!(keys, Some(IdentitiesContractKeys::new()));
+            let sent = sdk.mock().request_count(&query.request()).await;
+            assert_eq!(sent, 0, "nothing is sent for no identities");
+        }
+
+        // A request built by hand, unproved, is answered the same way.
+        let mut request = query_for(vec![], vec![Purpose::ENCRYPTION]).request();
+        if let Some(V0(v0)) = request.version.as_mut() {
+            v0.prove = false;
+        }
+        let keys = IdentitiesContractKeys::fetch(&sdk, request.clone())
+            .await
+            .expect("an answer for no identities");
+        assert_eq!(keys, Some(IdentitiesContractKeys::new()));
+        assert_eq!(sdk.mock().request_count(&request).await, 0);
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_send_a_query_that_names_an_identity() {
+        use crate::platform::Fetch;
+        use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+
+        let mut sdk = crate::Sdk::new_mock();
+        // With a purpose, and without one: the transport refuses the latter.
+        for purposes in [vec![Purpose::ENCRYPTION], vec![]] {
+            let query = query_for(vec![Identifier::from([1; 32])], purposes);
+            IdentitiesContractKeys::fetch(&sdk, query.clone())
+                .await
+                .expect_err("the mock knows no request");
+            assert_eq!(sdk.mock().request_count(&query.request()).await, 1);
+        }
+    }
+
+    /// With nothing sent there is no metadata or proof to return, so these still send it.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_send_no_identities_when_metadata_or_a_proof_is_asked_for() {
+        use crate::platform::Fetch;
+        use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let query = query_for(vec![], vec![Purpose::ENCRYPTION]);
+        IdentitiesContractKeys::fetch_with_metadata(&sdk, query.clone(), None)
+            .await
+            .expect_err("no metadata without a response");
+        IdentitiesContractKeys::fetch_with_metadata_and_proof(&sdk, query.clone(), None)
+            .await
+            .expect_err("no proof without a response");
+        assert_eq!(sdk.mock().request_count(&query.request()).await, 2);
     }
 
     #[test]

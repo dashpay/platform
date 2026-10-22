@@ -18,12 +18,15 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs; an empty list answers `{}`
-///   without a query. The SDK asks for a repeated ID once (`IdentitiesContractKeysQuery`).
+/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs. An empty (or blank)
+///   string is the empty list, which the SDK answers with `{}` without a query. A repeated ID is
+///   asked for once.
 /// - `contract_id`: Base58-encoded contract ID
 /// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
 ///   the same as NULL)
-/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). The SDK asks for a repeated purpose once.
+/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption,
+///   2=Decryption, 3=Transfer). It is checked even when `identity_ids` is empty. The SDK asks for a
+///   repeated purpose once.
 ///
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
@@ -107,24 +110,24 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         }
     };
 
-    // An empty list asks for nothing
+    // Parse comma-separated identity IDs. A blank string is the empty list, which the SDK
+    // answers.
     let ids_str = ids_str.trim();
-    if ids_str.is_empty() {
-        return DashSDKResult::success_string(c"{}".to_owned().into_raw());
-    }
-
-    // Parse comma-separated identity IDs
-    let identities_ids: Result<Vec<Identifier>, DashSDKError> = ids_str
-        .split(',')
-        .map(|id_str| {
-            Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
-                DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid identity ID: {}", e),
-                )
+    let identities_ids: Result<Vec<Identifier>, DashSDKError> = if ids_str.is_empty() {
+        Ok(Vec::new())
+    } else {
+        ids_str
+            .split(',')
+            .map(|id_str| {
+                Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
+                    DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Invalid identity ID: {}", e),
+                    )
+                })
             })
-        })
-        .collect();
+            .collect()
+    };
 
     let identities_ids = match identities_ids {
         Ok(ids) => ids,
@@ -516,13 +519,22 @@ mod tests {
 
     #[test]
     fn should_answer_no_identities_with_an_empty_object() {
+        // The mock knows only `query()`: an empty list is answered by the SDK without a query.
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
         for ids in ["", "  "] {
-            // Purposes are not looked at when no identity is asked for.
-            let json = unsafe { json_of(fetch_with(handle, ids, CONTRACT, None, "")) };
+            let json = unsafe { json_of(fetch_with(handle, ids, CONTRACT, None, "1")) };
             assert_eq!(json, serde_json::json!({}));
         }
-        // The contract id is still checked.
+        // The purposes are still checked.
+        for purposes in ["", "9"] {
+            let code = unsafe { error_code_of(fetch_with(handle, "", CONTRACT, None, purposes)) };
+            assert_eq!(
+                code,
+                DashSDKErrorCode::InvalidParameter,
+                "purposes {purposes:?}"
+            );
+        }
+        // So is the contract id.
         let ids = CString::new("").unwrap();
         let contract = CString::new("not-base58!!").unwrap();
         let purposes = CString::new("1").unwrap();
