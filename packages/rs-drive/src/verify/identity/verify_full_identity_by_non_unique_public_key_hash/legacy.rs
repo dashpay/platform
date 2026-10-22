@@ -57,6 +57,9 @@ impl Drive {
             )));
         }
         // Strict producer-query completeness above precedes the shared identity decoder.
+        // The decoder rebuilds both queries from the tables it is given; the producer's
+        // tables make it read exactly the queries checked above, whose verification
+        // already applied this verifier's GroveDB version to the same bytes.
         let (decoded_root, identity) = Self::verify_full_identity_by_non_unique_public_key_hash_v0(
             &IdentityAndNonUniquePublicKeyHashDoubleProof {
                 identity_id_public_key_hash_proof: index_proof.to_vec(),
@@ -64,7 +67,7 @@ impl Drive {
             },
             public_key_hash,
             after,
-            platform_version,
+            query_platform_version,
         )?;
         if decoded_root != root {
             return Err(Error::Proof(ProofError::CorruptedProof(
