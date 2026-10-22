@@ -34,6 +34,7 @@ use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue}
 use std::collections::BTreeMap;
 
 mod document_type;
+mod indexes;
 mod properties;
 
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema

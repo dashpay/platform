@@ -94,6 +94,7 @@ impl Checker<'_> {
                 self.constant(value, &json!(DOCUMENT_SCHEMA_URI))
             }
             "$defs" => self.property_map(value),
+            "indices" => self.indices(value),
             "properties" => self.root_properties(value),
             "additionalProperties" => {
                 self.boolean(value)?;
