@@ -1,7 +1,10 @@
 //! Read-only discovery through the SDK and its trusted HTTPS quorum provider.
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::{
+    GetIdentityByNonUniquePublicKeyHashRequestV0, GetIdentityByNonUniquePublicKeyHashRequestV1,
+};
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
-    get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult, Version,
+    get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult,
+    get_identity_by_non_unique_public_key_hash_response_v1::Result as V1LookupResult, Version,
 };
 use dapi_grpc::platform::v0::GetIdentityByNonUniquePublicKeyHashRequest;
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
@@ -128,7 +131,7 @@ async fn check(network: Network, id: &str, require_positive: bool) {
         !require_positive || nonunique_matches > 0,
         "positive discovery fixture must contain a nonunique key"
     );
-    // Authenticate an exposed raw response as well, to record the actual wire variant.
+    // Authenticate exposed raw responses as well, to record the actual wire variants.
     let hash = identity
         .public_keys()
         .values()
@@ -148,32 +151,65 @@ async fn check(network: Network, id: &str, require_positive: bool) {
         .await
         .unwrap();
     let Some(Version::V0(v0)) = &response.inner.version else {
-        panic!("missing version")
+        panic!("a V0 request must get a V0 response")
     };
-    let format = match &v0.result {
-        Some(LookupResult::LegacyProof(_)) => "legacy field2",
-        Some(LookupResult::Proof(_)) => "current field4",
-        _ => panic!("missing proof"),
-    };
+    assert!(
+        matches!(&v0.result, Some(LookupResult::Proof(_))),
+        "every node answers V0 with two proofs"
+    );
     let (_, metadata, _) = <Identity as FromProof<GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof_with_metadata(
         request, response.inner, network, PlatformVersion::latest(), &sdk.context_provider().unwrap(),
     ).unwrap();
     sdk.verify_response_metadata("get_identity_by_non_unique_public_key_hash", &metadata)
         .unwrap();
     println!(
-        "{network:?} authenticated_wire={format} node={} height={} protocol={}",
+        "{network:?} authenticated_wire=v0 two proofs node={} height={} protocol={}",
         response.address, metadata.height, metadata.protocol_version
     );
+    // V1 is served from protocol 14 by nodes that know it; older nodes refuse it.
+    let request: GetIdentityByNonUniquePublicKeyHashRequest =
+        GetIdentityByNonUniquePublicKeyHashRequestV1 {
+            public_key_hash: hash.to_vec(),
+            start_after: None,
+            prove: true,
+        }
+        .into();
+    match sdk
+        .execute(request.clone(), RequestSettings::default())
+        .await
+    {
+        Ok(response) => {
+            let Some(Version::V1(v1)) = &response.inner.version else {
+                panic!("a V1 request must get a V1 response")
+            };
+            assert!(matches!(&v1.result, Some(V1LookupResult::Proof(_))));
+            let (_, metadata, _) = <Identity as FromProof<
+                GetIdentityByNonUniquePublicKeyHashRequest,
+            >>::maybe_from_proof_with_metadata(
+                request,
+                response.inner,
+                network,
+                PlatformVersion::latest(),
+                &sdk.context_provider().unwrap(),
+            )
+            .unwrap();
+            println!(
+                "{network:?} authenticated_wire=v1 one proof node={} height={} protocol={}",
+                response.address, metadata.height, metadata.protocol_version
+            );
+        }
+        Err(error) => println!("{network:?} v1 refused: {error}"),
+    }
     println!("{network:?} fully verified identity discovery passed for {checked} key hashes");
 }
 
-/// Records authenticated mainnet answers in the legacy format as offline replay vectors.
+/// Records authenticated mainnet V0 answers (two proofs) as offline replay vectors.
 /// Run it only to refresh them; the replay test in drive-proof-verifier needs no network.
 /// It rewrites committed files, so running the live checks with `--ignored` skips it
 /// unless `DASH_SDK_CAPTURE_MAINNET_VECTORS=1` is set.
 #[tokio::test]
 #[ignore = "requires live mainnet and DASH_SDK_CAPTURE_MAINNET_VECTORS=1; rewrites drive-proof-verifier's mainnet vectors"]
-async fn should_capture_mainnet_legacy_nonunique_vectors() {
+async fn should_capture_mainnet_v0_nonunique_vectors() {
     use dapi_grpc::Message;
     use dash_context_provider::ContextProvider;
     if std::env::var("DASH_SDK_CAPTURE_MAINNET_VECTORS").as_deref() != Ok("1") {
@@ -221,10 +257,10 @@ async fn should_capture_mainnet_legacy_nonunique_vectors() {
         let Some(Version::V0(v0)) = &response.version else {
             panic!("missing version")
         };
-        let Some(LookupResult::LegacyProof(legacy)) = &v0.result else {
-            panic!("mainnet must answer in the legacy format")
+        let Some(LookupResult::Proof(proved)) = &v0.result else {
+            panic!("mainnet must answer V0 with two proofs")
         };
-        let proof = legacy
+        let proof = proved
             .grovedb_identity_public_key_hash_proof
             .clone()
             .unwrap();

@@ -6,11 +6,6 @@ mod tests {
         ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy,
         StrategyRandomness, UpgradingInfo,
     };
-    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
-        get_identity_by_non_unique_public_key_hash_response_v0::Result as NonUniqueResult,
-        Version as NonUniqueResponseVersion,
-    };
     use dash_platform_macros::stack_size;
     use dpp::block::epoch::Epoch;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
@@ -25,14 +20,9 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contracts::SystemDataContract;
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::version::PlatformVersion;
     use dpp::version::ProtocolVersion;
     use drive::config::DriveConfig;
-    use drive::drive::Drive;
     use drive::query::proposer_block_count_query::ProposerQueryType;
     use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
@@ -933,92 +923,6 @@ mod tests {
             .is_some());
     }
 
-    /// Asserts the proved non-unique identity lookup answers in the format of the
-    /// committed protocol version: field 2 up to 13 (including lock-in of 14), field 4
-    /// once 14 is active, verified without changing the stored root.
-    fn assert_nonunique_lookup_generation(
-        platform: &Platform<MockCoreRPCLike>,
-        hash: [u8; 20],
-        id: [u8; 32],
-    ) {
-        let state = platform.state.load();
-        let version = state
-            .current_platform_version()
-            .expect("committed protocol version");
-        let root_before = platform
-            .drive
-            .grove
-            .root_hash(None, &version.drive.grove_version)
-            .unwrap()
-            .unwrap();
-        for after in [None, Some(id)] {
-            let response = platform
-                .query_identity_by_non_unique_public_key_hash(
-                    GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                        public_key_hash: hash.to_vec(),
-                        start_after: after.map(|id| id.to_vec()),
-                        prove: true,
-                    }
-                    .into(),
-                    &state,
-                    version,
-                )
-                .unwrap();
-            assert!(response.is_valid());
-            let Some(NonUniqueResponseVersion::V0(response)) = response.data.unwrap().version
-            else {
-                panic!("request and response stay version zero")
-            };
-            assert_eq!(
-                response.metadata.unwrap().protocol_version,
-                state.current_protocol_version_in_consensus()
-            );
-            let (root, identity) = match response.result.unwrap() {
-                NonUniqueResult::LegacyProof(proof) if version.protocol_version == 13 => {
-                    Drive::verify_legacy_identity_by_non_unique_public_key_hash(
-                        &proof
-                            .grovedb_identity_public_key_hash_proof
-                            .unwrap()
-                            .grovedb_proof,
-                        proof.identity_proof_bytes.as_deref(),
-                        hash,
-                        after,
-                        version,
-                        PlatformVersion::latest(),
-                    )
-                    .unwrap()
-                }
-                NonUniqueResult::Proof(proof) if version.protocol_version == 14 => {
-                    Drive::verify_full_identity_by_non_unique_public_key_hash(
-                        proof.grovedb_proof.as_slice(),
-                        hash,
-                        after,
-                        version,
-                        PlatformVersion::latest(),
-                    )
-                    .unwrap()
-                }
-                _ => panic!(
-                    "response encoding must follow committed current, not next or software version"
-                ),
-            };
-            assert_eq!(
-                identity.map(|identity| identity.id().to_buffer()),
-                if after.is_none() { Some(id) } else { None }
-            );
-            assert_eq!(root, root_before);
-        }
-        assert_eq!(
-            platform
-                .drive
-                .grove
-                .root_hash(None, &version.drive.grove_version)
-                .unwrap()
-                .unwrap(),
-            root_before
-        );
-    }
-
     /// The app-connect contract only comes into existence through the upgrade to protocol
     /// version 14 (or a version-14 genesis). Driven through real blocks: absent while the
     /// chain still runs 13, written by the activation block, served by the system contract
@@ -1030,16 +934,7 @@ mod tests {
             strategy: Strategy {
                 start_contracts: vec![],
                 operations: vec![],
-                start_identities: StartIdentities {
-                    number_of_identities: 1,
-                    keys_per_identity: 3,
-                    starting_balances: 100_000_000,
-                    extra_keys: BTreeMap::from([(
-                        Purpose::AUTHENTICATION,
-                        BTreeMap::from([(SecurityLevel::HIGH, vec![KeyType::ECDSA_HASH160])]),
-                    )]),
-                    ..Default::default()
-                },
+                start_identities: StartIdentities::default(),
                 start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
@@ -1099,7 +994,6 @@ mod tests {
             identity_nonce_counter,
             identity_contract_nonce_counter,
             instant_lock_quorums,
-            identities: current_identities,
             ..
         } = run_chain_for_strategy(
             &mut platform,
@@ -1111,19 +1005,6 @@ mod tests {
             &mut None,
         )
         .await;
-
-        let lookup_identity = current_identities
-            .first()
-            .expect("populated protocol 13 identity");
-        let lookup_id = lookup_identity.id().to_buffer();
-        let lookup_hash = lookup_identity
-            .public_keys()
-            .values()
-            .find(|key| !key.key_type().is_unique_key_type())
-            .expect("non-unique authentication key")
-            .public_key_hash()
-            .unwrap();
-        assert_nonunique_lookup_generation(abci_app.platform, lookup_hash, lookup_id);
 
         let state = abci_app.platform.state.load();
         assert_eq!(state.current_protocol_version_in_consensus(), 13);
@@ -1163,7 +1044,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
-                current_identities: current_identities.clone(),
+                current_identities: Vec::new(),
                 current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy.clone(),
@@ -1176,7 +1057,6 @@ mod tests {
         assert_eq!(state.last_committed_block_epoch().index, 1);
         assert_eq!(state.current_protocol_version_in_consensus(), 13);
         assert_eq!(state.next_epoch_protocol_version(), 14);
-        assert_nonunique_lookup_generation(abci_app.platform, lookup_hash, lookup_id);
         let block_start = state
             .last_committed_block_info()
             .as_ref()
@@ -1219,7 +1099,6 @@ mod tests {
         platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
         platform.platform.core_rpc = core_rpc;
         let abci_app = FullAbciApplication::new(&platform.platform);
-        assert_nonunique_lookup_generation(abci_app.platform, lookup_hash, lookup_id);
 
         let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
             abci_app,
@@ -1237,7 +1116,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
-                current_identities: current_identities.clone(),
+                current_identities: Vec::new(),
                 current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
@@ -1250,7 +1129,6 @@ mod tests {
         assert_eq!(state.last_committed_block_epoch().index, 2);
         assert_eq!(state.current_protocol_version_in_consensus(), 14);
         assert_eq!(state.next_epoch_protocol_version(), 14);
-        assert_nonunique_lookup_generation(abci_app.platform, lookup_hash, lookup_id);
         drop(state);
 
         let stored = abci_app
@@ -1296,7 +1174,6 @@ mod tests {
         drop(platform_before_restart);
 
         let reopened_platform = TempPlatform::open_with_tempdir(tempdir, config);
-        assert_nonunique_lookup_generation(&reopened_platform, lookup_hash, lookup_id);
         let state = reopened_platform.state.load();
         assert_eq!(state.current_protocol_version_in_consensus(), 14);
         drop(state);

@@ -9,8 +9,16 @@ use crate::{
 };
 use dapi_grpc::{
     platform::v0::{
-        get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0,
-        GetIdentityByNonUniquePublicKeyHashResponse,
+        get_identity_by_non_unique_public_key_hash_request::{
+            GetIdentityByNonUniquePublicKeyHashRequestV0,
+            GetIdentityByNonUniquePublicKeyHashRequestV1,
+        },
+        get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
+            get_identity_by_non_unique_public_key_hash_response_v1::Result as V1Result, Version,
+        },
+        GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
+        Proof,
     },
     Message,
 };
@@ -31,15 +39,11 @@ fn hash() -> [u8; 20] {
         .try_into()
         .unwrap()
 }
-fn response(
-    version: u32,
-    legacy: bool,
-    page: usize,
-) -> GetIdentityByNonUniquePublicKeyHashResponse {
-    let name = format!(
-        "pv{version}-{}-{page}.bin",
-        if legacy { "legacy" } else { "current" }
-    );
+/// A recorded answer to request version `lookup` (0 or 1), signed at `version`.
+fn response(version: u32, lookup: u8, page: usize) -> GetIdentityByNonUniquePublicKeyHashResponse {
+    vector(&format!("pv{version}-v{lookup}-{page}.bin"))
+}
+fn vector(name: &str) -> GetIdentityByNonUniquePublicKeyHashResponse {
     GetIdentityByNonUniquePublicKeyHashResponse::decode(
         std::fs::read(directory().join(name)).unwrap().as_slice(),
     )
@@ -76,16 +80,11 @@ impl ContextProvider for Provider {
         Ok(1)
     }
 }
-/// The vectors' versions answer in one format each: PV12 and PV13 legacy, PV14 current.
-fn producer_for(legacy: bool) -> u32 {
-    if legacy {
-        13
-    } else {
-        14
-    }
-}
 fn sdk(pinned: bool, stale: bool, network: Network) -> Sdk {
-    let version = PlatformVersion::get(12).unwrap();
+    sdk_from(12, pinned, stale, network)
+}
+fn sdk_from(seed: u32, pinned: bool, stale: bool, network: Network) -> Sdk {
+    let version = PlatformVersion::get(seed).unwrap();
     let builder = SdkBuilder::new_mock()
         .with_network(network)
         .with_context_provider(Provider)
@@ -98,18 +97,29 @@ fn sdk(pinned: bool, stale: bool, network: Network) -> Sdk {
     };
     builder.build().unwrap()
 }
-fn request(after: Option<[u8; 32]>) -> IdentityRequest {
-    IdentityRequest::GetIdentityByNonUniquePublicKeyHash(
-        GetIdentityByNonUniquePublicKeyHashRequestV0 {
-            public_key_hash: hash().to_vec(),
-            start_after: after.map(|a| a.to_vec()),
+fn request(lookup: u8, after: Option<[u8; 32]>) -> IdentityRequest {
+    let (public_key_hash, start_after) = (hash().to_vec(), after.map(|a| a.to_vec()));
+    let request: GetIdentityByNonUniquePublicKeyHashRequest = match lookup {
+        0 => GetIdentityByNonUniquePublicKeyHashRequestV0 {
+            public_key_hash,
+            start_after,
             prove: true,
         }
         .into(),
-    )
+        _ => GetIdentityByNonUniquePublicKeyHashRequestV1 {
+            public_key_hash,
+            start_after,
+            prove: true,
+        }
+        .into(),
+    };
+    IdentityRequest::GetIdentityByNonUniquePublicKeyHash(request)
 }
+/// Answer only the request of version `lookup`: a lookup in the other version finds no
+/// expectation and fails.
 async fn register(
     sdk: &Sdk,
+    lookup: u8,
     response: GetIdentityByNonUniquePublicKeyHashResponse,
     after: Option<[u8; 32]>,
 ) {
@@ -119,7 +129,7 @@ async fn register(
     dapi.lock()
         .await
         .expect(
-            &request(after),
+            &request(lookup, after),
             &Ok(ExecutionResponse {
                 inner: IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response),
                 address: "http://127.0.0.1:9000".parse().unwrap(),
@@ -128,108 +138,165 @@ async fn register(
         )
         .unwrap();
 }
+async fn fetch(sdk: &Sdk, after: Option<[u8; 32]>) -> Option<[u8; 32]> {
+    Identity::fetch(
+        sdk,
+        NonUniquePublicKeyHashQuery {
+            key_hash: hash(),
+            after,
+        },
+    )
+    .await
+    .unwrap()
+    .map(|id| id.id().to_buffer())
+}
+fn verified_version(sdk: &Sdk) -> u32 {
+    sdk.verified_protocol_version
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+/// A page's cursor and the identity it must find.
+type Page = (Option<[u8; 32]>, Option<[u8; 32]>);
+const PAGES: [Page; 3] = [
+    (None, Some([0x10; 32])),
+    (Some([0x10; 32]), Some([0x20; 32])),
+    (Some([0x20; 32]), None),
+];
+
+/// A fresh SDK sends V0, which every node serves. Once it has verified an answer signed
+/// at protocol 14 it sends V1, unless its pinned version still selects V0. Clones share
+/// what was verified, like the stored version.
 #[tokio::test]
-async fn should_fetch_legacy_and_current_nonunique_identities_through_sdk_and_preserve_pins() {
-    for legacy in [true, false] {
-        let version = producer_for(legacy);
-        for pinned in [false, true] {
-            let sdk = sdk(pinned, false, Network::Testnet);
-            for (page, after) in [None, Some([0x10; 32]), Some([0x20; 32])]
-                .into_iter()
-                .enumerate()
-            {
-                register(&sdk, response(version, legacy, page), after).await;
-                let found = Identity::fetch(
-                    &sdk,
-                    NonUniquePublicKeyHashQuery {
-                        key_hash: hash(),
-                        after,
-                    },
-                )
-                .await
-                .unwrap();
-                assert_eq!(
-                    found.map(|id| id.id().to_buffer()),
-                    match page {
-                        0 => Some([0x10; 32]),
-                        1 => Some([0x20; 32]),
-                        _ => None,
-                    }
-                );
-                assert_eq!(
-                    sdk.protocol_version_number(),
-                    if pinned { 12 } else { version }
-                );
-            }
+async fn should_fetch_nonunique_identities_with_v0_until_protocol_14_is_verified() {
+    for pinned in [false, true] {
+        let sdk = sdk(pinned, false, Network::Testnet);
+        let clone = sdk.clone();
+        for (page, (after, expected)) in PAGES.into_iter().enumerate() {
+            let lookup = if page == 0 || pinned { 0 } else { 1 };
+            register(&sdk, lookup, response(14, lookup, page), after).await;
+            let client = if page == 0 { &sdk } else { &clone };
+            assert_eq!(
+                fetch(client, after).await,
+                expected,
+                "pinned={pinned}, page {page}"
+            );
+            assert_eq!(
+                sdk.protocol_version_number(),
+                if pinned { 12 } else { 14 },
+                "pinned={pinned}, page {page}"
+            );
+            assert_eq!(verified_version(&sdk), 14);
         }
     }
 }
+
+/// An SDK seeded above the network, as devnet SDKs are, keeps sending V0 to a protocol
+/// 13 network: its own seed never selects V1, only a verified answer can.
+#[tokio::test]
+async fn should_keep_v0_on_a_protocol_13_network_whatever_the_seed() {
+    for (seed, pinned) in [(14, false), (14, true), (13, false)] {
+        let sdk = sdk_from(seed, pinned, false, Network::Testnet);
+        for (page, (after, expected)) in PAGES.into_iter().enumerate() {
+            register(&sdk, 0, response(13, 0, page), after).await;
+            assert_eq!(
+                fetch(&sdk, after).await,
+                expected,
+                "seed {seed}, page {page}"
+            );
+            assert_eq!(verified_version(&sdk), 13);
+            assert_eq!(sdk.protocol_version_number(), seed.max(13));
+        }
+    }
+}
+
 #[tokio::test]
 async fn should_not_learn_nonunique_version_from_stale_or_tampered_response() {
-    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
-        get_identity_by_non_unique_public_key_hash_response_v0::Result as LookupResult, Version,
-    };
-    for legacy in [true, false] {
+    for lookup in [0, 1] {
         for stale in [true, false] {
             let sdk = sdk(false, stale, Network::Testnet);
-            let mut response = response(producer_for(legacy), legacy, 0);
+            let mut response = response(14, lookup, 0);
             if !stale {
-                let Some(Version::V0(v0)) = &mut response.version else {
-                    panic!("v0")
-                };
-                match v0.result.as_mut().unwrap() {
-                    LookupResult::Proof(p) => p.signature[0] ^= 1,
-                    LookupResult::LegacyProof(p) => {
-                        p.grovedb_identity_public_key_hash_proof
-                            .as_mut()
-                            .unwrap()
-                            .signature[0] ^= 1
-                    }
-                    _ => panic!("proof"),
-                }
+                signed_proof(&mut response).signature[0] ^= 1;
             }
             let result = sdk
                 .verify_fetching_quorum_key::<IdentityRequest, Identity>(
-                    request(None),
+                    request(lookup, None),
                     IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response),
                     &Provider,
                     "get_identity_by_non_unique_public_key_hash",
                 )
                 .await;
-            assert!(result.is_err());
+            if stale {
+                assert!(
+                    matches!(result, Err(crate::Error::StaleNode(_))),
+                    "V{lookup}: {result:?}"
+                );
+            } else {
+                // A flipped bit may not decode as a signature at all.
+                assert!(
+                    matches!(
+                        result,
+                        Err(crate::Error::Proof(
+                            drive_proof_verifier::Error::InvalidSignature { .. }
+                                | drive_proof_verifier::Error::SignatureVerificationError { .. }
+                                | drive_proof_verifier::Error::InvalidSignatureFormat { .. }
+                        ))
+                    ),
+                    "V{lookup}: {result:?}"
+                );
+            }
             assert_eq!(sdk.protocol_version_number(), 12);
+            assert_eq!(verified_version(&sdk), 0, "V{lookup}, stale={stale}");
         }
+    }
+}
+fn signed_proof(response: &mut GetIdentityByNonUniquePublicKeyHashResponse) -> &mut Proof {
+    match &mut response.version {
+        Some(Version::V0(v0)) => match v0.result.as_mut() {
+            Some(V0Result::Proof(proved)) => proved
+                .grovedb_identity_public_key_hash_proof
+                .as_mut()
+                .unwrap(),
+            _ => panic!("proved V0"),
+        },
+        Some(Version::V1(v1)) => match v1.result.as_mut() {
+            Some(V1Result::Proof(proof)) => proof,
+            _ => panic!("proved V1"),
+        },
+        None => panic!("version"),
     }
 }
 #[tokio::test]
 async fn should_keep_nonunique_protocol_learning_monotonic_and_network_local() {
     let mainnet = sdk(false, false, Network::Mainnet);
     let testnet = sdk(false, false, Network::Testnet);
-    let verify = |version, legacy| {
+    let verify = |version, lookup| {
         mainnet.verify_fetching_quorum_key::<IdentityRequest, Identity>(
-            request(None),
-            IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response(version, legacy, 0)),
+            request(lookup, None),
+            IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response(version, lookup, 0)),
             &Provider,
             "get_identity_by_non_unique_public_key_hash",
         )
     };
-    // Newer first: a later, older answer must still verify but never lower the version.
-    verify(14, false).await.unwrap();
+    // Newer first: a later, older answer must still verify but never lower either version.
+    verify(14, 1).await.unwrap();
     assert_eq!(mainnet.protocol_version_number(), 14);
-    verify(12, true).await.unwrap();
+    assert_eq!(verified_version(&mainnet), 14);
+    verify(12, 0).await.unwrap();
     assert_eq!(mainnet.protocol_version_number(), 14);
+    assert_eq!(verified_version(&mainnet), 14);
     assert_eq!(testnet.protocol_version_number(), 12);
+    assert_eq!(verified_version(&testnet), 0);
 }
-/// A correctly signed answer in the format its version does not emit is refused, and
-/// the SDK does not learn the version from it.
+/// A correctly signed answer of the other request version is refused, and the SDK learns
+/// nothing from it.
 #[tokio::test]
-async fn should_refuse_nonunique_answers_in_a_format_their_signed_version_does_not_emit() {
-    for (version, legacy) in [(12, false), (13, false), (14, true)] {
+async fn should_refuse_a_nonunique_answer_of_the_other_request_version() {
+    for (asked, answered) in [(0, 1), (1, 0)] {
         let sdk = sdk(false, false, Network::Testnet);
         let result = sdk
             .verify_fetching_quorum_key::<IdentityRequest, Identity>(
-                request(None),
-                IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response(version, legacy, 0)),
+                request(asked, None),
+                IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response(14, answered, 0)),
                 &Provider,
                 "get_identity_by_non_unique_public_key_hash",
             )
@@ -238,38 +305,38 @@ async fn should_refuse_nonunique_answers_in_a_format_their_signed_version_does_n
             matches!(
                 &result,
                 Err(crate::Error::Proof(drive_proof_verifier::Error::ResponseDecodeError { error }))
-                    if error.contains("proof format")
+                    if error.contains("does not match request version")
             ),
-            "PV{version}, legacy={legacy}: {result:?}"
+            "V{asked} asked, V{answered} answered: {result:?}"
         );
         assert_eq!(sdk.protocol_version_number(), 12);
+        assert_eq!(verified_version(&sdk), 0);
     }
 }
-/// After a newer protocol activates, this SDK still discovers identities: the answer is
-/// read with the newest known rules, and the unknown version is not learned.
+/// After a newer protocol activates, this SDK still discovers identities in both request
+/// versions: the answer is read with the newest known rules, and the unknown version is
+/// not adopted as the stored one.
 #[tokio::test]
 async fn should_read_nonunique_answers_signed_by_an_unknown_newer_version() {
-    let sdk = sdk(false, false, Network::Testnet);
-    let (found, metadata, _) = sdk
-        .verify_fetching_quorum_key::<IdentityRequest, Identity>(
-            request(None),
-            IdentityResponse::GetIdentityByNonUniquePublicKeyHash(
-                GetIdentityByNonUniquePublicKeyHashResponse::decode(
-                    std::fs::read(directory().join("newer-current-0.bin"))
-                        .unwrap()
-                        .as_slice(),
-                )
-                .unwrap(),
-            ),
-            &Provider,
-            "get_identity_by_non_unique_public_key_hash",
-        )
-        .await
-        .unwrap();
-    assert!(
-        metadata.protocol_version > PlatformVersion::latest().protocol_version,
-        "the vector must stay signed by a version this build does not know"
-    );
-    assert_eq!(found.map(|id| id.id().to_buffer()), Some([0x10; 32]));
-    assert_eq!(sdk.protocol_version_number(), 12);
+    for lookup in [0, 1] {
+        let sdk = sdk(false, false, Network::Testnet);
+        let (found, metadata, _) = sdk
+            .verify_fetching_quorum_key::<IdentityRequest, Identity>(
+                request(lookup, None),
+                IdentityResponse::GetIdentityByNonUniquePublicKeyHash(vector(&format!(
+                    "newer-v{lookup}-0.bin"
+                ))),
+                &Provider,
+                "get_identity_by_non_unique_public_key_hash",
+            )
+            .await
+            .unwrap();
+        assert!(
+            metadata.protocol_version > PlatformVersion::latest().protocol_version,
+            "the vector must stay signed by a version this build does not know"
+        );
+        assert_eq!(found.map(|id| id.id().to_buffer()), Some([0x10; 32]));
+        assert_eq!(sdk.protocol_version_number(), 12);
+        assert_eq!(verified_version(&sdk), metadata.protocol_version);
+    }
 }

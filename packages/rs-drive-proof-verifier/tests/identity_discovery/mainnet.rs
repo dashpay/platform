@@ -1,6 +1,7 @@
 //! Authenticated answers recorded from mainnet protocol 13 nodes, replayed offline.
 //!
-//! Recorded by `rs-sdk/tests/identity_discovery_live.rs::should_capture_mainnet_legacy_nonunique_vectors`.
+//! Recorded by `rs-sdk/tests/identity_discovery_live.rs::should_capture_mainnet_v0_nonunique_vectors`.
+//! These are request V0 answers, the only version 4.1 nodes serve.
 //! The quorum keys are the ones that signed these answers, not trust anchors.
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
@@ -120,10 +121,10 @@ fn replay(
     let Some(Version::V0(v0)) = &response.version else {
         panic!("v0")
     };
-    let Some(LookupResult::LegacyProof(legacy)) = &v0.result else {
-        panic!("recorded mainnet answers use the legacy format")
+    let Some(LookupResult::Proof(proved)) = &v0.result else {
+        panic!("recorded mainnet answers carry two proofs")
     };
-    let proof = legacy
+    let proof = proved
         .grovedb_identity_public_key_hash_proof
         .as_ref()
         .unwrap();
@@ -154,7 +155,7 @@ fn verify(
 /// A deployed protocol 13 node's answer stays verifiable by this client under both the
 /// producer's and the newest verifier rules.
 #[test]
-fn should_verify_recorded_mainnet_legacy_nonunique_answers() {
+fn should_verify_recorded_mainnet_v0_nonunique_answers() {
     for (name, expected) in [
         (
             "match",
@@ -170,16 +171,20 @@ fn should_verify_recorded_mainnet_legacy_nonunique_answers() {
         };
         let v0 = fields(v0);
         let numbers: Vec<u64> = v0.iter().map(|(number, _)| *number).collect();
-        assert_eq!(numbers, [2, 3], "{name}: legacy result and metadata only");
-        let legacy: Vec<u64> = fields(v0[0].1).iter().map(|(number, _)| *number).collect();
         assert_eq!(
-            legacy,
+            numbers,
+            [2, 3],
+            "{name}: two-proof result and metadata only"
+        );
+        let proved: Vec<u64> = fields(v0[0].1).iter().map(|(number, _)| *number).collect();
+        assert_eq!(
+            proved,
             if expected.is_some() {
                 vec![1, 2]
             } else {
                 vec![1]
             },
-            "{name}: legacy proof fields"
+            "{name}: two-proof fields"
         );
 
         for verifier in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
@@ -196,7 +201,7 @@ fn should_verify_recorded_mainnet_legacy_nonunique_answers() {
 }
 
 #[test]
-fn should_refuse_altered_recorded_mainnet_legacy_answers() {
+fn should_refuse_altered_recorded_mainnet_v0_answers() {
     let (request, response, quorum) = replay("match");
     let latest = PlatformVersion::latest();
 
@@ -204,10 +209,10 @@ fn should_refuse_altered_recorded_mainnet_legacy_answers() {
     let Some(Version::V0(v0)) = &mut altered.version else {
         panic!("v0")
     };
-    let Some(LookupResult::LegacyProof(legacy)) = &mut v0.result else {
-        panic!("legacy")
+    let Some(LookupResult::Proof(proved)) = &mut v0.result else {
+        panic!("two proofs")
     };
-    let identity_proof = legacy.identity_proof_bytes.as_mut().unwrap();
+    let identity_proof = proved.identity_proof_bytes.as_mut().unwrap();
     let last = identity_proof.len() - 1;
     identity_proof[last] ^= 1;
     assert!(verify(request.clone(), altered, &quorum, latest).is_err());
@@ -216,7 +221,7 @@ fn should_refuse_altered_recorded_mainnet_legacy_answers() {
     let Some(Version::V0(v0)) = &mut relabeled.version else {
         panic!("v0")
     };
-    // Protocol 12 answers in the same format, so only the signature can refuse it.
+    // Protocol 12 builds the same queries, so only the signature can refuse it.
     v0.metadata.as_mut().unwrap().protocol_version = 12;
     assert!(matches!(
         *verify(request.clone(), relabeled, &quorum, latest).unwrap_err(),

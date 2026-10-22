@@ -276,14 +276,20 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
     );
 }
 
+/// Answers recorded from a local protocol 14 network of 5.0 beta nodes, which answer
+/// request V0 with separate index and identity proofs, as every node does. A V0 lookup
+/// must keep verifying them, with the quorum key that signed them.
 #[test]
-fn should_reject_retired_recorded_nonunique_responses() {
+fn should_verify_recorded_two_proof_nonunique_responses() {
+    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version;
     use dash_sdk::platform::types::identity::{IdentityRequest, IdentityResponse};
     use drive_proof_verifier::{FromProof, MockContextProvider};
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/vectors/test_fetch_identity_by_non_unique_public_keys_legacy");
-    let mut count = 0;
-    for entry in directory.read_dir().expect("retired response fixtures") {
+    let mut provider = MockContextProvider::new();
+    provider.quorum_keys_dir(Some(directory.clone()));
+    let mut cursors = vec![];
+    for entry in directory.read_dir().expect("recorded response fixtures") {
         let path = entry.expect("fixture entry").path();
         if !path
             .file_name()
@@ -295,24 +301,49 @@ fn should_reject_retired_recorded_nonunique_responses() {
         }
         let bytes = std::fs::read(&path).expect("recorded bytes");
         let parts: Vec<_> = bytes.split(|byte| *byte == 0).collect();
-        let request: IdentityRequest =
-            serde_json::from_slice(parts[0]).expect("unchanged request shape");
+        let request: IdentityRequest = serde_json::from_slice(parts[0]).expect("recorded request");
+        let IdentityRequest::GetIdentityByNonUniquePublicKeyHash(lookup) = &request else {
+            panic!("non-unique lookup request")
+        };
+        let Some(Version::V0(v0)) = &lookup.version else {
+            panic!("recorded requests are V0")
+        };
+        let cursor = v0.start_after.clone();
         let result: serde_json::Value =
             serde_json::from_slice(parts[1]).expect("recorded mock result");
         let response_bytes: Vec<u8> =
             serde_json::from_value(result["Ok"].clone()).expect("recorded response bytes");
-        // Retired JSON must fail decoding or proof verification; no conversion to a supported proof.
-        if let Ok(response) = serde_json::from_slice::<IdentityResponse>(&response_bytes) {
-            assert!(<Identity as FromProof<IdentityRequest>>::maybe_from_proof(
+        let response: IdentityResponse =
+            serde_json::from_slice(&response_bytes).expect("two-proof V0 response");
+        let (found, metadata, _) =
+            <Identity as FromProof<IdentityRequest>>::maybe_from_proof_with_metadata(
                 request,
                 response,
                 dpp::dashcore::Network::Testnet,
                 dpp::version::PlatformVersion::latest(),
-                &MockContextProvider::new(),
+                &provider,
             )
-            .is_err());
+            .unwrap_or_else(|error| panic!("cursor {cursor:?}: {error}"));
+        assert_eq!(metadata.protocol_version, 14, "recorded at protocol 14");
+        // The recorded identities sit between the cursors [1; 32], [2; 32] and [3; 32].
+        let expected = cursor.as_ref().is_none_or(|cursor| cursor[0] < 3);
+        assert_eq!(found.is_some(), expected, "cursor {cursor:?}");
+        if let (Some(found), Some(cursor)) = (&found, &cursor) {
+            assert!(
+                found.id().as_slice() > cursor.as_slice(),
+                "cursor {cursor:?}"
+            );
         }
-        count += 1;
+        cursors.push(cursor);
     }
-    assert_eq!(count, 4);
+    cursors.sort();
+    assert_eq!(
+        cursors,
+        [
+            None,
+            Some(vec![1; 32]),
+            Some(vec![2; 32]),
+            Some(vec![3; 32])
+        ]
+    );
 }

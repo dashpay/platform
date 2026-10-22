@@ -1,14 +1,18 @@
-//! Both wire formats bind the requested first-after index, complete identity, and signed state.
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+//! Both request versions bind the requested first-after index, complete identity, and signed state.
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::{
+    GetIdentityByNonUniquePublicKeyHashRequestV0, GetIdentityByNonUniquePublicKeyHashRequestV1,
+};
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
     get_identity_by_non_unique_public_key_hash_response_v0::{
-        IdentityProvedResponse, Result as LookupResult,
+        IdentityProvedResponse, Result as V0Result,
     },
-    GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+    get_identity_by_non_unique_public_key_hash_response_v1::Result as V1Result,
+    GetIdentityByNonUniquePublicKeyHashResponseV0, GetIdentityByNonUniquePublicKeyHashResponseV1,
+    Version,
 };
 use dapi_grpc::platform::v0::{
-    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse, Proof,
-    ResponseMetadata,
+    get_identity_by_non_unique_public_key_hash_request, GetIdentityByNonUniquePublicKeyHashRequest,
+    GetIdentityByNonUniquePublicKeyHashResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -25,7 +29,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::PathQuery;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use drive_proof_verifier::FromProof;
+use drive_proof_verifier::{Error, FromProof};
 use std::sync::Arc;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
@@ -35,6 +39,15 @@ use tenderdash_abci::{
 /// A protocol version far above any real one. Recorded vectors signed with it stay newer
 /// than every build, so the SDK tests replaying them never depend on the latest version.
 const NEWER_PROTOCOL_VERSION: u32 = 1_000;
+
+/// The request version, which also names the shape of the proved answer: V0 carries
+/// separate index and identity proofs, V1 one proof of both.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Lookup {
+    V0,
+    V1,
+}
+use Lookup::{V0, V1};
 
 struct Fixture {
     drive: Drive,
@@ -90,78 +103,93 @@ impl Fixture {
             .grove_get_proved_path_query(query, None, &mut vec![], &self.producer.drive)
             .unwrap()
     }
-    fn response(
-        &self,
-        legacy: bool,
-        after: Option<[u8; 32]>,
-    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
-        self.response_signed_as(legacy, after, self.producer.protocol_version)
-    }
-    /// Build either wire format from this state and sign it as `protocol_version`,
-    /// which may name a version the producer does not answer in that format.
-    fn response_signed_as(
-        &self,
-        legacy: bool,
-        after: Option<[u8; 32]>,
-        protocol_version: u32,
-    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
-        let metadata = ResponseMetadata {
+    fn metadata(protocol_version: u32) -> ResponseMetadata {
+        ResponseMetadata {
             height: 10,
             core_chain_locked_height: 1,
             time_ms: 1_700_000_000_000,
             protocol_version,
             chain_id: "dash-testnet-51".into(),
             ..Default::default()
-        };
-        let result = if legacy {
-            let mut query =
-                Drive::identity_id_by_non_unique_public_key_hash_query(self.hash, after);
-            query.query.limit = Some(1);
-            let identity = self
-                .identities
-                .iter()
-                .find(|id| after.is_none_or(|a| id.id().to_buffer() > a));
-            LookupResult::LegacyProof(IdentityProvedResponse {
-                grovedb_identity_public_key_hash_proof: Some(signed(
-                    self.prove(&query),
-                    &metadata,
-                    self.root(),
-                )),
-                identity_proof_bytes: identity.map(|id| {
-                    self.prove(
-                        &Drive::full_identity_query(
-                            &id.id().to_buffer(),
-                            &self.producer.drive.grove_version,
-                        )
-                        .unwrap(),
+        }
+    }
+    fn response(
+        &self,
+        lookup: Lookup,
+        after: Option<[u8; 32]>,
+    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
+        self.response_signed_as(lookup, after, self.producer.protocol_version)
+    }
+    /// The answer this state's producer gives to `lookup`, signed as `protocol_version`.
+    fn response_signed_as(
+        &self,
+        lookup: Lookup,
+        after: Option<[u8; 32]>,
+        protocol_version: u32,
+    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
+        let metadata = Self::metadata(protocol_version);
+        match lookup {
+            V0 => {
+                let proof = self
+                    .drive
+                    .prove_full_identity_by_non_unique_public_key_hash_two_proofs(
+                        self.hash,
+                        after,
+                        None,
+                        self.producer,
                     )
-                }),
-            })
-        } else {
-            // Force the single-proof producer so older versions can be signed over it too.
-            let mut producer = self.producer.clone();
-            producer
-                .drive
-                .methods
-                .identity
-                .prove
-                .prove_full_identity_by_non_unique_public_key_hash = 1;
-            let bytes = self
-                .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
-                    self.hash, after, None, &producer,
+                    .unwrap();
+                self.two_proof_answer(
+                    proof.identity_id_public_key_hash_proof,
+                    proof.identity_proof,
+                    metadata,
                 )
-                .unwrap()
-                .into_current()
-                .unwrap();
-            LookupResult::Proof(signed(bytes, &metadata, self.root()))
-        };
+            }
+            V1 => {
+                let proof = self
+                    .drive
+                    .prove_full_identity_by_non_unique_public_key_hash(
+                        self.hash,
+                        after,
+                        None,
+                        self.producer,
+                    )
+                    .unwrap();
+                GetIdentityByNonUniquePublicKeyHashResponse {
+                    version: Some(Version::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                        result: Some(V1Result::Proof(signed(proof, &metadata, self.root()))),
+                        metadata: Some(metadata),
+                    })),
+                }
+            }
+        }
+    }
+    /// A V0 answer over the given proofs, signed over this state's root.
+    fn two_proof_answer(
+        &self,
+        index_proof: Vec<u8>,
+        identity_proof: Option<Vec<u8>>,
+        metadata: ResponseMetadata,
+    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
         GetIdentityByNonUniquePublicKeyHashResponse {
             version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(result),
+                result: Some(V0Result::Proof(IdentityProvedResponse {
+                    grovedb_identity_public_key_hash_proof: Some(signed(
+                        index_proof,
+                        &metadata,
+                        self.root(),
+                    )),
+                    identity_proof_bytes: identity_proof,
+                })),
                 metadata: Some(metadata),
             })),
         }
+    }
+    /// The identity a lookup after `after` must return.
+    fn expected(&self, after: Option<[u8; 32]>) -> Option<&Identity> {
+        self.identities
+            .iter()
+            .find(|id| after.is_none_or(|a| id.id().to_buffer() > a))
     }
 }
 struct Provider;
@@ -242,296 +270,542 @@ fn signed(bytes: Vec<u8>, metadata: &ResponseMetadata, root: [u8; 32]) -> Proof 
         .to_vec();
     proof
 }
+fn request(
+    lookup: Lookup,
+    hash: [u8; 20],
+    after: Option<[u8; 32]>,
+) -> GetIdentityByNonUniquePublicKeyHashRequest {
+    let (public_key_hash, start_after) = (hash.to_vec(), after.map(|a| a.to_vec()));
+    GetIdentityByNonUniquePublicKeyHashRequest {
+        version: Some(match lookup {
+            V0 => get_identity_by_non_unique_public_key_hash_request::Version::V0(
+                GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                },
+            ),
+            V1 => get_identity_by_non_unique_public_key_hash_request::Version::V1(
+                GetIdentityByNonUniquePublicKeyHashRequestV1 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                },
+            ),
+        }),
+    }
+}
+/// The version of a response, which the matching request must have.
+fn lookup_of(response: &GetIdentityByNonUniquePublicKeyHashResponse) -> Lookup {
+    match response.version {
+        Some(Version::V0(_)) => V0,
+        Some(Version::V1(_)) => V1,
+        None => panic!("response without a version"),
+    }
+}
+/// Verify `response` as the answer to the request of its own version, so every refusal
+/// below comes from the proof, the signature or the request, never from the pairing.
 fn verify(
     response: GetIdentityByNonUniquePublicKeyHashResponse,
     hash: [u8; 20],
     after: Option<[u8; 32]>,
-) -> Result<Option<Identity>, Box<drive_proof_verifier::Error>> {
-    let request: GetIdentityByNonUniquePublicKeyHashRequest =
-        GetIdentityByNonUniquePublicKeyHashRequestV0 {
-            public_key_hash: hash.to_vec(),
-            start_after: after.map(|a| a.to_vec()),
-            prove: true,
-        }
-        .into();
+) -> Result<Option<Identity>, Box<Error>> {
+    verify_as(
+        lookup_of(&response),
+        response,
+        hash,
+        after,
+        PlatformVersion::latest(),
+    )
+}
+fn verify_as(
+    lookup: Lookup,
+    response: GetIdentityByNonUniquePublicKeyHashResponse,
+    hash: [u8; 20],
+    after: Option<[u8; 32]>,
+    verifier: &PlatformVersion,
+) -> Result<Option<Identity>, Box<Error>> {
     // Exercise actual protobuf encoding/decoding before FromProof.
     let response =
         GetIdentityByNonUniquePublicKeyHashResponse::decode(response.encode_to_vec().as_slice())
             .unwrap();
     <Identity as FromProof<GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-        request,
+        request(lookup, hash, after),
         response,
         Network::Testnet,
-        PlatformVersion::latest(),
+        verifier,
         &Provider,
     )
     .map_err(Box::new)
 }
-fn inner(
+fn signed_proof(response: &mut GetIdentityByNonUniquePublicKeyHashResponse) -> &mut Proof {
+    match &mut response.version {
+        Some(Version::V0(v0)) => match v0.result.as_mut() {
+            Some(V0Result::Proof(proved)) => proved
+                .grovedb_identity_public_key_hash_proof
+                .as_mut()
+                .unwrap(),
+            _ => panic!("proved V0"),
+        },
+        Some(Version::V1(v1)) => match v1.result.as_mut() {
+            Some(V1Result::Proof(proof)) => proof,
+            _ => panic!("proved V1"),
+        },
+        None => panic!("version"),
+    }
+}
+fn metadata(response: &mut GetIdentityByNonUniquePublicKeyHashResponse) -> &mut ResponseMetadata {
+    match &mut response.version {
+        Some(Version::V0(v0)) => v0.metadata.as_mut().unwrap(),
+        Some(Version::V1(v1)) => v1.metadata.as_mut().unwrap(),
+        None => panic!("version"),
+    }
+}
+fn two_proofs(
     response: &mut GetIdentityByNonUniquePublicKeyHashResponse,
-) -> &mut GetIdentityByNonUniquePublicKeyHashResponseV0 {
+) -> &mut IdentityProvedResponse {
     let Some(Version::V0(v0)) = &mut response.version else {
-        panic!("v0")
+        panic!("V0")
     };
-    v0
+    let Some(V0Result::Proof(proved)) = &mut v0.result else {
+        panic!("proved V0")
+    };
+    proved
 }
-fn proof(response: &mut GetIdentityByNonUniquePublicKeyHashResponse) -> &mut Proof {
-    match inner(response).result.as_mut().unwrap() {
-        LookupResult::Proof(proof) => proof,
-        LookupResult::LegacyProof(legacy) => legacy
-            .grovedb_identity_public_key_hash_proof
-            .as_mut()
-            .unwrap(),
-        _ => panic!("proof"),
-    }
-}
-/// The newest version whose nodes answer in the given wire format.
-fn producer_for(legacy: bool) -> u32 {
-    if legacy {
-        13
-    } else {
-        PlatformVersion::latest().protocol_version
-    }
-}
-fn assert_format_refused(
-    result: Result<Option<Identity>, Box<drive_proof_verifier::Error>>,
-    context: &str,
-) {
+fn assert_invalid_signature(result: Result<Option<Identity>, Box<Error>>, context: &str) {
     let error = result.expect_err(context);
     assert!(
-        matches!(&*error, drive_proof_verifier::Error::ResponseDecodeError { error } if error.contains("proof format")),
+        matches!(*error, Error::InvalidSignature { .. }),
         "{context}: {error}"
     );
 }
+/// A proof that does not prove the rebuilt query: GroveDB refuses it, or one of the
+/// strict two-proof checks does.
+fn assert_proof_refused(result: Result<Option<Identity>, Box<Error>>, context: &str) {
+    let error = result.expect_err(context);
+    assert!(
+        matches!(
+            *error,
+            Error::GroveDBError { .. } | Error::DriveError { .. }
+        ),
+        "{context}: {error}"
+    );
+}
+/// The versions this test signs answers with: every version that serves V0, the first
+/// that serves V1, and one newer than this build.
+fn signed_versions(lookup: Lookup) -> Vec<u32> {
+    let latest = PlatformVersion::latest().protocol_version;
+    match lookup {
+        V0 => vec![12, 13, latest, latest + 1],
+        // No honest node answers V1 below 14, but such an answer is still a sound proof
+        // of the signed state, so it verifies.
+        V1 => vec![13, latest, latest + 1],
+    }
+}
+/// The newest table this build knows for a signed version.
+fn producer_for(signed: u32) -> u32 {
+    signed.min(PlatformVersion::latest().protocol_version)
+}
+
 #[test]
-fn should_verify_nonunique_pagination_in_the_format_each_producer_version_emits() {
-    for version in [12, 13, PlatformVersion::latest().protocol_version] {
-        let f = Fixture::new(version);
-        let legacy = version <= 13;
-        for (after, expected) in [
-            (None, Some(&f.identities[0])),
-            (Some([0x10; 32]), Some(&f.identities[1])),
-            (Some([0x20; 32]), None),
-        ] {
-            assert_eq!(
-                verify(f.response(legacy, after), f.hash, after)
-                    .unwrap()
-                    .as_ref(),
-                expected,
-                "PV{version}, legacy={legacy}"
-            );
+fn should_verify_nonunique_pagination_in_both_versions() {
+    for lookup in [V0, V1] {
+        for signed in signed_versions(lookup) {
+            let f = Fixture::new(producer_for(signed));
+            for verifier in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+                for after in [None, Some([0x10; 32]), Some([0x20; 32])] {
+                    let response = f.response_signed_as(lookup, after, signed);
+                    assert_eq!(
+                        verify_as(lookup, response, f.hash, after, verifier)
+                            .unwrap()
+                            .as_ref(),
+                        f.expected(after),
+                        "{lookup:?} signed PV{signed}, verifier PV{}, after={after:?}",
+                        verifier.protocol_version
+                    );
+                }
+            }
         }
     }
 }
-/// A node must not choose the format: a correctly signed, otherwise valid answer in the
-/// format its signed version does not emit is refused, never reinterpreted.
+
+/// The request version chooses the shape. A correctly signed, otherwise valid answer of
+/// the other version is refused, never reinterpreted, whatever version signed it.
 #[test]
-fn should_refuse_nonunique_answers_in_a_format_the_signed_version_does_not_emit() {
-    for (version, legacy) in [
-        (12, false),
-        (13, false),
-        (PlatformVersion::latest().protocol_version, true),
-    ] {
-        let f = Fixture::new(version);
-        for after in [None, Some([0x10; 32]), Some([0x20; 32])] {
-            assert_format_refused(
-                verify(f.response(legacy, after), f.hash, after),
-                &format!("PV{version}, legacy={legacy}, after={after:?}"),
-            );
+fn should_refuse_a_nonunique_answer_of_the_other_version() {
+    for (asked, answered) in [(V0, V1), (V1, V0)] {
+        for signed in [13, PlatformVersion::latest().protocol_version] {
+            let f = Fixture::new(signed);
+            for after in [None, Some([0x10; 32]), Some([0x20; 32])] {
+                let response = f.response(answered, after);
+                assert!(verify(response.clone(), f.hash, after).is_ok());
+                let error = verify_as(asked, response, f.hash, after, PlatformVersion::latest())
+                    .expect_err("an answer of the other version");
+                assert!(
+                    matches!(&*error, Error::ResponseDecodeError { error } if error.contains("does not match request version")),
+                    "{asked:?} asked, {answered:?} answered, PV{signed}: {error}"
+                );
+            }
         }
     }
 }
-/// A version newer than this build is read with the newest known rules: its nodes are
-/// expected to answer in the newest format, still bound to the signed root.
+
+/// A V0 answer whose result arrives at the field-4 number of the 5.0 prereleases has no
+/// result to this client.
+#[test]
+fn should_find_no_proof_in_a_v0_answer_at_field_4() {
+    let f = Fixture::new(PlatformVersion::latest().protocol_version);
+    let mut bytes = f.response(V1, None).encode_to_vec();
+    // Outer version tag 2 (V1) becomes 1 (V0); inner result tag 2 (Proof) becomes 4.
+    assert_eq!(bytes[0], 0x12);
+    bytes[0] = 0x0a;
+    let inner = fields_start(&bytes);
+    assert_eq!(bytes[inner], 0x12);
+    bytes[inner] = 0x22;
+    let response = GetIdentityByNonUniquePublicKeyHashResponse::decode(bytes.as_slice()).unwrap();
+    let Some(Version::V0(v0)) = &response.version else {
+        panic!("V0")
+    };
+    assert!(v0.result.is_none());
+    assert!(matches!(
+        *verify_as(V0, response, f.hash, None, PlatformVersion::latest()).unwrap_err(),
+        Error::NoProofInResult
+    ));
+}
+/// Offset of the first field inside the outer length-delimited version field.
+fn fields_start(bytes: &[u8]) -> usize {
+    let mut offset = 1;
+    while bytes[offset] & 0x80 != 0 {
+        offset += 1;
+    }
+    offset + 1
+}
+
+/// A version newer than this build is read with the newest known rules, still bound to
+/// the signed root.
 #[test]
 fn should_read_nonunique_answers_signed_by_an_unknown_newer_version_with_newest_rules() {
     let newer = PlatformVersion::latest().protocol_version + 1;
     let f = Fixture::new(PlatformVersion::latest().protocol_version);
-    for (after, expected) in [
-        (None, Some(&f.identities[0])),
-        (Some([0x10; 32]), Some(&f.identities[1])),
-        (Some([0x20; 32]), None),
-    ] {
-        assert_eq!(
-            verify(f.response_signed_as(false, after, newer), f.hash, after)
-                .unwrap()
-                .as_ref(),
-            expected,
-            "PV{newer}, after={after:?}"
-        );
-        assert_format_refused(
-            verify(f.response_signed_as(true, after, newer), f.hash, after),
-            &format!("PV{newer} legacy, after={after:?}"),
-        );
-    }
-    let mut forged = f.response_signed_as(false, None, newer);
-    inner(&mut forged)
-        .metadata
-        .as_mut()
-        .unwrap()
-        .protocol_version = newer + 1;
-    assert!(matches!(
-        *verify(forged, f.hash, None).unwrap_err(),
-        drive_proof_verifier::Error::InvalidSignature { .. }
-    ));
-}
-#[test]
-fn should_reject_nonunique_wrong_hash_cursor_signature_and_metadata_tampering() {
-    for legacy in [true, false] {
-        let f = Fixture::new(producer_for(legacy));
-        let response = f.response(legacy, None);
-        assert!(verify(response.clone(), [9; 20], None).is_err());
-        assert!(verify(response.clone(), f.hash, Some([0x10; 32])).is_err());
-        assert!(verify(f.response(legacy, Some([0x10; 32])), f.hash, None).is_err());
-        for field in 0..9 {
-            let mut changed = response.clone();
-            let m = inner(&mut changed).metadata.as_mut().unwrap();
-            match field {
-                0 => m.height += 1,
-                1 => m.time_ms += 1,
-                2 => m.core_chain_locked_height += 1,
-                // Another version answering in the same format, so only the signature can refuse it.
-                3 => {
-                    m.protocol_version = if legacy {
-                        12
-                    } else {
-                        PlatformVersion::latest().protocol_version + 1
-                    }
-                }
-                4 => m.chain_id.push('x'),
-                5 => m.protocol_version = u32::MAX,
-                6 => m.protocol_version = 0,
-                7 => m.protocol_version = PlatformVersion::latest().protocol_version + 1,
-                _ => proof(&mut changed).signature[0] ^= 1,
-            }
-            let error = verify(changed, f.hash, None)
-                .expect_err(&format!("legacy={legacy}, field={field}"));
-            if field == 3 {
-                assert!(
-                    matches!(*error, drive_proof_verifier::Error::InvalidSignature { .. }),
-                    "legacy={legacy}: {error}"
-                );
-            }
-        }
-    }
-}
-#[test]
-fn should_reject_legacy_unbound_incomplete_malformed_and_v0_proofs() {
-    let f = Fixture::new(13);
-    for case in 0..7 {
-        let mut response = f.response(true, None);
-        let Some(LookupResult::LegacyProof(legacy)) = &mut inner(&mut response).result else {
-            panic!("legacy")
-        };
-        match case {
-            0 => legacy.identity_proof_bytes = None,
-            1 => legacy.identity_proof_bytes = Some(vec![1]),
-            2 => legacy.identity_proof_bytes = Some(vec![0]),
-            3 => {
-                legacy
-                    .grovedb_identity_public_key_hash_proof
-                    .as_mut()
+    for lookup in [V0, V1] {
+        for after in [None, Some([0x10; 32]), Some([0x20; 32])] {
+            assert_eq!(
+                verify(f.response_signed_as(lookup, after, newer), f.hash, after)
                     .unwrap()
-                    .grovedb_proof = vec![0]
-            }
-            4 => {
-                legacy.identity_proof_bytes = Some(
-                    f.prove(
-                        &Drive::full_identity_query(&[0x20; 32], &f.producer.drive.grove_version)
-                            .unwrap(),
-                    ),
-                )
-            }
-            5 => {
-                legacy.identity_proof_bytes =
-                    Some(f.prove(&Drive::identity_balance_query(&[0x10; 32])))
-            }
-            _ => {
-                let mut identity = Identity::random_identity(3, Some(16), f.producer).unwrap();
-                identity.set_id(Identifier::new([0x30; 32]));
-                f.drive
-                    .add_new_identity(
-                        identity,
-                        false,
-                        &BlockInfo::default(),
-                        true,
-                        None,
-                        f.producer,
-                    )
-                    .unwrap();
-                legacy.identity_proof_bytes = Some(
-                    f.prove(
-                        &Drive::full_identity_query(&[0x10; 32], &f.producer.drive.grove_version)
-                            .unwrap(),
-                    ),
-                );
-            }
+                    .as_ref(),
+                f.expected(after),
+                "{lookup:?} PV{newer}, after={after:?}"
+            );
         }
-        assert!(verify(response, f.hash, None).is_err(), "case={case}");
-    }
-    let mut absence = f.response(true, Some([0xff; 32]));
-    let Some(LookupResult::LegacyProof(legacy)) = &mut inner(&mut absence).result else {
-        panic!("legacy")
-    };
-    legacy.identity_proof_bytes = Some(
-        f.prove(&Drive::full_identity_query(&[0x10; 32], &f.producer.drive.grove_version).unwrap()),
-    );
-    assert!(verify(absence, f.hash, Some([0xff; 32])).is_err());
-}
-#[test]
-fn should_verify_nonunique_hash_absence_in_both_formats() {
-    for legacy in [true, false] {
-        let mut f = Fixture::new(producer_for(legacy));
-        f.hash = [9; 20];
-        f.identities.clear();
-        assert!(verify(f.response(legacy, None), f.hash, None)
-            .unwrap()
-            .is_none());
+        let mut forged = f.response_signed_as(lookup, None, newer);
+        metadata(&mut forged).protocol_version = newer + 1;
+        assert_invalid_signature(verify(forged, f.hash, None), &format!("{lookup:?}"));
     }
 }
 
-/// Callers replaying a verified answer get the signed proof back: for a legacy answer
-/// that is the index proof, which carries the quorum signature.
 #[test]
-fn should_return_the_signed_proof_of_either_format() {
-    for legacy in [true, false] {
-        let f = Fixture::new(producer_for(legacy));
-        let mut response = f.response(legacy, None);
-        let signed = proof(&mut response).clone();
-        let request: GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: f.hash.to_vec(),
-                start_after: None,
-                prove: true,
+fn should_reject_nonunique_wrong_hash_cursor_signature_and_metadata_tampering() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for lookup in [V0, V1] {
+        for signed in [13, latest] {
+            let f = Fixture::new(signed);
+            let context = format!("{lookup:?} PV{signed}");
+            let response = f.response(lookup, None);
+            assert_eq!(
+                verify(response.clone(), f.hash, None).unwrap().as_ref(),
+                f.expected(None),
+                "{context}: untampered control"
+            );
+            assert_proof_refused(
+                verify(response.clone(), [9; 20], None),
+                &format!("{context}: hash"),
+            );
+            assert_proof_refused(
+                verify(response.clone(), f.hash, Some([0x10; 32])),
+                &format!("{context}: cursor"),
+            );
+            assert_proof_refused(
+                verify(f.response(lookup, Some([0x10; 32])), f.hash, None),
+                &format!("{context}: answer for another cursor"),
+            );
+            for field in 0..8 {
+                let mut changed = response.clone();
+                let m = metadata(&mut changed);
+                match field {
+                    0 => m.height += 1,
+                    1 => m.time_ms += 1,
+                    2 => m.core_chain_locked_height += 1,
+                    // Another version building the same queries: only the signature refuses it.
+                    3 => m.protocol_version = if signed == 13 { 12 } else { latest + 1 },
+                    4 => m.chain_id.push('x'),
+                    5 => m.protocol_version = u32::MAX,
+                    6 => m.protocol_version = latest + 1,
+                    _ => signed_proof(&mut changed).signature[0] ^= 1,
+                }
+                let context = format!("{context}, field {field}");
+                let result = verify(changed, f.hash, None);
+                if field == 7 {
+                    // A flipped bit may not decode as a signature at all.
+                    let error = result.expect_err(&context);
+                    assert!(
+                        matches!(
+                            *error,
+                            Error::InvalidSignature { .. }
+                                | Error::InvalidSignatureFormat { .. }
+                                | Error::SignatureVerificationError { .. }
+                        ),
+                        "{context}: {error}"
+                    );
+                } else {
+                    assert_invalid_signature(result, &context);
+                }
             }
-            .into();
+            let mut unknown = response.clone();
+            metadata(&mut unknown).protocol_version = 0;
+            let error = verify(unknown, f.hash, None).expect_err("protocol version 0");
+            assert!(
+                matches!(&*error, Error::ResponseDecodeError { error } if error.contains("unsupported proof query protocol version 0")),
+                "{lookup:?}: {error}"
+            );
+        }
+    }
+}
+
+/// Moving an answer across the protocol 14 boundary needs the signature of the version
+/// it claims: a two-proof answer made at 13 relabeled 14, and a single proof made at 14
+/// relabeled 13.
+#[test]
+fn should_refuse_nonunique_answers_relabeled_across_protocol_14() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for (lookup, made, claimed) in [
+        (V0, 13, latest),
+        (V0, latest, 13),
+        (V1, latest, 13),
+        (V1, 13, latest),
+    ] {
+        let f = Fixture::new(made);
+        let mut response = f.response(lookup, None);
+        metadata(&mut response).protocol_version = claimed;
+        assert_invalid_signature(
+            verify(response, f.hash, None),
+            &format!("{lookup:?} made at {made}, claimed {claimed}"),
+        );
+    }
+}
+
+/// A true absence proof for a narrower range or another key cannot answer a wider
+/// request: the request's own hash and cursor rebuild the query.
+#[test]
+fn should_refuse_a_substituted_nonunique_absence_proof() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for lookup in [V0, V1] {
+        for signed in [13, latest] {
+            let f = Fixture::new(signed);
+            let past_all = f.response(lookup, Some([0x20; 32]));
+            assert_eq!(
+                verify(past_all.clone(), f.hash, Some([0x20; 32])).unwrap(),
+                None
+            );
+            for after in [None, Some([0x10; 32])] {
+                assert_proof_refused(
+                    verify(past_all.clone(), f.hash, after),
+                    &format!("{lookup:?} PV{signed}: cursor 0x20 answer for {after:?}"),
+                );
+            }
+            let mut other = Fixture::new(signed);
+            other.hash = [9; 20];
+            let other_key = other.response(lookup, None);
+            assert_eq!(verify(other_key.clone(), [9; 20], None).unwrap(), None);
+            // The other fixture holds the same identities, so its root signs this state too.
+            assert_eq!(other.root(), f.root());
+            for after in [None, Some([0x10; 32])] {
+                assert_proof_refused(
+                    verify(other_key.clone(), f.hash, after),
+                    &format!("{lookup:?} PV{signed}: another key's absence for {after:?}"),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn should_reject_unbound_incomplete_and_malformed_two_proof_answers() {
+    for signed in [
+        13,
+        PlatformVersion::latest().protocol_version,
+        PlatformVersion::latest().protocol_version + 1,
+    ] {
+        let f = Fixture::new(producer_for(signed));
+        let control = f.response_signed_as(V0, None, signed);
+        assert_eq!(
+            verify(control.clone(), f.hash, None).unwrap().as_ref(),
+            f.expected(None),
+            "PV{signed}: untampered control"
+        );
+        let first = f.identities[0].id().to_buffer();
+        let second = f.identities[1].id().to_buffer();
+        let full_identity = |id: &[u8; 32]| {
+            f.prove(&Drive::full_identity_query(id, &f.producer.drive.grove_version).unwrap())
+        };
+        for case in 0..7 {
+            let mut response = control.clone();
+            let proved = two_proofs(&mut response);
+            match case {
+                // The index names an identity, but its proof is missing.
+                0 => proved.identity_proof_bytes = None,
+                // Unsupported or malformed identity proof envelopes.
+                1 => proved.identity_proof_bytes = Some(vec![1]),
+                2 => proved.identity_proof_bytes = Some(vec![0]),
+                // Malformed index proof under the signature.
+                3 => {
+                    proved
+                        .grovedb_identity_public_key_hash_proof
+                        .as_mut()
+                        .unwrap()
+                        .grovedb_proof = vec![0]
+                }
+                // Another identity's complete proof.
+                4 => proved.identity_proof_bytes = Some(full_identity(&second)),
+                // A proof of only part of the identity.
+                5 => {
+                    proved.identity_proof_bytes =
+                        Some(f.prove(&Drive::identity_balance_query(&first)))
+                }
+                // An identity proof of another state.
+                _ => {
+                    let mut later = Identity::random_identity(3, Some(16), f.producer).unwrap();
+                    later.set_id(Identifier::new([0x30; 32]));
+                    let g = Fixture::new(producer_for(signed));
+                    g.drive
+                        .add_new_identity(
+                            later,
+                            false,
+                            &BlockInfo::default(),
+                            true,
+                            None,
+                            g.producer,
+                        )
+                        .unwrap();
+                    proved.identity_proof_bytes = Some(
+                        g.prove(
+                            &Drive::full_identity_query(&first, &g.producer.drive.grove_version)
+                                .unwrap(),
+                        ),
+                    );
+                }
+            }
+            let error =
+                verify(response, f.hash, None).expect_err(&format!("PV{signed}, case {case}"));
+            let refused_by = match &*error {
+                Error::DriveError { error } | Error::GroveDBError { error, .. } => error.clone(),
+                Error::UnsupportedGroveDBProofVersion { proof, version, .. } => {
+                    format!("unsupported {proof} envelope {version}")
+                }
+                other => panic!("PV{signed}, case {case}: unexpected {other}"),
+            };
+            let expected = [
+                "references an identity without its proof",
+                "unable to decode proof",
+                "unsupported full identity proof envelope 0",
+                "unsupported proof envelope 0",
+                "invalid proof",
+                "invalid proof",
+                "index and identity proof roots differ",
+            ][case];
+            assert!(
+                refused_by.contains(expected),
+                "PV{signed}, case {case}: {refused_by}"
+            );
+        }
+
+        // An identity proof sent with an absence answer.
+        let mut absence = f.response_signed_as(V0, Some([0xff; 32]), signed);
+        assert_eq!(
+            verify(absence.clone(), f.hash, Some([0xff; 32])).unwrap(),
+            None
+        );
+        two_proofs(&mut absence).identity_proof_bytes = Some(full_identity(&first));
+        assert_proof_refused(
+            verify(absence, f.hash, Some([0xff; 32])),
+            &format!("PV{signed}: absence with identity"),
+        );
+
+        // An index proof of more than the first entry after the cursor.
+        let mut query = Drive::identity_id_by_non_unique_public_key_hash_query(f.hash, None);
+        query.query.limit = Some(2);
+        let extra = f.two_proof_answer(
+            f.prove(&query),
+            Some(full_identity(&first)),
+            Fixture::metadata(signed),
+        );
+        let error = verify(extra, f.hash, None).expect_err("an extra index entry");
+        assert!(
+            matches!(&*error, Error::GroveDBError { error, .. } if error.contains("more data than limit")),
+            "PV{signed}: {error}"
+        );
+
+        // An index proof that skips the first entry, paired with the second identity.
+        let mut skipped =
+            Drive::identity_id_by_non_unique_public_key_hash_query(f.hash, Some(first));
+        skipped.query.limit = Some(1);
+        let skipped = f.two_proof_answer(
+            f.prove(&skipped),
+            Some(full_identity(&second)),
+            Fixture::metadata(signed),
+        );
+        assert_proof_refused(
+            verify(skipped, f.hash, None),
+            &format!("PV{signed}: skipped first entry"),
+        );
+    }
+}
+
+#[test]
+fn should_verify_nonunique_hash_absence_in_both_versions() {
+    for lookup in [V0, V1] {
+        for signed in [13, PlatformVersion::latest().protocol_version] {
+            let mut f = Fixture::new(signed);
+            f.hash = [9; 20];
+            f.identities.clear();
+            let response = f.response(lookup, None);
+            if lookup == V0 {
+                assert_eq!(two_proofs(&mut response.clone()).identity_proof_bytes, None);
+            }
+            assert!(verify(response, f.hash, None).unwrap().is_none());
+        }
+    }
+}
+
+/// Callers replaying a verified answer get the signed proof back: for V0 that is the index
+/// proof, which carries the quorum signature.
+#[test]
+fn should_return_the_signed_proof_of_either_version() {
+    for lookup in [V0, V1] {
+        let f = Fixture::new(PlatformVersion::latest().protocol_version);
+        let mut response = f.response(lookup, None);
+        let signed = signed_proof(&mut response).clone();
         let (identity, _, returned) = <Identity as FromProof<
             GetIdentityByNonUniquePublicKeyHashRequest,
         >>::maybe_from_proof_with_metadata(
-            request,
+            request(lookup, f.hash, None),
             response,
             Network::Testnet,
             PlatformVersion::latest(),
             &Provider,
         )
         .unwrap();
-        assert_eq!(identity.as_ref(), Some(&f.identities[0]), "legacy={legacy}");
-        assert_eq!(returned, signed, "legacy={legacy}");
+        assert_eq!(identity.as_ref(), Some(&f.identities[0]), "{lookup:?}");
+        assert_eq!(returned, signed, "{lookup:?}");
     }
 }
 
 #[test]
-fn should_not_interpret_a_malformed_current_nonunique_proof_as_legacy() {
-    let f = Fixture::new(producer_for(false));
-    let mut response = f.response(false, None);
-    let legacy = f.response(true, None);
-    let Some(Version::V0(legacy)) = legacy.version else {
-        panic!("legacy")
-    };
-    let Some(LookupResult::LegacyProof(legacy)) = legacy.result else {
-        panic!("legacy")
-    };
-    proof(&mut response).grovedb_proof = legacy.encode_to_vec();
+fn should_not_read_two_proofs_packed_into_a_v1_proof() {
+    let f = Fixture::new(PlatformVersion::latest().protocol_version);
+    let mut response = f.response(V1, None);
+    let mut two = f.response(V0, None);
+    let packed = two_proofs(&mut two).encode_to_vec();
+    signed_proof(&mut response).grovedb_proof = packed;
     assert!(verify(response, f.hash, None).is_err());
 }
 
@@ -541,82 +815,48 @@ fn should_export_nonunique_sdk_fixtures() {
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/identity-discovery");
     std::fs::create_dir_all(&directory).unwrap();
-    // The versions on either side of the wire change, fixed so that re-running on a later
+    // The versions on either side of protocol 14, fixed so that re-running on a later
     // branch rewrites the same files the SDK tests read.
-    for version in [12, 13, 14] {
-        let f = Fixture::new(version);
-        std::fs::write(directory.join("key-hash.bin"), f.hash).unwrap();
-        std::fs::write(
-            directory.join("quorum-key.bin"),
-            key().public_key().to_bytes(),
-        )
-        .unwrap();
-        for legacy in [true, false] {
+    for (lookup, versions) in [(V0, vec![12, 13, 14]), (V1, vec![14])] {
+        for version in versions {
+            let f = Fixture::new(version);
+            std::fs::write(directory.join("key-hash.bin"), f.hash).unwrap();
+            std::fs::write(
+                directory.join("quorum-key.bin"),
+                key().public_key().to_bytes(),
+            )
+            .unwrap();
             for (page, after) in [None, Some([0x10; 32]), Some([0x20; 32])]
                 .into_iter()
                 .enumerate()
             {
-                let response = f.response(legacy, after);
-                if legacy == (version <= 13) {
-                    verify(response.clone(), f.hash, after).unwrap();
-                } else {
-                    assert_format_refused(verify(response.clone(), f.hash, after), "export");
-                }
-                let name = format!(
-                    "pv{version}-{}-{page}.bin",
-                    if legacy { "legacy" } else { "current" }
+                let response = f.response(lookup, after);
+                assert_eq!(
+                    verify(response.clone(), f.hash, after).unwrap().as_ref(),
+                    f.expected(after)
                 );
+                let name = format!("pv{version}-{}-{page}.bin", lookup_name(lookup));
                 std::fs::write(directory.join(name), response.encode_to_vec()).unwrap();
             }
         }
     }
-    // A version newer than any build, answering in the single-proof format.
+    // A version newer than any build, in each request version.
     let f = Fixture::new(14);
-    let response = f.response_signed_as(false, None, NEWER_PROTOCOL_VERSION);
-    verify(response.clone(), f.hash, None).unwrap();
-    std::fs::write(
-        directory.join("newer-current-0.bin"),
-        response.encode_to_vec(),
-    )
-    .unwrap();
+    for lookup in [V0, V1] {
+        let response = f.response_signed_as(lookup, None, NEWER_PROTOCOL_VERSION);
+        verify(response.clone(), f.hash, None).unwrap();
+        std::fs::write(
+            directory.join(format!("newer-{}-0.bin", lookup_name(lookup))),
+            response.encode_to_vec(),
+        )
+        .unwrap();
+    }
 }
-
-#[test]
-fn should_reject_unknown_legacy_nonunique_verifier_generation() {
-    let f = Fixture::new(13);
-    let mut security = PlatformVersion::latest().clone();
-    security
-        .drive
-        .methods
-        .verify
-        .identity
-        .verify_full_identity_by_non_unique_public_key_hash = 255;
-    let response = f.response(true, None);
-    let Some(Version::V0(v0)) = response.version else {
-        panic!("v0")
-    };
-    let Some(LookupResult::LegacyProof(proof)) = v0.result else {
-        panic!("legacy")
-    };
-    let error = Drive::verify_legacy_identity_by_non_unique_public_key_hash(
-        &proof
-            .grovedb_identity_public_key_hash_proof
-            .unwrap()
-            .grovedb_proof,
-        proof.identity_proof_bytes.as_deref(),
-        f.hash,
-        None,
-        f.producer,
-        &security,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        drive::error::Error::Drive(drive::error::drive::DriveError::UnknownVersionMismatch {
-            received: 255,
-            ..
-        })
-    ));
+fn lookup_name(lookup: Lookup) -> &'static str {
+    match lookup {
+        V0 => "v0",
+        V1 => "v1",
+    }
 }
 
 #[path = "identity_discovery/document_outcome.rs"]
