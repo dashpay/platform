@@ -439,6 +439,70 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(keyMessage, detail)
     }
 
+    /// The invitation claim's outcomes keep pinned raw values and typed
+    /// cases, so the app branches on codes rather than on error text.
+    func testShouldPreserveInvitationClaimOutcomesFromFFI() {
+        let codes: [(PlatformWalletFFIResultCode, PlatformWalletResultCode, Int32)] = [
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_KEYS_ALREADY_REGISTERED,
+             .errorInvitationKeysAlreadyRegistered, 63),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_CLAIMED_BY_THIS_WALLET,
+             .errorInvitationClaimedByThisWallet, 64),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_NOT_READY,
+             .errorInvitationNotReady, 65),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_CHAIN_LOCKED,
+             .errorAssetLockNotChainLocked, 66),
+        ]
+        for (ffi, code, raw) in codes {
+            XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
+            XCTAssertEqual(code.rawValue, raw)
+        }
+
+        let id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
+        guard case .invitationKeysAlreadyRegistered(let owner) = PlatformWalletError(
+            code: .errorInvitationKeysAlreadyRegistered, message: "{\"identityId\":\"\(id)\"}"
+        ) else { return XCTFail("lost typed keys-already-registered error") }
+        XCTAssertEqual(owner, id)
+        guard case .invitationKeysAlreadyRegistered(let unknownOwner) = PlatformWalletError(
+            code: .errorInvitationKeysAlreadyRegistered, message: "{\"identityId\":null}"
+        ) else { return XCTFail("lost the owner-less keys-already-registered error") }
+        XCTAssertNil(unknownOwner)
+        guard case .invitationClaimedByThisWallet(let claimed) = PlatformWalletError(
+            code: .errorInvitationClaimedByThisWallet, message: "{\"identityId\":\"\(id)\"}"
+        ) else { return XCTFail("lost typed claimed-by-this-wallet error") }
+        XCTAssertEqual(claimed, id)
+        guard case .invitationNotReady = PlatformWalletError(
+            code: .errorInvitationNotReady, message: "quorum not verified"
+        ) else { return XCTFail("lost typed not-ready error") }
+        guard case .assetLockNotChainLocked = PlatformWalletError(
+            code: .errorAssetLockNotChainLocked, message: "retry later"
+        ) else { return XCTFail("lost typed not-chain-locked error") }
+    }
+
+    /// 64 always names its identity; a payload without one degrades to
+    /// `.unknown` instead of inventing an id.
+    func testShouldDegradeAnUndecodableInvitationDetailToUnknown() {
+        guard case .unknown = PlatformWalletError(
+            code: .errorInvitationClaimedByThisWallet, message: "{\"identityId\":null}"
+        ) else { return XCTFail("a claim with no identity must not be typed") }
+        guard case .unknown = PlatformWalletError(
+            code: .errorInvitationKeysAlreadyRegistered, message: "not json"
+        ) else { return XCTFail("a prose payload must not be typed") }
+    }
+
+    /// The FFI tri-state maps to `false` / `true` / `nil`.
+    func testShouldDecodeWhoseInvitationClaimItWas() {
+        func status(claimed: Bool, by: UInt8) -> ManagedPlatformWallet.InvitationClaimStatus {
+            var ffi = InvitationClaimStatusFFI()
+            ffi.already_claimed = claimed
+            ffi.claimed_by_this_wallet = by
+            return ManagedPlatformWallet.InvitationClaimStatus(ffi)
+        }
+        XCTAssertEqual(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO)).claimedByThisWallet, false)
+        XCTAssertEqual(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_YES)).claimedByThisWallet, true)
+        XCTAssertNil(status(claimed: true, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN)).claimedByThisWallet)
+        XCTAssertEqual(status(claimed: false, by: UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO)).claimedByThisWallet, false)
+    }
+
     func testShouldPreserveSpvProcessRestartRequiredFromFFI() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED

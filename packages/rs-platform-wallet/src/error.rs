@@ -94,6 +94,33 @@ pub enum PlatformWalletError {
         wallet: Network,
     },
 
+    /// The invitation's identity is this wallet's: it holds this claim's
+    /// master key (an earlier claim of this wallet landed), or the wallet
+    /// already records it. Nothing was recorded, and nothing was broadcast
+    /// unless a node that lagged behind let the claim through; the host loads
+    /// the identity the way it loads any of its own.
+    #[error("invitation was already claimed by this wallet as identity {identity_id}")]
+    InvitationClaimedByThisWallet { identity_id: Identifier },
+
+    /// Someone else claimed the invitation first; nothing was broadcast unless a node that lagged behind let the claim through.
+    #[error("invitation was already claimed by identity {identity_id}")]
+    InvitationAlreadyClaimed { identity_id: Identifier },
+
+    /// A key of the claim is already registered to another identity, so
+    /// Platform would refuse the claim and charge the voucher. `identity_id`
+    /// is that identity when the claim's lookup found it, `None` when
+    /// Platform refused the broadcast.
+    #[error("{}", match identity_id {
+        Some(id) => format!("a key of this invitation claim is already registered to identity {id}"),
+        None => "a key of this invitation claim is already registered to another identity".to_string(),
+    })]
+    InvitationKeysAlreadyRegistered { identity_id: Option<Identifier> },
+
+    /// The claim's identity lookups could not be verified yet (the trusted
+    /// quorum source is not ready). Nothing was broadcast; retry once synced.
+    #[error("cannot verify Platform's answer for the invitation claim yet: {0}")]
+    InvitationNotReady(#[source] dash_sdk::Error),
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -1050,6 +1077,16 @@ impl From<InvitationError> for PlatformWalletError {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::ClaimedByThisWallet { identity_id } => {
+                Self::InvitationClaimedByThisWallet { identity_id }
+            }
+            InvitationError::AlreadyClaimed { identity_id } => {
+                Self::InvitationAlreadyClaimed { identity_id }
+            }
+            InvitationError::KeysAlreadyRegistered { identity_id } => {
+                Self::InvitationKeysAlreadyRegistered { identity_id }
+            }
+            InvitationError::NotReady(error) => Self::InvitationNotReady(error),
             InvitationError::Sdk(error) => Self::Sdk(error),
         }
     }
@@ -1853,6 +1890,34 @@ mod invitation_error_mapping_tests {
                 "boom".to_string()
             ))),
             PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
+        ));
+    }
+
+    /// The claim's preflight outcomes keep the identity they name.
+    #[test]
+    fn should_keep_the_identity_a_preflight_outcome_names() {
+        let id = Identifier::new([5; 32]);
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::ClaimedByThisWallet { identity_id: id }),
+            PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == id
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
+            PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
+        ));
+        for owner in [Some(id), None] {
+            assert!(matches!(
+                PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
+                    identity_id: owner,
+                }),
+                PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id } if identity_id == owner
+            ));
+        }
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotReady(dash_sdk::Error::Generic(
+                "later".to_string()
+            ))),
+            PlatformWalletError::InvitationNotReady(_)
         ));
     }
 }

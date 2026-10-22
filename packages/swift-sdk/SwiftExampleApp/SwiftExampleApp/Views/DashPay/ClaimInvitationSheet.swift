@@ -240,6 +240,11 @@ struct ClaimInvitationSheet: View {
                 } else {
                     dismiss()
                 }
+            } catch PlatformWalletError.invitationClaimedByThisWallet {
+                // An earlier claim from this wallet already created the
+                // identity, which this claim did not record.
+                errorMessage = "This invitation already created an identity in this wallet. "
+                    + "It appears once identities are refreshed."
             } catch {
                 errorMessage = error.localizedDescription
             }

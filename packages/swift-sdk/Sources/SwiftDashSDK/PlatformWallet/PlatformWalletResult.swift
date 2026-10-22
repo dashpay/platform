@@ -264,6 +264,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorSpvProcessRestartRequired = 59
     /// A whole-wallet asset lock exceeds the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// A key of a DashPay invitation claim already belongs to another
+    /// identity; the message is a JSON detail naming it.
+    case errorInvitationKeysAlreadyRegistered = 63
+    /// An earlier DashPay invitation claim of this wallet landed; the message
+    /// is a JSON detail naming its identity. Nothing was recorded.
+    case errorInvitationClaimedByThisWallet = 64
+    /// The invitation claim could not verify Platform's answers yet; nothing
+    /// was broadcast. Retry once synced.
+    case errorInvitationNotReady = 65
+    /// The asset lock is not usable yet (not propagated, or not chain-locked
+    /// for a ChainLock proof). Retry later.
+    case errorAssetLockNotChainLocked = 66
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -395,6 +407,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_KEYS_ALREADY_REGISTERED:
+            self = .errorInvitationKeysAlreadyRegistered
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_CLAIMED_BY_THIS_WALLET:
+            self = .errorInvitationClaimedByThisWallet
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVITATION_NOT_READY:
+            self = .errorInvitationNotReady
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_CHAIN_LOCKED:
+            self = .errorAssetLockNotChainLocked
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -581,6 +601,24 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockInsufficientFunds(String)
     /// A drain cannot fit every eligible input in one transaction. No partial drain occurred.
     case assetLockTooManyInputs(String)
+    /// The asset lock cannot be used yet: its transaction has not reached the
+    /// queried node, or it needs a ChainLock proof and is not chain-locked
+    /// yet. Retry later. Produced today by `claimInvitation`.
+    case assetLockNotChainLocked(String)
+    /// A key of the DashPay invitation claim is already registered to
+    /// another identity (base58 `identityId`, `nil` when Platform refused the
+    /// broadcast without naming it), so the claim cannot be made with these
+    /// keys.
+    case invitationKeysAlreadyRegistered(identityId: String?)
+    /// The invitation's identity (base58 `identityId`) is this wallet's: it
+    /// holds this claim's master key (an earlier claim landed) or the wallet
+    /// already records it. Nothing was recorded, and nothing was broadcast
+    /// unless a node that lagged behind let the claim through; load the
+    /// identity like any of the wallet's own.
+    case invitationClaimedByThisWallet(identityId: String)
+    /// The invitation claim could not verify Platform's answers yet (the
+    /// quorum is not verified). Nothing was broadcast; retry once synced.
+    case invitationNotReady(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -805,7 +843,8 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m),
+             .assetLockTooManyInputs(let m), .assetLockNotChainLocked(let m),
+             .invitationNotReady(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -851,6 +890,13 @@ public enum PlatformWalletError: LocalizedError {
                 + "could be confirmed. Nothing was purchased."
         case .insufficientIdentityCredits(let identityId, let required, let available):
             return "Identity \(identityId) has \(available) credits but \(required) are required."
+        case .invitationKeysAlreadyRegistered(let identityId):
+            guard let identityId else {
+                return "A key of this invitation claim is already registered to another identity."
+            }
+            return "A key of this invitation claim is already registered to identity \(identityId)."
+        case .invitationClaimedByThisWallet(let identityId):
+            return "This invitation was already claimed by this wallet as identity \(identityId)."
         case .contestedNameNotTradable(let label, let endsAtMs):
             if endsAtMs == 0 {
                 return "\"\(label)\" is in an active contested-name vote and cannot be traded "
@@ -924,6 +970,22 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorAssetLockNotChainLocked: self = .assetLockNotChainLocked(detail)
+        case .errorInvitationNotReady: self = .invitationNotReady(detail)
+        // Codes 63/64 carry a stable JSON detail naming the identity; a
+        // payload that does not decode degrades to `.unknown(detail)`.
+        case .errorInvitationKeysAlreadyRegistered:
+            if let d = InvitationErrorDetail.decode(detail) {
+                self = .invitationKeysAlreadyRegistered(identityId: d.identityId)
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorInvitationClaimedByThisWallet:
+            if let identityId = InvitationErrorDetail.decode(detail)?.identityId {
+                self = .invitationClaimedByThisWallet(identityId: identityId)
+            } else {
+                self = .unknown(detail)
+            }
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
@@ -1080,6 +1142,22 @@ private enum TradeErrorDetail {
     private static func decode<T: Decodable>(_ type: T.Type, from message: String?) -> T? {
         guard let data = message?.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+}
+
+// MARK: - Invitation-claim error detail decoding
+
+/// Decoder for the JSON detail FFI result codes 63/64 put in the result
+/// `message`: `{"identityId":"<base58>"}`, with `null` when code 63 could not
+/// name the identity.
+private enum InvitationErrorDetail {
+    struct Detail: Decodable {
+        let identityId: String?
+    }
+
+    static func decode(_ message: String?) -> Detail? {
+        guard let data = message?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(Detail.self, from: data)
     }
 }
 

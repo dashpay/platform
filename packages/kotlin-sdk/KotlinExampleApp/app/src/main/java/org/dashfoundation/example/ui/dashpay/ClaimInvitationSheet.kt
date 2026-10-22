@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.tokens.InvitationPreview
 import org.dashfoundation.example.di.LocalAppContainer
@@ -177,7 +178,14 @@ fun ClaimInvitationSheet(
                     onClose()
                 }
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Claiming the invitation failed."
+                errorMessage = if (t is DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
+                    // An earlier claim from this wallet already created the
+                    // identity, which this claim did not record.
+                    "This invitation already created an identity in this wallet. " +
+                        "It appears once identities are refreshed."
+                } else {
+                    t.message ?: "Claiming the invitation failed."
+                }
             } finally {
                 isClaiming = false
                 appUiState.invitationClaimInFlight.value = false

@@ -614,6 +614,41 @@ pub enum PlatformWalletFFIResultCode {
     /// host must not silently substitute a partial drain.
     ErrorAssetLockTooManyInputs = 60,
 
+    /// Maps `PlatformWalletError::InvitationKeysAlreadyRegistered`. A key of
+    /// the DashPay invitation claim is already registered to another
+    /// identity (usually one this wallet registered before at the same
+    /// index), so Platform would refuse the claim and charge the voucher.
+    /// Definitive for these keys.
+    ///
+    /// Message: a STABLE JSON detail object —
+    /// `{"identityId":"<base58>"}`, or `{"identityId":null}` when Platform
+    /// refused the broadcast and the owner is unknown. Swift mirror:
+    /// `PlatformWalletError.invitationKeysAlreadyRegistered`.
+    ErrorInvitationKeysAlreadyRegistered = 63,
+
+    /// Maps `PlatformWalletError::InvitationClaimedByThisWallet`. The
+    /// invitation's identity exists and holds this claim's master key: an
+    /// earlier claim of this wallet landed (or the wallet already records the
+    /// identity). Nothing was recorded, and nothing was broadcast unless a
+    /// node that lagged behind let the claim through; load the identity as
+    /// any of the wallet's own.
+    ///
+    /// Message: a STABLE JSON detail object — `{"identityId":"<base58>"}`.
+    /// Swift mirror: `PlatformWalletError.invitationClaimedByThisWallet`.
+    ErrorInvitationClaimedByThisWallet = 64,
+
+    /// Maps `PlatformWalletError::InvitationNotReady`. The invitation
+    /// claim's identity lookups could not be verified yet (the trusted
+    /// quorum source is not ready), so nothing was broadcast. Retry once the
+    /// wallet has synced.
+    ErrorInvitationNotReady = 65,
+
+    /// Maps `PlatformWalletError::AssetLockNotChainLocked`. The asset lock
+    /// cannot be used yet: its transaction has not reached the queried node,
+    /// or it needs a ChainLock proof and is not chain-locked yet. Retry
+    /// later. Produced today by the DashPay invitation claim.
+    ErrorAssetLockNotChainLocked = 66,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -809,12 +844,13 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
     }
 }
 
-/// The value-carrying DPNS-marketplace rejections, rendered as
-/// `(code, JSON detail)` instead of `(code, Display)`.
+/// The value-carrying rejections (the DPNS-marketplace trio and the
+/// invitation claim's identity outcomes), rendered as `(code, JSON detail)`
+/// instead of `(code, Display)`.
 ///
 /// `PlatformWalletFFIResult` has no per-error value fields, so a
 /// host that needs the *values* — not prose naming them — can only get
-/// them through the message. These three therefore put a stable JSON
+/// them through the message. These therefore put a stable JSON
 /// object there; the exact shape is documented on each
 /// [`PlatformWalletFFIResultCode`] variant and parsed back by the Swift
 /// mirror. Returns `None` for every other error, leaving the `Display`
@@ -822,9 +858,7 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 ///
 /// `DocumentNotForSale` (37) is deliberately absent: its only value is
 /// the document id the caller supplied, so its `Display` is enough.
-fn trade_error_json_detail(
-    error: &PlatformWalletError,
-) -> Option<(PlatformWalletFFIResultCode, String)> {
+fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIResultCode, String)> {
     match error {
         PlatformWalletError::DocumentPriceChanged {
             document_id,
@@ -860,16 +894,30 @@ fn trade_error_json_detail(
             })
             .to_string(),
         )),
+        PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id } => Some((
+            PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
+            serde_json::json!({
+                "identityId": identity_id.map(|id| id.to_string(Encoding::Base58)),
+            })
+            .to_string(),
+        )),
+        PlatformWalletError::InvitationClaimedByThisWallet { identity_id } => Some((
+            PlatformWalletFFIResultCode::ErrorInvitationClaimedByThisWallet,
+            serde_json::json!({
+                "identityId": identity_id.to_string(Encoding::Base58),
+            })
+            .to_string(),
+        )),
         _ => None,
     }
 }
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        // The three value-carrying marketplace rejections replace the
-        // Display rendering with a stable JSON detail object; everything
-        // else keeps Display as the message.
-        if let Some((code, detail)) = trade_error_json_detail(&error) {
+        // The value-carrying rejections replace the Display rendering with a
+        // stable JSON detail object; everything else keeps Display as the
+        // message.
+        if let Some((code, detail)) = error_json_detail(&error) {
             return PlatformWalletFFIResult::err(code, detail);
         }
         // Map the typed wallet error variants explicitly so they
@@ -996,8 +1044,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNetworkMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidNetwork
             }
-            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
+            PlatformWalletError::AssetLockAlreadyConsumed(..)
+            | PlatformWalletError::InvitationAlreadyClaimed { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+            }
+            PlatformWalletError::InvitationNotReady(..) => {
+                PlatformWalletFFIResultCode::ErrorInvitationNotReady
+            }
+            PlatformWalletError::AssetLockNotChainLocked(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
@@ -1091,7 +1146,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             // DPNS marketplace: the one trade rejection whose Display is
             // sufficient (the other three are handled by
-            // `trade_error_json_detail` above and never reach this match).
+            // `error_json_detail` above and never reach this match).
             PlatformWalletError::DocumentNotForSale { .. } => {
                 PlatformWalletFFIResultCode::ErrorDocumentNotForSale
             }
@@ -2183,6 +2238,88 @@ mod tests {
         assert_eq!(
             retry.code,
             PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+        );
+    }
+
+    /// The invitation claim's outcomes keep their own pinned codes, so a
+    /// host can tell "this wallet already has an identity" (63) and "your
+    /// own claim landed" (64) from "someone else claimed it" (24), and the
+    /// two retry signals (65, 66) from an unknown failure.
+    #[test]
+    fn should_keep_distinct_pinned_codes_for_invitation_claim_outcomes() {
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::from([7u8; 32]);
+        let cases: [(PlatformWalletError, PlatformWalletFFIResultCode, i32); 6] = [
+            (
+                PlatformWalletError::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(id),
+                },
+                PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
+                63,
+            ),
+            (
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id: id },
+                PlatformWalletFFIResultCode::ErrorInvitationClaimedByThisWallet,
+                64,
+            ),
+            (
+                PlatformWalletError::InvitationNotReady(dash_sdk::Error::Generic(
+                    "quorum".to_string(),
+                )),
+                PlatformWalletFFIResultCode::ErrorInvitationNotReady,
+                65,
+            ),
+            (
+                PlatformWalletError::AssetLockNotChainLocked("later".to_string()),
+                PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked,
+                66,
+            ),
+            (
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id: id },
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+                24,
+            ),
+            (
+                PlatformWalletError::AssetLockAlreadyConsumed(dashcore::OutPoint::default()),
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+                24,
+            ),
+        ];
+        for (error, expected, raw) in cases {
+            let rendered = error.to_string();
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(result.code, expected, "{rendered}");
+            assert_eq!(result.code as i32, raw, "{rendered}");
+        }
+    }
+
+    /// Codes 63/64 carry the identity they name as a STABLE JSON detail,
+    /// `null` when Platform refused the broadcast and named no owner.
+    #[test]
+    fn should_carry_the_documented_json_detail_for_invitation_identity_outcomes() {
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::from([7u8; 32]);
+        let detail = |error: PlatformWalletError| -> serde_json::Value {
+            let result: PlatformWalletFFIResult = error.into();
+            serde_json::from_str(&message_of(&result)).expect("the message must parse as JSON")
+        };
+        assert_eq!(
+            detail(PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: Some(id)
+            })["identityId"],
+            id.to_string(Encoding::Base58)
+        );
+        assert!(
+            detail(PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id: None })
+                ["identityId"]
+                .is_null()
+        );
+        assert_eq!(
+            detail(PlatformWalletError::InvitationClaimedByThisWallet { identity_id: id })
+                ["identityId"],
+            id.to_string(Encoding::Base58)
         );
     }
 

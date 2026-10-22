@@ -241,6 +241,57 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * Code 63: a key of the DashPay invitation claim is already
+         * registered to another identity ([identityId], base58; `null` when
+         * Platform refused the broadcast without naming it). Definitive for
+         * these keys.
+         */
+        class InvitationKeysAlreadyRegistered(
+            val identityId: String?,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            if (identityId == null) {
+                "A key of this invitation claim is already registered to another identity."
+            } else {
+                "A key of this invitation claim is already registered to identity $identityId."
+            },
+            cause,
+        )
+
+        /**
+         * Code 64: the invitation's identity ([identityId], base58) is this
+         * wallet's: it holds the claim's master key (an earlier claim landed)
+         * or the wallet already records it. Nothing was recorded, and nothing
+         * was broadcast unless a node that lagged behind let the claim
+         * through; load the identity like any of the wallet's own.
+         */
+        class InvitationClaimedByThisWallet(
+            val identityId: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "This invitation was already claimed by this wallet as identity $identityId.",
+            cause,
+        )
+
+        /**
+         * Code 65: the invitation claim could not verify Platform's answers
+         * yet. Nothing was broadcast; retry once synced.
+         */
+        class InvitationNotReady(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * Code 66: the asset lock is not usable yet (not propagated, or not
+         * chain-locked for a ChainLock proof). Retry later.
+         */
+        class AssetLockNotChainLocked(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -768,6 +819,24 @@ sealed class DashSdkError(
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
+            63 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationKeysAlreadyRegistered(
+                        identityId = detail.optionalString("identityId"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            64 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationClaimedByThisWallet(
+                        identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            65 -> PlatformWallet.InvitationNotReady(message, cause) // ErrorInvitationNotReady
+            66 -> PlatformWallet.AssetLockNotChainLocked(message, cause) // ErrorAssetLockNotChainLocked
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -778,7 +847,7 @@ sealed class DashSdkError(
             35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
             36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
             37 -> PlatformWallet.DocumentNotForSale(message, cause)
-            38 -> parseMarketplaceDetail(message)?.let { detail ->
+            38 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.DocumentPriceChanged(
                         documentId = detail.getString("documentId"),
@@ -788,7 +857,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            39 -> parseMarketplaceDetail(message)?.let { detail ->
+            39 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.InsufficientIdentityCredits(
                         identityId = detail.getString("identityId"),
@@ -798,7 +867,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            40 -> parseMarketplaceDetail(message)?.let { detail ->
+            40 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.ContestedNameNotTradable(
                         label = detail.getString("label"),
@@ -852,11 +921,15 @@ sealed class DashSdkError(
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
 
-        private fun parseMarketplaceDetail(message: String): JSONObject? =
+        private fun parseErrorDetail(message: String): JSONObject? =
             runCatching { JSONObject(message) }.getOrNull()
 
         private fun JSONObject.requiredULong(name: String): ULong =
             get(name).toString().toULong()
+
+        /** A string, or `null` when the key is JSON `null` or absent. */
+        private fun JSONObject.optionalString(name: String): String? =
+            if (isNull(name)) null else requireNotNull(get(name) as? String) { "$name is not a string" }
     }
 }
 
