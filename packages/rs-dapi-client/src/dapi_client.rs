@@ -1106,6 +1106,30 @@ impl DapiRequestExecutor for DapiClient {
         R::Response: Mockable,
         TransportError: Mockable,
     {
+        self.execute_with_transport_error_observer(request, settings, &|_| {})
+            .await
+    }
+}
+
+impl DapiClient {
+    /// Execute with the ordinary retry policy, observing each failed dispatched
+    /// attempt before its error can be replaced by a later attempt's result.
+    ///
+    /// The observer also sees client-side attempt deadlines. It is not called
+    /// for local request refusal, address exhaustion or client construction
+    /// errors, where the request has not been dispatched. It cannot change the
+    /// returned result, retry budget, address selection or banning policy.
+    pub async fn execute_with_transport_error_observer<R>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+        observer: &(dyn Fn(&TransportError) + Send + Sync),
+    ) -> ExecutionResult<R::Response, DapiClientError>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+        TransportError: Mockable,
+    {
         // Every node refuses a proof of nothing, so it is refused here, without a node, the
         // same way; see `TransportRequest::names_nothing`.
         if let Some(refusal) = request.names_nothing() {
@@ -1275,6 +1299,7 @@ impl DapiRequestExecutor for DapiClient {
                         })
                     }
                     Err(transport_error) => {
+                        observer(&transport_error);
                         tracing::debug!(error = ?transport_error, "received error: {transport_error}");
                         Err(ExecutionError {
                             inner: DapiClientError::Transport(transport_error),

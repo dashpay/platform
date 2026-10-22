@@ -1,5 +1,7 @@
 use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
-use crate::platform::transition::broadcast::wait_after_broadcast;
+use crate::platform::transition::broadcast::{
+    broadcast_with_observation, wait_after_broadcast, BroadcastOutcome,
+};
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
     address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
@@ -186,7 +188,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = state_transition.broadcast(sdk, settings).await;
+        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -243,7 +245,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = state_transition.broadcast(sdk, settings).await;
+        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -303,7 +305,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
 /// transition is waited for after a successful or ambiguous acknowledgement.
 /// Definite broadcast refusals are returned without invoking the wait.
 async fn broadcast_then_wait<W, WFut>(
-    broadcast: Result<(), Error>,
+    broadcast: impl Into<BroadcastOutcome>,
     state_transition: StateTransition,
     wait: W,
 ) -> Result<Identity, Error>
@@ -454,6 +456,8 @@ async fn put_identity_with_address_funding<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::transition::broadcast::retry_tests::{retrying_broadcast, Attempt};
+    use dapi_grpc::tonic::Status;
 
     fn signed_create() -> StateTransition {
         use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -474,6 +478,30 @@ mod tests {
             balance: 1,
             revision: 0,
         })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_verify_the_same_identity_after_mixed_transport_retry_outcomes() {
+        let submitted = signed_create();
+        let (broadcast, sent, executions) = retrying_broadcast(
+            &submitted,
+            vec![
+                Attempt::Error(Status::unavailable("acknowledgement lost")),
+                Attempt::Error(Status::resource_exhausted("mempool is full")),
+            ],
+            1,
+        )
+        .await;
+        assert_eq!(sent.len(), 2);
+        assert_eq!(executions, 1);
+        let expected = submitted.clone();
+        let identity = broadcast_then_wait(broadcast, submitted, |transition| async move {
+            assert_eq!(transition, expected);
+            Ok(created())
+        })
+        .await
+        .expect("identity from the existing verified-result wait");
+        assert_eq!(identity, created());
     }
 
     #[tokio::test]
