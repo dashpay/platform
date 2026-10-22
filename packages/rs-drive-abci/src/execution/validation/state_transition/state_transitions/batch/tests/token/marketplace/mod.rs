@@ -10,6 +10,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
 };
@@ -24,6 +25,7 @@ use dpp::prelude::{Identity, IdentityPublicKey};
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
@@ -648,6 +650,34 @@ impl Market {
 
     /// Proves the executed transition the way the node answers a wait, and verifies the proof
     /// the way the SDK does, returning the verifier's error rather than panicking on it.
+    /// Proves `proved` the way the node answers a wait and verifies that proof against
+    /// `claimed`, with the verifier's contract lookup answering `contract`.
+    fn verify_proof_of_as(
+        &self,
+        proved: &StateTransition,
+        claimed: &StateTransition,
+        contract: &DataContract,
+    ) -> Result<StateTransitionProofResult, DriveError> {
+        let platform_version = PlatformVersion::latest();
+        let proof = self
+            .platform
+            .drive
+            .prove_state_transition(proved, None, platform_version)
+            .expect("expected to prove the executed batch")
+            .into_data()
+            .expect("expected proof bytes");
+        let contract = Arc::new(contract.clone());
+        let lookup = |_id: &Identifier| Ok(Some(Arc::clone(&contract)));
+        Drive::verify_state_transition_was_executed_with_proof(
+            claimed,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .map(|(_, outcome)| outcome.into_result())
+    }
+
     fn prove_and_try_verify(
         &self,
         transition: &StateTransition,
@@ -759,6 +789,56 @@ fn with_group_info(transition: &StateTransition) -> StateTransition {
             action_is_proposer: false,
         }));
     StateTransition::Batch(BatchTransition::V1(batch))
+}
+
+/// `transition` with the base of its one token transition changed by `change`.
+fn with_base(
+    transition: &StateTransition,
+    change: impl FnOnce(&mut TokenBaseTransition),
+) -> StateTransition {
+    let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition.clone() else {
+        panic!("expected a batch of token transitions");
+    };
+    let BatchedTransition::Token(token_transition) = &mut batch.transitions[0] else {
+        panic!("expected a token transition");
+    };
+    change(token_transition.base_mut());
+    StateTransition::Batch(BatchTransition::V1(batch))
+}
+
+/// A marketplace transition's proof is read by its token id, which must be the one its contract
+/// and position derive. The genuine proof of an executed listing does not verify the same
+/// request re-signed naming another position of a two-token contract, or another contract,
+/// with the same token id: the node refuses such a request, so it never executed.
+#[tokio::test]
+async fn should_not_prove_a_listing_whose_token_id_its_contract_and_position_do_not_derive() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+    let mut two_tokens = market.contract.clone();
+    let token = market
+        .contract
+        .expected_token_configuration(0)
+        .expect("expected the token")
+        .clone();
+    two_tokens.add_token(1, token);
+
+    for claimed in [
+        with_base(&place, |base| base.set_token_contract_position(1)),
+        with_base(&place, |base| {
+            base.set_data_contract_id(Identifier::from([9; 32]))
+        }),
+    ] {
+        assert_matches!(
+            market.verify_proof_of_as(&place, &claimed, &two_tokens),
+            Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+        );
+    }
+    assert_matches!(
+        market.verify_proof_of_as(&place, &place, &two_tokens),
+        Ok(StateTransitionProofResult::VerifiedDocuments(documents))
+            if documents.get(&order_id).is_some_and(Option::is_some)
+    );
 }
 
 /// A placement is never a group action: the node refuses group information on it. A listing
@@ -2238,6 +2318,39 @@ mod offers {
         );
         assert_eq!(market.credit_escrow(order_id), None);
         assert_eq!(market.offer(order_id), None);
+    }
+
+    /// The genuine proof of an executed offer does not verify the same request re-signed naming
+    /// another position of a two-token contract, or another contract, with the same token id.
+    #[tokio::test]
+    async fn should_not_prove_an_offer_whose_token_id_its_contract_and_position_do_not_derive() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+        let mut two_tokens = market.contract.clone();
+        let token = market
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token")
+            .clone();
+        two_tokens.add_token(1, token);
+
+        for claimed in [
+            with_base(&place, |base| base.set_token_contract_position(1)),
+            with_base(&place, |base| {
+                base.set_data_contract_id(Identifier::from([9; 32]))
+            }),
+        ] {
+            assert_matches!(
+                market.verify_proof_of_as(&place, &claimed, &two_tokens),
+                Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+            );
+        }
+        assert_matches!(
+            market.verify_proof_of_as(&place, &place, &two_tokens),
+            Ok(StateTransitionProofResult::VerifiedDocuments(documents))
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
     }
 
     /// An offer that executed, re-sent with group information and otherwise the same, is
