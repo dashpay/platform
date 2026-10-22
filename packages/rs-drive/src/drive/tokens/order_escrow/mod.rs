@@ -12,11 +12,16 @@ mod tokens;
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_path;
     use crate::drive::tokens::paths::tokens_root_path;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
     use grovedb::batch::KeyInfoPath;
@@ -553,5 +558,326 @@ mod tests {
         assert!(drive
             .set_credit_order_escrow_operations([3; 32], largest + 1, &mut None, platform_version)
             .is_err());
+    }
+
+    /// The escrow methods are active from protocol version 15: at 14 every one of them refuses
+    /// with `VersionNotActive` instead of building operations for trees that do not exist there.
+    #[test]
+    fn should_refuse_every_escrow_method_before_protocol_version_15() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(latest));
+        let token_id = [5; 32];
+        let order_id = [9; 32];
+
+        let calls = |platform_version: &PlatformVersion| -> Vec<(&str, Result<(), Error>)> {
+            let mut estimation = HashMap::new();
+            vec![
+                (
+                    "add_tokens",
+                    drive
+                        .add_to_token_order_escrow_operations(
+                            token_id,
+                            order_id,
+                            500,
+                            &mut None,
+                            None,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "set_tokens",
+                    drive
+                        .set_token_order_escrow_operations(
+                            token_id,
+                            order_id,
+                            200,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "remove_tokens",
+                    drive
+                        .remove_token_order_escrow_operations(
+                            token_id,
+                            order_id,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "fetch_tokens",
+                    drive
+                        .fetch_token_order_escrow(
+                            token_id,
+                            order_id,
+                            None,
+                            &mut vec![],
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "add_credits",
+                    drive
+                        .add_to_credit_order_escrow_operations(
+                            order_id,
+                            70_000,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "set_credits",
+                    drive
+                        .set_credit_order_escrow_operations(
+                            order_id,
+                            30_000,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "remove_credits",
+                    drive
+                        .remove_credit_order_escrow_operations(
+                            order_id,
+                            &mut None,
+                            platform_version,
+                        )
+                        .map(|_| ()),
+                ),
+                (
+                    "fetch_credits",
+                    drive
+                        .fetch_credit_order_escrow(order_id, None, &mut vec![], platform_version)
+                        .map(|_| ()),
+                ),
+                (
+                    "estimated_costs_for_tokens",
+                    Drive::add_estimation_costs_for_token_order_escrow(
+                        token_id,
+                        &mut estimation,
+                        platform_version,
+                    ),
+                ),
+                (
+                    "estimated_costs_for_credits",
+                    Drive::add_estimation_costs_for_credit_order_escrow(
+                        &mut estimation,
+                        platform_version,
+                    ),
+                ),
+            ]
+        };
+
+        let before = PlatformVersion::get(14).expect("expected protocol version 14");
+        for (name, result) in calls(before) {
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::VersionNotActive { .. }))
+                ),
+                "{name} at protocol version 14: expected VersionNotActive, got {result:?}"
+            );
+        }
+        for (name, result) in calls(latest) {
+            assert!(
+                result.is_ok(),
+                "{name} at the latest protocol version: {result:?}"
+            );
+        }
+    }
+
+    /// What an escrow write costs, priced without state (`estimated`) and applied to the state
+    /// it writes to (`applied`).
+    fn estimated_and_applied_fees(
+        drive: &Drive,
+        build: impl Fn(
+            &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        ) -> Vec<LowLevelDriveOperation>,
+    ) -> (FeeResult, FeeResult) {
+        let platform_version = PlatformVersion::latest();
+        let fee = |costs: Vec<LowLevelDriveOperation>| {
+            Drive::calculate_fee(
+                None,
+                Some(costs),
+                &BlockInfo::default().epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .expect("expected a fee")
+        };
+
+        let mut estimation = Some(HashMap::new());
+        let operations = build(&mut estimation);
+        let mut estimated_costs = vec![];
+        drive
+            .apply_batch_low_level_drive_operations(
+                estimation,
+                None,
+                operations,
+                &mut estimated_costs,
+                &platform_version.drive,
+            )
+            .expect("expected to estimate");
+
+        let operations = build(&mut None);
+        let mut applied_costs = vec![];
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut applied_costs,
+                &platform_version.drive,
+            )
+            .expect("expected to apply");
+
+        (fee(estimated_costs), fee(applied_costs))
+    }
+
+    /// Characterization: the estimate of each escrow write covers what applying it costs on the
+    /// initial state, where the offers' escrow key sits on the third level of the prefunded
+    /// specialized balances Merk and a listing's on the fourth of the Tokens Merk.
+    #[test]
+    fn should_estimate_at_least_what_an_escrow_write_costs() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [5; 32];
+
+        let (estimated, applied) = estimated_and_applied_fees(&drive, |estimation| {
+            drive
+                .add_to_credit_order_escrow_operations(
+                    [9; 32],
+                    70_000,
+                    estimation,
+                    platform_version,
+                )
+                .expect("expected the operations")
+        });
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "an offer's escrow: estimated {estimated:?}, applied {applied:?}"
+        );
+        assert!(estimated.storage_fee >= applied.storage_fee);
+
+        let (estimated, applied) = estimated_and_applied_fees(&drive, |estimation| {
+            drive
+                .set_credit_order_escrow_operations([9; 32], 30_000, estimation, platform_version)
+                .expect("expected the operations")
+        });
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "an offer's escrow after a fill: estimated {estimated:?}, applied {applied:?}"
+        );
+
+        let (estimated, applied) = estimated_and_applied_fees(&drive, |estimation| {
+            drive
+                .add_to_token_order_escrow_operations(
+                    token_id,
+                    [1; 32],
+                    500,
+                    estimation,
+                    None,
+                    &mut None,
+                    platform_version,
+                )
+                .expect("expected the operations")
+        });
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a token's first listing: estimated {estimated:?}, applied {applied:?}"
+        );
+        assert!(estimated.storage_fee >= applied.storage_fee);
+
+        let (estimated, applied) = estimated_and_applied_fees(&drive, |estimation| {
+            drive
+                .set_token_order_escrow_operations(
+                    token_id,
+                    [1; 32],
+                    200,
+                    estimation,
+                    platform_version,
+                )
+                .expect("expected the operations")
+        });
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "a listing after a fill: estimated {estimated:?}, applied {applied:?}"
+        );
+    }
+
+    /// The offers' escrow is described at its key's depth in the prefunded specialized balances
+    /// layer, and from protocol version 15 the voting balance and fee pot estimations of the
+    /// same batch keep that deeper description, whichever registers first.
+    #[test]
+    fn should_keep_the_deeper_prefunded_balances_layer_estimate() {
+        let platform_version = PlatformVersion::latest();
+        let prefunded_layer_level =
+            |estimation: &HashMap<KeyInfoPath, EstimatedLayerInformation>| match estimation
+                .get(&KeyInfoPath::from_known_path(
+                    prefunded_specialized_balances_path(),
+                ))
+                .map(|layer| &layer.estimated_layer_count)
+            {
+                Some(EstimatedLevel(level, _)) => *level,
+                other => panic!("expected an estimated level, got {other:?}"),
+            };
+        let voting = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+                      platform_version: &PlatformVersion| {
+            Drive::add_estimation_costs_for_prefunded_specialized_balance_update(
+                estimation,
+                &platform_version.drive,
+            )
+            .expect("expected the voting balance estimation")
+        };
+        let fee_pot = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+                       platform_version: &PlatformVersion| {
+            Drive::add_estimation_costs_for_contract_fee_pot_update(
+                ContractFeePot::Owner,
+                estimation,
+                &platform_version.drive,
+            )
+            .expect("expected the fee pot estimation")
+        };
+        let escrow = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>| {
+            Drive::add_estimation_costs_for_credit_order_escrow(estimation, platform_version)
+                .expect("expected the escrow estimation")
+        };
+
+        type Sibling = fn(&mut HashMap<KeyInfoPath, EstimatedLayerInformation>, &PlatformVersion);
+        let siblings: [Sibling; 2] = [voting, fee_pot];
+        for sibling in siblings {
+            // The escrow first, the sibling after: the sibling keeps the escrow's depth.
+            let mut estimation = HashMap::new();
+            escrow(&mut estimation);
+            assert_eq!(prefunded_layer_level(&estimation), 2);
+            sibling(&mut estimation, platform_version);
+            assert_eq!(prefunded_layer_level(&estimation), 2);
+
+            // The sibling first, the escrow after.
+            let mut estimation = HashMap::new();
+            sibling(&mut estimation, platform_version);
+            assert_eq!(prefunded_layer_level(&estimation), 1);
+            escrow(&mut estimation);
+            assert_eq!(prefunded_layer_level(&estimation), 2);
+
+            // Protocol version 14's siblings describe the layer at their keys' level, as before.
+            let mut estimation = HashMap::new();
+            escrow(&mut estimation);
+            sibling(
+                &mut estimation,
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+            );
+            assert_eq!(prefunded_layer_level(&estimation), 1);
+        }
     }
 }

@@ -144,8 +144,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
 ///    `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
 ///    token conservation check; the credit check already counts every prefunded specialized
-///    balance. `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
-///    `ask` and `bid` types hold the open orders: registered at genesis from this version and
+///    balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
+///    escrow key sits two levels into the prefunded specialized balances layer, below the keys
+///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
+///    deeper description of that layer another write of the batch registered.
+///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
+///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
+///    placed, which prices its fills: registered at genesis from this version and
 ///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.

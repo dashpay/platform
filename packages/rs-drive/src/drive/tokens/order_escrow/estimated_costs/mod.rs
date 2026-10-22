@@ -22,17 +22,21 @@ impl Drive {
             .order_escrow
             .estimated_costs_for_tokens
         {
-            0 => {
+            Some(0) => {
                 Self::add_estimation_costs_for_token_order_escrow_v0(
                     token_id,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())
             }
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_token_order_escrow".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_estimation_costs_for_token_order_escrow".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -49,16 +53,20 @@ impl Drive {
             .order_escrow
             .estimated_costs_for_credits
         {
-            0 => {
+            Some(0) => {
                 Self::add_estimation_costs_for_credit_order_escrow_v0(
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())
             }
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_credit_order_escrow".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_estimation_costs_for_credit_order_escrow".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

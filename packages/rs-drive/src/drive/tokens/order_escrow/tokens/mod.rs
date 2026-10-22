@@ -33,7 +33,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version.drive.methods.token.order_escrow.add_tokens {
-            0 => self.add_to_token_order_escrow_operations_v0(
+            Some(0) => self.add_to_token_order_escrow_operations_v0(
                 token_id,
                 order_id,
                 amount,
@@ -42,10 +42,14 @@ impl Drive {
                 previous_batch_operations,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_to_token_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -64,17 +68,21 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version.drive.methods.token.order_escrow.set_tokens {
-            0 => self.set_token_order_escrow_operations_v0(
+            Some(0) => self.set_token_order_escrow_operations_v0(
                 token_id,
                 order_id,
                 amount,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "set_token_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "set_token_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -97,16 +105,20 @@ impl Drive {
             .order_escrow
             .remove_tokens
         {
-            0 => self.remove_token_order_escrow_operations_v0(
+            Some(0) => self.remove_token_order_escrow_operations_v0(
                 token_id,
                 order_id,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_token_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "remove_token_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -127,17 +139,21 @@ impl Drive {
             .order_escrow
             .fetch_tokens
         {
-            0 => self.fetch_token_order_escrow_v0(
+            Some(0) => self.fetch_token_order_escrow_v0(
                 token_id,
                 order_id,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_token_order_escrow".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_token_order_escrow".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
