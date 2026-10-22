@@ -224,7 +224,9 @@ async fn test_identity_public_keys_specific_read() {
 /// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_fetch_identity_by_non_unique_public_keys() {
-    // Deterministic signed single-proof vectors generated from a local Drive fixture.
+    // Deterministic signed vectors generated from a local Drive fixture. The SDK has
+    // verified nothing before page 0, so page 0 is a V0 two-proof answer; its signed
+    // protocol 14 metadata makes pages 1-3 V1 single-proof answers.
     const KEY_HASH: [u8; 20] = [
         116, 46, 250, 188, 249, 146, 183, 8, 195, 216, 201, 57, 86, 50, 151, 56, 213, 75, 221, 131,
     ];
