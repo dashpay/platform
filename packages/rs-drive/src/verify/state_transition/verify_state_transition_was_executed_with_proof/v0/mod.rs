@@ -1405,6 +1405,15 @@ impl Drive {
                                     || order.maker_id != owner_id
                                     || order.price != token_place_bid_transition.price()
                                     || order.amount != token_place_bid_transition.amount()
+                                    // An offer just placed has nothing filled yet, and holds what
+                                    // it is worth at the decimals it records.
+                                    || order.remaining != token_place_bid_transition.amount()
+                                    || Some(order.escrow)
+                                        != TokenOrder::order_value(
+                                            order.amount,
+                                            order.price,
+                                            order.decimals,
+                                        )
                                     || order.min_fill != token_place_bid_transition.min_fill()
                                     || order.expires_at != token_place_bid_transition.expires_at()
                                 {

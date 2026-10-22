@@ -6,8 +6,6 @@ use dpp::consensus::state::token::{
     TokenOrderPriceLimitError, TokenOrderSelfFillError,
 };
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_fill_bid_transition::v0::TokenFillBidTransitionV0;
@@ -29,9 +27,10 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 impl TokenFillBidTransitionActionV0 {
     /// Converts a borrowed `TokenFillBidTransitionV0` into an action: reads the offer, and works
     /// out the amount the fill takes and the credits the seller receives out of its escrow,
-    /// the change in the offer's running total rounded down. An offer that is not open for this
-    /// token, the seller's own offer, an expired offer, a fill range the offer cannot meet and a
-    /// payment below the seller's minimum each bump the nonce with their error instead.
+    /// the change in the offer's running total rounded down, at the decimals the offer records.
+    /// A token its contract does not define, an offer that is not open for this token, the
+    /// seller's own offer, an expired offer, a fill range the offer cannot meet and a payment
+    /// below the seller's minimum each bump the nonce with their error instead.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_bid_transition_with_contract_lookup(
         drive: &Drive,
@@ -102,6 +101,12 @@ impl TokenFillBidTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
+        // Refused with the token base rules' error before anything is read for a token the
+        // contract does not define.
+        if let Err(error) = base_action.token_configuration_or_position_error() {
+            return bump(vec![error], fee_result);
+        }
+
         let token_market_contract = drive.token_market_contract_fetch_info(platform_version)?;
         let (order_document, read_cost) = drive.fetch_token_order_document(
             &token_market_contract.contract,
@@ -156,8 +161,10 @@ impl TokenFillBidTransitionActionV0 {
                 fee_result,
             );
         };
-        let decimals = base_action.token_configuration()?.conventions().decimals();
-        let credits = order.fill_credits(fill_amount, decimals)?;
+        // Priced at the decimals the token had when the offer was placed, which the offer
+        // records and its escrow was worked out at: a later change to the token's decimals does
+        // not reprice it.
+        let credits = order.fill_credits(fill_amount)?;
         if credits < *min_total_received {
             return bump(
                 vec![

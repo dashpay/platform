@@ -856,4 +856,78 @@ describe('TokenTransitions', () => {
       });
     });
   });
+
+  describe('TokenPlaceBidTransition', () => {
+    const offer = () => new wasm.TokenPlaceBidTransition({
+      base: baseTransition,
+      amount: BigInt(1000),
+      price: BigInt(100),
+      minFill: BigInt(1),
+      expiresAt: BigInt(5000),
+    });
+
+    it('should set the integer terms', () => {
+      const transition = offer();
+
+      transition.amount = BigInt(2000);
+      transition.price = BigInt(200);
+      transition.minFill = BigInt(10);
+      transition.expiresAt = BigInt(6000);
+
+      expect(transition.amount).to.equal(BigInt(2000));
+      expect(transition.price).to.equal(BigInt(200));
+      expect(transition.minFill).to.equal(BigInt(10));
+      expect(transition.expiresAt).to.equal(BigInt(6000));
+
+      transition.expiresAt = undefined;
+
+      expect(transition.expiresAt).to.be.undefined();
+    });
+
+    ['amount', 'price', 'minFill', 'expiresAt'].forEach((term) => {
+      it(`should refuse an out-of-range ${term} and keep the previous one`, () => {
+        const transition = offer();
+        const previous = transition[term];
+
+        [BigInt(1) << BigInt(64), BigInt(-1)].forEach((value) => {
+          expect(() => { transition[term] = value; }).to.throw();
+          expect(transition[term]).to.equal(previous);
+        });
+      });
+    });
+  });
+
+  describe('TokenFillBidTransition', () => {
+    const sale = () => new wasm.TokenFillBidTransition({
+      base: baseTransition,
+      orderId: ownerId,
+      minAmount: BigInt(1),
+      maxAmount: BigInt(1000),
+      minTotalReceived: BigInt(100),
+    });
+
+    it('should set the integer terms', () => {
+      const transition = sale();
+
+      transition.minAmount = BigInt(5);
+      transition.maxAmount = BigInt(500);
+      transition.minTotalReceived = BigInt(50);
+
+      expect(transition.minAmount).to.equal(BigInt(5));
+      expect(transition.maxAmount).to.equal(BigInt(500));
+      expect(transition.minTotalReceived).to.equal(BigInt(50));
+    });
+
+    ['minAmount', 'maxAmount', 'minTotalReceived'].forEach((term) => {
+      it(`should refuse an out-of-range ${term} and keep the previous one`, () => {
+        const transition = sale();
+        const previous = transition[term];
+
+        [BigInt(1) << BigInt(64), BigInt(-1)].forEach((value) => {
+          expect(() => { transition[term] = value; }).to.throw();
+          expect(transition[term]).to.equal(previous);
+        });
+      });
+    });
+  });
 });
