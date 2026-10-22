@@ -136,9 +136,19 @@ struct Walk<'v> {
     matching_only: bool,
     /// Whether a match check found a failure.
     failed: bool,
-    instance_path: Vec<String>,
-    schema_path: Vec<String>,
+    instance_path: Vec<Segment<'v>>,
+    schema_path: Vec<Segment<'v>>,
+    /// The length of `schema_path` at each `$ref` the walk is inside, innermost last.
+    reference_sites: Vec<usize>,
     violations: Vec<SchemaViolation>,
+}
+
+/// A step of a path through the document or the schema, rendered only when a violation is
+/// reported.
+#[derive(Clone, Copy)]
+enum Segment<'v> {
+    Name(&'v str),
+    Index(usize),
 }
 
 impl<'v> Walk<'v> {
@@ -149,6 +159,7 @@ impl<'v> Walk<'v> {
             failed: false,
             instance_path: Vec::new(),
             schema_path: Vec::new(),
+            reference_sites: Vec::new(),
             violations: Vec::new(),
         }
     }
@@ -173,7 +184,7 @@ impl<'v> Walk<'v> {
     /// as a `dependentRequired` entry reports a missing property as `required`.
     fn fail_under(
         &mut self,
-        schema_keyword: &str,
+        schema_keyword: &'static str,
         keyword: &'static str,
         property_name: &str,
         details: impl FnOnce() -> (JsonValue, String),
@@ -182,7 +193,7 @@ impl<'v> Walk<'v> {
             self.failed = true;
             return;
         }
-        self.schema_path.push(schema_keyword.to_string());
+        self.schema_path.push(Segment::Name(schema_keyword));
         let schema_path = pointer(&self.schema_path);
         self.schema_path.pop();
         let (params, message) = details();
@@ -214,12 +225,13 @@ impl<'v> Walk<'v> {
     /// since the walk last entered a value.
     fn node(
         &mut self,
-        node: &SchemaNode,
+        node: &'v SchemaNode,
         instance: &JsonValue,
         references_in_a_row: usize,
     ) -> Result<(), ProtocolError> {
         if let Some(reference) = &node.reference {
-            let references = &self.validator.schema.references;
+            let validator = self.validator;
+            let references = &validator.schema.references;
             let target = references.get(reference).ok_or_else(|| {
                 ProtocolError::CorruptedCodeExecution(format!(
                     "the validation schema holds no schema for `$ref` `{reference}`"
@@ -233,7 +245,9 @@ impl<'v> Walk<'v> {
             }
             // The JSON Schema validator reports a target's violations as if the target sat
             // in the place of the `$ref`
+            self.reference_sites.push(self.schema_path.len());
             self.node(target, instance, references_in_a_row + 1)?;
+            self.reference_sites.pop();
             if self.done() {
                 return Ok(());
             }
@@ -244,13 +258,17 @@ impl<'v> Walk<'v> {
                     let names = match types {
                         JsonTypes::One(json_type) => json!(json_type_name(*json_type)),
                         // In alphabetical order, as the JSON Schema validator lists them
+                        // A list of one type reads as that type
                         JsonTypes::AnyOf(json_types) => {
                             let mut names: Vec<&str> = json_types
                                 .iter()
                                 .map(|json_type| json_type_name(*json_type))
                                 .collect();
                             names.sort_unstable();
-                            json!(names)
+                            match names.as_slice() {
+                                [name] => json!(name),
+                                names => json!(names),
+                            }
                         }
                     };
                     let message = format!("{instance} is not of type {names}");
@@ -320,16 +338,16 @@ impl<'v> Walk<'v> {
 
     fn object(
         &mut self,
-        object: &ObjectConstraints,
+        object: &'v ObjectConstraints,
         map: &JsonMap<String, JsonValue>,
     ) -> Result<(), ProtocolError> {
         for (name, property) in object.properties.iter().flatten() {
             let Some(value) = map.get(name) else {
                 continue;
             };
-            self.schema_path.push("properties".to_string());
-            self.schema_path.push(name.clone());
-            self.instance_path.push(name.clone());
+            self.schema_path.push(Segment::Name("properties"));
+            self.schema_path.push(Segment::Name(name));
+            self.instance_path.push(Segment::Name(name));
             self.node(property, value, 0)?;
             self.instance_path.pop();
             self.schema_path.pop();
@@ -411,19 +429,22 @@ impl<'v> Walk<'v> {
 
     fn array(
         &mut self,
-        array: &ArrayConstraints,
+        array: &'v ArrayConstraints,
         items: &[JsonValue],
     ) -> Result<(), ProtocolError> {
         if let Some(element) = array.items.as_deref() {
+            self.schema_path.push(Segment::Name("items"));
             for (index, item) in items.iter().enumerate() {
-                self.schema_path.push("items".to_string());
-                self.instance_path.push(index.to_string());
+                self.instance_path.push(Segment::Index(index));
                 self.node(element, item, 0)?;
                 self.instance_path.pop();
-                self.schema_path.pop();
                 if self.done() {
-                    return Ok(());
+                    break;
                 }
+            }
+            self.schema_path.pop();
+            if self.done() {
+                return Ok(());
             }
         }
         if let Some(contains) = array.contains.as_deref() {
@@ -476,13 +497,18 @@ impl<'v> Walk<'v> {
 
     /// `byteArray`, as Platform's keyword checks a value where errors are reported: an
     /// array whose elements each read as an unsigned integer up to 255, stopping at the
-    /// first that does not. Its violations carry no schema path, as the keyword reports
-    /// none.
+    /// first that does not. The keyword reports no schema path of its own: a violation
+    /// carries only the path of the `$ref`s the walk followed to it, which the JSON Schema
+    /// validator adds as it returns through each.
     fn byte_array(&mut self, instance: &JsonValue) {
+        let schema_path = match self.reference_sites.last() {
+            Some(&site) => pointer(&self.schema_path[..site]),
+            None => String::new(),
+        };
         let JsonValue::Array(items) = instance else {
             self.report(
                 "type",
-                String::new(),
+                schema_path,
                 json!({ "type": "array" }),
                 "",
                 format!("{instance} is not of type \"array\""),
@@ -504,8 +530,8 @@ impl<'v> Walk<'v> {
                 )),
             };
             if let Some((keyword, params, message)) = failure {
-                self.instance_path.push(index.to_string());
-                self.report(keyword, String::new(), params, "", message);
+                self.instance_path.push(Segment::Index(index));
+                self.report(keyword, schema_path, params, "", message);
                 self.instance_path.pop();
                 return;
             }
@@ -630,10 +656,13 @@ fn not_a_number(keyword: &str) -> ProtocolError {
 }
 
 /// A JSON pointer of `segments`.
-fn pointer(segments: &[String]) -> String {
+fn pointer(segments: &[Segment]) -> String {
     segments
         .iter()
-        .map(|segment| format!("/{}", segment.replace('~', "~0").replace('/', "~1")))
+        .map(|segment| match segment {
+            Segment::Name(name) => format!("/{}", name.replace('~', "~0").replace('/', "~1")),
+            Segment::Index(index) => format!("/{index}"),
+        })
         .collect()
 }
 
@@ -857,18 +886,24 @@ pub(crate) fn is_unique(items: &[JsonValue]) -> bool {
                 .all(|other| !equal_json(item, other))
         });
     }
-    // The hash only sorts the elements into buckets; equality decides
-    let mut buckets: BTreeMap<u64, Vec<&JsonValue>> = BTreeMap::new();
-    for item in items {
-        let mut hasher = DefaultHasher::new();
-        hash_json(item, &mut hasher);
-        let bucket = buckets.entry(hasher.finish()).or_default();
-        if bucket.contains(&item) {
-            return false;
-        }
-        bucket.push(item);
-    }
-    true
+    // The hash only groups the elements; equality decides within a group
+    let mut hashed: Vec<(u64, &JsonValue)> = items
+        .iter()
+        .map(|item| {
+            let mut hasher = DefaultHasher::new();
+            hash_json(item, &mut hasher);
+            (hasher.finish(), item)
+        })
+        .collect();
+    hashed.sort_unstable_by_key(|(hash, _)| *hash);
+    hashed
+        .chunk_by(|left, right| left.0 == right.0)
+        .all(|group| {
+            group
+                .iter()
+                .enumerate()
+                .all(|(index, (_, item))| group[index + 1..].iter().all(|(_, other)| item != other))
+        })
 }
 
 /// Hashes `value` so that two values equal as JSON values hash alike.
