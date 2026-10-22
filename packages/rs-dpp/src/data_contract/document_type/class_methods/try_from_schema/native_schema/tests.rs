@@ -1370,6 +1370,17 @@ fn should_refuse_with_the_keyword_location_and_parameters_of_the_meta_schema_che
             }),
         ),
         (
+            "a terminal beside summableOffCountIndex",
+            Box::new(|root| {
+                root["indices"][0] = json!({
+                    "name": "i",
+                    "summableOffCountIndex": "base",
+                    "rangeSummable": true,
+                    "terminal": "name",
+                })
+            }),
+        ),
+        (
             "a rule name with a hyphen",
             Box::new(|root| root["propertyConstraints"] = json!({ "a-b": { "present": "name" } })),
         ),

@@ -76,8 +76,14 @@ impl Checker<'_> {
             self.required(map, &["rangeSummable"])?;
             self.member_constant(map, "rangeSummable", json!(true))?;
             if has("terminal") || has("summable") || has("averageable") {
-                return Err(self.fail(
-                    "not",
+                return Err(self.not_error(
+                    json!({
+                        "anyOf": [
+                            { "required": ["terminal"] },
+                            { "required": ["summable"] },
+                            { "required": ["averageable"] },
+                        ],
+                    }),
                     "a summableOffCountIndex index has no terminal, summable or averageable",
                 ));
             }
