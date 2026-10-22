@@ -8,6 +8,7 @@ use tenderdash_abci::proto::types::ConsensusParams;
 
 mod v0;
 mod v1;
+mod v2;
 
 pub(crate) fn consensus_params_update(
     network: Network,
@@ -33,9 +34,15 @@ pub(crate) fn consensus_params_update(
             new_platform_version,
             epoch_info,
         )),
+        2 => Ok(v2::consensus_params_update_v2(
+            network,
+            original_platform_version,
+            epoch_info,
+            new_platform_version,
+        )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }
@@ -143,7 +150,7 @@ mod tests {
                     received,
                 })) => {
                     assert_eq!(method, "consensus_params_update");
-                    assert_eq!(known_versions, vec![0, 1]);
+                    assert_eq!(known_versions, vec![0, 1, 2]);
                     assert_eq!(received, 99);
                 }
                 other => panic!("expected UnknownVersionMismatch error, got: {:?}", other),
@@ -586,5 +593,185 @@ mod tests {
                     .expect("should not error");
             assert!(result.is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod evidence_policy_tests {
+    use super::*;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use prost::Message;
+
+    fn epoch_info(is_epoch_change: bool, current_epoch_index: u16) -> EpochInfo {
+        EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index,
+            previous_epoch_index: current_epoch_index.checked_sub(1),
+            is_epoch_change,
+        })
+    }
+
+    #[test]
+    fn should_install_zero_evidence_bytes_on_activation_and_skipped_upgrades() {
+        let latest = PlatformVersion::latest();
+        for original in 1..latest.protocol_version {
+            for network in [
+                Network::Mainnet,
+                Network::Testnet,
+                Network::Regtest,
+                Network::Devnet,
+            ] {
+                let response = consensus_params_update(
+                    network,
+                    PlatformVersion::get(original).unwrap(),
+                    latest,
+                    &epoch_info(true, 20),
+                )
+                .unwrap()
+                .expect("activation update");
+                let evidence = response
+                    .evidence
+                    .expect("explicit evidence policy on activation");
+                assert_eq!(evidence.max_bytes, 0);
+                assert_eq!(evidence.max_age_num_blocks, 100_000);
+                let duration = evidence.max_age_duration.expect("positive evidence age");
+                assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
+                let version = response.version.unwrap();
+                assert_eq!(version.app_version, latest.protocol_version as u64);
+                assert_eq!(version.consensus_version, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn should_preserve_historical_consensus_responses() {
+        for new in 1..=14 {
+            let new_version = PlatformVersion::get(new).unwrap();
+            assert!(consensus_params_update(
+                Network::Regtest,
+                new_version,
+                new_version,
+                &epoch_info(false, 20)
+            )
+            .unwrap()
+            .is_none());
+            let response = consensus_params_update(
+                Network::Regtest,
+                PlatformVersion::first(),
+                new_version,
+                &epoch_info(true, 20),
+            )
+            .unwrap();
+            if new <= 2 {
+                assert!(response.is_none());
+            } else {
+                let params = response.expect("historical app version update");
+                assert!(params.evidence.is_none());
+                let version = params.version.unwrap();
+                assert_eq!(version.app_version, new as u64);
+                assert_eq!(version.consensus_version, 1);
+                assert!(
+                    params.block.is_none()
+                        && params.validator.is_none()
+                        && params.synchrony.is_none()
+                        && params.timeout.is_none()
+                        && params.abci.is_none()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_not_repeat_evidence_update_after_activation() {
+        let latest = PlatformVersion::latest();
+        for is_epoch_change in [false, true] {
+            assert!(consensus_params_update(
+                Network::Regtest,
+                latest,
+                latest,
+                &epoch_info(is_epoch_change, 20)
+            )
+            .unwrap()
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn should_encode_present_zero_evidence_submessage() {
+        let response = consensus_params_update(
+            Network::Regtest,
+            PlatformVersion::get(14).unwrap(),
+            PlatformVersion::latest(),
+            &epoch_info(true, 20),
+        )
+        .unwrap()
+        .unwrap();
+        let decoded = ConsensusParams::decode(response.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(decoded, response);
+        assert_eq!(
+            decoded
+                .evidence
+                .expect("zero is an explicit update")
+                .max_bytes,
+            0
+        );
+    }
+
+    #[test]
+    fn should_include_evidence_policy_alongside_emergency_version_updates() {
+        for (network, epoch) in [(Network::Mainnet, 3), (Network::Testnet, 1480)] {
+            let params = consensus_params_update(
+                network,
+                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::latest(),
+                &epoch_info(true, epoch),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                params
+                    .evidence
+                    .expect("emergency must not omit evidence policy")
+                    .max_bytes,
+                0
+            );
+            assert_eq!(params.version.unwrap().consensus_version, 1);
+            let params = consensus_params_update(
+                network,
+                PlatformVersion::latest(),
+                PlatformVersion::latest(),
+                &epoch_info(true, epoch),
+            )
+            .unwrap()
+            .unwrap();
+            assert!(params.evidence.is_none());
+        }
+    }
+
+    #[test]
+    fn should_compare_the_complete_evidence_policy_without_repeating_unchanged_policy() {
+        let latest = PlatformVersion::latest();
+        let mut original = latest.clone();
+        original
+            .consensus
+            .evidence
+            .as_mut()
+            .unwrap()
+            .max_age_num_blocks += 1;
+        let params =
+            consensus_params_update(Network::Regtest, &original, latest, &epoch_info(false, 20))
+                .unwrap()
+                .expect("age policy change needs update");
+        assert_eq!(params.evidence.unwrap().max_age_num_blocks, 100_000);
+
+        original = latest.clone();
+        original.protocol_version -= 1;
+        let params =
+            consensus_params_update(Network::Regtest, &original, latest, &epoch_info(true, 20))
+                .unwrap()
+                .expect("version change needs update");
+        assert!(
+            params.evidence.is_none(),
+            "unchanged policy must not be repeated"
+        );
     }
 }

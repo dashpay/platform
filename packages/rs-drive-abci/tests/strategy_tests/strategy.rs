@@ -141,6 +141,7 @@ use strategy_tests::transitions::{
 };
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
+use tenderdash_abci::proto::types::ConsensusParams;
 
 // TODO: Re-enable when OperationType has shielded variants
 // /// Cached Orchard proving key for strategy tests (~30s to build, reused across tests).
@@ -3100,6 +3101,8 @@ pub struct ValidatorVersionMigration {
 
 #[derive(Debug)]
 pub struct ChainExecutionOutcome<'a> {
+    pub init_chain_consensus_params: Option<ConsensusParams>,
+    pub consensus_param_updates: BTreeMap<u64, ConsensusParams>,
     pub abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,

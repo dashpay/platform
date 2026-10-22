@@ -1,4 +1,4 @@
-use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::consensus_versions::{ConsensusEvidenceParams, ConsensusVersions};
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
@@ -71,12 +71,16 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    earlier keep `advanced_structure` 0, so the blocks committed under them
 ///    replay with the same results. check_tx verifies these proofs at every
 ///    protocol version, which decides mempool admission only.
+///
+/// 3. **Zero consensus evidence budget**: consensus parameter update 2 installs
+///    the complete evidence policy at activation, including a zero byte budget.
+///    Protocol v14 and earlier retain their existing evidence limits.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: chain lock verification and full consensus evidence policy
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
@@ -103,5 +107,10 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V4,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        evidence: Some(ConsensusEvidenceParams {
+            max_bytes: 0,
+            max_age_num_blocks: 100_000,
+            max_age_duration_seconds: 172_800,
+        }),
     },
 };
