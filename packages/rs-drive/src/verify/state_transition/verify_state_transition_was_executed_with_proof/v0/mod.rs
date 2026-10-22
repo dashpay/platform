@@ -1335,9 +1335,12 @@ impl Drive {
                                     Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                                 }
                             }
-                            // The token marketplace keeps no token history: a listing is proven
-                            // by its `ask` document, whose order id follows from the signer and
-                            // the nonce and whose terms are the transition's.
+                            // A listing is proven by its `ask` document. Its order id follows from
+                            // the token, the signer and the nonce, so only this transition creates
+                            // a document with it: one holding the transition's terms proves the
+                            // placement even after fills, which leave `remaining` lower (from the
+                            // amount down to 1) and change nothing else. A listing filled entirely
+                            // is gone, and its document no longer proves the placement.
                             TokenTransition::PlaceAsk(token_place_ask_transition) => {
                                 let order_id = TokenOrderSide::Ask.order_id(
                                     token_id,
@@ -1363,8 +1366,10 @@ impl Drive {
                                     || order.maker_id != owner_id
                                     || order.price != token_place_ask_transition.price()
                                     || order.amount != token_place_ask_transition.amount()
-                                    // A listing just placed has nothing filled yet.
-                                    || order.remaining != token_place_ask_transition.amount()
+                                    // Fills lower what is open, never to 0 (a listing filled
+                                    // entirely is deleted) nor above what was listed.
+                                    || order.remaining == 0
+                                    || order.remaining > order.amount
                                     || order.min_fill != token_place_ask_transition.min_fill()
                                     || order.expires_at != token_place_ask_transition.expires_at()
                                 {
