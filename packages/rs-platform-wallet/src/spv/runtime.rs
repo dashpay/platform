@@ -138,13 +138,20 @@ impl SpvRuntime {
 
     /// Start SPV sync.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        self.ensure_startable().await?;
+        let shutdown = self.shutdown.lock().await;
+        self.start_locked(config, &shutdown).await
+    }
+
+    /// The checks a start runs before it queues for the `shutdown` lock: not
+    /// already running, and nothing left unjoined by an earlier start or
+    /// stop (fail fast instead of queueing behind a stop that is still
+    /// joining).
+    async fn ensure_startable(&self) -> Result<(), PlatformWalletError> {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
         }
-        // Fail fast instead of queueing behind a stop that is still joining.
-        self.ensure_no_live_run_loop()?;
-        let shutdown = self.shutdown.lock().await;
-        self.start_locked(config, &shutdown).await
+        self.ensure_no_live_run_loop()
     }
 
     /// Start SPV sync and publish its run loop as one operation under the
@@ -158,9 +165,14 @@ impl SpvRuntime {
     /// it. Here a stop issued during the start waits for the published run
     /// loop and tears it down with the client.
     ///
-    /// `publish` runs between construction and publication, still under the
-    /// lock, and says whether the caller still owns the client — typically
-    /// `!owner_released()`, see [`release_owner`](Self::release_owner). It
+    /// The owner is checked twice. First right after the lock is taken,
+    /// before the store is opened: an owner whose teardown ran ahead of this
+    /// start ([`release_owner`](Self::release_owner), then a stop that found
+    /// no client) must not have the store opened and its lock file held for
+    /// seconds on its behalf — a manager created on the same directory
+    /// meanwhile would find it locked. Then `publish` runs between
+    /// construction and publication, still under the lock, and says whether
+    /// the caller still owns the client — typically `!owner_released()`. It
     /// must not take a lock that another caller may hold while waiting for
     /// `shutdown` (a stop issued through a handle registry holds that
     /// registry's read guard while it waits): with a writer queued on such a
@@ -178,11 +190,11 @@ impl SpvRuntime {
     where
         F: FnOnce() -> bool + Send,
     {
-        if self.client.read().await.is_some() {
-            return Err(PlatformWalletError::SpvAlreadyRunning);
-        }
-        self.ensure_no_live_run_loop()?;
+        self.ensure_startable().await?;
         let mut shutdown = self.shutdown.lock().await;
+        if self.owner_released() {
+            return Ok(false);
+        }
         self.start_locked(config, &shutdown).await?;
 
         if !publish() {
@@ -1541,6 +1553,31 @@ mod tests {
             .await
             .expect("the stop joined the published run loop, so nothing is left unjoined");
         runtime.stop().await.unwrap();
+    }
+
+    /// `start_and_spawn` whose owner is already gone when it takes the lock
+    /// (its teardown's stop ran ahead of the start) opens no store at all:
+    /// nothing is created in the data directory, `publish` never runs.
+    #[tokio::test]
+    async fn should_not_open_the_store_when_its_owner_is_gone_before_the_lock() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.release_owner();
+
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), || {
+                panic!("publish must not run for a start that never built a client")
+            })
+            .await
+            .expect("bailing out is not an error");
+
+        assert!(!published);
+        assert!(!runtime.is_started());
+        assert_eq!(
+            std::fs::read_dir(storage.path()).unwrap().count(),
+            0,
+            "the store must not be opened for an owner that is gone"
+        );
     }
 
     /// `start_and_spawn` with an owner that went away during the start stops

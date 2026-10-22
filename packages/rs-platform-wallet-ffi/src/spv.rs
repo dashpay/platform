@@ -615,50 +615,9 @@ where
 #[cfg(test)]
 mod spv_start_registry_tests {
     use super::*;
-    use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
-    use crate::persistence::{FFIPersister, PersistenceCallbacks};
-    use crate::runtime::runtime;
-    use platform_wallet::PlatformWalletManager;
+    use crate::test_fixtures::mock_manager;
     use std::sync::mpsc;
     use std::time::Duration;
-
-    fn mock_manager() -> PlatformWalletManager<FFIPersister> {
-        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
-            0
-        }
-        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
-            0
-        }
-        let persister = FFIPersister::new(PersistenceCallbacks {
-            on_changeset_begin_fn: Some(begin),
-            on_changeset_end_fn: Some(end),
-            ..Default::default()
-        });
-        let events = FFIEventHandler::new(
-            EventHandlerCallbacks {
-                context: std::ptr::null_mut(),
-                on_wallet_event_fn: None,
-                on_error_fn: None,
-                on_platform_address_sync_completed_fn: None,
-                on_shielded_sync_completed_fn: None,
-                on_shielded_sync_progress_fn: None,
-                on_shielded_tree_progress_fn: None,
-                release_fn: None,
-            },
-            None,
-        );
-        let _runtime_guard = runtime().enter();
-        PlatformWalletManager::new(
-            Arc::new(
-                dash_sdk::SdkBuilder::new_mock()
-                    .with_network(dashcore::Network::Testnet)
-                    .build()
-                    .expect("mock sdk"),
-            ),
-            Arc::new(persister),
-            Arc::new(events),
-        )
-    }
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -683,7 +642,7 @@ mod spv_start_registry_tests {
     /// registry is free, so another manager can be created (a registry
     /// write) instead of parking behind the start's store open.
     #[test]
-    fn another_manager_can_be_created_while_a_start_is_suspended() {
+    fn should_create_another_manager_while_a_start_is_suspended() {
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
         let (entered_tx, entered_rx) = mpsc::channel::<()>();
         let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -731,7 +690,7 @@ mod spv_start_registry_tests {
     /// runtime's own tests start one) is stopped instead of being published
     /// for nobody to stop.
     #[test]
-    fn a_handle_destroyed_during_the_start_fails_it_and_stops_the_started_client() {
+    fn should_fail_a_start_whose_manager_was_destroyed_and_stop_its_client() {
         let storage = std::env::temp_dir().join(format!(
             "spv-start-registry-{}-{}",
             std::process::id(),
@@ -806,14 +765,14 @@ mod spv_start_registry_tests {
     /// other registry-backed test. The parent bounds the child and kills it
     /// instead.
     #[test]
-    fn a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop() {
+    fn should_not_wedge_a_start_overlapping_a_native_stop_and_a_queued_registry_writer() {
         if std::env::var_os(REGISTRY_DEADLOCK_CHILD).is_some() {
             registry_deadlock_scenario();
             return;
         }
 
         let test_name = format!(
-            "{}::a_queued_registry_writer_cannot_wedge_a_start_overlapping_a_native_stop",
+            "{}::should_not_wedge_a_start_overlapping_a_native_stop_and_a_queued_registry_writer",
             module_path!()
                 .split_once("::")
                 .map(|(_, path)| path)
@@ -951,7 +910,7 @@ mod spv_start_registry_tests {
 
     /// A start whose native step fails reports the native error as-is.
     #[test]
-    fn a_failed_native_start_is_reported_and_spawns_no_run_loop() {
+    fn should_report_a_failed_native_start_as_is() {
         let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
 
         let (code, message) = code_and_message(start_spv_outside_registry(handle, |_spv, _| {
@@ -979,7 +938,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     // runtime, and holding the guard makes `platform_wallet_manager_destroy`
     // wait for the stop instead of tearing the runtime down underneath it.
     // (The start cannot afford this hold: it releases the guard for its
-    // multi-second store open and re-validates the handle afterwards.)
+    // multi-second store open and never re-reads the registry under the
+    // runtime's shutdown lock — it reads the runtime's owner flag instead;
+    // see `start_spv_outside_registry`.)
     //
     // A stop that did not complete (teardown outlived the stop deadline and
     // stays tracked for a retry, or it failed) is returned as an error: a

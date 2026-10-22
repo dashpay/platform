@@ -377,6 +377,10 @@ extension PlatformWalletManager {
     /// would wait on the same teardown on the calling thread. Throws the same
     /// while an async [`startSpv(config:)`] is in flight: a stop that ran
     /// before the client exists would leave the started client running.
+    /// A `try?` at the call site turns that refusal into a silent no-op, and
+    /// the start then publishes the client this stop meant to prevent: a
+    /// stop that must land during a start goes through the async
+    /// [`stopSpv()`], which queues behind it.
     ///
     /// Throws `shutdownIncomplete` when teardown is still running (stop
     /// again) and `spvProcessRestartRequired` when the app must restart.
@@ -437,7 +441,9 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// the stopping client can still hold and write the same data directory.
     /// Throws the same while an async [`startSpv(config:)`] is in flight: the
-    /// starting client is opening that directory.
+    /// starting client is opening that directory. A `try?` at the call site
+    /// turns either refusal into a silent no-op with the storage intact;
+    /// await the start or the async [`stopSpv()`] first.
     public func clearSpvStorage() throws {
         try ensureNoSpvStopInFlight(before: "clearing SPV storage")
         try ensureNoSpvStartInFlight(before: "clearing SPV storage")
