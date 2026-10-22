@@ -28,10 +28,7 @@ public struct ProtocolCompatibility: Codable, Equatable, Sendable {
     public let unavailableReason: UnavailableReason?
 
     /// True only when authenticated evidence exceeds this SDK's supported tables.
-    public var newerProtocolAvailable: Bool {
-        guard let verifiedProtocolVersion else { return false }
-        return verifiedProtocolVersion > maximumSupportedProtocolVersion
-    }
+    public let newerProtocolAvailable: Bool
 
     public init(
         generation: UInt64,
@@ -39,6 +36,7 @@ public struct ProtocolCompatibility: Codable, Equatable, Sendable {
         verifiedProtocolVersion: UInt32?,
         effectiveProtocolVersion: UInt32,
         maximumSupportedProtocolVersion: UInt32,
+        newerProtocolAvailable: Bool,
         unavailableReason: UnavailableReason? = nil
     ) {
         self.generation = generation
@@ -46,6 +44,7 @@ public struct ProtocolCompatibility: Codable, Equatable, Sendable {
         self.verifiedProtocolVersion = verifiedProtocolVersion
         self.effectiveProtocolVersion = effectiveProtocolVersion
         self.maximumSupportedProtocolVersion = maximumSupportedProtocolVersion
+        self.newerProtocolAvailable = newerProtocolAvailable
         self.unavailableReason = unavailableReason
     }
 }

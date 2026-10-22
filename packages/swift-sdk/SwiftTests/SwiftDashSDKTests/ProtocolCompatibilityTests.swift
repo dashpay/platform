@@ -6,7 +6,7 @@ final class ProtocolCompatibilityTests: XCTestCase {
         let snapshot = try JSONDecoder().decode(ProtocolCompatibility.self, from: Data("""
             {"generation":7,"status":"checked","verifiedProtocolVersion":99,
              "effectiveProtocolVersion":13,"maximumSupportedProtocolVersion":14,
-             "unavailableReason":null}
+             "unavailableReason":null,"newerProtocolAvailable":true}
             """.utf8))
         XCTAssertEqual(snapshot.status, .checked)
         XCTAssertEqual(snapshot.verifiedProtocolVersion, 99)
@@ -20,7 +20,7 @@ final class ProtocolCompatibilityTests: XCTestCase {
             let snapshot = try JSONDecoder().decode(ProtocolCompatibility.self, from: Data("""
                 {"generation":8,"status":"\(status)","verifiedProtocolVersion":null,
                  "effectiveProtocolVersion":13,"maximumSupportedProtocolVersion":14,
-                 "unavailableReason":\(reason)}
+                 "unavailableReason":\(reason),"newerProtocolAvailable":false}
                 """.utf8))
             XCTAssertNil(snapshot.verifiedProtocolVersion)
             XCTAssertEqual(snapshot.status.rawValue, status)
@@ -31,22 +31,31 @@ final class ProtocolCompatibilityTests: XCTestCase {
         }
     }
 
-    func testShouldKeepNewerVersionNoticeIndependentOfLatestCheckStatus() throws {
+    func testShouldDecodeRustNoticeWithoutRecomputingIt() throws {
         for status in ["unavailable", "checking", "checked"] {
-            for version in [13, 14, 99] {
+            for notice in [false, true] {
                 let snapshot = try JSONDecoder().decode(ProtocolCompatibility.self, from: Data("""
-                    {"generation":9,"status":"\(status)","verifiedProtocolVersion":\(version),
-                     "effectiveProtocolVersion":13,"maximumSupportedProtocolVersion":14}
+                    {"generation":9,"status":"\(status)","verifiedProtocolVersion":99,
+                     "effectiveProtocolVersion":13,"maximumSupportedProtocolVersion":14,
+                     "newerProtocolAvailable":\(notice)}
                     """.utf8))
-                XCTAssertEqual(snapshot.newerProtocolAvailable, version > 14)
+                XCTAssertEqual(snapshot.newerProtocolAvailable, notice)
             }
         }
+    }
+
+    func testShouldRejectMissingRustNotice() {
+        XCTAssertThrowsError(try JSONDecoder().decode(ProtocolCompatibility.self, from: Data("""
+            {"generation":9,"status":"checked","verifiedProtocolVersion":99,
+             "effectiveProtocolVersion":14,"maximumSupportedProtocolVersion":14}
+            """.utf8)))
     }
 
     func testShouldRejectUnknownCheckStatus() {
         XCTAssertThrowsError(try JSONDecoder().decode(ProtocolCompatibility.self, from: Data("""
             {"generation":9,"status":"unexpected","verifiedProtocolVersion":14,
-             "effectiveProtocolVersion":14,"maximumSupportedProtocolVersion":14}
+             "effectiveProtocolVersion":14,"maximumSupportedProtocolVersion":14,
+             "newerProtocolAvailable":false}
             """.utf8)))
     }
 
@@ -56,7 +65,8 @@ final class ProtocolCompatibilityTests: XCTestCase {
             status: .checked,
             verifiedProtocolVersion: 14,
             effectiveProtocolVersion: 13,
-            maximumSupportedProtocolVersion: 14
+            maximumSupportedProtocolVersion: 14,
+            newerProtocolAvailable: false
         )
         XCTAssertEqual(
             try JSONDecoder().decode(ProtocolCompatibility.self, from: JSONEncoder().encode(snapshot)),

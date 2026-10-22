@@ -17,11 +17,13 @@ struct CompatibilitySnapshot {
     verified_protocol_version: Option<u32>,
     effective_protocol_version: u32,
     maximum_supported_protocol_version: u32,
+    newer_protocol_available: bool,
     unavailable_reason: Option<&'static str>,
 }
 
 impl From<ProtocolCompatibility> for CompatibilitySnapshot {
     fn from(value: ProtocolCompatibility) -> Self {
+        let newer_protocol_available = value.newer_protocol_available();
         let (status, unavailable_reason) = match value.state {
             ProtocolCompatibilityState::Unavailable { reason } => (
                 "unavailable",
@@ -41,6 +43,7 @@ impl From<ProtocolCompatibility> for CompatibilitySnapshot {
             verified_protocol_version: value.verified_protocol_version,
             effective_protocol_version: value.effective_protocol_version,
             maximum_supported_protocol_version: value.maximum_supported_protocol_version,
+            newer_protocol_available,
             unavailable_reason,
         }
     }
@@ -141,6 +144,7 @@ mod tests {
         assert_eq!(value["status"], "checked");
         assert_eq!(value["verifiedProtocolVersion"], 99);
         assert_eq!(value["generation"], 7);
+        assert_eq!(value["newerProtocolAvailable"], true);
         unsafe { crate::dash_sdk_string_free(result.data.cast()) };
     }
 
@@ -182,6 +186,7 @@ mod tests {
                     .expect("snapshot");
             assert_eq!(json["generation"], generation);
             assert_eq!(json["status"], "checking");
+            assert_eq!(json["newerProtocolAvailable"], false);
             crate::dash_sdk_string_free(snapshot.data.cast());
 
             let invalid = dash_sdk_begin_protocol_compatibility_check(handle, std::ptr::null_mut());

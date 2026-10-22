@@ -4,8 +4,14 @@ use super::Sdk;
 use crate::platform::Fetch;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::version::PlatformVersion;
+use futures::future::{select, Either};
+use rs_dapi_client::transport::sleep;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 const CHECK_BUDGET: Duration = Duration::from_secs(20);
 
@@ -38,6 +44,16 @@ pub struct ProtocolCompatibility {
     pub verified_protocol_version: Option<u32>,
     pub effective_protocol_version: u32,
     pub maximum_supported_protocol_version: u32,
+}
+
+impl ProtocolCompatibility {
+    /// Whether authenticated evidence exceeds this SDK's supported tables.
+    /// This informational predicate is independent of the latest check status
+    /// and never authorizes or denies a wallet operation.
+    pub fn newer_protocol_available(&self) -> bool {
+        self.verified_protocol_version
+            .is_some_and(|version| version > self.maximum_supported_protocol_version)
+    }
 }
 
 #[derive(Debug)]
@@ -127,17 +143,19 @@ impl Sdk {
         let result = if !self.prove() {
             Err(ProtocolCompatibilityUnavailableReason::ProofsDisabled)
         } else {
-            match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), async {
-                ExtendedEpochInfo::fetch_with_metadata(&checking_sdk, 0u16, None).await
-            })
-            .await
-            {
-                Ok(Ok(_)) => Ok(()),
-                Ok(Err(error)) => {
+            // The transport owns the executor-specific timer: Tokio natively,
+            // a JavaScript timer in browsers. Poll the timer first so expiry
+            // wins when the query is also ready at the budget boundary.
+            let timeout = sleep(deadline.saturating_duration_since(Instant::now()));
+            let query = ExtendedEpochInfo::fetch_with_metadata(&checking_sdk, 0u16, None);
+            futures::pin_mut!(timeout, query);
+            match select(timeout, query).await {
+                Either::Right((Ok(_), _)) => Ok(()),
+                Either::Right((Err(error), _)) => {
                     tracing::warn!(%error, generation, network = ?self.network, "protocol observation failed");
                     Err(ProtocolCompatibilityUnavailableReason::CheckFailed)
                 }
-                Err(_) => Err(ProtocolCompatibilityUnavailableReason::TimedOut),
+                Either::Left(_) => Err(ProtocolCompatibilityUnavailableReason::TimedOut),
             }
         };
         {
@@ -229,6 +247,64 @@ mod tests {
             None,
         )
         .expect("fresh authenticated test metadata");
+    }
+
+    #[test]
+    fn should_classify_newer_evidence_independently_of_check_status() {
+        let maximum = PlatformVersion::latest().protocol_version;
+        for state in [
+            ProtocolCompatibilityState::Checking,
+            ProtocolCompatibilityState::Checked,
+            ProtocolCompatibilityState::Unavailable {
+                reason: ProtocolCompatibilityUnavailableReason::CheckFailed,
+            },
+        ] {
+            for (version, expected) in [
+                (None, false),
+                (Some(maximum - 1), false),
+                (Some(maximum), false),
+                (Some(maximum + 1), true),
+            ] {
+                let snapshot = ProtocolCompatibility {
+                    generation: 0,
+                    state,
+                    verified_protocol_version: version,
+                    effective_protocol_version: maximum,
+                    maximum_supported_protocol_version: maximum,
+                };
+                assert_eq!(snapshot.newer_protocol_available(), expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_skip_proofs_disabled_checks_without_losing_past_evidence() {
+        for evidence in [None, Some(PlatformVersion::latest().protocol_version + 1)] {
+            let mut sdk = SdkBuilder::new_mock()
+                .with_proofs(false)
+                .with_height_tolerance(None)
+                .build()
+                .unwrap();
+            if let Some(version) = evidence {
+                verified(&sdk, version);
+            }
+            let generation = sdk.begin_protocol_compatibility_check();
+            let result = sdk.refresh_protocol_compatibility(generation).await;
+            assert_eq!(
+                result.state,
+                ProtocolCompatibilityState::Unavailable {
+                    reason: ProtocolCompatibilityUnavailableReason::ProofsDisabled,
+                }
+            );
+            assert_eq!(result.verified_protocol_version, evidence);
+            assert_eq!(result.newer_protocol_available(), evidence.is_some());
+            // Epochs have no unproved wire query. Count the proven request
+            // that the lifecycle must have skipped before query encoding.
+            let mut settings = sdk.query_settings();
+            settings.prove = true;
+            let request: GetEpochsInfoRequest = 0u16.query(&settings).unwrap();
+            assert_eq!(sdk.mock().request_count(&request).await, 0);
+        }
     }
 
     #[tokio::test]

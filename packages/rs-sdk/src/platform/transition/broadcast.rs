@@ -10,6 +10,7 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
+use dapi_grpc::tonic::Code;
 use dash_context_provider::ContextProviderError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
@@ -24,8 +25,10 @@ use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
 use dpp::ProtocolError;
+use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
+use rs_dapi_client::DapiClientError;
 use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
@@ -278,7 +281,7 @@ impl BroadcastStateTransition for StateTransition {
 /// Keep waiting on the SAME signed transition through the caller's existing
 /// proof-verification path. Neither an ambiguous broadcast nor a failed proof
 /// is promoted to success, and this helper never builds or broadcasts a retry.
-async fn wait_after_broadcast<T>(
+pub(super) async fn wait_after_broadcast<T>(
     broadcast: Result<(), Error>,
     wait: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {
@@ -292,10 +295,6 @@ async fn wait_after_broadcast<T>(
 }
 
 fn broadcast_may_have_been_accepted(error: &Error) -> bool {
-    use dapi_grpc::tonic::Code;
-    use rs_dapi_client::transport::TransportError;
-    use rs_dapi_client::DapiClientError;
-
     let status = match error {
         Error::AlreadyExists(_) | Error::TimeoutReached(..) => return true,
         Error::NoAvailableAddressesToRetry(inner) => {
@@ -308,17 +307,22 @@ fn broadcast_may_have_been_accepted(error: &Error) -> bool {
         }
         _ => return false,
     };
-    matches!(
-        status.code(),
-        Code::AlreadyExists
-            | Code::DeadlineExceeded
-            | Code::Cancelled
-            | Code::Unknown
-            | Code::Internal
-            | Code::Aborted
-            | Code::DataLoss
-            | Code::Unavailable
-    )
+    // DAPI maps Tenderdash's confirmation timeout to this exact status.
+    // Other ResourceExhausted responses are mempool-full or rate-limit
+    // refusals and must not be treated as a possibly accepted submission.
+    (status.code() == Code::ResourceExhausted
+        && status.message() == "broadcasting state transition is timed out")
+        || matches!(
+            status.code(),
+            Code::AlreadyExists
+                | Code::DeadlineExceeded
+                | Code::Cancelled
+                | Code::Unknown
+                | Code::Internal
+                | Code::Aborted
+                | Code::DataLoss
+                | Code::Unavailable
+        )
 }
 
 /// DPNS registration has two separate creates. Fail over each signed create,
@@ -654,6 +658,55 @@ mod tests {
         for error in errors {
             let result = wait_after_broadcast(Err(error), async { Ok(42) }).await;
             assert_eq!(result.expect("verified wait result"), 42);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_wait_after_dapi_confirmation_timeout_including_retry_wrappers() {
+        let timeout = || {
+            TransportError::Grpc(Status::resource_exhausted(
+                "broadcasting state transition is timed out",
+            ))
+        };
+        for error in [
+            Error::DapiClientError(DapiClientError::Transport(timeout())),
+            Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                timeout(),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::Transport(timeout()),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(timeout())),
+            ))),
+        ] {
+            assert_eq!(
+                wait_after_broadcast(Err(error), async { Ok(42) })
+                    .await
+                    .unwrap(),
+                42
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_other_resource_exhausted_refusals() {
+        for message in [
+            "mempool is full",
+            "tenderdash is not responding: too many requests",
+            "rate limited",
+        ] {
+            let error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
+                    Status::resource_exhausted(message),
+                ))),
+            )));
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definite capacity refusal must not poll the result wait")
+            })
+            .await;
+            assert_eq!(result.unwrap_err().to_string(), expected);
         }
     }
 

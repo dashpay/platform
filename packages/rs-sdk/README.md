@@ -197,10 +197,7 @@ notice. Its check status never enables or disables wallet operations.
 # async fn example(sdk: &dash_sdk::Sdk) {
 let attempt = sdk.begin_protocol_compatibility_check();
 let compatibility = sdk.refresh_protocol_compatibility(attempt).await;
-let newer_protocol_available = compatibility
-    .verified_protocol_version
-    .is_some_and(|version| version > compatibility.maximum_supported_protocol_version);
-if newer_protocol_available {
+if compatibility.newer_protocol_available() {
     // Show an informational update notice; wallet operations remain available.
 }
 # }
@@ -215,6 +212,8 @@ the SDK; it is separate from the observed network version. SDK clones share the
 observations and check status.
 
 The total check budget is 20 seconds from `begin`, including worker-queue delay.
+The lifecycle uses a monotonic clock and the transport's timer on both native
+and browser WASM targets; browsers do not require a Tokio timer runtime.
 One proved genesis-epoch query supplies the network version through the normal
 proof, quorum-signature and freshness verification path. Transport retries use
 the existing configuration within that total budget. A superseded attempt's
