@@ -458,6 +458,25 @@ impl Market {
         .expect("expected to build the fill")
     }
 
+    /// Replaces the contract a client verifies with by the one stored now, as a client that
+    /// fetches it again sees it.
+    fn refresh_contract(&mut self) {
+        let platform_version = PlatformVersion::latest();
+        self.contract = self
+            .platform
+            .drive
+            .get_contract_with_fetch_info(
+                self.contract.id().to_buffer(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the token's contract")
+            .expect("expected the token's contract")
+            .contract
+            .clone();
+    }
+
     /// The token's decimals as stored now, which a placement signs.
     fn token_decimals(&self) -> u8 {
         let platform_version = PlatformVersion::latest();
@@ -2536,7 +2555,7 @@ mod history {
 
     /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
     /// the token changes to 2 records 8 on its placement and its fill, and its placement is
-    /// still proved once it has closed.
+    /// still proved once it has closed, against the contract at either scale.
     #[tokio::test]
     async fn should_record_the_decimals_an_order_was_placed_at() {
         let mut market = market_with(
@@ -2575,6 +2594,22 @@ mod history {
         assert_eq!(
             property(&filled[0], "credits").to_integer::<u64>().ok(),
             Some(10_000)
+        );
+        // A client still holding the contract at 8 decimals, and one that fetched it again at 2,
+        // both confirm the closed placement.
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        market.refresh_contract();
+        assert_eq!(
+            market
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected the token")
+                .conventions()
+                .decimals(),
+            2
         );
         assert_matches!(
             market.prove_and_verify(&place),
