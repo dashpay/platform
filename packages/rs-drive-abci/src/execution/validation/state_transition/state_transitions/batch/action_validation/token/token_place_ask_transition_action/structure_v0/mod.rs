@@ -1,10 +1,7 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::token::{
-    TokenOrderDecimalsMismatchError, TokenOrderExpiredError, TokenOrderValueTooLargeError,
-};
+use dpp::consensus::state::token::{TokenOrderDecimalsMismatchError, TokenOrderExpiredError};
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
-use dpp::tokens::token_order::TokenOrder;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
@@ -26,8 +23,8 @@ impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransit
     /// What a listing needs that reads nothing beyond the contract the action carries and the
     /// block: a tradeable token, the decimals it was signed at being the token's (its price is
     /// per whole token, so a change of the token's decimals between signing and execution would
-    /// reprice it), a total that fits in an order (`i64::MAX` credits) at them, and, when it
-    /// expires, an expiry after the block.
+    /// reprice it), and, when it expires, an expiry after the block. What the listing is worth
+    /// at the decimals it signs is checked with the transition's structure.
     fn validate_structure_v0(
         &self,
         block_info: &BlockInfo,
@@ -48,11 +45,6 @@ impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransit
                     token_decimals,
                 )
                 .into(),
-            ));
-        }
-        if TokenOrder::order_value(self.amount(), self.price(), decimals).is_none() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                TokenOrderValueTooLargeError::new(self.amount(), self.price(), decimals).into(),
             ));
         }
 

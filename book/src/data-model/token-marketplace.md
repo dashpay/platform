@@ -135,7 +135,7 @@ The rounding favours the seller and is never more than one credit per fill.
 
 | Rule | Refused with |
 |---|---|
-| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, `expiresAt` at most `i64::MAX` | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderExpiryError` (10464) |
+| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, `expiresAt` at most `i64::MAX`, and what the order is worth at the `decimals` it signs at most `i64::MAX` credits | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderExpiryError` (10464), `InvalidTokenOrderValueError` (10465) |
 | A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
@@ -146,7 +146,6 @@ The rounding favours the seller and is never more than one credit per fill.
 | The fill costs at most `maxTotalPrice` | `TokenOrderPriceLimitError` (40754) |
 | Only the order's owner cancels it | `TokenOrderNotOwnedError` (40755) |
 | A seller does not fill their own listing | `TokenOrderSelfFillError` (40756) |
-| A listing is worth at most `i64::MAX` credits | `TokenOrderValueTooLargeError` (40757) |
 | The seller holds `amount` | `IdentityDoesNotHaveEnoughTokenBalanceError` |
 | The token is not paused (to place or fill) | `TokenIsPausedError` |
 | The seller's account is not frozen (to place or fill), nor the buyer's unless the token allows transfers to frozen balances | `IdentityTokenAccountFrozenError` |

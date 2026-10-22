@@ -14,6 +14,7 @@ impl TokenPlaceAskTransitionStructureValidationV0 for TokenPlaceAskTransition {
         Ok(validate_token_order_terms(
             self.amount(),
             self.price(),
+            self.decimals(),
             self.min_fill(),
             self.expires_at(),
         ))

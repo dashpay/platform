@@ -5,7 +5,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderValueTooLargeError, TokenOrderDecimalsMismatchError};
+use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderDecimalsMismatchError};
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use crate::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
@@ -774,10 +774,6 @@ pub enum StateError {
     // The token marketplace (protocol version 15).
     #[error(transparent)]
     TokenOrderSelfFillError(TokenOrderSelfFillError),
-
-    // The token marketplace (protocol version 15).
-    #[error(transparent)]
-    TokenOrderValueTooLargeError(TokenOrderValueTooLargeError),
 
     // The token marketplace (protocol version 15).
     #[error(transparent)]
@@ -1767,17 +1763,10 @@ mod tests {
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
-            discriminant_of(StateError::TokenOrderValueTooLargeError(
-                TokenOrderValueTooLargeError::new(u64::MAX, u64::MAX, 0)
-            )),
-            183
-        );
-        // The token marketplace (protocol version 15).
-        assert_eq!(
             discriminant_of(StateError::TokenOrderDecimalsMismatchError(
                 TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
             )),
-            184
+            183
         );
     }
 }
