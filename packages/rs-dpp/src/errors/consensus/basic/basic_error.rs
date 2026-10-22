@@ -112,7 +112,7 @@ use crate::consensus::basic::state_transition::{
     WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::token::{
-    InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
+    InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -880,6 +880,10 @@ pub enum BasicError {
     // A token order's structure (protocol version 15).
     #[error(transparent)]
     InvalidTokenOrderFillRangeError(InvalidTokenOrderFillRangeError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderExpiryError(InvalidTokenOrderExpiryError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1109,6 +1113,13 @@ mod tests {
                 InvalidTokenOrderFillRangeError::new(0, 1)
             )),
             208
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderExpiryError(
+                InvalidTokenOrderExpiryError::new(0, 1)
+            )),
+            209
         );
     }
 

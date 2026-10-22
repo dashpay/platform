@@ -7,13 +7,16 @@ use dpp::state_transition::batch_transition::token_place_ask_transition::v0::Tok
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::v0::TokenPlaceAskTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use crate::state_transition_action::batch::BatchedTransitionAction;
@@ -21,8 +24,11 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 
 impl TokenPlaceAskTransitionActionV0 {
     /// Converts a borrowed `TokenPlaceAskTransitionV0` into an action. The listing's order id
-    /// follows from the token, the seller and the nonce; everything the listing needs from state
-    /// (the token's rules, the seller's balance) is checked by the state validation.
+    /// follows from the token, the seller and the nonce, and it records the token's decimals,
+    /// which price its fills; a transition naming a token its contract does not define bumps the
+    /// nonce with `ContractHasNoTokensError` or `InvalidTokenPositionError`. Everything else the
+    /// listing needs from state (the token's rules, the seller's balance) is checked by the
+    /// state validation.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_ask_transition_with_contract_lookup(
         drive: &Drive,
@@ -72,23 +78,30 @@ impl TokenPlaceAskTransitionActionV0 {
             None,
         )?;
 
+        let bump = |errors: Vec<ConsensusError>, fee_result: FeeResult| {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    errors,
+                ),
+                fee_result,
+            ))
+        };
+
         let (base_action, _change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
-            false => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                        base,
-                        owner_id,
-                        user_fee_increase,
-                    );
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
-                        base_action_validation_result.errors,
-                    ),
-                    fee_result,
-                ));
-            }
+            false => return bump(base_action_validation_result.errors, fee_result),
+        };
+
+        let decimals = match base_action.token_configuration_or_position_error() {
+            Ok(token_configuration) => token_configuration.conventions().decimals(),
+            Err(error) => return bump(vec![error], fee_result),
         };
 
         let order_id =
@@ -104,6 +117,7 @@ impl TokenPlaceAskTransitionActionV0 {
             min_fill: *min_fill,
             expires_at: *expires_at,
             escrow: 0,
+            decimals,
         }
         .new_document(block_info)?;
 

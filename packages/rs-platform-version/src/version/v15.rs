@@ -163,8 +163,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    as software that cannot decode them refuses them. The checks that read nothing beyond the
 ///    contract and the block (a tradeable token, a listing's value and expiry) run with the batch
 ///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
-///    Their structure and state validations and their high-level operation converters are 0 in
-///    every table, which only this version reaches.
+///    A listing's terms, its expiry included (at most `i64::MAX`, `InvalidTokenOrderExpiryError`
+///    10464), are checked with the transition's structure, unpaid. A listing records the token's
+///    decimals and its fills are priced at them; a listing of a token its contract does not
+///    define bumps the nonce with the token base rules' error. Their structure and state
+///    validations and their high-level operation converters are 0 in every table, which only this
+///    version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2
