@@ -1,5 +1,5 @@
 use super::*;
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter as DocumentHistoryFilter;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter as DocumentHistoryFilter;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -82,21 +82,40 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
         let (contract_id, _) = fixture.store_contract();
         let profile = history_contract(&fixture);
         let (mut client, server) = fixture.client();
+        let request: wire::GetDocumentHistoryRequest = if version
+            .drive_abci
+            .query
+            .document_history
+            .default_current_version
+            == 0
+        {
+            wire::get_document_history_request::GetDocumentHistoryRequestV0 {
+                data_contract_id: profile.id().to_vec(),
+                document_type_name: "profile".to_owned(),
+                document_id: vec![9; 32],
+                limit: Some(u32::MAX),
+                offset: None,
+                start_at_ms: 0,
+                prove: true,
+            }
+            .into()
+        } else {
+            wire::get_document_history_request::GetDocumentHistoryRequestV1 {
+                data_contract_id: profile.id().to_vec(),
+                document_type_name: "profile".to_owned(),
+                document_id: vec![9; 32],
+                limit: Some(u32::MAX),
+                filter: Some(DocumentHistoryFilter::StartAtMs(0)),
+                prove: true,
+            }
+            .into()
+        };
         let status = client
-            .get_document_history(wire::GetDocumentHistoryRequest::from(
-                wire::get_document_history_request::GetDocumentHistoryRequestV0 {
-                    data_contract_id: profile.id().to_vec(),
-                    document_type_name: "profile".to_owned(),
-                    document_id: vec![9; 32],
-                    limit: Some(u32::MAX),
-                    filter: Some(DocumentHistoryFilter::StartAtMs(0)),
-                    prove: true,
-                },
-            ))
+            .get_document_history(request)
             .await
             .expect_err("document-history limit must fit the query range");
         if status.code() != Code::InvalidArgument
-            || !status.message().contains("history limit out of bounds")
+            || !status.message().contains("limit out of bounds")
         {
             failures.push(format!(
                 "PV{} document history limit: {status}",
@@ -401,7 +420,7 @@ async fn should_keep_all_thirteen_nodes_available_after_three_bad_offset_request
     assert_no_node_bans(
         DocumentHistoryQuery {
             fixture: Arc::clone(&fixture),
-            request: wire::get_document_history_request::GetDocumentHistoryRequestV0 {
+            request: wire::get_document_history_request::GetDocumentHistoryRequestV1 {
                 data_contract_id: profile.id().to_vec(),
                 document_type_name: "profile".to_owned(),
                 document_id: vec![9; 32],
@@ -452,13 +471,33 @@ async fn should_validate_query_shapes_before_missing_history_lookups() {
             for prove in [false, true] {
                 for filter in [None, Some(DocumentHistoryFilter::StartAtMs(0))] {
                     let malformed = filter.is_none();
-                    let request = wire::get_document_history_request::GetDocumentHistoryRequestV0 {
-                        data_contract_id: id.clone(),
-                        document_type_name: name.to_owned(),
-                        document_id: vec![9; 32],
-                        limit: Some(2),
-                        filter,
-                        prove,
+                    let legacy = version
+                        .drive_abci
+                        .query
+                        .document_history
+                        .default_current_version
+                        == 0;
+                    let request: wire::GetDocumentHistoryRequest = if legacy {
+                        wire::get_document_history_request::GetDocumentHistoryRequestV0 {
+                            data_contract_id: id.clone(),
+                            document_type_name: name.to_owned(),
+                            document_id: vec![9; 32],
+                            limit: Some(if malformed { 0 } else { 2 }),
+                            offset: None,
+                            start_at_ms: 0,
+                            prove,
+                        }
+                        .into()
+                    } else {
+                        wire::get_document_history_request::GetDocumentHistoryRequestV1 {
+                            data_contract_id: id.clone(),
+                            document_type_name: name.to_owned(),
+                            document_id: vec![9; 32],
+                            limit: Some(2),
+                            filter,
+                            prove,
+                        }
+                        .into()
                     };
                     let status = client
                         .get_document_history(wire::GetDocumentHistoryRequest::from(request))
@@ -474,9 +513,11 @@ async fn should_validate_query_shapes_before_missing_history_lookups() {
                     );
                     if malformed {
                         assert!(
-                            status
-                                .message()
-                                .contains("exactly one history filter is required"),
+                            status.message().contains(if legacy {
+                                "limit 0 out of bounds"
+                            } else {
+                                "exactly one history filter is required"
+                            }),
                             "{status}"
                         );
                     }

@@ -96,7 +96,15 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
                 .verify_start_at_document_in_proof,
             0
         );
-        assert_eq!(version.drive_abci.query.document_history.max_version, 0);
+        let bounds = &version.drive_abci.query.document_history;
+        assert_eq!(
+            (
+                bounds.min_version,
+                bounds.max_version,
+                bounds.default_current_version
+            ),
+            (0, 0, 0)
+        );
         assert_ne!(
             version
                 .drive_abci
@@ -158,9 +166,16 @@ fn should_activate_storage_migration_and_history_proofs_together() {
             .verify_start_at_document_in_proof,
         1
     );
-    // The wire keeps the query in its v0 slot; the storage change is
-    // carried by the Drive method versions above, not by a wire version.
-    assert_eq!(version.drive_abci.query.document_history.max_version, 0);
+    // The composite wire shape activates with its storage and proof layout.
+    let bounds = &version.drive_abci.query.document_history;
+    assert_eq!(
+        (
+            bounds.min_version,
+            bounds.max_version,
+            bounds.default_current_version
+        ),
+        (1, 1, 1)
+    );
     assert_eq!(
         version
             .drive_abci

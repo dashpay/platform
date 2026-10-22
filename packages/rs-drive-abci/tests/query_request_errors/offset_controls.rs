@@ -1,8 +1,7 @@
-use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v0::Result as DocumentHistoryResult;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::get_contested_resource_identity_votes_response_v0::Result as IdentityVotesResult;
 use super::offsets::{history_contract, search_kind};
 use super::*;
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter as DocumentHistoryRequestFilter;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter as DocumentHistoryRequestFilter;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -398,63 +397,103 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                     filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
                     limit: Some(2),
                 };
+                let legacy = version
+                    .drive_abci
+                    .query
+                    .document_history
+                    .default_current_version
+                    == 0;
+                let request: wire::GetDocumentHistoryRequest = if legacy {
+                    wire::get_document_history_request::GetDocumentHistoryRequestV0 {
+                        data_contract_id: history_contract.id().to_vec(),
+                        document_type_name: "profile".to_owned(),
+                        document_id: document_id.to_vec(),
+                        limit: Some(2),
+                        offset,
+                        start_at_ms: 0,
+                        prove,
+                    }
+                    .into()
+                } else {
+                    wire::get_document_history_request::GetDocumentHistoryRequestV1 {
+                        data_contract_id: history_contract.id().to_vec(),
+                        document_type_name: "profile".to_owned(),
+                        document_id: document_id.to_vec(),
+                        limit: Some(2),
+                        filter: Some(DocumentHistoryRequestFilter::StartAtMs(start_at_ms)),
+                        prove,
+                    }
+                    .into()
+                };
                 let response = client
-                    .get_document_history(wire::GetDocumentHistoryRequest::from(
-                        wire::get_document_history_request::GetDocumentHistoryRequestV0 {
-                            data_contract_id: history_contract.id().to_vec(),
-                            document_type_name: "profile".to_owned(),
-                            document_id: document_id.to_vec(),
-                            limit: Some(2),
-                            filter: Some(DocumentHistoryRequestFilter::StartAtMs(start_at_ms)),
-                            prove,
-                        },
-                    ))
+                    .get_document_history(request)
                     .await
                     .expect("supported document history")
                     .into_inner();
-                let Some(wire::get_document_history_response::Version::V0(v0)) = response.version
-                else {
-                    panic!("document history V0")
+                let (plain, proof) = match response.version.expect("versioned history") {
+                    wire::get_document_history_response::Version::V0(v0) => match v0.result.expect("document result") {
+                        wire::get_document_history_response::get_document_history_response_v0::Result::DocumentHistory(history) => (
+                            Some(history.document_entries.into_iter().map(|entry| (entry.date, entry.value)).collect::<Vec<_>>()), None,
+                        ),
+                        wire::get_document_history_response::get_document_history_response_v0::Result::Proof(proof) => (None, Some(proof)),
+                    },
+                    wire::get_document_history_response::Version::V1(v1) => match v1.result.expect("document result") {
+                        wire::get_document_history_response::get_document_history_response_v1::Result::History(history) => (
+                            Some(history.entries.into_iter().map(|entry| (entry.time_ms, entry.document)).collect::<Vec<_>>()), None,
+                        ),
+                        wire::get_document_history_response::get_document_history_response_v1::Result::Proof(proof) => (None, Some(proof)),
+                    },
                 };
-                match v0.result.expect("document result") {
-                    DocumentHistoryResult::History(history) => {
-                        assert!(!prove);
-                        assert_eq!(
-                            history
-                                .entries
-                                .into_iter()
-                                .map(|e| (e.time_ms, e.document))
-                                .collect::<Vec<_>>(),
-                            expected_page
-                                .iter()
-                                .map(|(time, document)| (
-                                    *time,
-                                    document
-                                        .serialize(document_type, &history_contract, version)
-                                        .expect("original document bytes")
-                                ))
-                                .collect::<Vec<_>>()
-                        );
-                    }
-                    DocumentHistoryResult::Proof(proof) => {
-                        assert!(prove);
-                        let (root, documents) = Drive::verify_document_history(
+                if let Some(entries) = plain {
+                    assert!(!prove);
+                    assert_eq!(
+                        entries,
+                        expected_page
+                            .iter()
+                            .map(|(time, document)| (
+                                *time,
+                                document
+                                    .serialize(document_type, &history_contract, version)
+                                    .expect("original document bytes"),
+                            ))
+                            .collect::<Vec<_>>()
+                    );
+                } else {
+                    assert!(prove);
+                    let proof = proof.expect("proved history");
+                    let (root, documents) = if legacy {
+                        let (root, documents) = Drive::verify_document_history_legacy(
+                            &proof.grovedb_proof,
+                            history_contract.id().to_buffer(),
+                            "profile",
+                            document_type,
+                            document_id,
+                            0,
+                            Some(2),
+                            offset.map(|offset| offset as u16),
+                            version,
+                        )
+                        .expect("original document history proof");
+                        (root, documents.expect("verified history"))
+                    } else {
+                        let (root, history) = Drive::verify_document_history(
                             &history_query,
                             &proof.grovedb_proof,
                             document_type,
                             version,
                         )
-                        .expect("original document history proof");
-                        assert_eq!(root, stored_root);
-                        assert_eq!(
-                            documents
+                        .expect("composite history proof");
+                        (
+                            root,
+                            history
                                 .entries
                                 .into_iter()
                                 .map(|entry| (entry.time_ms, entry.document))
                                 .collect::<BTreeMap<_, _>>(),
-                            expected_page
-                        );
-                    }
+                        )
+                    };
+                    assert_eq!(root, stored_root);
+                    assert_eq!(documents, expected_page);
                 }
                 let expected_vote_page = expected_votes
                     .iter()

@@ -5,6 +5,9 @@ mod v1;
 mod tests;
 
 use crate::drive::Drive;
+use dpp::document::Document;
+use std::collections::BTreeMap;
+
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -80,6 +83,53 @@ impl DocumentHistoryProof {
 }
 
 impl Drive {
+    /// Verifies timestamp-keyed history with an exclusive time bound and an optional offset.
+    ///
+    /// # Parameters
+    /// `start_at_ms` excludes matching timestamps; `offset` skips entries after
+    /// that bound. The platform version must select the timestamp-keyed reader.
+    ///
+    /// # Returns
+    /// The history result, or an error for an unsupported reader generation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_document_history_legacy(
+        proof: &[u8],
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        document_type: DocumentTypeRef,
+        document_id: [u8; 32],
+        start_at_ms: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
+        require_supported_grovedb_proof_envelope(proof, "document history proof")?;
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .document
+            .verify_document_history
+        {
+            0 => Self::verify_document_history_v0(
+                proof,
+                contract_id,
+                document_type_name,
+                document_type,
+                document_id,
+                start_at_ms,
+                limit,
+                offset,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_document_history_legacy".to_owned(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
     /// Verifies a proved page of a historical document's history in the
     /// layout the protocol version stores.
     pub fn verify_document_history(

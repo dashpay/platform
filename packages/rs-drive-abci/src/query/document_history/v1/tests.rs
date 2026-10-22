@@ -1,6 +1,6 @@
 use super::*;
 use crate::query::tests::setup_platform;
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Cursor;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Cursor;
 use dapi_grpc::platform::v0::{
     GetDocumentHistoryRequest, GetDocumentHistoryResponse, Proof, ResponseMetadata,
 };
@@ -97,7 +97,7 @@ fn signed_proof(
 
 /// The proof a proved history response answers with; a proved response never
 /// carries the history itself.
-fn proof_mut(response: &mut GetDocumentHistoryResponseV0) -> &mut Proof {
+fn proof_mut(response: &mut GetDocumentHistoryResponseV1) -> &mut Proof {
     match response.result.as_mut() {
         Some(ResponseResult::Proof(proof)) => proof,
         _ => panic!("a proved history query answers with a proof"),
@@ -206,7 +206,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 DocumentHistoryFilter::StartAtRevision(3),
             ),
         ] {
-            let request = GetDocumentHistoryRequestV0 {
+            let request = GetDocumentHistoryRequestV1 {
                 data_contract_id: contract.id().to_vec(),
                 document_type_name: "profile".into(),
                 document_id: document.id().to_vec(),
@@ -221,7 +221,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 let mut refused = request.clone();
                 refused.prove = prove;
                 let result = platform
-                    .query_document_history_v0(refused, &state, version)
+                    .query_document_history_v1(refused, &state, version)
                     .expect("a refused revision read is a query error, not a node error");
                 assert!(!result.is_valid());
                 assert!(
@@ -233,7 +233,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             let mut time_request = request.clone();
             time_request.filter = Some(Filter::StartAtMs(0));
             let mut response = platform
-                .query_document_history_v0(time_request, &state, version)
+                .query_document_history_v1(time_request, &state, version)
                 .unwrap()
                 .into_data()
                 .unwrap();
@@ -321,7 +321,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         ),
     ];
     for (id, wire_selector, filter) in selections {
-        let request = GetDocumentHistoryRequestV0 {
+        let request = GetDocumentHistoryRequestV1 {
             data_contract_id: contract.id().to_vec(),
             document_type_name: "profile".into(),
             document_id: id.to_vec(),
@@ -331,7 +331,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         };
         let request_v0 = request.clone();
         let response = platform
-            .query_document_history_v0(request.clone(), &state, version)
+            .query_document_history_v1(request.clone(), &state, version)
             .unwrap()
             .into_data()
             .unwrap();
@@ -347,7 +347,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             .fetch_document_history(&query, document_type, None, version)
             .unwrap();
         let request: GetDocumentHistoryRequest = request.into();
-        let verify = |response: GetDocumentHistoryResponseV0| {
+        let verify = |response: GetDocumentHistoryResponseV1| {
             DocumentHistory::maybe_from_proof(
                 request.clone(),
                 GetDocumentHistoryResponse::from(response),
@@ -380,7 +380,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         let mut plain_request = request_v0.clone();
         plain_request.prove = false;
         let plain = platform
-            .query_document_history_v0(plain_request, &state, version)
+            .query_document_history_v1(plain_request, &state, version)
             .unwrap()
             .into_data()
             .unwrap();
@@ -417,7 +417,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 DocumentHistoryState::Absent => State::Absent,
             } as i32
         );
-        let with_proofs = |mut response: GetDocumentHistoryResponseV0,
+        let with_proofs = |mut response: GetDocumentHistoryResponseV1,
                            edit: &dyn Fn(&mut DocumentHistoryProof)| {
             let proof = proof_mut(&mut response);
             let mut proofs = DocumentHistoryProof::from_bytes(&proof.grovedb_proof).unwrap();
@@ -474,97 +474,10 @@ fn history_api_proof_round_trip(gapped: bool) {
     }
 }
 
-/// Before protocol 15 the handler serves the request shape from the legacy
-/// per-document layout: the inclusive time bound works, revision and
-/// cursor filters are refused as invalid arguments.
-#[test]
-fn should_serve_time_filters_and_refuse_revision_filters_at_protocol_14() {
-    let (platform, state, version) = setup_platform(None, Network::Testnet, Some(14));
-    assert_eq!(version.protocol_version, 14);
-    let contract = json_document_to_contract(concat!(env!("CARGO_MANIFEST_DIR"), "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"), false, version).unwrap();
-    platform
-        .drive
-        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
-        .unwrap();
-    let document_type = contract.document_type_for_name("profile").unwrap();
-    let mut document = json_document_to_document(
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
-        ),
-        Some([8; 32].into()),
-        document_type,
-        version,
-    )
-    .unwrap();
-    for (revision, time_ms) in [(1, 1000), (2, 2000)] {
-        document.set_revision(Some(revision));
-        platform
-            .drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                true,
-                BlockInfo::default_with_time(time_ms),
-                true,
-                None,
-                version,
-                None,
-            )
-            .unwrap();
-    }
-    let request = |filter| GetDocumentHistoryRequestV0 {
-        data_contract_id: contract.id().to_vec(),
-        document_type_name: "profile".into(),
-        document_id: document.id().to_vec(),
-        filter: Some(filter),
-        limit: None,
-        prove: false,
-    };
-
-    let plain = platform
-        .query_document_history_v0(request(Filter::StartAtMs(2000)), &state, version)
-        .unwrap()
-        .into_data()
-        .unwrap();
-    let Some(ResponseResult::History(history)) = plain.result else {
-        panic!("an unproved history query answers with the history");
-    };
-    assert_eq!(
-        history
-            .entries
-            .iter()
-            .map(|entry| (entry.time_ms, entry.revision))
-            .collect::<Vec<_>>(),
-        [(2000, 2)]
-    );
-    assert!(history.lifecycle.is_none());
-
-    for filter in [
-        Filter::Revision(1),
-        Filter::StartAtRevision(1),
-        Filter::StartAfter(Cursor {
-            time_ms: 1000,
-            revision: 1,
-        }),
-    ] {
-        let result = platform
-            .query_document_history_v0(request(filter), &state, version)
-            .unwrap();
-        assert!(!result.is_valid(), "{result:?}");
-    }
-}
-
 #[test]
 fn should_reject_missing_selectors_before_reading_state() {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-    let request = GetDocumentHistoryRequestV0 {
+    let request = GetDocumentHistoryRequestV1 {
         data_contract_id: vec![1; 32],
         document_type_name: "note".into(),
         document_id: vec![2; 32],
@@ -573,7 +486,7 @@ fn should_reject_missing_selectors_before_reading_state() {
         prove: false,
     };
     assert!(!platform
-        .query_document_history_v0(request, &state, version)
+        .query_document_history_v1(request, &state, version)
         .unwrap()
         .is_valid());
 }
