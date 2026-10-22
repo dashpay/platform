@@ -128,6 +128,7 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::InvalidTokenOrderPriceError(_) => 10462,
             Self::InvalidTokenOrderFillRangeError(_) => 10463,
+            Self::InvalidTokenOrderExpiryError(_) => 10464,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

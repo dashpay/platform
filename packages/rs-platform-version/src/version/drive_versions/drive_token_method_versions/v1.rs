@@ -70,18 +70,18 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         mark_once_per_identity_release_as_distributed: 0,
         evonode_participation_rewards: 0,
     },
-    // The token marketplace (protocol version 15) is refused before its activation, so these
-    // methods are never reached by an older protocol version.
+    // The token marketplace's escrow is active from protocol version 15
+    // (`DRIVE_TOKEN_METHOD_VERSIONS_V3`).
     order_escrow: DriveTokenOrderEscrowMethodVersions {
-        add_tokens: 0,
-        set_tokens: 0,
-        remove_tokens: 0,
-        fetch_tokens: 0,
-        add_credits: 0,
-        set_credits: 0,
-        remove_credits: 0,
-        fetch_credits: 0,
-        estimated_costs_for_tokens: 0,
-        estimated_costs_for_credits: 0,
+        add_tokens: None,
+        set_tokens: None,
+        remove_tokens: None,
+        fetch_tokens: None,
+        add_credits: None,
+        set_credits: None,
+        remove_credits: None,
+        fetch_credits: None,
+        estimated_costs_for_tokens: None,
+        estimated_costs_for_credits: None,
     },
 };

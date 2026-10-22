@@ -1,5 +1,8 @@
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
+use dpp::consensus::basic::token::{ContractHasNoTokensError, InvalidTokenPositionError};
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -59,6 +62,28 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
 
     /// Gets the token configuration associated to the action
     fn token_configuration(&self) -> Result<&TokenConfiguration, Error>;
+
+    /// The configuration of the token at the action's position, or the consensus error a
+    /// transition naming a token its contract does not define is refused with:
+    /// `ContractHasNoTokensError` when the contract defines no token, `InvalidTokenPositionError`
+    /// otherwise. The batch's advanced structure validation refuses such a transition with it,
+    /// and a transformer that needs the token's configuration earlier reads it through this.
+    fn token_configuration_or_position_error(&self) -> Result<&TokenConfiguration, ConsensusError> {
+        let contract = &self.data_contract_fetch_info_ref().contract;
+        let token_position = self.token_position();
+        contract.tokens().get(&token_position).ok_or_else(|| {
+            if contract.tokens().is_empty() {
+                BasicError::ContractHasNoTokensError(ContractHasNoTokensError::new(contract.id()))
+                    .into()
+            } else {
+                BasicError::InvalidTokenPositionError(InvalidTokenPositionError::new(
+                    contract.tokens().keys().last().copied(),
+                    token_position,
+                ))
+                .into()
+            }
+        })
+    }
 
     /// Gets the store_in_group field (optional)
     fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo>;

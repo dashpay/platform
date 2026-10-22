@@ -69,6 +69,7 @@ describe('Token Market Contract', () => {
     amount: 1000,
     remaining: 1000,
     minFill: 1,
+    decimals: 2,
     ...extra,
   });
 
@@ -80,7 +81,7 @@ describe('Token Market Contract', () => {
         expect(validate(type, raw()).isValid()).to.be.true();
       });
 
-      ['tokenId', 'price', 'amount', 'remaining', 'minFill'].forEach((property) => {
+      ['tokenId', 'price', 'amount', 'remaining', 'minFill', 'decimals'].forEach((property) => {
         it(`should require ${property}`, () => {
           const document = raw();
           delete document[property];
@@ -98,6 +99,15 @@ describe('Token Market Contract', () => {
 
           expect(error.keyword).to.equal('minimum');
         });
+      });
+
+      it('should accept decimals from 0 to 255 and refuse more', () => {
+        expect(validate(type, raw({ decimals: 0 })).isValid()).to.be.true();
+        expect(validate(type, raw({ decimals: 255 })).isValid()).to.be.true();
+
+        const error = expectJsonSchemaError(validate(type, raw({ decimals: 256 })));
+
+        expect(error.keyword).to.equal('maximum');
       });
 
       it('should refuse an unknown property', () => {

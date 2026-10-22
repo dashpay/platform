@@ -1364,6 +1364,8 @@ impl Drive {
                                     || order.maker_id != owner_id
                                     || order.price != token_place_ask_transition.price()
                                     || order.amount != token_place_ask_transition.amount()
+                                    // A listing just placed has nothing filled yet.
+                                    || order.remaining != token_place_ask_transition.amount()
                                     || order.min_fill != token_place_ask_transition.min_fill()
                                     || order.expires_at != token_place_ask_transition.expires_at()
                                 {
@@ -3446,17 +3448,6 @@ impl Drive {
     }
 }
 
-/// A moderator's document deletion is proved by the record it left: the one of the document
-/// named, saying that the transition's signer removed it for the transition's reason, and not
-/// marked restored. When is the block's to say, and whose the document was only the record
-/// knows. A document id is
-/// produced at most once, so the record is of that document and of no other.
-///
-/// On a type whose moderators' deletions keep no record
-/// (`moderatorAbilities.deleteKeepsRecord: false`) it is proved by the document's absence,
-/// and verifies to `VerifiedDocuments` with the document named and none. That the type keeps
-/// none is read from the contract, when the provider holds it: a deletion of a type that keeps
-/// records is proved by its record without the contract, as it always was.
 /// Verifies the proof of one token market contract order document: the document when the order
 /// is open, `None` when it is not.
 fn verify_token_order_document(
@@ -3487,6 +3478,17 @@ fn verify_token_order_document(
     )
 }
 
+/// A moderator's document deletion is proved by the record it left: the one of the document
+/// named, saying that the transition's signer removed it for the transition's reason, and not
+/// marked restored. When is the block's to say, and whose the document was only the record
+/// knows. A document id is
+/// produced at most once, so the record is of that document and of no other.
+///
+/// On a type whose moderators' deletions keep no record
+/// (`moderatorAbilities.deleteKeepsRecord: false`) it is proved by the document's absence,
+/// and verifies to `VerifiedDocuments` with the document named and none. That the type keeps
+/// none is read from the contract, when the provider holds it: a deletion of a type that keeps
+/// records is proved by its record without the contract, as it always was.
 fn verify_contract_document_deletion_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
