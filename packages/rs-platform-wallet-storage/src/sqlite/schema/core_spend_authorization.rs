@@ -67,29 +67,36 @@ pub(crate) fn repair(
         .iter()
         .map(|record| (record.txid, record))
         .collect();
+    // Peer-supplied records can be large, so ownership and input details are
+    // indexed once instead of scanned per input.
+    let owned: HashSet<OutPoint> = funding
+        .iter()
+        .flat_map(|(txid, parent)| {
+            parent
+                .output_details
+                .iter()
+                .filter(|output| is_owned(output.role))
+                .map(|output| OutPoint::new(*txid, output.index))
+        })
+        .collect();
     let mut rejected = HashSet::new();
     for record in &state.records {
         if authenticated(record) {
             continue;
         }
+        let mut details = HashMap::with_capacity(record.input_details.len());
+        for detail in &record.input_details {
+            details.entry(detail.index as usize).or_insert(detail);
+        }
         for (index, input) in record.transaction.input.iter().enumerate() {
             // Input details cover a previously owned coin whose materialized row is absent.
-            let detail = record
-                .input_details
-                .iter()
-                .find(|detail| detail.index as usize == index)
-                .map(|detail| TxOut {
-                    value: detail.value,
-                    script_pubkey: detail.address.script_pubkey(),
-                });
+            let detail = details.get(&index).map(|detail| TxOut {
+                value: detail.value,
+                script_pubkey: detail.address.script_pubkey(),
+            });
             let parent = funding.get(&input.previous_output.txid);
             let output_index = input.previous_output.vout;
-            let owned_by_record = parent.is_some_and(|parent| {
-                parent
-                    .output_details
-                    .iter()
-                    .any(|output| output.index == output_index && is_owned(output.role))
-            });
+            let owned_by_record = owned.contains(&input.previous_output);
             let remembered = coins.get(&input.previous_output).or(detail.as_ref());
             if remembered.is_none() && !owned_by_record {
                 continue;
@@ -201,4 +208,104 @@ pub(crate) fn repair(
     asset_locks::remove_swept(tx, wallet_id, &rejected)?;
     dashpay::settle_swept_payments(tx, wallet_id, &rejected)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use dashcore::address::Payload;
+    use dashcore::{Address, BlockHash, Network, PubkeyHash, Transaction, TxIn};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        OutputDetail, OutputRole, TransactionDirection,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionType};
+
+    use super::*;
+    use crate::sqlite::migrations::wallet_db;
+
+    fn record(transaction: Transaction, context: TransactionContext) -> TransactionRecord {
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let (kind, direction) = (TransactionType::Standard, TransactionDirection::Incoming);
+        TransactionRecord::new(
+            transaction,
+            account,
+            context,
+            kind,
+            direction,
+            vec![],
+            vec![],
+            0,
+        )
+    }
+
+    /// A peer can relay a pending record whose inputs name vouts its stored
+    /// parent lacks: they are no wallet coins, and checking them must not
+    /// rescan the parent's outputs once per input.
+    #[test]
+    fn should_check_inputs_naming_absent_parent_vouts_in_linear_time() {
+        const OUTPUTS: u32 = 100_000;
+        const ABSENT: u32 = 100_000;
+        let wallet_id = [0xC5u8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let hash = PubkeyHash::from_byte_array([0x31; 20]);
+        let address = Address::new(Network::Testnet, Payload::PubkeyHash(hash));
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn::default()],
+            output: (0..OUTPUTS)
+                .map(|_| TxOut {
+                    value: 1_000,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        };
+        let block = BlockInfo::new(100, BlockHash::all_zeros(), 100);
+        let mut parent = record(funding, TransactionContext::InBlock(block));
+        parent.output_details = (0..OUTPUTS)
+            .map(|index| OutputDetail {
+                index,
+                role: OutputRole::Received,
+                address: Some(address.clone()),
+                value: 1_000,
+            })
+            .collect();
+        // The last, unsigned input names an owned output, so the check still
+        // reaches ownership after every absent vout.
+        let input = (OUTPUTS..OUTPUTS + ABSENT)
+            .chain([0])
+            .map(|vout| TxIn {
+                previous_output: OutPoint::new(parent.txid, vout),
+                ..Default::default()
+            })
+            .collect();
+        let spend = Transaction {
+            version: 1,
+            lock_time: 0,
+            input,
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let state = CoreChangeSet {
+            records: vec![parent, record(spend, TransactionContext::Mempool)],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        let started = Instant::now();
+        assert!(
+            repair(&tx, &wallet_id, &state).unwrap(),
+            "the unsigned spend of an owned output is rejected"
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "ownership checks must not scale with inputs times parent outputs: {elapsed:?}"
+        );
+    }
 }
