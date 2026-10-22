@@ -626,7 +626,10 @@ impl Sdk {
     /// it is newer than the stored version, including on a pinned SDK. An
     /// unknown newer version uses the newest known verifier table with a warning.
     /// The stored version is learned only after proof and signature verification
-    /// succeeds, and is never lowered; a pin still governs construction.
+    /// succeeds, and is never lowered; a pin still governs construction. Some
+    /// requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -1168,6 +1171,9 @@ impl SdkBuilder {
     ///
     /// The pin governs construction. Proof verification may use a newer table
     /// named in the response's quorum-signed metadata without changing the pin.
+    /// Some requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].
