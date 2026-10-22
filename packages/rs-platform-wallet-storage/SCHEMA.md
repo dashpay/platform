@@ -409,8 +409,7 @@ One row per UTXO, spent or unspent. Owning-account identity is derived from
 `core_address_pool` while loading wallet state, and confirmation height is
 derived from `core_transactions.height`.
 
-`spent_in_txid` names the transaction that claims the row. Three writers set
-it:
+`spent_in_txid` names the transaction that claims the row. It is written by:
 
 - the spend writer (`schema::core_state::apply`), naming the record stored in
   the same round when it turns a row from unspent to spent, mempool spends
@@ -421,7 +420,9 @@ it:
   of several), so that removing that spender can release the coin;
 - the runtime history repair (`schema::core_history`), which marks an owned
   output `spent = 1` for each non-mempool stored record that spends it,
-  including a record stored before the output itself was known.
+  including a record stored before the output itself was known;
+- startup authorization repair, reassigning a rejected claim to a surviving
+  authorized spender when one still holds the same input.
 
 The repair only fills the link: an existing claim (`spent = 1` with a
 non-NULL `spent_in_txid`) stands, so it never overwrites another spender. It is set to NULL by a trigger
@@ -429,8 +430,18 @@ when its referenced `core_transactions` row is deleted (instead of a native
 `ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
 column) — and by a later sweep that releases the same outpoint.
 
-On load, recorded conflicts are reconciled wallet-wide using persisted
-ChainLock and InstantSend finality. The loader applies the sweep results and
+Before replay, the loader checks P2PKH/SIGHASH_ALL owner signatures for
+unconfirmed claims on known wallet coins. Invalid claims and their unconfirmed
+descendants lose their records and outputs; their inputs are released only when
+no surviving spender claims them. Valid signed pending sends and authenticated
+Core/InstantSend spends retain their holds. Unsupported authorized signature
+forms fail the load without mutation. This is wallet authorization, not full
+transaction validation; live peer admission remains Core's responsibility.
+
+Recorded conflicts are then reconciled wallet-wide using persisted ChainLock
+and InstantSend finality. A stored block is promoted using a ChainLock only
+when both height and block hash match exactly. A later checkpoint alone does
+not prove ancestor membership and cannot authorize destructive settlement. The loader applies the sweep results and
 rebuilds the wallet from the repaired rows in one transaction, so losing
 outputs disappear and genuinely released materialized inputs become available.
 Replay preserves a surviving `spent_in_txid` claim even when its winner has
