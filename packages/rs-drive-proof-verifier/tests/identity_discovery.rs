@@ -91,11 +91,21 @@ impl Fixture {
         legacy: bool,
         after: Option<[u8; 32]>,
     ) -> GetIdentityByNonUniquePublicKeyHashResponse {
+        self.response_signed_as(legacy, after, self.producer.protocol_version)
+    }
+    /// Build either wire format from this state and sign it as `protocol_version`,
+    /// which may name a version the producer does not answer in that format.
+    fn response_signed_as(
+        &self,
+        legacy: bool,
+        after: Option<[u8; 32]>,
+        protocol_version: u32,
+    ) -> GetIdentityByNonUniquePublicKeyHashResponse {
         let metadata = ResponseMetadata {
             height: 10,
             core_chain_locked_height: 1,
             time_ms: 1_700_000_000_000,
-            protocol_version: self.producer.protocol_version,
+            protocol_version,
             chain_id: "dash-testnet-51".into(),
             ..Default::default()
         };
@@ -326,6 +336,40 @@ fn should_refuse_nonunique_answers_in_a_format_the_signed_version_does_not_emit(
             );
         }
     }
+}
+/// A version newer than this build is read with the newest known rules: its nodes are
+/// expected to answer in the newest format, still bound to the signed root.
+#[test]
+fn should_read_nonunique_answers_signed_by_an_unknown_newer_version_with_newest_rules() {
+    let newer = PlatformVersion::latest().protocol_version + 1;
+    let f = Fixture::new(PlatformVersion::latest().protocol_version);
+    for (after, expected) in [
+        (None, Some(&f.identities[0])),
+        (Some([0x10; 32]), Some(&f.identities[1])),
+        (Some([0x20; 32]), None),
+    ] {
+        assert_eq!(
+            verify(f.response_signed_as(false, after, newer), f.hash, after)
+                .unwrap()
+                .as_ref(),
+            expected,
+            "PV{newer}, after={after:?}"
+        );
+        assert_format_refused(
+            verify(f.response_signed_as(true, after, newer), f.hash, after),
+            &format!("PV{newer} legacy, after={after:?}"),
+        );
+    }
+    let mut forged = f.response_signed_as(false, None, newer);
+    inner(&mut forged)
+        .metadata
+        .as_mut()
+        .unwrap()
+        .protocol_version = newer + 1;
+    assert!(matches!(
+        *verify(forged, f.hash, None).unwrap_err(),
+        drive_proof_verifier::Error::InvalidSignature { .. }
+    ));
 }
 #[test]
 fn should_reject_nonunique_wrong_hash_cursor_signature_metadata_and_unsupported_version() {

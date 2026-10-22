@@ -401,18 +401,15 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 }
 
 // Query construction follows the producer, while security checks keep the caller's
-// verifier version. Metadata is untrusted until the signature binds it to the root;
-// exclude unsupported and reserved mock versions before looking up their tables.
+// verifier version. Metadata is untrusted until the signature binds it to the root.
+// A producer newer than this build is read with the newest known construction rules,
+// as the verifier tables are; a wrong guess can only fail verification. Reserved
+// mock versions also sit above the newest one, so their tables are never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,
 ) -> Result<&'static PlatformVersion, Error> {
     if metadata.protocol_version > LATEST_VERSION {
-        return Err(Error::ResponseDecodeError {
-            error: format!(
-                "unsupported proof query protocol version {}",
-                metadata.protocol_version
-            ),
-        });
+        return Ok(PlatformVersion::latest());
     }
     PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
         error: format!(

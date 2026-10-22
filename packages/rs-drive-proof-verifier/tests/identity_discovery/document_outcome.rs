@@ -70,6 +70,18 @@ fn fixture(
     WaitForStateTransitionResultResponse,
     ContractProvider,
 ) {
+    fixture_signed_as(producer, proof_version, producer)
+}
+/// Like [`fixture`], but the quorum signs `signed_version`, which may be unknown here.
+fn fixture_signed_as(
+    producer: u32,
+    proof_version: u32,
+    signed_version: u32,
+) -> (
+    BroadcastStateTransitionRequest,
+    WaitForStateTransitionResultResponse,
+    ContractProvider,
+) {
     let producer = PlatformVersion::get(producer).unwrap();
     let drive = setup_drive_with_initial_state_structure(Some(producer));
     let contract = get_dpns_data_contract_fixture(
@@ -143,7 +155,7 @@ fn fixture(
         height: 10,
         core_chain_locked_height: 1,
         time_ms: 1_700_000_000_000,
-        protocol_version: producer.protocol_version,
+        protocol_version: signed_version,
         chain_id: "dash-testnet-51".into(),
         ..Default::default()
     };
@@ -196,6 +208,34 @@ fn should_verify_signed_older_document_outcome_with_current_verifier_security() 
         assert!(outcome.is_execution_proved());
         assert_eq!(outcome.owner_balance().is_some(), version >= 14);
     }
+}
+/// Once a newer protocol activates, clients built before it keep verifying outcomes with
+/// the newest rules they know instead of refusing every result until they upgrade.
+#[test]
+fn should_verify_document_outcome_signed_by_an_unknown_newer_version_with_newest_rules() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let newer = latest + 1;
+    let (request, response, provider) = fixture_signed_as(latest, latest, newer);
+    let outcome = verify(request, response, &provider)
+        .expect("newest known rules verify the newer producer's outcome")
+        .unwrap();
+    assert!(outcome.is_execution_proved());
+    assert!(outcome.owner_balance().is_some());
+
+    // The newest rules apply, not the oldest: the owner balance is still required.
+    let (request, response, provider) = fixture_signed_as(latest, 13, newer);
+    assert!(verify(request, response, &provider).is_err());
+
+    // The newer version is still bound by the signature.
+    let (request, mut response, provider) = fixture_signed_as(latest, latest, newer);
+    let Some(Version::V0(v0)) = &mut response.version else {
+        panic!("v0")
+    };
+    v0.metadata.as_mut().unwrap().protocol_version = newer + 1;
+    assert!(matches!(
+        *verify(request, response, &provider).unwrap_err(),
+        drive_proof_verifier::Error::InvalidSignature { .. }
+    ));
 }
 #[test]
 fn should_reject_current_document_outcome_missing_owner_balance() {
