@@ -176,7 +176,7 @@ async fn check(network: Network, id: &str, require_positive: bool) {
 async fn should_capture_mainnet_legacy_nonunique_vectors() {
     use dapi_grpc::Message;
     use dash_context_provider::ContextProvider;
-    if std::env::var_os("DASH_SDK_CAPTURE_MAINNET_VECTORS").is_none() {
+    if std::env::var("DASH_SDK_CAPTURE_MAINNET_VECTORS").as_deref() != Ok("1") {
         eprintln!(
             "skipped: set DASH_SDK_CAPTURE_MAINNET_VECTORS=1 to rewrite the recorded mainnet vectors"
         );
