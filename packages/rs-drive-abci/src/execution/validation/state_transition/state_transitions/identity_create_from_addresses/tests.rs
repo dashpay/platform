@@ -9376,13 +9376,13 @@ mod tests {
     mod actual_signature_verification {
         use super::*;
         use dpp::dashcore::hashes::Hash;
-        use dpp::dashcore::secp256k1::PublicKey as RawSecp256k1PublicKey;
+        use dpp::secp256k1::PublicKey as RawSecp256k1PublicKey;
         use dpp::serialization::Signable;
 
         /// Helper to create a properly signed P2PKH witness
         /// Note: Creates a recoverable signature for P2PKH (65 bytes)
         fn create_real_p2pkh_witness(
-            secret_key: &dpp::dashcore::secp256k1::SecretKey,
+            secret_key: &dpp::secp256k1::SecretKey,
             signable_bytes: &[u8],
         ) -> (PlatformAddress, AddressWitness) {
             let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(secret_key);
@@ -9410,7 +9410,7 @@ mod tests {
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             // Create a real secret key
-            let secret_key = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([
+            let secret_key = dpp::secp256k1::SecretKey::from_secret_bytes([
                 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
                 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
                 0x1d, 0x1e, 0x1f, 0x20,
@@ -9486,8 +9486,8 @@ mod tests {
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             // Create address from one key
-            let correct_secret = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([1u8; 32])
-                .expect("valid secret key");
+            let correct_secret =
+                dpp::secp256k1::SecretKey::from_secret_bytes([1u8; 32]).expect("valid secret key");
             let raw_correct_pubkey = RawSecp256k1PublicKey::from_secret_key(&correct_secret);
             let correct_pubkey = PublicKey::new(raw_correct_pubkey);
             let pubkey_hash =
@@ -9495,8 +9495,8 @@ mod tests {
             let address = PlatformAddress::P2pkh(pubkey_hash.to_byte_array());
 
             // But sign with different key
-            let wrong_secret = dpp::dashcore::secp256k1::SecretKey::from_secret_bytes([2u8; 32])
-                .expect("valid secret key");
+            let wrong_secret =
+                dpp::secp256k1::SecretKey::from_secret_bytes([2u8; 32]).expect("valid secret key");
 
             let mut inputs = BTreeMap::new();
             inputs.insert(address.clone(), (1 as AddressNonce, dash_to_credits!(1.0)));
@@ -9557,8 +9557,7 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i;
-                    dpp::dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
-                        .expect("valid")
+                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
                 })
                 .collect();
 
@@ -9646,8 +9645,7 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i + 10;
-                    dpp::dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
-                        .expect("valid")
+                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
                 })
                 .collect();
 

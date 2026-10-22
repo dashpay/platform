@@ -33,9 +33,10 @@ use dashcore::OutPoint;
 use platform_version::version::PlatformVersion;
 
 use async_trait::async_trait;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, SecretKey};
+use dashcore::ecdsa::{EcdsaPublicKey, EcdsaSignature};
 use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
 use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
+use secp256k1::{Message, PublicKey, SecretKey};
 
 /// Fixed-key in-memory `key_wallet::signer::Signer`. Mirrors how a
 /// Swift KeychainSigner behaves: derive once, sign atomically. Path
@@ -68,13 +69,13 @@ impl KwSigner for FixedKeySigner {
         &self,
         _path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+    ) -> Result<(EcdsaSignature, EcdsaPublicKey), Self::Error> {
         let msg = Message::from_digest(sighash);
-        Ok((self.secret.sign_ecdsa(msg), self.public))
+        Ok((self.secret.sign_ecdsa(msg).into(), self.public.into()))
     }
 
-    async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        Ok(self.public)
+    async fn public_key(&self, _path: &DerivationPath) -> Result<EcdsaPublicKey, Self::Error> {
+        Ok(self.public.into())
     }
 }
 

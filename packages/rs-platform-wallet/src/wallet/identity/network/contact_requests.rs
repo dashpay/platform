@@ -50,7 +50,7 @@ pub trait ContactCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dashcore::secp256k1::PublicKey,
+        peer: &dpp::secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError>;
 
     /// Export the raw **auto-accept private key** at `path` (DIP-15 QR
@@ -64,7 +64,7 @@ pub trait ContactCryptoProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
+    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError>;
 
     /// Export the raw **invitation-funding private key** at `path` (DIP-13
     /// sub-feature `3'`) — the second deliberate raw-key export (alongside
@@ -85,7 +85,7 @@ pub trait ContactCryptoProvider {
     async fn export_invitation_private_key(
         &self,
         _path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
         Err(PlatformWalletError::InvalidIdentityData(
             "invitation private-key export is not supported by this crypto provider".to_string(),
         ))
@@ -201,34 +201,40 @@ impl ContactCryptoProvider for SeedCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dashcore::secp256k1::PublicKey,
+        peer: &dpp::secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test ecdh derive: {e}"))
         })?;
         Ok(zeroize::Zeroizing::new(
-            platform_encryption::derive_shared_key_ecdh(&xprv.private_key, peer),
+            platform_encryption::derive_shared_key_ecdh(
+                &dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+                    .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?,
+                peer,
+            ),
         ))
     }
 
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
         })?;
-        Ok(xprv.private_key)
+        dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+            .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))
     }
 
     async fn export_invitation_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export invitation: {e}"))
         })?;
-        Ok(xprv.private_key)
+        dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+            .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))
     }
 
     async fn account_reference(
@@ -242,7 +248,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
         })?;
         Ok(platform_encryption::calculate_account_reference(
-            &xprv.private_key.to_secret_bytes(),
+            &xprv.private_key.to_bytes(),
             compact_xpub,
             account_index,
             version,
@@ -260,7 +266,7 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         })?;
         Ok(platform_encryption::unmask_account_reference(
             account_reference,
-            &xprv.private_key.to_secret_bytes(),
+            &xprv.private_key.to_bytes(),
             compact_xpub,
         ))
     }
@@ -341,7 +347,7 @@ impl SeedCryptoProvider {
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
             })?;
-        Ok(xprv.private_key.to_secret_bytes())
+        Ok(*xprv.private_key.to_bytes())
     }
 }
 
@@ -363,7 +369,7 @@ pub enum AutoAcceptProofSource {
     /// QR (`dapk`), binding it to the accountReference this send computes.
     SignWithKey {
         /// The auto-accept private key handed out in the QR.
-        secret_key: dashcore::secp256k1::SecretKey,
+        secret_key: dpp::secp256k1::SecretKey,
         /// The proof's expiry (the key blob's timestamp / derivation index).
         expiry: u32,
     },
@@ -523,7 +529,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let xpub_bytes = platform_encryption::CompactXpub {
             parent_fingerprint: contact_xpub_ext.parent_fingerprint.to_bytes(),
             chain_code: contact_xpub_ext.chain_code.to_bytes(),
-            public_key: contact_xpub_ext.public_key.serialize(),
+            public_key: contact_xpub_ext.public_key.to_compressed(),
         }
         .to_bytes()
         .to_vec();
@@ -644,7 +650,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Recipient identity has no key at index {recipient_key_index}"
                     ))
                 })?;
-            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+            dpp::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Recipient encryption public key is invalid: {e}"
                 ))
@@ -2460,7 +2466,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         .get(contact_encryption_key_index)
                     {
                         Some(k) => {
-                            match dashcore::secp256k1::PublicKey::from_slice(k.data().as_slice()) {
+                            match dpp::secp256k1::PublicKey::from_slice(k.data().as_slice()) {
                                 Ok(pk) => pk,
                                 Err(e) => {
                                     tracing::warn!(
@@ -3005,7 +3011,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             };
             let valid = verify_auto_accept_proof_with_pubkey(
-                &pubkey,
+                &pubkey.into(),
                 proof,
                 &request.sender_id,
                 &owner,
@@ -3674,7 +3680,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Contact identity has no key at index {contact_encryption_key_index}"
                     ))
                 })?;
-            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+            dpp::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Contact encryption public key is invalid: {e}"
                 ))
@@ -5598,7 +5604,7 @@ mod contact_info_provider_tests {
     /// the resident `derive_shared_key_ecdh` at the same path.
     #[tokio::test]
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
-        use dashcore::secp256k1::{PublicKey, SecretKey};
+        use dpp::secp256k1::{PublicKey, SecretKey};
 
         let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
@@ -5628,7 +5634,10 @@ mod contact_info_provider_tests {
         let xprv = wallet
             .derive_extended_private_key(&path)
             .expect("resident xprv");
-        let expected = platform_encryption::derive_shared_key_ecdh(&xprv.private_key, &peer);
+        let expected = platform_encryption::derive_shared_key_ecdh(
+            &SecretKey::from_secret_bytes(*xprv.private_key.to_bytes()).expect("valid scalar"),
+            &peer,
+        );
 
         assert_eq!(
             *shared, expected,

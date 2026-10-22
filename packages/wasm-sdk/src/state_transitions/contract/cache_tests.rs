@@ -9,7 +9,7 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use dash_sdk::dpp::address_funds::AddressWitness;
-use dash_sdk::dpp::dashcore::{secp256k1, signer, Network};
+use dash_sdk::dpp::dashcore::{signer, Network};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dash_sdk::dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dash_sdk::dpp::data_contract::TokenConfiguration;
@@ -17,6 +17,7 @@ use dash_sdk::dpp::document::{DocumentV0, DocumentV0Setters};
 use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dash_sdk::dpp::identity::{KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::{platform_value, BinaryData, Value};
+use dash_sdk::dpp::secp256k1;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::StateTransition;
