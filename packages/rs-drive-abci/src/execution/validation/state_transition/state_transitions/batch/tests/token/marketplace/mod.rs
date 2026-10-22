@@ -1209,7 +1209,11 @@ mod offers {
         }
 
         /// A cancel of an offer, by the buyer, or by the seller when `by_seller`.
-        async fn cancel_bid(&mut self, order_id: Identifier, by_seller: bool) -> StateTransition {
+        pub(super) async fn cancel_bid(
+            &mut self,
+            order_id: Identifier,
+            by_seller: bool,
+        ) -> StateTransition {
             let platform_version = PlatformVersion::latest();
             let party = if by_seller {
                 &mut self.seller
@@ -2006,6 +2010,33 @@ mod history {
         );
     }
 
+    /// A cancelled offer is recorded on the bid side, owned by the buyer who cancelled it; the
+    /// cancel releases the offer's credit escrow rather than tokens.
+    #[tokio::test]
+    async fn should_record_the_cancel_of_an_offer_on_the_bid_side() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let cancel = market.cancel_bid(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        let cancelled = market.history("orderCancelled");
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].owner_id(), market.buyer.id());
+        assert_eq!(
+            property(&cancelled[0], "tokenId"),
+            Value::Identifier(market.token_id.to_buffer())
+        );
+        assert_eq!(
+            property(&cancelled[0], "orderId"),
+            Value::Identifier(order_id.to_buffer())
+        );
+        assert_eq!(
+            property(&cancelled[0], "side").to_integer::<u8>().ok(),
+            Some(1)
+        );
+    }
+
     #[tokio::test]
     async fn should_record_nothing_for_a_token_that_keeps_no_transfer_history() {
         let mut market = market_with(
@@ -2025,10 +2056,23 @@ mod history {
             .keeps_transfer_history());
         let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
         market.assert_executes(&place, &BlockInfo::default());
-        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
+        let cancel = market.cancel(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        // The bid side: an offer, a sale into it and the cancel of another.
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let cancel = market.cancel_bid(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
 
         assert!(market.history("orderPlaced").is_empty());
         assert!(market.history("orderFilled").is_empty());
+        assert!(market.history("orderCancelled").is_empty());
     }
 }

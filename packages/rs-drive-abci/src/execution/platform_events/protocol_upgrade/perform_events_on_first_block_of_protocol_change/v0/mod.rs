@@ -910,8 +910,9 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger, and add the token marketplace: its escrow trees and the token market
-    /// contract.
+    /// trigger, add the token marketplace (its escrow trees and the token market
+    /// contract), and upgrade the token history contract to v3, which records the
+    /// marketplace's events, keeping its storage ownership.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
