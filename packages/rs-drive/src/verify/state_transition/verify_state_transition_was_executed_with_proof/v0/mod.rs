@@ -1412,6 +1412,7 @@ impl Drive {
                                 if order.token_id != token_id
                                     || order.maker_id != owner_id
                                     || order.price != token_place_bid_transition.price()
+                                    || order.decimals != token_place_bid_transition.decimals()
                                     || order.amount != token_place_bid_transition.amount()
                                     || order.remaining == 0
                                     || order.remaining > order.amount

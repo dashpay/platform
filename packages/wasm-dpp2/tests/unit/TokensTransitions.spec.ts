@@ -886,6 +886,7 @@ describe('TokenTransitions', () => {
       base: baseTransition,
       amount: BigInt(1000),
       price: BigInt(100),
+      decimals: 8,
       minFill: BigInt(1),
       expiresAt: BigInt(5000),
     });
@@ -902,10 +903,33 @@ describe('TokenTransitions', () => {
       expect(transition.price).to.equal(BigInt(200));
       expect(transition.minFill).to.equal(BigInt(10));
       expect(transition.expiresAt).to.equal(BigInt(6000));
+      expect(transition.decimals).to.equal(8);
+
+      transition.decimals = 2;
+
+      expect(transition.decimals).to.equal(2);
 
       transition.expiresAt = undefined;
 
       expect(transition.expiresAt).to.be.undefined();
+    });
+
+    it('should refuse decimals outside a byte and keep the previous ones', () => {
+      const transition = offer();
+
+      [256, -1, 1.5].forEach((value) => {
+        expect(() => { transition.decimals = value; }).to.throw();
+        expect(transition.decimals).to.equal(8);
+      });
+    });
+
+    it('should refuse a offer without decimals', () => {
+      expect(() => new wasm.TokenPlaceBidTransition({
+        base: baseTransition,
+        amount: BigInt(1000),
+        price: BigInt(100),
+        minFill: BigInt(1),
+      })).to.throw();
     });
 
     ['amount', 'price', 'minFill', 'expiresAt'].forEach((term) => {

@@ -180,8 +180,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///    the change in the offer's running total rounded down out of the escrow); a
 ///    `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
-///    same `is_allowed` gate. An offer's terms are checked as a listing's are, and an offer records
-///    the token's decimals: its escrow and every sale into it are priced at them. Their
+///    same `is_allowed` gate. An offer's terms are checked as a listing's are; it signs the
+///    decimals its price is at, is refused unless they are the token's
+///    (`TokenOrderDecimalsMismatchError`, before its escrow is worked out), and records them: its
+///    escrow and every sale into it are priced at them. Their
 ///    validations and converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,

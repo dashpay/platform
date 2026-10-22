@@ -24,6 +24,9 @@ pub struct TokenPlaceBidTransitionActionV0 {
     pub min_fill: TokenAmount,
     /// The block time from which the offer can no longer be filled
     pub expires_at: Option<TimestampMillis>,
+    /// The token's decimals the offer was signed at, which its price is at and its order
+    /// records; the structure validation refuses them unless they are the token's
+    pub decimals: u8,
     /// What the offer is worth, rounded up: the credits it moves from the buyer's balance into
     /// escrow
     pub escrow: Credits,
@@ -55,6 +58,9 @@ pub trait TokenPlaceBidTransitionActionAccessorsV0 {
 
     /// The block time from which the offer can no longer be filled
     fn expires_at(&self) -> Option<TimestampMillis>;
+
+    /// The token's decimals the offer was signed at
+    fn decimals(&self) -> u8;
 
     /// The credits the offer holds in escrow
     fn escrow(&self) -> Credits;
@@ -108,6 +114,10 @@ impl TokenPlaceBidTransitionActionAccessorsV0 for TokenPlaceBidTransitionActionV
 
     fn expires_at(&self) -> Option<TimestampMillis> {
         self.expires_at
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
     }
 
     fn escrow(&self) -> Credits {

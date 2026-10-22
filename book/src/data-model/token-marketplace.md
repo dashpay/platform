@@ -181,7 +181,7 @@ an offer.
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceBid` | `amount`, `price`, `minFill`, optional `expiresAt` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
+| `TokenPlaceBid` | `amount`, `price`, `decimals`, `minFill`, optional `expiresAt` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
 | `TokenFillBid` | `orderId`, `minAmount`, `maxAmount`, `minTotalReceived` | Moves part or all of the amount still wanted from the seller to the buyer, and its price from the escrow to the seller |
 
 An offer holds what it is worth, its amount at its price rounded up, and its `escrow` property
@@ -203,6 +203,7 @@ as it does for a listing, and a sale is refused when it would be paid less than
 |---|---|
 | The terms of a listing (amount, price, minimum fill, expiry), and a sale's fill range | The listing's basic errors (10458, 10462 to 10464), unpaid |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
+| An offer's `decimals` are the token's, before its escrow is worked out | `TokenOrderDecimalsMismatchError` (40758), in check_tx too |
 | The token is tradeable (to place or sell into) | `TokenNotTradeableError` (40750), in check_tx too |
 | An offer is worth at most `i64::MAX` credits | `TokenOrderValueTooLargeError` (40757), in check_tx too |
 | An offer's `expiresAt` is after the block, and a sale comes before it | `TokenOrderExpiredError` (40752) |

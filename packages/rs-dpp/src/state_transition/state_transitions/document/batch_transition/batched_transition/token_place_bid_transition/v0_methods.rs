@@ -51,6 +51,18 @@ impl TokenPlaceBidTransitionV0Methods for TokenPlaceBidTransition {
         }
     }
 
+    fn decimals(&self) -> u8 {
+        match self {
+            TokenPlaceBidTransition::V0(v0) => v0.decimals(),
+        }
+    }
+
+    fn set_decimals(&mut self, decimals: u8) {
+        match self {
+            TokenPlaceBidTransition::V0(v0) => v0.set_decimals(decimals),
+        }
+    }
+
     fn min_fill(&self) -> TokenAmount {
         match self {
             TokenPlaceBidTransition::V0(v0) => v0.min_fill(),

@@ -65,6 +65,12 @@ impl TokenPlaceBidTransitionActionAccessorsV0 for TokenPlaceBidTransitionAction 
         }
     }
 
+    fn decimals(&self) -> u8 {
+        match self {
+            TokenPlaceBidTransitionAction::V0(v0) => v0.decimals,
+        }
+    }
+
     fn escrow(&self) -> Credits {
         match self {
             TokenPlaceBidTransitionAction::V0(v0) => v0.escrow,

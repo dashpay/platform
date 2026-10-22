@@ -1634,6 +1634,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         token_contract_position: u16,
         amount: TokenAmount,
         price: Credits,
+        decimals: u8,
         min_fill: TokenAmount,
         expires_at: Option<TimestampMillis>,
         identity_public_key: &IdentityPublicKey,
@@ -1653,6 +1654,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             }),
             amount,
             price,
+            decimals,
             min_fill,
             expires_at,
         });

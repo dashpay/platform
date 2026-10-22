@@ -1470,6 +1470,7 @@ mod offers {
             expires_at: Option<u64>,
         ) -> (StateTransition, Identifier) {
             let platform_version = PlatformVersion::latest();
+            let decimals = self.token_decimals();
             let nonce = self.buyer.take_nonce();
             let order_id = TokenOrderSide::Bid.order_id(self.token_id, self.buyer.id(), nonce);
             let transition = BatchTransition::new_token_place_bid_transition(
@@ -1479,6 +1480,7 @@ mod offers {
                 0,
                 amount,
                 price,
+                decimals,
                 min_fill,
                 expires_at,
                 &self.buyer.key,
@@ -1573,6 +1575,7 @@ mod offers {
                 position,
                 1_000,
                 PRICE,
+                8,
                 1,
                 None,
                 &self.buyer.key,
@@ -2104,6 +2107,40 @@ mod offers {
         );
         assert_eq!(market.credit_escrow(order_id), Some(10_000));
         assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+    }
+
+    /// An offer's escrow is what it is worth at the decimals it was signed at: 1,000 base units
+    /// at 1,000,000,000 credits per whole token hold 10,000 credits at 8 decimals and
+    /// 100,000,000 at 4. The buyer signs at 8; the identity controlling the token's conventions
+    /// (the contract owner) changes them to 4 before the offer executes. The offer is refused
+    /// with `TokenOrderDecimalsMismatchError`, by check_tx and in a block, and none of the
+    /// buyer's credits move into escrow.
+    #[tokio::test]
+    async fn should_refuse_an_offer_signed_at_other_decimals() {
+        let mut market = market_with(
+            make_token_tradeable_with_owner_conventions_and_freezes,
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, 1_000_000_000, 1, None).await;
+
+        market.set_decimals(4).await;
+
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::StateError(StateError::TokenOrderDecimalsMismatchError(error))]
+                if error.signed_decimals() == 8 && error.token_decimals() == 4
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: error @ ConsensusError::StateError(
+                    StateError::TokenOrderDecimalsMismatchError(inner)
+                ),
+                ..
+            }] if inner.token_id() == market.token_id && error.code() == 40758
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
     }
 
     #[tokio::test]
