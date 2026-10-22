@@ -1871,8 +1871,12 @@ mod signed {
             .expect("write direct WASM vectors");
         let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../wasm-drive-verify/tests/fixtures/nonunique_single_proof.json");
+        // Compare parsed JSON so formatting, such as a final newline, does not matter.
+        let committed_vectors: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&committed).expect("committed WASM vectors"))
+                .expect("committed WASM vectors are JSON");
         assert!(
-            std::fs::read(&committed).expect("committed WASM vectors") == direct,
+            committed_vectors == serde_json::Value::from(direct_vectors),
             "single proofs changed: replace {} with nonunique-fixtures.json from {}",
             committed.display(),
             destination.display()
