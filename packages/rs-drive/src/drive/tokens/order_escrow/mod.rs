@@ -880,4 +880,68 @@ mod tests {
             assert_eq!(prefunded_layer_level(&estimation), 1);
         }
     }
+
+    /// A batch moving tokens between a balance and escrow describes the Tokens layer at the
+    /// escrow key's depth whichever of the two operations is built first. At protocol version 14
+    /// the balance estimation built last lowers it to the balances key, as it always did.
+    #[test]
+    fn should_keep_the_escrow_depth_whichever_of_balance_and_escrow_is_built_first() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [5; 32];
+        let tokens_layer_level =
+            |estimation: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| match estimation
+                .as_ref()
+                .expect("expected an estimation")
+                .get(&KeyInfoPath::from_known_path(tokens_root_path()))
+                .map(|layer| &layer.estimated_layer_count)
+            {
+                Some(EstimatedLevel(level, _)) => *level,
+                other => panic!("expected an estimated level, got {other:?}"),
+            };
+        let balance = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+                       platform_version: &PlatformVersion| {
+            drive
+                .remove_from_identity_token_balance_operations(
+                    token_id,
+                    [7; 32],
+                    500,
+                    estimation,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the balance operations");
+        };
+        let escrow = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| {
+            drive
+                .add_to_token_order_escrow_operations(
+                    token_id,
+                    [9; 32],
+                    500,
+                    estimation,
+                    None,
+                    &mut None,
+                    platform_version,
+                )
+                .expect("expected the escrow operations");
+        };
+
+        let mut estimation = Some(HashMap::new());
+        balance(&mut estimation, platform_version);
+        escrow(&mut estimation);
+        assert_eq!(tokens_layer_level(&estimation), 3, "the balance first");
+
+        let mut estimation = Some(HashMap::new());
+        escrow(&mut estimation);
+        balance(&mut estimation, platform_version);
+        assert_eq!(tokens_layer_level(&estimation), 3, "the escrow first");
+
+        let mut estimation = Some(HashMap::new());
+        escrow(&mut estimation);
+        balance(
+            &mut estimation,
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        assert_eq!(tokens_layer_level(&estimation), 0, "protocol version 14");
+    }
 }
