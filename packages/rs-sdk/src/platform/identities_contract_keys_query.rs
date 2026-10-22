@@ -48,8 +48,9 @@ impl IdentitiesContractKeysQuery {
         })
     }
 
-    /// The request this query sends, proved or not.
-    fn request(&self, prove: bool) -> GetIdentitiesContractKeysRequest {
+    /// The request this query sends. It always asks for a proof: the answer
+    /// is only read from a verified proof, whatever the SDK's proof setting.
+    fn request(&self) -> GetIdentitiesContractKeysRequest {
         GetIdentitiesContractKeysRequest {
             version: Some(V0(GetIdentitiesContractKeysRequestV0 {
                 identities_ids: first_of_each(&self.identities_ids)
@@ -62,7 +63,7 @@ impl IdentitiesContractKeysQuery {
                     .into_iter()
                     .map(|purpose| purpose as i32)
                     .collect(),
-                prove,
+                prove: true,
             })),
         }
     }
@@ -82,16 +83,18 @@ impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
     type Error = Error;
     fn try_from(dapi_request: IdentitiesContractKeysQuery) -> Result<Self, Self::Error> {
         //todo: transform this into PlatformVersionedTryFrom
-        Ok(dapi_request.request(true))
+        Ok(dapi_request.request())
     }
 }
 
 impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
     fn query(
         &self,
-        settings: &crate::platform::QuerySettings<'_>,
+        _settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesContractKeysRequest, Error> {
-        Ok(self.request(settings.prove))
+        // Proved whatever `settings.prove` says: a response without a proof
+        // would only be refused by the verifier.
+        Ok(self.request())
     }
 }
 
@@ -112,7 +115,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
     }
 
     fn names_nothing(&self) -> Option<&'static str> {
-        self.request(true).names_nothing()
+        self.request().names_nothing()
     }
 
     fn execute_transport<'c>(
@@ -120,7 +123,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        self.request(true).execute_transport(client, settings)
+        self.request().execute_transport(client, settings)
     }
 }
 
@@ -158,7 +161,7 @@ mod tests {
 
         // The transport and names_nothing build it through `request`; the request sent and the
         // one the proof is verified against are the same.
-        assert_eq!(query.request(true), expected);
+        assert_eq!(query.request(), expected);
         assert_eq!(
             GetIdentitiesContractKeysRequest::try_from(query.clone()).expect("request"),
             expected
@@ -171,6 +174,30 @@ mod tests {
         };
         let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
         assert_eq!(sent, expected);
+    }
+
+    /// A proofs-disabled SDK still sends a proved request: the answer is only
+    /// read from a verified proof, so an unproved one could only be refused.
+    #[test]
+    fn should_ask_for_a_proof_whatever_the_query_settings_say() {
+        let query = IdentitiesContractKeysQuery::new(
+            vec![Identifier::from([1; 32])],
+            Identifier::from([3; 32]),
+            None,
+            vec![Purpose::AUTHENTICATION],
+        )
+        .expect("valid query");
+        let request_settings = RequestSettings::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::latest(),
+            prove: false,
+        };
+        let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
+        let Some(V0(sent)) = sent.version else {
+            panic!("a v0 request");
+        };
+        assert!(sent.prove);
     }
 
     #[test]
