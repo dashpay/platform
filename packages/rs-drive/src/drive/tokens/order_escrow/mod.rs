@@ -13,24 +13,37 @@ mod tokens;
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
     use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_path;
     use crate::drive::tokens::paths::tokens_root_path;
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation;
+    use crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    use dpp::document::{Document, DocumentV0};
     use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
     use grovedb::batch::KeyInfoPath;
     use grovedb::EstimatedLayerCount::EstimatedLevel;
     use grovedb::EstimatedLayerSizes::AllSubtrees;
     use grovedb::EstimatedSumTrees::AllBigSumTrees;
-    use grovedb::{EstimatedLayerInformation, TreeType};
-    use std::collections::HashMap;
+    use grovedb::{EstimatedLayerInformation, GroveDb, TreeType};
+    use std::collections::{BTreeMap, HashMap};
 
     fn apply(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
@@ -1009,5 +1022,187 @@ mod tests {
             PlatformVersion::get(14).expect("expected protocol version 14"),
         );
         assert_eq!(level_at(&estimation, root()), 1, "protocol version 14");
+    }
+
+    /// Orders priced at two scales sit apart in the token market contract's `depth` index
+    /// (`tokenId`, `decimals`, `price`): a sum for the token at decimals 8 counts only the
+    /// orders placed at 8 and one at decimals 2 only those at 2, though all are at the same
+    /// price, and a proven per-price sum at one scale verifies against the path query a client
+    /// rebuilds and holds that scale's orders alone.
+    #[test]
+    fn should_sum_the_depth_of_each_price_scale_apart() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
+            .expect("expected the token market contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to store the token market contract");
+        let ask_type = contract
+            .document_type_for_name("ask")
+            .expect("expected the ask type");
+        let token_id = Identifier::from([5; 32]);
+        let maker_id = Identifier::from([7; 32]);
+
+        for (i, (decimals, remaining)) in
+            [(8i64, 300i64), (8, 200), (2, 50)].into_iter().enumerate()
+        {
+            let document: Document = DocumentV0 {
+                contract_version: None,
+                id: Identifier::from([i as u8 + 1; 32]),
+                owner_id: maker_id,
+                properties: BTreeMap::from([
+                    (
+                        "tokenId".to_string(),
+                        Value::Identifier(token_id.to_buffer()),
+                    ),
+                    ("price".to_string(), Value::I64(100)),
+                    ("amount".to_string(), Value::I64(remaining)),
+                    ("remaining".to_string(), Value::I64(remaining)),
+                    ("minFill".to_string(), Value::I64(1)),
+                    ("decimals".to_string(), Value::I64(decimals)),
+                ]),
+                revision: Some(1),
+                created_at: Some(1_000 + i as u64),
+                updated_at: Some(1_000 + i as u64),
+                transferred_at: None,
+                created_at_block_height: Some(1),
+                updated_at_block_height: None,
+                transferred_at_block_height: None,
+                created_at_core_block_height: None,
+                updated_at_core_block_height: None,
+                transferred_at_core_block_height: None,
+                creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
+            }
+            .into();
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: Some(maker_id.to_buffer()),
+                        },
+                        contract: &contract,
+                        document_type: ask_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to store the listing");
+        }
+
+        // Every price of the token at one scale: the depth index's properties, the last one a
+        // range.
+        let at_scale = |decimals: i64| {
+            vec![
+                WhereClause {
+                    field: "tokenId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(token_id.to_buffer()),
+                },
+                WhereClause {
+                    field: "decimals".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::I64(decimals),
+                },
+                WhereClause {
+                    field: "price".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::I64(0),
+                },
+            ]
+        };
+        let drive_config = DriveConfig::default();
+        let sum = |where_clauses: Vec<WhereClause>| {
+            let request = DocumentSumRequest {
+                contract: &contract,
+                document_type: ask_type,
+                sum_property: "remaining".to_string(),
+                where_clauses,
+                order_clauses: Vec::new(),
+                mode: SumMode::Aggregate,
+                limit: None,
+                prove: false,
+                drive_config: &drive_config,
+                resolved_time_ranges: vec![],
+            };
+            match drive
+                .execute_document_sum_request(request, None, platform_version)
+                .expect("expected the depth sum")
+            {
+                DocumentSumResponse::Aggregate(total) => total,
+                other => panic!("expected an aggregate, got {other:?}"),
+            }
+        };
+        assert_eq!(sum(at_scale(8)), 500);
+        assert_eq!(sum(at_scale(2)), 50);
+
+        // A proven per-price sum at decimals 8, verified as a client does.
+        let where_clauses = at_scale(8);
+        let request = DocumentSumRequest {
+            contract: &contract,
+            document_type: ask_type,
+            sum_property: "remaining".to_string(),
+            where_clauses: where_clauses.clone(),
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+            resolved_time_ranges: vec![],
+        };
+        let DocumentSumResponse::Proof(proof) = drive
+            .execute_document_sum_request(request, None, platform_version)
+            .expect("expected the proven depth sum")
+        else {
+            panic!("expected a proof");
+        };
+        let index = find_range_summable_index_for_where_clauses(
+            ask_type.indexes(),
+            &where_clauses,
+            "remaining",
+            &[],
+        )
+        .expect("expected the depth index to serve the query");
+        assert_eq!(index.name, "depth");
+        let path_query = DriveDocumentSumQuery {
+            document_type: ask_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "ask".to_string(),
+            index,
+            where_clauses,
+            sum_property: "remaining".to_string(),
+        }
+        .distinct_sum_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
+        .expect("expected the client's path query");
+        let (_, elements) =
+            GroveDb::verify_query(&proof, &path_query, &platform_version.drive.grove_version)
+                .expect("expected the proof to verify");
+        let sums: Vec<i64> = elements
+            .iter()
+            .filter_map(|(_, _, element)| {
+                element
+                    .as_ref()
+                    .map(|element| element.sum_value_or_default())
+            })
+            .collect();
+        assert_eq!(
+            sums,
+            vec![500],
+            "one price bucket at decimals 8, holding 500"
+        );
     }
 }

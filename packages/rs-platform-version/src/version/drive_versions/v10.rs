@@ -9,7 +9,7 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveInitializationMethodVersions, DriveMethodVersions,
+    DriveBatchOperationsMethodVersion, DriveInitializationMethodVersions, DriveMethodVersions,
     DrivePrefundedSpecializedMethodVersions, DriveVersion,
 };
 
@@ -32,7 +32,10 @@ use crate::version::drive_versions::{
 ///   `for_token_balances` 1 keeps a deeper description of the Tokens layer. The escrows also sit
 ///   deeper in the root tree than the identity balances and the token balances, so
 ///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
-///   description of the root as well.
+///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 lowers
+///   each operation of an estimated batch with layer descriptions of its own and merges them
+///   keeping the deeper one, so no other write of the batch (a document, a nonce) lowers what
+///   the escrows describe, whichever is built first.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -55,6 +58,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
                 ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
+        },
+        batch_operations: DriveBatchOperationsMethodVersion {
+            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions keeping the deeper
+            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
