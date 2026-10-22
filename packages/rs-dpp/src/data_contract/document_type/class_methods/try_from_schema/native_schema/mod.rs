@@ -33,9 +33,24 @@ use platform_version::version::PlatformVersion;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::BTreeMap;
 
+mod constraints;
 mod document_type;
 mod indexes;
 mod properties;
+mod references;
+
+/// The system timestamps a rule or a `where` bound may read.
+const TIMESTAMP_PROPERTIES: [&str; 9] = [
+    "$createdAt",
+    "$updatedAt",
+    "$transferredAt",
+    "$createdAtBlockHeight",
+    "$updatedAtBlockHeight",
+    "$transferredAtBlockHeight",
+    "$createdAtCoreBlockHeight",
+    "$updatedAtCoreBlockHeight",
+    "$transferredAtCoreBlockHeight",
+];
 
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema
 /// added and its property type shorthands expanded, against the rules of the document
@@ -416,6 +431,21 @@ impl Checker<'_> {
         }
     }
 
+    /// A property path: words joined by dots, at most 256 characters.
+    fn path(&self, value: &JsonValue) -> Checked {
+        let text = self.string_of_length(value, 1, Some(256))?;
+        if is_path(text) {
+            Ok(())
+        } else {
+            Err(self.fail_with(
+                "pattern",
+                format!("{value} is not a property path"),
+                json!({ "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$" }),
+                "",
+            ))
+        }
+    }
+
     /// An array of strings, no two alike.
     fn string_array(&self, value: &JsonValue) -> Checked {
         let items = self.array(value)?;
@@ -446,6 +476,49 @@ impl Checker<'_> {
     ) -> Checked {
         self.member(map, name, |c, value| c.constant(value, &expected))
     }
+
+    // ---- names and choices ----
+
+    /// A property name or key of `minimum` to `maximum` characters.
+    fn name_of_length(&self, name: &str, minimum: usize, maximum: usize) -> Checked {
+        if (minimum..=maximum).contains(&name.chars().count()) {
+            Ok(())
+        } else {
+            Err(self.name_error(
+                name,
+                &format!("is not {minimum} to {maximum} characters long"),
+            ))
+        }
+    }
+
+    fn name_error(&self, name: &str, problem: &str) -> ProtocolError {
+        self.fail_with(
+            "propertyNames",
+            format!("\"{name}\" {problem}"),
+            json!({}),
+            name,
+        )
+    }
+
+    /// The error of a value no branch of a choice admits.
+    fn no_branch(&self, value: &JsonValue) -> ProtocolError {
+        self.fail(
+            "anyOf",
+            format!("{value} is not valid under any of the given schemas"),
+        )
+    }
+
+    /// A string of 1 to 256 characters that `admits`.
+    fn short_string_admitted(&self, value: &JsonValue, admits: impl Fn(&str) -> bool) -> bool {
+        value
+            .as_str()
+            .is_some_and(|text| (1..=256).contains(&text.chars().count()) && admits(text))
+    }
+}
+
+/// Words joined by dots, as the meta-schema's property path pattern reads them.
+fn is_path(text: &str) -> bool {
+    text.split('.').all(is_word)
 }
 
 /// A name of 1 to 64 ASCII letters, digits and underscores.

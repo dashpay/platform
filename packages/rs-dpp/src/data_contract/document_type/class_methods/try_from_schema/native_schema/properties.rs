@@ -122,6 +122,7 @@ impl Checker<'_> {
             }
             "items" => self.array_item(value),
             "encryptedFor" => self.encrypted_for(value),
+            "refersTo" => self.refers_to(value),
             "contains" | "const" => Ok(()),
             "additionalProperties" => {
                 self.boolean(value)?;
@@ -405,6 +406,15 @@ impl Checker<'_> {
                 }
                 "distinctFrom" => c.string_of_length(keyword, 1, Some(256)).map(drop),
                 "maxBytes" => c.integer(keyword, Some(1), Some(65535)),
+                "refersTo" => {
+                    c.refers_to(keyword)?;
+                    if keyword.get("type") == Some(&json!("identityPublicKey")) {
+                        return Err(
+                            c.fail("not", "an element may not refer to an identity public key")
+                        );
+                    }
+                    Ok(())
+                }
                 key => c.value_keyword(key, keyword),
             })?;
         }
