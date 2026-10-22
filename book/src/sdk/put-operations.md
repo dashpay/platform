@@ -248,6 +248,8 @@ The signed producer version selects the execution-proof query layout. A client
 retaining protocol 14 verifier rules can therefore authenticate a protocol 13
 outcome without inventing a balance. A protocol 14 outcome must still prove the
 balance; verification never retries a malformed current proof as an older layout.
+An outcome signed by a protocol newer than the SDK is verified with the newest
+layout the SDK knows, so results stay verifiable after that protocol activates.
 Signature and freshness checks run before the SDK learns the producer version.
 
 `put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also

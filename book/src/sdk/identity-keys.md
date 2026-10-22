@@ -452,24 +452,25 @@ exhausted cursor proves the entire remaining range is empty. A missing identity
 referenced by the index is a proof error, rather than an empty result.
 
 Clients reconstruct the query using the producer protocol version in signed
-metadata and retain their verification security floor. Unsupported future query
-versions require an SDK update and fail closed. The Rust SDK still returns
-`Option<Identity>`; high-level WASM/JavaScript APIs retain their existing result
-shape. The direct WASM verifier takes one proof blob and returns a root that the
-caller must authenticate independently.
+metadata and retain their verification security floor. A producer version newer
+than the SDK is read with the newest query rules the SDK knows; the proof must
+still rebuild the signed root. The Rust SDK still returns `Option<Identity>`;
+high-level WASM/JavaScript APIs retain their existing result shape. The direct
+WASM verifier takes one proof blob and returns a root that the caller must
+authenticate independently.
 
 The SDK also accepts the legacy nested response at field 2. It strictly verifies
 its first-after index proof and complete identity proof, requires equal roots,
 and authenticates that root with the trusted quorum key and signed metadata.
 Only proved index absence permits an omitted identity proof. Both formats require
-GroveDB V1 or newer; failed current-format proofs are never retried as legacy.
-The response field selects the format, independently of protocol version: current
-proofs can also be produced at protocol 13. Freshness checks and authenticated
-version learning apply after successful verification. The response generation
-follows committed current protocol state, so lock-in of protocol 14 still returns
-the protocol 13 encoding until activation. Clients also accept the single-proof
-format already deployed by some protocol 13 nodes. Unproved response field 1 and
-request version 0 are unchanged.
+GroveDB V1 or newer. The signed protocol version selects the one format the SDK
+accepts: field 2 up to protocol 13, field 4 from protocol 14 (and from versions
+newer than the SDK). An answer in the other format is a proof error and is never
+re-read in the other format, so the request moves to another node. Freshness
+checks and authenticated version learning apply after successful verification.
+The response generation follows committed current protocol state, so lock-in of
+protocol 14 still returns the protocol 13 encoding until activation. Unproved
+response field 1 and request version 0 are unchanged.
 For a legacy response, `fetch_with_metadata_and_proof` returns the signed index
 `Proof`; independent replay of the full verification needs both original blobs.
 
