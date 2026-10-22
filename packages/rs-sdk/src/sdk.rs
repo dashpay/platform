@@ -292,6 +292,13 @@ pub struct Sdk {
     /// [`SdkBuilder::with_version()`].
     version_pinned: bool,
 
+    /// Highest protocol version seen in a response whose proof, signature and
+    /// freshness were verified, or 0 before the first one. Unlike `protocol_version`
+    /// it is never seeded or pinned and also records versions this build does not
+    /// know: it is evidence of what the network runs, not a choice of rules. Shared
+    /// between clones.
+    verified_protocol_version: Arc<atomic::AtomicU32>,
+
     /// Notified each time auto-detect ratchets the protocol version upward, so a
     /// host can persist the learned version and seed the next SDK with it.
     protocol_version_observer: Option<ProtocolVersionObserver>,
@@ -331,6 +338,7 @@ impl Clone for Sdk {
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
             version_pinned: self.version_pinned,
+            verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
@@ -462,6 +470,8 @@ impl Sdk {
             )?;
         };
 
+        self.verified_protocol_version
+            .fetch_max(metadata.protocol_version, Ordering::Relaxed);
         self.maybe_update_protocol_version(metadata.protocol_version);
 
         Ok(())
@@ -755,6 +765,7 @@ impl Sdk {
         crate::platform::QuerySettings {
             request_settings: &self.dapi_client_settings,
             protocol_version: self.version(),
+            verified_protocol_version: self.verified_protocol_version.load(Ordering::Relaxed),
             prove: self.prove(),
         }
     }
@@ -1348,6 +1359,7 @@ impl SdkBuilder {
                     // pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
@@ -1418,6 +1430,7 @@ impl SdkBuilder {
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
