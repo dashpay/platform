@@ -381,6 +381,284 @@ impl DocumentOperationType<'_> {
         }
     }
 
+    /// Converts a member of a batch whose document TTL cleanup is complete against the operations
+    /// the batch built before it, and appends its own to them (protocol version 15,
+    /// `apply_drive_operations` 2). Every document insert, update and deletion is built with the
+    /// batch's earlier operations as pending: a deletion does not take a tree an earlier write
+    /// of the batch fills for empty, two deletions that empty a tree together remove it, and an
+    /// insert into a tree an earlier deletion of the batch empties keeps the tree.
+    /// `into_low_level_drive_operations_after_ttl_drain` builds an operation on its own.
+    pub(crate) fn append_low_level_drive_operations_after_ttl_drain(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match self {
+            DocumentOperationType::AddDocument {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                override_document,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract,
+                        document_type,
+                    },
+                    override_document,
+                    block_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+            }
+            DocumentOperationType::UpdateDocument {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let operations = drive.update_document_for_contract_operations_without_ttl_drain(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract,
+                        document_type,
+                    },
+                    block_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+            }
+            DocumentOperationType::AddDocumentAndDeleteConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    block_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+                for (document_id, document_type_name) in consumed_documents {
+                    let consumed_document_type =
+                        DocumentTypeInfo::DocumentTypeName(document_type_name).resolve(contract)?;
+                    let operations = drive.force_delete_document_for_contract_operations(
+                        document_id,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut *batch_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                    batch_operations.extend(operations);
+                }
+            }
+            DocumentOperationType::DeleteDocument {
+                document_id,
+                contract_info,
+                document_type_info,
+            } => {
+                Self::append_deletions(
+                    drive,
+                    vec![document_id],
+                    contract_info,
+                    document_type_info,
+                    false,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+            DocumentOperationType::DeleteDocuments {
+                document_ids,
+                contract_info,
+                document_type_info,
+            } => {
+                Self::append_deletions(
+                    drive,
+                    document_ids,
+                    contract_info,
+                    document_type_info,
+                    false,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+            DocumentOperationType::ForceDeleteDocument {
+                document_id,
+                contract_info,
+                document_type_info,
+            } => {
+                Self::append_deletions(
+                    drive,
+                    vec![document_id],
+                    contract_info,
+                    document_type_info,
+                    true,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+            DocumentOperationType::DeleteIndexOnlyDocument {
+                document_id,
+                owner_id,
+                data,
+                contract_info,
+                document_type_info,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let document = Drive::index_only_document_from_values(document_id, owner_id, data)?;
+                let operations = drive
+                    .delete_index_only_document_for_contract_operations_without_ttl_drain(
+                        document,
+                        contract,
+                        document_type,
+                        Some(&mut *batch_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                batch_operations.extend(operations);
+            }
+            // A contested insert, a withdrawal, a document history entry and a group of
+            // operations for one document type: built as before, after the batch's earlier
+            // operations.
+            operation => {
+                let operations = operation.into_low_level_drive_operations_after_ttl_drain(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+            }
+        }
+        Ok(())
+    }
+
+    /// Appends the deletions of `document_ids`, each built against the batch's operations so
+    /// far; `force` skips the owner's `canBeDeleted` guard (`ForceDeleteDocument`).
+    #[allow(clippy::too_many_arguments)]
+    fn append_deletions(
+        drive: &Drive,
+        document_ids: Vec<Identifier>,
+        contract_info: DataContractInfo,
+        document_type_info: DocumentTypeInfo,
+        force: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let contract_resolved_info = contract_info.resolve(
+            drive,
+            block_info,
+            transaction,
+            batch_operations,
+            platform_version,
+        )?;
+        let contract = contract_resolved_info.as_ref();
+        let document_type = document_type_info.resolve(contract)?;
+        for document_id in document_ids {
+            let operations = if force {
+                drive.force_delete_document_for_contract_operations(
+                    document_id,
+                    contract,
+                    document_type,
+                    Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )?
+            } else {
+                drive.delete_document_for_contract_operations_without_ttl_drain(
+                    document_id,
+                    contract,
+                    document_type,
+                    Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )?
+            };
+            batch_operations.extend(operations);
+        }
+        Ok(())
+    }
+
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
