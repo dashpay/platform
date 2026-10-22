@@ -484,7 +484,8 @@ it: its stored protocol version, and the highest protocol version it has seen in
 verified, signed answer. Until it has verified one, it sends V0, which every node
 serves. A seeded, pinned or persisted version alone therefore never sends V1 to a
 network that may still run protocol 13. On a network that has just activated
-protocol 14, a node one block behind can still refuse the first V1 request.
+protocol 14, a node that has not reached the activation block yet refuses V1.
+Each refusal bans it again, for longer each time, until it catches up and answers.
 
 **Older clients.** 4.1.x clients and 5.0 betas up to beta.4 send only V0 and read
 only result field 2, so 4.1 nodes and every node from 5.0.0-rc.8 on answer them,
