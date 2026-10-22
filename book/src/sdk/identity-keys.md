@@ -471,7 +471,9 @@ it, and independent replay of the full verification needs both original blobs.
 Clients reconstruct the query using the producer protocol version in signed
 metadata and retain their verification security floor. A producer version newer
 than the SDK is read with the newest query rules the SDK knows; the proof must
-still rebuild the signed root. The Rust SDK still returns `Option<Identity>`;
+still rebuild the signed root. An absence answer can still verify at an index
+location a newer protocol no longer uses, so relocating this index needs an SDK
+update. The Rust SDK still returns `Option<Identity>`;
 high-level WASM/JavaScript APIs retain their existing result shape. The direct
 WASM verifier takes one V1 proof blob and returns a root that the caller must
 authenticate independently.
@@ -485,9 +487,10 @@ network that may still run protocol 13. On a network that has just activated
 protocol 14, a node one block behind can still refuse the first V1 request.
 
 **Older clients.** 4.1.x clients and 5.0 betas up to beta.4 send only V0 and read
-only result field 2, so every 5.0 node keeps answering them, before and after
-protocol 14 activates. The 5.0 prereleases from beta.5 to rc.7 sent V0 and expected
-the proof at field 4, which no node sends any more; they must update.
+only result field 2, so 4.1 nodes and every node from 5.0.0-rc.8 on answer them,
+before and after protocol 14 activates. The 5.0 prereleases from beta.5 to rc.7
+sent V0 and expected the proof at field 4, which nodes from rc.8 on no longer send;
+they must update.
 
 **Fetch all keys for an identity:**
 ```rust

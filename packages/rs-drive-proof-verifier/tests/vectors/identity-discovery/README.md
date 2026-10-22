@@ -13,9 +13,10 @@ identity proofs (result field 2), produced by the two-proof producer at protocol
 12, 13 and 14; every protocol version serves V0. A V1 answer carries one proof of
 both (result field 2 of response V1), produced at protocol 14, the first version
 that serves V1. The generator verifies every answer before writing it.
-`newer-v{0,1}-0.bin` are first matches signed by protocol version 1000, far above
-any real version, so they are read with the newest known rules whatever the latest
-version is.
+`newer-v{0,1}-0.bin` are first matches built with the protocol 14 rules and signed
+as protocol version 1000, far above any real version, so the SDK always reads them
+with the newest rules it knows. They keep verifying as long as those rules build
+the same non-unique lookup query as protocol 14.
 `../document-outcome/newer-{request,response}.bin` is the same for a protocol 14
 document outcome; it uses `pv14-contract.bin`.
 The fixed test signing key is `[1; 32]`; `quorum-key.bin` is its public key.

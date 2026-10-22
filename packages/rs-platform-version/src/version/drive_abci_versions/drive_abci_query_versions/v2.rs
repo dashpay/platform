@@ -33,7 +33,7 @@ use versioned_feature_core::FeatureVersionBounds;
 /// 1-11 select `DRIVE_ABCI_QUERY_VERSIONS_V0` and 12-13 select
 /// `DRIVE_ABCI_QUERY_VERSIONS_V1`. Both use helper version 0 and reject
 /// ranked and `HAVING` shapes, so nodes agree until the protocol version 14
-/// upgrade carries. The wire surface is unchanged: `document_query` stays at
+/// upgrade carries. For documents the wire surface is unchanged: `document_query` stays at
 /// v1 because `GetDocumentsRequestV1` already carries `selects` / `group_by`
 /// / `having`, and the ranked and range responses reuse the additive
 /// `ResultData.ranked` entries shape (with `skipped` unset for a range page,
