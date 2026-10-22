@@ -254,26 +254,14 @@ extension SDK {
 
     /// Get identities contract keys: the key Platform's current-key reference names for each
     /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
-    /// response.
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
     ///
     /// Every requested identity id is a key of the result, and every requested purpose
     /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
     /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
     /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
-    ///
-    /// What the reference holds depends on the storage requirement for the purpose of the
-    /// contract, or of the document type for a key bound to one (as Drive writes it from protocol
-    /// version 14); a key bound to a contract group, whose id can
-    /// be passed as `contractId`, is always under `MultipleReferenceToLatest`.
-    /// Under `MultipleReferenceToLatest` it is the key of the latest registration (of the keys
-    /// one identity create or update registers together, the one with the highest id), and it
-    /// stays that key when the key is disabled. Under `Unique` it is the identity's one key bound
-    /// to that contract or document type for the purpose: Platform refuses a second one later,
-    /// also once the first is disabled (if one identity create or update registers several, the
-    /// reference names the last one Drive queued). Under `Multiple` there is no
-    /// reference, so the answer is always `NSNull`, as it is for `"transfer"`, `"system"`,
-    /// `"voting"` and `"owner"` (such keys cannot be bound to a contract) and for a contract or
-    /// document type that does not exist. See `dash_sdk_identities_fetch_contract_keys`.
     ///
     /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
     /// `"0"` to `"3"`, and an empty array or a number outside that range throws, also when there

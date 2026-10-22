@@ -30,24 +30,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///   once.
 ///
 /// # Returns
-/// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
-/// Drive's current-key reference names for the identity, contract (or document type) and purpose.
-/// What that reference holds depends on the storage requirement for the purpose of the contract,
-/// or of the document type for a key bound to one (as Drive writes it from protocol version 14):
-/// - `MultipleReferenceToLatest` (every bound authentication key, a bound encryption or
-///   decryption key when the contract, or for a key bound to a document type the document type,
-///   asks for it, and every key bound to a contract group, whose ID can be passed as
-///   `contract_id`): the key of the latest registration, and of
-///   the keys one identity create or update registers together, the one with the highest ID. It
-///   stays the current one when it is disabled (`disabled_at` is then set).
-/// - `Unique`: the identity's one key bound to that contract or document type for the purpose;
-///   Platform refuses a second one later, also once the first is disabled. (If one identity create
-///   or update registers several, the reference names the last one Drive queued.)
-/// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
-///
-/// Only authentication, encryption and decryption keys can be bound to a contract, so any other
-/// purpose (`"transfer"`, `"system"`, `"voting"`, `"owner"`) is always `null`. A contract or
-/// document type that does not exist answers `null` too.
+/// A JSON object read from a proved `getIdentitiesContractKeys` response: for each identity and
+/// purpose, the key Drive's current-key reference names for the contract (or document type) and
+/// purpose. What that reference holds, and which purposes can ever have a key, is described on
+/// `dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery`.
 ///
 /// Every requested identity ID is a top-level key, in its Base58 form with any whitespace around it
 /// dropped, and every requested purpose (`"authentication"`, `"encryption"`, `"decryption"`,

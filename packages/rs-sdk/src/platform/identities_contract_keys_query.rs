@@ -13,6 +13,30 @@ use crate::Error;
 
 /// Request that is used to query identities' contract keys.
 ///
+/// # What the answer holds
+///
+/// [`IdentitiesContractKeys`] is read from a verified proof. For each identity and purpose it
+/// holds the key Drive's current-key reference names for the contract (or document type) and the
+/// purpose. What that reference holds depends on the storage requirement for the purpose of the
+/// contract, or of the document type for a key bound to one (as Drive writes it from protocol
+/// version 14):
+/// - `MultipleReferenceToLatest` (every bound authentication key, a bound encryption or
+///   decryption key when the contract, or for a key bound to a document type the document type,
+///   asks for it, and every key bound to a contract group, whose ID can be passed as
+///   `contract_id`): the key of the latest registration, and of the keys one identity create or
+///   update registers together, the one with the highest ID. It stays the current one when it is
+///   disabled (its `disabled_at` is then set).
+/// - `Unique`: the identity's one key bound to that contract or document type for the purpose;
+///   Platform refuses a second one later, also once the first is disabled. (If one identity create
+///   or update registers several, the reference names the last one Drive queued.)
+/// - `Multiple`: there is no reference, so there is never a key, whatever keys exist.
+///
+/// Only authentication, encryption and decryption keys can be bound to a contract, so any other
+/// purpose (transfer, system, voting, owner) never has a key. Nor does a contract or document type
+/// that does not exist.
+///
+/// # The request sent
+///
 /// A repeated identity or purpose is sent once, in the order it first appears: Drive sizes the
 /// proof by the number of identities times the number of purposes, so every caller of this query
 /// sends, and has the proof verified against, the same request whatever repeats it was given. A
@@ -26,6 +50,7 @@ use crate::Error;
 /// refuses a proof of nothing (see [`TransportRequest::names_nothing`]). A query for identities
 /// but no purpose is refused the same way by every fetch.
 ///
+/// [`IdentitiesContractKeys`]: dpp::identity::identities_contract_keys::IdentitiesContractKeys
 /// [`Fetch::fetch`]: crate::platform::Fetch::fetch
 /// [`Fetch::fetch_with_settings`]: crate::platform::Fetch::fetch_with_settings
 /// [`Fetch::fetch_with_metadata`]: crate::platform::Fetch::fetch_with_metadata
