@@ -191,15 +191,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
 
 /// The name a purpose is answered under in the JSON.
 fn json_name(purpose: Purpose) -> &'static str {
-    match purpose {
-        Purpose::AUTHENTICATION => "authentication",
-        Purpose::ENCRYPTION => "encryption",
-        Purpose::DECRYPTION => "decryption",
-        Purpose::TRANSFER => "transfer",
-        Purpose::SYSTEM => "system",
-        Purpose::VOTING => "voting",
-        Purpose::OWNER => "owner",
-    }
+    purpose.wire_name()
 }
 
 /// The JSON answer for the requested identities and purposes. Every requested identity is a
