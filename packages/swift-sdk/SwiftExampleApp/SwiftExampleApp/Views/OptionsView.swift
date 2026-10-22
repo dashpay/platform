@@ -604,7 +604,7 @@ struct OptionsView: View {
                         }
 
                         HStack {
-                            Text("Quorums in Memory")
+                            Text("Trusted Quorums Cached")
                             Spacer()
                             Text("\(status.quorumCount)")
                                 .foregroundColor(status.quorumCount > 0 ? .green : .red)

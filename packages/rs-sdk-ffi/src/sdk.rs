@@ -738,7 +738,25 @@ pub unsafe extern "C" fn dash_sdk_set_context_provider_mode(
     }
 }
 
-/// Return the currently selected quorum source for UI diagnostics.
+/// The source answering `wrapper`'s quorum lookups now: an adaptive
+/// provider's live routing choice, else the one source a trusted or strict
+/// SPV SDK has. `None` for a provider this crate did not build.
+pub(crate) fn quorum_source(wrapper: &SDKWrapper) -> Option<AdaptiveContextProviderSource> {
+    if let Some(provider) = &wrapper.adaptive_provider {
+        // Evaluate readiness inside the SDK's multi-thread runtime so callers
+        // outside Tokio (including Swift UI code) receive the live Auto source.
+        Some(wrapper.runtime.block_on(async { provider.active_source() }))
+    } else if wrapper.trusted_provider.is_some() {
+        Some(AdaptiveContextProviderSource::Trusted)
+    } else if wrapper.spv_source_slot.is_some() {
+        Some(AdaptiveContextProviderSource::Spv)
+    } else {
+        None
+    }
+}
+
+/// Return the currently selected quorum source for UI diagnostics. A
+/// provider this crate did not build reports `Trusted`.
 ///
 /// # Safety
 /// `sdk_handle` must be a valid SDK handle for the duration of this call.
@@ -748,15 +766,7 @@ pub unsafe extern "C" fn dash_sdk_get_context_provider_source(sdk_handle: *const
         return AdaptiveContextProviderSource::Trusted as u8;
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    if let Some(provider) = &wrapper.adaptive_provider {
-        // Evaluate readiness inside the SDK's multi-thread runtime so callers
-        // outside Tokio (including Swift UI code) receive the live Auto source.
-        wrapper.runtime.block_on(async { provider.active_source() }) as u8
-    } else if wrapper.spv_source_slot.is_some() {
-        AdaptiveContextProviderSource::Spv as u8
-    } else {
-        AdaptiveContextProviderSource::Trusted as u8
-    }
+    quorum_source(wrapper).unwrap_or(AdaptiveContextProviderSource::Trusted) as u8
 }
 
 /// Register global context provider callbacks

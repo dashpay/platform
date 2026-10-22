@@ -652,7 +652,16 @@ public final class SDK: @unchecked Sendable {
 public struct SDKStatus: Codable {
   public let version: String
   public let network: String
+  /// The context provider the SDK was built with: `"trusted"`, `"spv"`,
+  /// `"adaptive"`, or `"custom"` for a provider the native SDK did not build
+  /// (caller-supplied or mock).
   public let mode: String
+  /// The source answering quorum lookups now, `"trusted"` or `"spv"`; an
+  /// adaptive SDK reports its live routing choice. `nil` for a custom
+  /// provider.
+  public let quorumSource: String?
+  /// Quorums in the trusted provider's cache, whichever source answers;
+  /// `0` without a trusted provider.
   public let quorumCount: Int
 }
 
