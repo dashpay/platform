@@ -10,8 +10,7 @@ use crate::data_contract::document_type::property::reference_where::{
     WHERE_CONST, WHERE_CONTAINS, WHERE_CONTAINS_ALL, WHERE_IN, WHERE_NOT_EQUAL,
 };
 use crate::data_contract::document_type::property_constraints::{
-    either_version_path, parse_delete_constraints, parse_delete_constraints_with_byte_array_keys,
-    parse_property_constraints, parse_property_constraints_with_byte_array_keys, referenced_path,
+    either_version_path, parse_delete_constraints, parse_property_constraints, referenced_path,
     referenced_read, stored_version_path, whole_integer, AffixPosition, AggregateBinding,
     AggregateKind, AggregateRead, ElementKind, EqualityKind, PropertyConstraint, PropertyRead,
     SystemChange, SystemProperty, SystemRead, SystemValue, REFERENCED_DOCUMENT_PREFIX,
@@ -3239,14 +3238,11 @@ pub(super) fn apply_property_constraints(
         .parse_property_constraints
     {
         None => Ok(()),
-        Some(0) => apply_property_constraints_v0(
-            document_type,
-            schema_defs,
-            document_type_name,
-            full_validation,
-            platform_version,
-        ),
-        Some(1) => apply_property_constraints_v1(
+        // Version 1 (protocol version 15) differs in the rule parse alone, which dispatches
+        // on the same version: a byte array binds a countOf or sumOf filter key
+        // (`aggregate_binding_kind`), and `validate_property_constraint_aggregates` admits a
+        // byte array key bound to one
+        Some(0) | Some(1) => apply_property_constraints_v0(
             document_type,
             schema_defs,
             document_type_name,
@@ -3268,8 +3264,12 @@ fn apply_property_constraints_v0(
 ) -> Result<(), DataContractError> {
     let property_kind =
         |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints =
-        parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
+    let constraints = parse_property_constraints(
+        &document_type.schema,
+        document_type_name,
+        &property_kind,
+        platform_version,
+    )?;
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
             "document type \"{document_type_name}\" propertyConstraints {message}"
@@ -3380,130 +3380,11 @@ fn apply_delete_constraints_v0(
 ) -> Result<(), DataContractError> {
     let property_kind =
         |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints =
-        parse_delete_constraints(&document_type.schema, document_type_name, &property_kind)?;
-    if constraints.is_empty() {
-        return Ok(());
-    }
-    let keyword = property_names::DELETE_CONSTRAINTS;
-    let structure_error = |message: String| {
-        DataContractError::InvalidContractStructure(format!(
-            "document type \"{document_type_name}\" {keyword} {message}"
-        ))
-    };
-    if document_type.documents_deleted_only_when_consumed {
-        return Err(structure_error(
-            "gate the delete of a document by its owner, but the type sets `canBeDeleted: \
-             \"onlyWhenConsumed\"`: its owner never deletes one, and a consume deletes it \
-             without the rules"
-                .to_string(),
-        ));
-    }
-    if !document_type.documents_can_be_deleted {
-        return Err(structure_error(
-            "gate the delete of a document by its owner, but the type sets `canBeDeleted: \
-             false`, so there is no delete to gate"
-                .to_string(),
-        ));
-    }
-    if document_type.index_only {
-        return Err(structure_error(
-            "gate the delete of a stored document, but the type is indexOnly: its delete \
-             carries the row's values, judged by the type's propertyConstraints as a create's"
-                .to_string(),
-        ));
-    }
-
-    for (name, constraint) in &constraints {
-        validate_property_constraint_reads(
-            document_type,
-            schema_defs,
-            &format!("rule \"{name}\""),
-            constraint,
-            false,
-            false,
-            &structure_error,
-        )?;
-    }
-
-    if full_validation {
-        validate_rule_limits(&constraints, &structure_error, platform_version)?;
-    }
-
-    document_type.delete_constraints = constraints;
-    Ok(())
-}
-
-/// [`apply_property_constraints_v0`] with the grammar of `parse_property_constraints` 1
-/// (protocol version 15): a `countOf` or `sumOf` filter key of a `propertyConstraints` or
-/// `deleteConstraints` rule may be bound to a byte array property of the document
-/// ([`parse_property_constraints_with_byte_array_keys`]), a read of that byte array that
-/// [`validate_property_constraint_reads`] checks names one, neither transient nor inside a
-/// transient object. Whether the key it binds is a byte array of the counted type is checked
-/// once every type of the contract is parsed ([`validate_property_constraint_aggregates`]).
-/// Everything else is version 0's.
-fn apply_property_constraints_v1(
-    document_type: &mut DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
-    document_type_name: &str,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<(), DataContractError> {
-    let property_kind =
-        |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints = parse_property_constraints_with_byte_array_keys(
+    let constraints = parse_delete_constraints(
         &document_type.schema,
         document_type_name,
         &property_kind,
-    )?;
-    let structure_error = |message: String| {
-        DataContractError::InvalidContractStructure(format!(
-            "document type \"{document_type_name}\" propertyConstraints {message}"
-        ))
-    };
-
-    for (name, constraint) in &constraints {
-        validate_property_constraint_reads(
-            document_type,
-            schema_defs,
-            &format!("rule \"{name}\""),
-            constraint,
-            true,
-            true,
-            &structure_error,
-        )?;
-    }
-
-    if full_validation {
-        validate_rule_limits(&constraints, &structure_error, platform_version)?;
-    }
-
-    document_type.property_constraints = constraints;
-    apply_delete_constraints_v1(
-        document_type,
-        schema_defs,
-        document_type_name,
-        full_validation,
         platform_version,
-    )
-}
-
-/// [`apply_delete_constraints_v0`] with the grammar of `parse_property_constraints` 1
-/// ([`parse_delete_constraints_with_byte_array_keys`]); called by
-/// [`apply_property_constraints_v1`].
-fn apply_delete_constraints_v1(
-    document_type: &mut DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
-    document_type_name: &str,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<(), DataContractError> {
-    let property_kind =
-        |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints = parse_delete_constraints_with_byte_array_keys(
-        &document_type.schema,
-        document_type_name,
-        &property_kind,
     )?;
     if constraints.is_empty() {
         return Ok(());

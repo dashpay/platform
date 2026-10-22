@@ -3990,11 +3990,13 @@ fn parse_replace_condition(
     let property_kind =
         |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
     let condition =
-        parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
-            consensus_or_protocol_data_contract_error(condition_error(format!(
-                "{subject} {message}"
-            )))
-        })?;
+        parse_property_constraint_condition(when, name, &property_kind, platform_version).map_err(
+            |message| {
+                consensus_or_protocol_data_contract_error(condition_error(format!(
+                    "{subject} {message}"
+                )))
+            },
+        )?;
     super::validate_property_constraint_reads(
         document_type,
         schema_defs,

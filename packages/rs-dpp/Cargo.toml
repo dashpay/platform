@@ -12,6 +12,7 @@ authors = [
 ]
 
 [dependencies]
+secp256k1 = { workspace = true }
 dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "33fcc59e1868c803f9608e0e78ee8bddf3abcee7", default-features = false, features = ["bls"], optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
@@ -31,7 +32,6 @@ chrono = { version = "0.4.35", default-features = false, features = [
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { workspace = true, features = [
-  "secp-recovery",
   "rand",
   "signer",
   "serde",
@@ -48,7 +48,7 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
-jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "configure_regexp", default-features = false, features = [
+jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", rev = "aacc1ab5140daac30eb65d376852f01f5381979d", default-features = false, features = [
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
@@ -66,6 +66,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "2.0.17" }
+url = { version = "2.5", optional = true }
 data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
@@ -205,6 +206,7 @@ abci = [
 cbor = ["ciborium"]
 validation = [
   "json-schema-validation",
+  "validation-schema",
   "value-conversion",
   "ed25519-dalek",
 ]
@@ -218,6 +220,9 @@ json-schema-validation = [
   "platform-value-json",
   "dep:json-schema-compatibility-validator",
 ]
+# The typed validation schema of a document type, apart from the JSON Schema validator it
+# mirrors, whose URL crate it shares to check the document schema's URIs
+validation-schema = ["platform-value-json", "dep:url"]
 json-object = ["platform-value", "platform-value-json"]
 platform-value = []
 identity-hashing = ["identity-serialization"]

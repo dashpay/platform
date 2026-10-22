@@ -722,6 +722,7 @@ final class DashModelMigrationTests: XCTestCase {
     func testAcceptedV1PreservesAllThirteenFieldsMissingFromHistoricalV2() throws {
         let (directory, url) = try copyFixture(Self.fixtures[0])
         defer { try? FileManager.default.removeItem(at: directory) }
+        let before = directory.appendingPathComponent("before.store")
         try autoreleasepool {
             let schema = Schema(versionedSchema: DashSchemaV1.self)
             let container = try ModelContainer(for: schema, configurations: [
@@ -749,9 +750,12 @@ final class DashModelMigrationTests: XCTestCase {
             context.insert(type)
             context.insert(index)
             try context.save()
+            // Snapshot committed rows before releasing the writer: its teardown
+            // can checkpoint the WAL and contend with the backup's source read lock.
+            try withExtendedLifetime((container, context)) {
+                try DashLegacyStoreSQLite.copy(from: url, to: before)
+            }
         }
-        let before = directory.appendingPathComponent("before.store")
-        try DashLegacyStoreSQLite.copy(from: url, to: before)
         try autoreleasepool {
             let container = try DashModelContainer.create(url: url)
             let context = container.mainContext

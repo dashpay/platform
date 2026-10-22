@@ -5275,7 +5275,7 @@ fn build_address_pools_from_derived(
             // `dashcore::PublicKey`; its compressed serialization is the
             // 33-byte ECDSA form, left-aligned in the 48-byte slot.
             let mut public_key = [0u8; 48];
-            public_key[..33].copy_from_slice(&d.public_key.inner.serialize());
+            public_key[..33].copy_from_slice(&d.public_key.inner.to_compressed());
             pool_entries.push(CoreAddressEntryFFI {
                 public_key,
                 public_key_len: 33,
