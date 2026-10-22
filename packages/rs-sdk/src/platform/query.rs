@@ -1836,6 +1836,8 @@ mod history_query_tests {
         query.limit = Some(1);
         assert!(query.query(&settings).is_ok());
         query.filter = DocumentHistoryFilter::StartAtRevision(65536);
+        assert!(query.query(&settings).is_ok());
+        query.filter = DocumentHistoryFilter::StartAtRevision(65537);
         assert!(query.query(&settings).is_err());
     }
 
@@ -1871,9 +1873,9 @@ mod history_query_tests {
                     None,
                 ),
                 (DocumentHistoryFilter::Revision(0), None),
-                (DocumentHistoryFilter::Revision(65536), None),
+                (DocumentHistoryFilter::Revision(65537), None),
                 (DocumentHistoryFilter::StartAtRevision(0), None),
-                (DocumentHistoryFilter::StartAtRevision(65536), None),
+                (DocumentHistoryFilter::StartAtRevision(65537), None),
                 (DocumentHistoryFilter::Revision(1), Some(2)),
             ] {
                 let query = DocumentHistoryQuery {

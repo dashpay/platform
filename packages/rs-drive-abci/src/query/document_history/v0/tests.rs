@@ -310,6 +310,11 @@ fn history_api_proof_round_trip(gapped: bool) {
             DocumentHistoryFilter::StartAtRevision(65535),
         ),
         (
+            document.id().to_buffer(),
+            Filter::StartAtRevision(65536),
+            DocumentHistoryFilter::StartAtRevision(65536),
+        ),
+        (
             [255; 32],
             Filter::Revision(2),
             DocumentHistoryFilter::Revision(2),

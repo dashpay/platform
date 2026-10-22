@@ -275,7 +275,7 @@ fn should_reject_invalid_selectors_and_unsupported_protocols() {
     };
     for filter in [
         DocumentHistoryFilter::Revision(0),
-        DocumentHistoryFilter::StartAtRevision(65536),
+        DocumentHistoryFilter::StartAtRevision(65537),
         DocumentHistoryFilter::StartAtTime(1 << 63),
         DocumentHistoryFilter::StartAfter {
             time_ms: 0,
@@ -298,6 +298,36 @@ fn should_reject_invalid_selectors_and_unsupported_protocols() {
     assert!(query
         .construct_path_query(PlatformVersion::get(15).unwrap())
         .is_ok());
+}
+
+#[test]
+fn should_address_every_revision_whose_offset_fits_the_grovedb_offset() {
+    let mut query = DocumentHistoryDriveQuery {
+        contract_id: [1; 32],
+        document_type_name: "note".into(),
+        document_id: [2; 32],
+        filter: DocumentHistoryFilter::StartAtTime(0),
+        limit: Some(1),
+    };
+    for (revision, offset) in [(65535, 65534), (65536, u16::MAX)] {
+        for filter in [
+            DocumentHistoryFilter::Revision(revision),
+            DocumentHistoryFilter::StartAtRevision(revision),
+        ] {
+            query.filter = filter;
+            let path_query = query
+                .construct_path_query(PlatformVersion::get(15).unwrap())
+                .expect("revision addressable through a u16 offset");
+            assert_eq!(path_query.query.offset, Some(offset));
+        }
+    }
+    for filter in [
+        DocumentHistoryFilter::Revision(65537),
+        DocumentHistoryFilter::StartAtRevision(65537),
+    ] {
+        query.filter = filter;
+        assert!(query.validate().is_err());
+    }
 }
 
 #[test]

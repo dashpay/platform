@@ -17,6 +17,11 @@ use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
 use std::collections::BTreeMap;
 
+/// The highest revision a revision filter can address. Revision `n` is read at
+/// the zero-based offset `n - 1` of the document's history tree, and GroveDB
+/// offsets are `u16`.
+pub const MAX_DOCUMENT_HISTORY_REVISION_FILTER: u64 = u16::MAX as u64 + 1;
+
 /// Exactly one lower bound or revision position for a history page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -142,9 +147,9 @@ impl DocumentHistoryDriveQuery {
             }
             DocumentHistoryFilter::StartAtRevision(revision)
             | DocumentHistoryFilter::Revision(revision)
-                if !(1..=u16::MAX as u64).contains(&revision) =>
+                if !(1..=MAX_DOCUMENT_HISTORY_REVISION_FILTER).contains(&revision) =>
             {
-                Err(invalid("history revision must be between one and 65535"))
+                Err(invalid("history revision must be between one and 65536"))
             }
             DocumentHistoryFilter::Revision(_) if self.limit.is_some_and(|limit| limit != 1) => {
                 Err(invalid("single revision queries require limit one"))
