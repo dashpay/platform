@@ -43,6 +43,7 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
             document_type_schema: 2, // changed: v2 document meta-schema accepts the keeps*History flags
+            check_document_type_schema: 0,
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
             find_identifier_and_binary_paths: 0,

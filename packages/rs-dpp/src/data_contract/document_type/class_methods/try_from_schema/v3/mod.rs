@@ -14,15 +14,14 @@
 //! admits is spelled out below as literals rather than looked up in a version
 //! table.
 //!
-//! Generation 4 (protocol version 15) runs this module's parse with native schema checks in
-//! place of the document meta-schema ([`super::v4`]).
+//! From protocol version 15 (`check_document_type_schema` 1), full validation checks a
+//! schema natively ([`super::native_schema`]) instead of against the document meta-schema
+//! through the `jsonschema` crate, and requires the type to have a typed validation schema.
 //!
 //! The parsing steps themselves are shared with the earlier generations in
 //! [`super::common`]. What stays here is what only generation 3 has: the ranked
 //! index-key length ceilings, and the constants they are derived from.
 
-#[cfg(feature = "validation")]
-use super::native_schema;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -343,7 +342,7 @@ fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolErr
 /// records the stray keys those contracts do carry, and fails if a document
 /// meta-schema ever declares one of them as a keyword.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn try_from_schema_generation_3(
+fn try_from_schema_generation_3(
     data_contract_id: Identifier,
     data_contract_system_version: u16,
     contract_config_version: u16,
@@ -353,7 +352,6 @@ pub(super) fn try_from_schema_generation_3(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool,
-    native_schema_checks: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
@@ -367,7 +365,6 @@ pub(super) fn try_from_schema_generation_3(
         token_configurations,
         data_contact_config,
         full_validation,
-        native_schema_checks,
         validation_operations,
         platform_version,
     )
@@ -386,7 +383,6 @@ fn parse_generation_3(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool,
-    native_schema_checks: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
@@ -468,8 +464,8 @@ fn parse_generation_3(
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
-            // CONTRACT_VERSIONS_V6 selects this parser, and V7 selects generation 4,
-            // which runs it too; both are the only tables naming meta-schema v3. So every constant
+            // CONTRACT_VERSIONS_V6 and V7 are the only tables that select this
+            // parser, and the only tables naming meta-schema v3. So every constant
             // here is a property of the generation, not of a platform version,
             // and none of them is read out of a table.
             document_type_schema_version: 3,
@@ -482,9 +478,6 @@ fn parse_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // Generation 4 runs this parse with native schema checks in place of the
-            // document meta-schema; generation 3 keeps the meta-schema.
-            native_schema_checks,
             // RANKED / TIME RANGE: the keyword admissions that make this
             // generation 3, read from the shared generation → admission
             // mapping so the registration-cost re-parse can never drift
@@ -724,11 +717,11 @@ fn parse_generation_3(
             .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
-    // Generation 4 then requires the type to have a typed validation schema, which its
-    // documents are checked against natively; last, so the parser's own refusals come first
+    // `check_document_type_schema` 1 then requires a typed validation schema; last, so
+    // that a schema the parser refuses is refused with the parser's error
     #[cfg(feature = "validation")]
-    if full_validation && native_schema_checks {
-        native_schema::check_validation_schema(&v2.schema, schema_defs, platform_version)?;
+    if full_validation {
+        common::require_validation_schema(&v2.schema, schema_defs, platform_version)?;
     }
 
     // Every stage above read the expanded schema; the document type holds the
@@ -1975,7 +1968,6 @@ impl DocumentType {
             token_configurations,
             data_contact_config,
             full_validation,
-            false,
             validation_operations,
             platform_version,
         )
@@ -2116,7 +2108,6 @@ mod tests {
             &BTreeMap::new(),
             &config,
             full_validation,
-            false,
             &mut vec![],
             platform_version,
         )

@@ -1,6 +1,7 @@
-//! The schema checks parser generation 4 runs at registration in place of the document
-//! meta-schema (`schema/meta_schemas/document/v3/document-meta.json`), which the
-//! `jsonschema` crate checked the enriched schema against through protocol version 14.
+//! The schema checks of `check_document_type_schema` 1 (protocol version 15), which full
+//! validation runs at registration in place of the document meta-schema
+//! (`schema/meta_schemas/document/v3/document-meta.json`), which the `jsonschema` crate
+//! checked the enriched schema against through protocol version 14.
 //!
 //! [`check_document_type_schema`] repeats that meta-schema's rules, read from the JSON the
 //! crate checked, so a repeated key reads as its last entry and every value as its JSON
@@ -9,8 +10,8 @@
 //! `f64::EPSILON`) and an array of unique items. A schema breaking one is refused with the
 //! [`JsonSchemaError`] the meta-schema check returned, so the error code stays.
 //!
-//! Generation 4 differs from the meta-schema in one rule: an index property name is at most
-//! 255 bytes, the longest key GroveDB stores, where the meta-schema took 256 characters.
+//! They differ from the meta-schema in one rule: an index property name is at most 255 bytes,
+//! the longest key GroveDB stores, where the meta-schema took 256 characters.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
@@ -56,7 +57,7 @@ const TIMESTAMP_PROPERTIES: [&str; 9] = [
 
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema
 /// added and its property type shorthands expanded, against the rules of the document
-/// meta-schema, as parser generation 4 does under full validation.
+/// meta-schema, as full validation does under `check_document_type_schema` 1.
 pub(super) fn check_document_type_schema(root: &Value) -> Result<(), ProtocolError> {
     let root = root.try_to_validating_json().map_err(|e| {
         ProtocolError::ConsensusError(

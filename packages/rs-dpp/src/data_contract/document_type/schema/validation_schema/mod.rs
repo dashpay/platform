@@ -84,7 +84,7 @@ pub use keyword::{
     ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
     StringKeyword,
 };
-/// Parser generation 4 reads list uniqueness as the document validator does.
+/// Registration's native schema checks read list uniqueness as the document validator does.
 #[cfg(feature = "validation")]
 pub(crate) use validate::is_unique;
 pub use validate::{DocumentSchemaValidator, SchemaViolation};

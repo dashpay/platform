@@ -100,7 +100,6 @@ impl DocumentTypeV1 {
                 admit_history: document_type_schema_version >= 2,
                 admit_count_indexes: platform_version.protocol_version >= 12,
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
-                native_schema_checks: false,
                 // RANKED: generation 1 predates the ranked aggregates entirely
                 // — its index grammar has no `ranked*` keywords, and it
                 // therefore has no ranked key ceiling to enforce. Both

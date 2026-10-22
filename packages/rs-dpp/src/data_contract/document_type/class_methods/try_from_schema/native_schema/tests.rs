@@ -1,6 +1,7 @@
-//! The native schema checks against the document meta-schema they replace, and parser
-//! generation 4 against generation 3, on hand-written document types, on every document
-//! type of the contract corpus and on schemas generated from both.
+//! The native schema checks against the document meta-schema they replace, and registration
+//! with them (`check_document_type_schema` 1) against registration with the meta-schema
+//! check (0), on hand-written document types, on every document type of the contract corpus
+//! and on schemas generated from both.
 
 use super::super::common::select_document_meta_schema;
 use super::document_type::DOCUMENT_SCHEMA_URI;
@@ -28,6 +29,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::{json, Value as JsonValue};
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 // ---- what the comparisons run ----
 
@@ -117,16 +119,17 @@ impl Case {
         self.root(platform_version)?.try_to_validating_json().ok()
     }
 
-    fn parse(&self, native_schema_checks: bool) -> Option<Result<DocumentType, ProtocolError>> {
-        let platform_version = PlatformVersion::latest();
+    /// The document type registered at the latest protocol version, with its schema checked
+    /// natively, or against the meta-schema.
+    fn parse(&self, native: bool) -> Option<Result<DocumentType, ProtocolError>> {
+        let platform_version = if native {
+            PlatformVersion::latest()
+        } else {
+            latest_with_the_meta_schema_check()
+        };
         let schema_defs = self.schema_defs()?;
         let schema = Value::from(self.schema.clone());
-        let parse = if native_schema_checks {
-            DocumentType::try_from_schema_v4
-        } else {
-            DocumentType::try_from_schema_v3
-        };
-        Some(parse(
+        Some(DocumentType::try_from_schema(
             self.contract_id,
             1,
             self.config.version(),
@@ -162,8 +165,24 @@ fn json_schema_error(error: &ProtocolError) -> Option<&JsonSchemaError> {
     }
 }
 
-/// How the native checks and generation 4 compared with the meta-schema and generation 3
-/// over a set of cases.
+/// The latest protocol version with `check_document_type_schema` 0: registration checks a
+/// schema against the meta-schema through the `jsonschema` crate.
+fn latest_with_the_meta_schema_check() -> &'static PlatformVersion {
+    static VERSION: OnceLock<PlatformVersion> = OnceLock::new();
+    VERSION.get_or_init(|| {
+        let mut version = PlatformVersion::latest().clone();
+        version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .check_document_type_schema = 0;
+        version
+    })
+}
+
+/// How the native checks compared with the meta-schema, and registration with them with
+/// registration with the meta-schema check, over a set of cases.
 #[derive(Default, Debug)]
 struct Tally {
     checked: usize,
@@ -176,8 +195,8 @@ struct Tally {
     error_class_moves: usize,
 }
 
-/// Compares the native checks with the meta-schema on `case`, and generation 4 with
-/// generation 3. Returns what differs that may not.
+/// Compares the native checks with the meta-schema on `case`, and registering it with them
+/// with registering it with the meta-schema check. Returns what differs that may not.
 fn compare(case: &Case, tally: &mut Tally) -> Vec<String> {
     let platform_version = PlatformVersion::latest();
     let mut differences = Vec::new();
@@ -198,50 +217,51 @@ fn compare(case: &Case, tally: &mut Tally) -> Vec<String> {
         }
     }
 
-    let (Some(generation_3), Some(generation_4)) = (case.parse(false), case.parse(true)) else {
+    let (Some(with_meta), Some(with_native)) = (case.parse(false), case.parse(true)) else {
         return differences;
     };
     tally.parsed += 1;
-    match (generation_3, generation_4) {
-        (Ok(three), Ok(four)) => {
-            if three != four {
-                differences.push(format!("{origin}: the generations parse different types"));
+    match (with_meta, with_native) {
+        (Ok(meta), Ok(native)) => {
+            if meta != native {
+                differences.push(format!("{origin}: the checks parse different types"));
             }
         }
-        (Err(three), Ok(_)) => differences.push(format!(
-            "{origin}: generation 4 admits what generation 3 refuses: {three}\n{:#}",
+        (Err(meta), Ok(_)) => differences.push(format!(
+            "{origin}: the native check admits what the meta-schema check refuses: {meta}\n{:#}",
             case.schema
         )),
-        (Ok(_), Err(four)) => {
-            if json_schema_error(&four).is_some_and(is_index_property_name_cap) {
+        (Ok(_), Err(native)) => {
+            if json_schema_error(&native).is_some_and(is_index_property_name_cap) {
                 tally.capped += 1;
             } else if case.refused_by_the_builder() {
                 tally.builder_refusals += 1;
             } else {
                 differences.push(format!(
-                    "{origin}: generation 4 refuses what generation 3 admits: {four}\n{:#}",
+                    "{origin}: the native check refuses what the meta-schema check admits: \
+                     {native}\n{:#}",
                     case.schema
                 ));
             }
         }
-        (Err(three), Err(four)) => {
+        (Err(meta), Err(native)) => {
             tally.parse_refusals += 1;
             let code = |error: &ProtocolError| consensus_error(error).map(ErrorWithCode::code);
-            if code(&three) != code(&four) {
+            if code(&meta) != code(&native) {
                 tally.error_class_moves += 1;
                 // The refusals that may change class: a refusal of the `jsonschema` compile,
                 // which the builder now makes, and the byte cap
-                let moved = (json_schema_error(&three).is_some()
+                let moved = (json_schema_error(&meta).is_some()
                     && case
                         .validating_root(platform_version)
                         .is_some_and(|root| meta_schema_refusal(&root).is_none()))
-                    || json_schema_error(&four).is_some_and(is_index_property_name_cap);
+                    || json_schema_error(&native).is_some_and(is_index_property_name_cap);
                 if !moved {
                     differences.push(format!(
-                        "{origin}: generation 4 refuses with code {:?} ({four}) where generation \
-                         3 refused with {:?} ({three})\n{:#}",
-                        code(&four),
-                        code(&three),
+                        "{origin}: the native check refuses with code {:?} ({native}) where the \
+                         meta-schema check refused with {:?} ({meta})\n{:#}",
+                        code(&native),
+                        code(&meta),
                         case.schema
                     ));
                 }
@@ -899,7 +919,7 @@ fn compare_all(cases: &[Case]) -> Tally {
 // ---- the tests ----
 
 #[test]
-fn should_admit_every_written_document_type_as_the_meta_schema_and_generation_3_do() {
+fn should_admit_every_written_document_type_as_the_meta_schema_check_does() {
     let platform_version = PlatformVersion::latest();
     for case in written_cases() {
         let root = case
@@ -913,7 +933,7 @@ fn should_admit_every_written_document_type_as_the_meta_schema_and_generation_3_
 }
 
 #[test]
-fn should_register_every_corpus_document_type_as_generation_3_does() {
+fn should_register_every_corpus_document_type_as_the_meta_schema_check_does() {
     let cases = corpus_cases();
     assert_eq!(cases.len(), 106 + 1397);
     let tally = compare_all(&cases);
@@ -921,7 +941,7 @@ fn should_register_every_corpus_document_type_as_generation_3_does() {
 }
 
 #[test]
-fn should_refuse_generated_schemas_as_the_meta_schema_and_generation_3_do() {
+fn should_refuse_generated_schemas_as_the_meta_schema_check_does() {
     let values = generated_values();
     let mut rng = StdRng::seed_from_u64(15);
     let written = written_cases();
@@ -939,7 +959,7 @@ fn should_refuse_generated_schemas_as_the_meta_schema_and_generation_3_do() {
 }
 
 #[test]
-fn should_refuse_generated_corpus_schemas_as_the_meta_schema_and_generation_3_do() {
+fn should_refuse_generated_corpus_schemas_as_the_meta_schema_check_does() {
     let values = generated_values();
     let mut rng = StdRng::seed_from_u64(1503);
     let cases: Vec<Case> = corpus_cases()
