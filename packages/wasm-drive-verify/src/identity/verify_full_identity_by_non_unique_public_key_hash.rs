@@ -222,7 +222,7 @@ mod tests {
             .methods
             .verify
             .identity
-            .verify_full_identity_by_non_unique_public_key_hash = 1;
+            .verify_full_identity_by_non_unique_public_key_hash = 255;
         let (root, identity) = verify_with_versions(&proof, hash, None, &unknown_verifier, latest)
             .expect("producer uses query table, not verifier generation");
         assert_eq!(
@@ -234,7 +234,7 @@ mod tests {
             .expect_err("security table selects verifier generation");
         assert!(matches!(
             error,
-            Error::Drive(DriveError::UnknownVersionMismatch { received: 1, .. })
+            Error::Drive(DriveError::UnknownVersionMismatch { received: 255, .. })
         ));
     }
 
