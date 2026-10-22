@@ -1,8 +1,5 @@
-mod legacy;
 mod v0;
-mod v1;
 
-use crate::drive::identity::non_unique_public_key_hash_proof::NonUniquePublicKeyHashProofRef;
 use crate::drive::Drive;
 
 use crate::error::drive::DriveError;
@@ -18,14 +15,12 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Verifies the full identity of a user using their non-unique public key hash.
     ///
-    /// The explicit proof encoding selects the historical v0 or current v1 verifier.
-    /// Raw bytes mean the current encoding. Callers that receive a signed response
-    /// must check that its producer version emits the encoding it carries.
-    /// The caller's verification rules apply independently of the wire encoding.
+    /// This function acts as a dispatcher that selects the appropriate version-specific
+    /// verification method based on the provided platform version.
     ///
     /// # Parameters
     ///
-    /// - `proof`: An explicit legacy/current proof, or raw current-format bytes.
+    /// - `proof`: One complete proof of first-after index selection and the full identity.
     /// - `public_key_hash`: A 20-byte array representing the hash of the user's public key.
     /// - `after`: An optional 32-byte array specifying an identity after which
     ///   the search should begin when retrieving the identity.
@@ -51,12 +46,11 @@ impl Drive {
     ///
     /// # Versioning
     ///
-    /// - The wire encoding of `proof` selects the decoder: legacy separate proofs use
-    ///   the historical verifier, raw bytes the current one. The verifier slot only
-    ///   gates known generations: 0 and 1 accept either encoding, and any other value
-    ///   returns `UnknownVersionMismatch`.
-    pub fn verify_full_identity_by_non_unique_public_key_hash<'a>(
-        proof: impl Into<NonUniquePublicKeyHashProofRef<'a>>,
+    /// - Currently, only version `0` of `verify_full_identity_by_non_unique_public_key_hash`
+    ///   is implemented. If an unsupported version is provided, an `UnknownVersionMismatch`
+    ///   error is returned.
+    pub fn verify_full_identity_by_non_unique_public_key_hash(
+        proof: &[u8],
         public_key_hash: [u8; 20],
         after: Option<[u8; 32]>,
         query_platform_version: &PlatformVersion,
@@ -69,65 +63,16 @@ impl Drive {
             .identity
             .verify_full_identity_by_non_unique_public_key_hash
         {
-            0 | 1 => match proof.into() {
-                NonUniquePublicKeyHashProofRef::Legacy(proof) => {
-                    Self::verify_legacy_identity_by_non_unique_public_key_hash(
-                        &proof.identity_id_public_key_hash_proof,
-                        proof.identity_proof.as_deref(),
-                        public_key_hash,
-                        after,
-                        query_platform_version,
-                        platform_version,
-                    )
-                }
-                NonUniquePublicKeyHashProofRef::Current(proof) => {
-                    Self::verify_full_identity_by_non_unique_public_key_hash_v1(
-                        proof,
-                        public_key_hash,
-                        after,
-                        query_platform_version,
-                        platform_version,
-                    )
-                }
-            },
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_full_identity_by_non_unique_public_key_hash".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
-        }
-    }
-
-    /// Verify legacy separate index and identity proofs against one authenticated root.
-    ///
-    /// The legacy wire encoding selects historical v0 behind strict proof guards.
-    /// The caller's verification security floor is retained independently.
-    pub fn verify_legacy_identity_by_non_unique_public_key_hash(
-        index_proof: &[u8],
-        identity_proof: Option<&[u8]>,
-        public_key_hash: [u8; 20],
-        after: Option<[u8; 32]>,
-        query_platform_version: &PlatformVersion,
-        platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<Identity>), Error> {
-        match platform_version
-            .drive
-            .methods
-            .verify
-            .identity
-            .verify_full_identity_by_non_unique_public_key_hash
-        {
-            0 | 1 => Self::verify_legacy_identity_by_non_unique_public_key_hash_checked(
-                index_proof,
-                identity_proof,
+            0 => Self::verify_full_identity_by_non_unique_public_key_hash_v0(
+                proof,
                 public_key_hash,
                 after,
                 query_platform_version,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_legacy_identity_by_non_unique_public_key_hash".to_string(),
-                known_versions: vec![0, 1],
+                method: "verify_full_identity_by_non_unique_public_key_hash".to_string(),
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -161,7 +106,7 @@ mod tests {
 
         assert!(
             matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
-                if method == "verify_full_identity_by_non_unique_public_key_hash" && known_versions == vec![0, 1] && received == 255
+                if method == "verify_full_identity_by_non_unique_public_key_hash" && known_versions == vec![0] && received == 255
             )
         );
     }

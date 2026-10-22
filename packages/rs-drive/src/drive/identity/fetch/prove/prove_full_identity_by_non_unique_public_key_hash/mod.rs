@@ -1,7 +1,5 @@
 mod v0;
-mod v1;
 
-use crate::drive::identity::non_unique_public_key_hash_proof::NonUniquePublicKeyHashProof;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -29,8 +27,8 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// Returns separate index/identity proofs for generation 0, or one complete
-    /// GroveDB proof for generation 1. The encoding follows the producer's table.
+    /// Returns one complete GroveDB proof binding the index selection and identity.
+    /// Absence proves the entire remaining index range.
     ///
     /// # Errors
     ///
@@ -41,15 +39,16 @@ impl Drive {
     ///
     /// # Versioning
     ///
-    /// - Generations 0 and 1 preserve the historical and current proof encodings.
-    ///   Unsupported versions return `UnknownVersionMismatch`.
+    /// - Currently, only version `0` of `prove_full_identity_by_non_unique_public_key_hash`
+    ///   is implemented. If an unsupported version is provided, an `UnknownVersionMismatch`
+    ///   error is returned.
     pub fn prove_full_identity_by_non_unique_public_key_hash(
         &self,
         public_key_hash: [u8; 20],
         after: Option<[u8; 32]>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<NonUniquePublicKeyHashProof, Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods
@@ -57,25 +56,15 @@ impl Drive {
             .prove
             .prove_full_identity_by_non_unique_public_key_hash
         {
-            0 => self
-                .prove_full_identity_by_non_unique_public_key_hash_v0(
-                    public_key_hash,
-                    after,
-                    transaction,
-                    platform_version,
-                )
-                .map(NonUniquePublicKeyHashProof::Legacy),
-            1 => self
-                .prove_full_identity_by_non_unique_public_key_hash_v1(
-                    public_key_hash,
-                    after,
-                    transaction,
-                    platform_version,
-                )
-                .map(NonUniquePublicKeyHashProof::Current),
+            0 => self.prove_full_identity_by_non_unique_public_key_hash_v0(
+                public_key_hash,
+                after,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_full_identity_by_non_unique_public_key_hash".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
