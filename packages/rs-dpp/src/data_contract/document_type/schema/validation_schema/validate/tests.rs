@@ -4,6 +4,8 @@ use super::super::tests::{
 use super::*;
 use crate::consensus::codes::ErrorWithCode;
 use crate::consensus::ConsensusError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -369,6 +371,37 @@ fn item_contract(properties: Value) -> DataContract {
     registered(properties, platform_value!({}))
 }
 
+/// What document validation has built of `item`'s native validator: nothing yet (`None`),
+/// the validator (`Some(true)`), or none, for a schema without a validation schema
+/// (`Some(false)`).
+fn native_validator_state(contract: &DataContract) -> Option<bool> {
+    contract
+        .document_type_for_name("item")
+        .expect("expected the document type")
+        .json_schema_validator_ref()
+        .native()
+        .get()
+        .map(Option::is_some)
+}
+
+/// Drops what document validation has built for `item`, as a contract loaded anew.
+fn reset_native_validator(contract: &mut DataContract) {
+    let schema = contract
+        .document_type_for_name("item")
+        .expect("expected the document type")
+        .schema()
+        .clone();
+    contract
+        .set_document_schema(
+            "item",
+            schema,
+            false,
+            &mut Vec::new(),
+            PlatformVersion::latest(),
+        )
+        .expect("expected the document type to set");
+}
+
 /// Document validation's verdict on `properties` as an `item`, at `platform_version`.
 fn document_errors(
     contract: &DataContract,
@@ -407,6 +440,7 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
         },
         "when": { "type": "string", "format": "date", "maxLength": 10, "position": 5 },
     }));
+    let mut contract = contract;
     let latest = PlatformVersion::latest();
     let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
     for properties in [
@@ -424,8 +458,15 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
         platform_value!({ "when": "2026-13-01" }),
         platform_value!({ "other": 1 }),
     ] {
-        let native = document_errors(&contract, properties.clone(), latest);
         let existing = document_errors(&contract, properties.clone(), protocol_version_14);
+        // Protocol version 14 never builds the native validator
+        assert_eq!(native_validator_state(&contract), None, "{properties:?}");
+        let native = document_errors(&contract, properties.clone(), latest);
+        assert_eq!(
+            native_validator_state(&contract),
+            Some(true),
+            "{properties:?}"
+        );
         assert_eq!(native.is_empty(), existing.is_empty(), "{properties:?}");
         // Consensus depends on the code of the first error, not on its message
         assert_eq!(
@@ -433,6 +474,7 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
             existing.first().map(ErrorWithCode::code),
             "{properties:?}"
         );
+        reset_native_validator(&mut contract);
     }
 }
 
@@ -468,10 +510,232 @@ fn should_keep_the_existing_check_for_a_schema_without_a_validation_schema() {
         platform_version
     )
     .is_empty());
+    // The native validator was looked for, and the type has none
+    assert_eq!(native_validator_state(&contract), Some(false));
     assert!(!document_errors(
         &contract,
         platform_value!({ "name": "x" }),
         platform_version
     )
     .is_empty());
+}
+
+/// The first error of the existing validator on `document` under `root`, as it reports it.
+fn existing_validator_first_error(
+    root: &JsonValue,
+    document: &JsonValue,
+) -> Option<crate::consensus::basic::json_schema_error::JsonSchemaError> {
+    let result = JsonSchemaValidator::new()
+        .compile_and_validate(root, document, PlatformVersion::latest())
+        .expect("expected the schema to compile");
+    result.errors.into_iter().next().map(|error| match error {
+        ConsensusError::BasicError(crate::consensus::basic::BasicError::JsonSchemaError(error)) => {
+            error
+        }
+        other => panic!("expected a JSON Schema error, got {other:?}"),
+    })
+}
+
+#[test]
+fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_parameters() {
+    let identifier = json!({
+        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+    });
+    let cases: Vec<(&str, JsonValue, JsonValue)> = vec![
+        ("type", json!({ "type": "string" }), json!(1)),
+        (
+            "a union type",
+            json!({ "type": ["string", "number"] }),
+            json!(true),
+        ),
+        ("enum", json!({ "enum": ["a", "b"] }), json!("c")),
+        ("const", json!({ "const": 3 }), json!(4)),
+        (
+            "minimum",
+            json!({ "type": "integer", "minimum": 2 }),
+            json!(1),
+        ),
+        (
+            "maximum",
+            json!({ "type": "number", "maximum": 2.5 }),
+            json!(3),
+        ),
+        (
+            "exclusiveMinimum",
+            json!({ "exclusiveMinimum": 2 }),
+            json!(2),
+        ),
+        (
+            "exclusiveMaximum",
+            json!({ "exclusiveMaximum": 2 }),
+            json!(2),
+        ),
+        ("multipleOf", json!({ "multipleOf": 3 }), json!(4)),
+        (
+            "minLength",
+            json!({ "type": "string", "minLength": 2 }),
+            json!("a"),
+        ),
+        (
+            "maxLength",
+            json!({ "type": "string", "maxLength": 1 }),
+            json!("ab"),
+        ),
+        (
+            "pattern",
+            json!({ "type": "string", "pattern": "^a" }),
+            json!("b"),
+        ),
+        (
+            "format",
+            json!({ "type": "string", "format": "date" }),
+            json!("2026-13-01"),
+        ),
+        (
+            "required",
+            json!({ "type": "object", "properties": { "a": {} }, "required": ["a"] }),
+            json!({}),
+        ),
+        (
+            "additionalProperties",
+            json!({ "type": "object", "properties": { "a": {} }, "additionalProperties": false }),
+            json!({ "a": 1, "b": 2, "c": 3 }),
+        ),
+        (
+            "minProperties",
+            json!({ "type": "object", "minProperties": 1 }),
+            json!({}),
+        ),
+        (
+            "maxProperties",
+            json!({ "type": "object", "maxProperties": 0 }),
+            json!({ "a": 1 }),
+        ),
+        (
+            "dependentRequired",
+            json!({ "type": "object", "dependentRequired": { "a": ["b"] } }),
+            json!({ "a": 1 }),
+        ),
+        (
+            "an element",
+            json!({ "type": "array", "items": { "type": "string" } }),
+            json!(["a", 1]),
+        ),
+        (
+            "minItems",
+            json!({ "type": "array", "minItems": 2 }),
+            json!([1]),
+        ),
+        (
+            "maxItems",
+            json!({ "type": "array", "maxItems": 1 }),
+            json!([1, 2]),
+        ),
+        (
+            "uniqueItems",
+            json!({ "type": "array", "uniqueItems": true }),
+            json!([1, 1]),
+        ),
+        (
+            "contains",
+            json!({ "type": "array", "contains": { "type": "string" } }),
+            json!([1, 2]),
+        ),
+        (
+            "a byte array of no array",
+            json!({ "byteArray": true }),
+            json!("ab"),
+        ),
+        (
+            "a byte past 255",
+            json!({ "type": "array", "byteArray": true }),
+            json!([1, 256]),
+        ),
+        (
+            "a byte of no integer",
+            json!({ "type": "array", "byteArray": true }),
+            json!([1, "a"]),
+        ),
+        ("an identifier of 31 bytes", identifier, json!(vec![1; 31])),
+    ];
+    let referenced = |target: JsonValue| {
+        json!({
+            "type": "object",
+            "properties": {
+                "value": { "$ref": "#/$defs/target" },
+                "nested": { "$ref": "#/$defs/outer" },
+            },
+            "$defs": {
+                "target": target,
+                "outer": { "$ref": "#/$defs/target" },
+            },
+        })
+    };
+    let mut cases: Vec<(&str, JsonValue, JsonValue)> = cases
+        .into_iter()
+        .map(|(case, schema, value)| (case, with_value(&schema), json!({ "value": value })))
+        .collect();
+    cases.extend([
+        (
+            "a reference",
+            referenced(json!({ "type": "string", "maxLength": 1 })),
+            json!({ "value": "ab" }),
+        ),
+        (
+            "a reference to a reference",
+            referenced(json!({ "type": "string", "maxLength": 1 })),
+            json!({ "nested": "ab" }),
+        ),
+        (
+            "a reference to an object",
+            referenced(json!({
+                "type": "object",
+                "properties": { "a": { "type": "integer" } },
+                "required": ["b"],
+            })),
+            json!({ "value": { "a": 1 } }),
+        ),
+    ]);
+    let mut differences = Vec::new();
+    for (case, root, document) in cases {
+        let expected = existing_validator_first_error(&root, &document)
+            .unwrap_or_else(|| panic!("{case}: the existing validator accepts it"));
+        let violation = validator_of(&root)
+            .validate(&document)
+            .expect("expected the check to run")
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("{case}: the native validator accepts it"));
+        let native = (
+            violation.keyword.to_string(),
+            violation.instance_path,
+            violation.schema_path,
+            Value::from(JsonValue::Object(violation.params)),
+            violation.property_name,
+        );
+        let existing = (
+            expected.keyword().to_string(),
+            expected.instance_path().to_string(),
+            expected.schema_path().to_string(),
+            expected.params().clone(),
+            expected.property_name().to_string(),
+        );
+        if native != existing {
+            differences.push(format!(
+                "{case}:\n  native   {native:?}\n  existing {existing:?}"
+            ));
+        }
+    }
+    assert!(differences.is_empty(), "{}", differences.join("\n"));
+}
+
+#[test]
+fn should_build_no_violation_when_only_asking_whether_a_value_matches() {
+    let validator = validator_of(&with_value(&json!({ "type": "string", "enum": ["a"] })));
+    let mut walk = Walk::new(&validator, true);
+    walk.node(&validator.schema.root, &json!({ "value": 1 }), 0)
+        .expect("expected the check to run");
+    assert!(walk.failed);
+    assert!(walk.violations.is_empty());
 }

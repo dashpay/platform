@@ -61,13 +61,13 @@ pub struct SchemaViolation {
     pub keyword: &'static str,
     /// Where the failing value sits in the document, a JSON pointer.
     pub instance_path: String,
-    /// Where the keyword sits in the schema, a JSON pointer from the document schema
-    /// through each `$ref` followed.
+    /// Where the keyword sits in the schema, a JSON pointer from the document schema, as
+    /// the JSON Schema validator reports it: a `$ref` followed adds no segment, as if its
+    /// target sat in its place, and `byteArray`, Platform's keyword, reports none.
     pub schema_path: String,
     /// The keyword's parameters: a limit, the allowed values, a missing property.
     pub params: JsonMap<String, JsonValue>,
-    /// The property a `required` or `additionalProperties` violation names, empty for
-    /// any other.
+    /// The property a `required` violation names, empty for any other.
     pub property_name: String,
     /// What the violation is, in words.
     pub message: String,
@@ -131,9 +131,11 @@ impl DocumentSchemaValidator {
 struct Walk<'v> {
     validator: &'v DocumentSchemaValidator,
     /// Whether the walk only asks whether the value matches, as the JSON Schema validator
-    /// asks of each element against a `contains` schema: it stops at the first violation,
-    /// and skips `byteArray`, whose match check accepts every value.
+    /// asks of each element against a `contains` schema: it builds no violation, stops at
+    /// the first failure, and skips `byteArray`, whose match check accepts every value.
     matching_only: bool,
+    /// Whether a match check found a failure.
+    failed: bool,
     instance_path: Vec<String>,
     schema_path: Vec<String>,
     violations: Vec<SchemaViolation>,
@@ -144,6 +146,7 @@ impl<'v> Walk<'v> {
         Self {
             validator,
             matching_only,
+            failed: false,
             instance_path: Vec::new(),
             schema_path: Vec::new(),
             violations: Vec::new(),
@@ -152,19 +155,48 @@ impl<'v> Walk<'v> {
 
     /// Whether a match check has its answer.
     fn done(&self) -> bool {
-        self.matching_only && !self.violations.is_empty()
+        self.matching_only && self.failed
     }
 
+    /// A violation of `keyword`, whose parameters and message `details` gives: built only
+    /// when the walk reports violations, not when it only asks whether the value matches.
     fn fail(
         &mut self,
         keyword: &'static str,
+        property_name: &str,
+        details: impl FnOnce() -> (JsonValue, String),
+    ) {
+        self.fail_under(keyword, keyword, property_name, details);
+    }
+
+    /// [`Walk::fail`] for a violation of `keyword` the schema holds under `schema_keyword`,
+    /// as a `dependentRequired` entry reports a missing property as `required`.
+    fn fail_under(
+        &mut self,
+        schema_keyword: &str,
+        keyword: &'static str,
+        property_name: &str,
+        details: impl FnOnce() -> (JsonValue, String),
+    ) {
+        if self.matching_only {
+            self.failed = true;
+            return;
+        }
+        self.schema_path.push(schema_keyword.to_string());
+        let schema_path = pointer(&self.schema_path);
+        self.schema_path.pop();
+        let (params, message) = details();
+        self.report(keyword, schema_path, params, property_name, message);
+    }
+
+    fn report(
+        &mut self,
+        keyword: &'static str,
+        schema_path: String,
         params: JsonValue,
         property_name: &str,
         message: String,
     ) {
-        self.schema_path.push(keyword.to_string());
-        let schema_path = pointer(&self.schema_path);
-        self.schema_path.pop();
         self.violations.push(SchemaViolation {
             keyword,
             instance_path: pointer(&self.instance_path),
@@ -199,50 +231,49 @@ impl<'v> Walk<'v> {
                      of the value"
                 )));
             }
-            self.schema_path.push("$ref".to_string());
+            // The JSON Schema validator reports a target's violations as if the target sat
+            // in the place of the `$ref`
             self.node(target, instance, references_in_a_row + 1)?;
-            self.schema_path.pop();
             if self.done() {
                 return Ok(());
             }
         }
         if let Some(types) = &node.types {
             if !types_admit(types, instance) {
-                let names = match types {
-                    JsonTypes::One(json_type) => json!(json_type_name(*json_type)),
-                    JsonTypes::AnyOf(json_types) => json!(json_types
-                        .iter()
-                        .map(|json_type| json_type_name(*json_type))
-                        .collect::<Vec<_>>()),
-                };
-                self.fail(
-                    "type",
-                    json!({ "type": names }),
-                    "",
-                    format!("{instance} is not of type {names}"),
-                );
+                self.fail("type", "", || {
+                    let names = match types {
+                        JsonTypes::One(json_type) => json!(json_type_name(*json_type)),
+                        // In alphabetical order, as the JSON Schema validator lists them
+                        JsonTypes::AnyOf(json_types) => {
+                            let mut names: Vec<&str> = json_types
+                                .iter()
+                                .map(|json_type| json_type_name(*json_type))
+                                .collect();
+                            names.sort_unstable();
+                            json!(names)
+                        }
+                    };
+                    let message = format!("{instance} is not of type {names}");
+                    (json!({ "type": names }), message)
+                });
             }
         }
         if let Some(values) = &node.enum_values {
             if !values.iter().any(|value| equal_value(instance, value)) {
-                let options = json_of_values(values);
-                self.fail(
-                    "enum",
-                    json!({ "enum": options }),
-                    "",
-                    format!("{instance} is not one of {options}"),
-                );
+                self.fail("enum", "", || {
+                    let options = json_of_values(values);
+                    let message = format!("{instance} is not one of {options}");
+                    (json!({ "enum": options }), message)
+                });
             }
         }
         if let Some(constant) = &node.constant {
             if !const_admits(constant, instance) {
-                let expected = json_of_value(constant);
-                self.fail(
-                    "const",
-                    json!({ "allowedValue": expected }),
-                    "",
-                    format!("{expected} was expected"),
-                );
+                self.fail("const", "", || {
+                    let expected = json_of_value(constant);
+                    let message = format!("{expected} was expected");
+                    (json!({ "allowedValue": expected }), message)
+                });
             }
         }
         if self.done() {
@@ -265,12 +296,12 @@ impl<'v> Walk<'v> {
                 }
                 if let Some(format) = node.format.as_deref().and_then(|f| f.format.as_deref()) {
                     if !format_admits(format, string) {
-                        self.fail(
-                            "format",
-                            json!({ "format": format }),
-                            "",
-                            format!("{instance} is not a \"{format}\""),
-                        );
+                        self.fail("format", "", || {
+                            (
+                                json!({ "format": format }),
+                                format!("{instance} is not a \"{format}\""),
+                            )
+                        });
                     }
                 }
             }
@@ -318,47 +349,46 @@ impl<'v> Walk<'v> {
                         .any(|(name, _)| name == *key)
                 })
                 .collect();
-            if let Some(first) = unexpected.first() {
-                let first = first.to_string();
-                self.fail(
-                    "additionalProperties",
-                    json!({ "additionalProperties": unexpected }),
-                    &first,
-                    format!(
+            if !unexpected.is_empty() {
+                self.fail("additionalProperties", "", || {
+                    (
+                        json!({ "additionalProperties": unexpected }),
+                        format!(
                         "additional properties are not allowed ({unexpected:?} were unexpected)"
                     ),
-                );
+                    )
+                });
             }
         }
         for name in object.required.iter().flatten() {
             if !map.contains_key(name) {
-                self.fail(
-                    "required",
-                    json!({ "missingProperty": name }),
-                    name,
-                    format!("\"{name}\" is a required property"),
-                );
+                self.fail("required", name, || {
+                    (
+                        json!({ "missingProperty": name }),
+                        format!("\"{name}\" is a required property"),
+                    )
+                });
             }
         }
         let count = map.len() as u64;
         if let Some(minimum) = object.min_properties {
             if count < minimum {
-                self.fail(
-                    "minProperties",
-                    json!({ "minProperties": minimum }),
-                    "",
-                    format!("an object with fewer than {minimum} properties is not allowed"),
-                );
+                self.fail("minProperties", "", || {
+                    (
+                        json!({ "minProperties": minimum }),
+                        format!("an object with fewer than {minimum} properties is not allowed"),
+                    )
+                });
             }
         }
         if let Some(maximum) = object.max_properties {
             if count > maximum {
-                self.fail(
-                    "maxProperties",
-                    json!({ "maxProperties": maximum }),
-                    "",
-                    format!("an object with more than {maximum} properties is not allowed"),
-                );
+                self.fail("maxProperties", "", || {
+                    (
+                        json!({ "maxProperties": maximum }),
+                        format!("an object with more than {maximum} properties is not allowed"),
+                    )
+                });
             }
         }
         for (name, dependents) in object.dependent_required.iter().flatten() {
@@ -367,12 +397,12 @@ impl<'v> Walk<'v> {
             }
             for dependent in dependents {
                 if !map.contains_key(dependent) {
-                    self.fail(
-                        "required",
-                        json!({ "missingProperty": dependent }),
-                        dependent,
-                        format!("\"{dependent}\" is a required property"),
-                    );
+                    self.fail_under("dependentRequired", "required", dependent, || {
+                        (
+                            json!({ "missingProperty": dependent }),
+                            format!("\"{dependent}\" is a required property"),
+                        )
+                    });
                 }
             }
         }
@@ -401,59 +431,58 @@ impl<'v> Walk<'v> {
             for item in items {
                 let mut walk = Walk::new(self.validator, true);
                 walk.node(contains, item, 0)?;
-                if walk.violations.is_empty() {
+                if !walk.failed {
                     matched = true;
                     break;
                 }
             }
             if !matched {
-                self.fail(
-                    "contains",
-                    json!({}),
-                    "",
-                    "none of the items are valid under the given schema".to_string(),
-                );
+                self.fail("contains", "", || {
+                    (
+                        json!({}),
+                        "none of the items are valid under the given schema".to_string(),
+                    )
+                });
             }
         }
         let count = items.len() as u64;
         if let Some(minimum) = array.min_items {
             if count < minimum {
-                self.fail(
-                    "minItems",
-                    json!({ "minItems": minimum }),
-                    "",
-                    format!("an array with fewer than {minimum} items is not allowed"),
-                );
+                self.fail("minItems", "", || {
+                    (
+                        json!({ "minItems": minimum }),
+                        format!("an array with fewer than {minimum} items is not allowed"),
+                    )
+                });
             }
         }
         if let Some(maximum) = array.max_items {
             if count > maximum {
-                self.fail(
-                    "maxItems",
-                    json!({ "maxItems": maximum }),
-                    "",
-                    format!("an array with more than {maximum} items is not allowed"),
-                );
+                self.fail("maxItems", "", || {
+                    (
+                        json!({ "maxItems": maximum }),
+                        format!("an array with more than {maximum} items is not allowed"),
+                    )
+                });
             }
         }
         if array.unique_items == Some(true) && !is_unique(items) {
-            self.fail(
-                "uniqueItems",
-                json!({}),
-                "",
-                "the array has non-unique elements".to_string(),
-            );
+            self.fail("uniqueItems", "", || {
+                (json!({}), "the array has non-unique elements".to_string())
+            });
         }
         Ok(())
     }
 
     /// `byteArray`, as Platform's keyword checks a value where errors are reported: an
     /// array whose elements each read as an unsigned integer up to 255, stopping at the
-    /// first that does not.
+    /// first that does not. Its violations carry no schema path, as the keyword reports
+    /// none.
     fn byte_array(&mut self, instance: &JsonValue) {
         let JsonValue::Array(items) = instance else {
-            self.fail(
+            self.report(
                 "type",
+                String::new(),
                 json!({ "type": "array" }),
                 "",
                 format!("{instance} is not of type \"array\""),
@@ -476,7 +505,7 @@ impl<'v> Walk<'v> {
             };
             if let Some((keyword, params, message)) = failure {
                 self.instance_path.push(index.to_string());
-                self.fail(keyword, params, "", message);
+                self.report(keyword, String::new(), params, "", message);
                 self.instance_path.pop();
                 return;
             }
@@ -487,22 +516,22 @@ impl<'v> Walk<'v> {
         let length = value.chars().count() as u64;
         if let Some(minimum) = string.min_length {
             if length < minimum {
-                self.fail(
-                    "minLength",
-                    json!({ "minLength": minimum }),
-                    "",
-                    format!("\"{value}\" is shorter than {minimum} characters"),
-                );
+                self.fail("minLength", "", || {
+                    (
+                        json!({ "minLength": minimum }),
+                        format!("\"{value}\" is shorter than {minimum} characters"),
+                    )
+                });
             }
         }
         if let Some(maximum) = string.max_length {
             if length > maximum {
-                self.fail(
-                    "maxLength",
-                    json!({ "maxLength": maximum }),
-                    "",
-                    format!("\"{value}\" is longer than {maximum} characters"),
-                );
+                self.fail("maxLength", "", || {
+                    (
+                        json!({ "maxLength": maximum }),
+                        format!("\"{value}\" is longer than {maximum} characters"),
+                    )
+                });
             }
         }
         if let Some(pattern) = &string.pattern {
@@ -512,12 +541,12 @@ impl<'v> Walk<'v> {
                 ))
             })?;
             if !regex.is_match(value) {
-                self.fail(
-                    "pattern",
-                    json!({ "pattern": pattern }),
-                    "",
-                    format!("\"{value}\" does not match \"{pattern}\""),
-                );
+                self.fail("pattern", "", || {
+                    (
+                        json!({ "pattern": pattern }),
+                        format!("\"{value}\" does not match \"{pattern}\""),
+                    )
+                });
             }
         }
         Ok(())
@@ -561,13 +590,11 @@ impl<'v> Walk<'v> {
             };
             let limit = Num::of_value(bound).ok_or_else(|| not_a_number(keyword))?;
             if !admits(item, limit) {
-                let limit = json_of_value(bound);
-                self.fail(
-                    keyword,
-                    json!({ keyword: limit }),
-                    "",
-                    format!("{value} is {relation} {limit}"),
-                );
+                self.fail(keyword, "", || {
+                    let limit = json_of_value(bound);
+                    let message = format!("{value} is {relation} {limit}");
+                    (json!({ keyword: limit }), message)
+                });
             }
         }
         if let Some(divisor) = &number.multiple_of {
@@ -575,12 +602,12 @@ impl<'v> Walk<'v> {
                 .ok_or_else(|| not_a_number("multipleOf"))?
                 .as_f64();
             if !is_multiple_of(value_as_f64(value), divisor) {
-                self.fail(
-                    "multipleOf",
-                    json!({ "multipleOf": divisor }),
-                    "",
-                    format!("{value} is not a multiple of {divisor}"),
-                );
+                self.fail("multipleOf", "", || {
+                    (
+                        json!({ "multipleOf": divisor }),
+                        format!("{value} is not a multiple of {divisor}"),
+                    )
+                });
             }
         }
         Ok(())
@@ -953,10 +980,7 @@ fn is_hostname(value: &str) -> bool {
 
 /// `value`, a value the validation schema holds, as JSON, for an error's parameters.
 fn json_of_value(value: &Value) -> JsonValue {
-    value
-        .clone()
-        .try_into_validating_json()
-        .unwrap_or(JsonValue::Null)
+    value.try_to_validating_json().unwrap_or(JsonValue::Null)
 }
 
 fn json_of_values(values: &[Value]) -> JsonValue {
