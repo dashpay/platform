@@ -259,15 +259,17 @@ or past the block that executed the write; that works for any transition with
 an owner.
 
 The protocol version signed with the proof selects the layout the proof is
-checked against; the SDK's own version still selects every security check. An
-SDK at protocol 14 therefore verifies an outcome produced at protocol 13, whose
+checked against. Validation and decoding follow the SDK's stored version, or
+the signed version when it is newer and known to this build, also for a pinned
+SDK: a producer's version can raise those rules but never lower them. An SDK
+at protocol 14 therefore verifies an outcome produced at protocol 13, whose
 `owner_balance()` is `None`, while an outcome signed as protocol 14 must prove
 the balance: a proof without it is refused, never retried as the older layout.
-An outcome signed by a protocol newer than the SDK is checked against the
-newest layout the SDK knows, so results stay verifiable after that protocol
-activates. The signature binds the protocol version to the state root, and the
-SDK learns the producer's version only after the signature and freshness checks
-pass.
+An outcome signed by a protocol newer than any this SDK build knows is checked
+with the newest layout and rules the build knows, so results stay verifiable
+after that protocol activates. The signature binds the protocol version to the
+state root, and the SDK learns the producer's version only after the signature
+and freshness checks pass.
 
 ### Timeout Handling
 
