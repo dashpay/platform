@@ -59,8 +59,8 @@ offer), each with three indexes:
 
 | Index | Properties | Serves |
 |---|---|---|
-| `book` | `tokenId`, `price`, `$createdAt` | A token's order book, by price and then by age |
-| `depth` | `tokenId`, `price`, summed | The total open at each price, or over a price range, in one proven sum query: the base units of the asks (`remaining`) and the credits of the bids (`escrow`) |
+| `book` | `tokenId`, `decimals`, `price`, `$createdAt` | A token's order book, by price and then by age |
+| `depth` | `tokenId`, `decimals`, `price`, summed | The total open at each price, or over a price range, in one proven sum query: the base units of the asks (`remaining`) and the credits of the bids (`escrow`) |
 | `byOwner` | `$ownerId`, `tokenId`, `$createdAt` | An identity's open orders |
 
 Each side sums what it holds in escrow, so the sums cannot overflow: the tokens listed never exceed
@@ -71,9 +71,11 @@ size.
 An order's price is in credits per whole token, and each order records the token's decimals when
 it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
 token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
-open offer pays. The `book` and `depth` indexes order by price alone: after a token changes its
-decimals, orders placed before and after the change are priced at different scales until the older
-ones close, and a client comparing them scales each by its own `decimals`.
+open offer pays. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
+then `price`), so a book query and a depth sum name the token's decimals and never mix prices of
+different scales. After a token changes its decimals, the orders placed before the change stay
+under the old decimals until they close; a client showing them alongside the new ones queries both
+and scales each by its `decimals`.
 
 Only the marketplace transitions write orders. A document transition cannot create one
 (`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
