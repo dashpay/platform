@@ -237,9 +237,6 @@ class IdentityUpdates internal constructor(
         require(disablePublicKeyIds.all { it >= 0 }) {
             "every disabled key id must be non-negative, got $disablePublicKeyIds"
         }
-        require(revision == null || revision >= 0) {
-            "revision must be non-negative, got $revision"
-        }
         mapNativeErrors {
             TransactionsNative.updateIdentity(
                 walletHandle,

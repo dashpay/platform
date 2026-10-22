@@ -1050,8 +1050,16 @@ pub struct IdentityKeyEntry {
     /// watched-only identities with no wallet association.
     pub wallet_id: Option<[u8; 32]>,
     /// DIP-9 `(identity_index, key_index)` pair the client needs to
-    /// re-derive the private key. `None` means "view-only, no
-    /// private key recoverable".
+    /// re-derive the private key.
+    ///
+    /// `None` gives no coordinates: for a row the persister does not hold
+    /// yet it means "view-only, no private key recoverable", but for an
+    /// update to a held row it means "no new coordinates", and the
+    /// persister keeps the breadcrumb (and its `wallet_id`) the row already
+    /// holds. A refresh emits such entries for keys a wallet derived, so a
+    /// persister that replaced the held breadcrumb with `None` would lose
+    /// the key's signing recovery. The SQLite writer, the Swift and the
+    /// Kotlin persisters all keep it, and changeset merges do the same.
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
