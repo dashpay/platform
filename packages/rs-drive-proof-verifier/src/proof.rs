@@ -440,7 +440,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
         let response = response.into();
         // A V0 answer carries separate index and identity proofs, a V1 answer one proof.
         // The index proof of a V0 answer is the one carrying the quorum signature.
-        let (proof, identity_proof, mtd) = match &response.version {
+        let (proof, identity_proof, mtd, answered_with_two_proofs) = match &response.version {
             Some(NonUniqueLookupVersion::V0(v0)) => {
                 let Some(NonUniqueLookupV0Result::Proof(proved)) = &v0.result else {
                     return Err(Error::NoProofInResult);
@@ -450,15 +450,16 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
                         .grovedb_identity_public_key_hash_proof
                         .as_ref()
                         .ok_or(Error::NoProofInResult)?,
-                    Some(proved.identity_proof_bytes.as_deref()),
+                    proved.identity_proof_bytes.as_deref(),
                     v0.metadata.as_ref(),
+                    true,
                 )
             }
             Some(NonUniqueLookupVersion::V1(v1)) => {
                 let Some(NonUniqueLookupV1Result::Proof(proof)) = &v1.result else {
                     return Err(Error::NoProofInResult);
                 };
-                (proof, None, v1.metadata.as_ref())
+                (proof, None, v1.metadata.as_ref(), false)
             }
             None => return Err(Error::NoProofInResult),
         };
@@ -488,7 +489,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
         // The request version chooses the proof shape, and the answer must come in it.
         // The quorum signature covers the state, not the envelope, so an answer in the
         // other shape is refused rather than reinterpreted.
-        if two_proofs_requested != identity_proof.is_some() {
+        if two_proofs_requested != answered_with_two_proofs {
             return Err(Error::ResponseDecodeError {
                 error: "non-unique identity response version does not match request version"
                     .to_string(),
@@ -497,24 +498,23 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
 
         let query_platform_version = proof_query_platform_version(mtd)?;
         let bytes = supported_grovedb_proof_bytes(proof)?;
-        let verified = match identity_proof {
-            Some(identity_proof) => {
-                Drive::verify_full_identity_by_non_unique_public_key_hash_two_proofs(
-                    bytes,
-                    identity_proof,
-                    public_key_hash,
-                    after_identity,
-                    query_platform_version,
-                    platform_version,
-                )
-            }
-            None => Drive::verify_full_identity_by_non_unique_public_key_hash(
+        let verified = if answered_with_two_proofs {
+            Drive::verify_full_identity_by_non_unique_public_key_hash_two_proofs(
+                bytes,
+                identity_proof,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            )
+        } else {
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
                 bytes,
                 public_key_hash,
                 after_identity,
                 query_platform_version,
                 platform_version,
-            ),
+            )
         };
         let (root_hash, maybe_identity) = verified.map_drive_error(proof, mtd)?;
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -3954,6 +3954,36 @@ mod tests {
             let err =
                 non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
             assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_proved_response_without_metadata_is_refused() {
+        for version in [0, 1] {
+            let mut response =
+                non_unique_response(version, Proof::default(), ResponseMetadata::default());
+            match &mut response.version {
+                Some(NonUniqueLookupVersion::V0(v0)) => v0.metadata = None,
+                Some(NonUniqueLookupVersion::V1(v1)) => v1.metadata = None,
+                None => panic!("version"),
+            }
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(
+                matches!(err, Error::EmptyResponseMetadata),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_request_without_version_is_refused() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                platform::GetIdentityByNonUniquePublicKeyHashRequest { version: None },
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(matches!(err, Error::EmptyVersion), "V{version}: {err:?}");
         }
     }
 
