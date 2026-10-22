@@ -25,7 +25,7 @@ pub struct TokenPlaceBidTransitionActionV0 {
     /// The block time from which the offer can no longer be filled
     pub expires_at: Option<TimestampMillis>,
     /// The token's decimals the offer was signed at, which its price is at and its order
-    /// records; the structure validation refuses them unless they are the token's
+    /// records; the transformer refuses them unless they are the token's
     pub decimals: u8,
     /// What the offer is worth, rounded up: the credits it moves from the buyer's balance into
     /// escrow
