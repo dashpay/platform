@@ -431,12 +431,60 @@ fn reservation_can_be_released_or_promoted_to_used() {
     );
 }
 
+/// Two identities of one wallet that are each other's contacts hold the
+/// same script twice: on A's external account paying B, and on B's
+/// receiving account. The used-address reader leaves the external row out —
+/// it is restored on its own account — so the receiving account keeps its
+/// reuse guard.
+#[test]
+fn used_address_shared_with_a_contact_external_row_guards_the_receiving_account() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB6);
+    ensure_wallet_meta(&persister, &w);
+    let external = AccountType::DashpayExternalAccount {
+        index: 0,
+        user_identity_id: [0xA1; 32],
+        friend_identity_id: [0xB1; 32],
+    };
+    let receiving = AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id: [0xB1; 32],
+        friend_identity_id: [0xA1; 32],
+    };
+    let mut infos = external_infos(0xB6);
+    infos.truncate(1);
+    infos[0].state = AddressState::Used;
+    for account_type in [external, receiving] {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type,
+                        AddressPoolType::External,
+                        infos.clone(),
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let owners: Vec<String> = core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+        .unwrap()
+        .into_iter()
+        .map(|(_, owner)| owner.account_type)
+        .collect();
+    assert_eq!(owners, vec!["dashpay_receiving".to_string()]);
+}
+
 /// A contact payment stores its address reserved before the broadcast. A
 /// crash before the reservation is settled must not reload the address as
 /// fresh — the transaction may already be on the network — so the loader
-/// returns it with the used addresses. A reservation released before the
-/// crash reloads available, and a reservation on any other account is left
-/// to its TTL sweep.
+/// returns it, at its pool coordinates, with the used ones. A reservation
+/// released before the crash is not returned, nor is a reservation on any
+/// other account, which is left to its TTL sweep.
 #[test]
 fn unsettled_contact_payment_reservation_reloads_used() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -484,18 +532,23 @@ fn unsettled_contact_payment_reservation_reloads_used() {
     store(standard, standard_infos);
 
     let conn = persister.lock_conn_for_test();
-    let reloaded: Vec<_> = core_pool::load_used_addresses(&conn, &w, Network::Testnet)
-        .unwrap()
-        .into_iter()
-        .map(|(address, owner)| (address, owner.account_type))
-        .collect();
     assert_eq!(
-        reloaded,
-        vec![(
-            contact_infos[0].address.clone(),
-            "dashpay_external".to_string()
-        )],
-        "only the unsettled contact reservation reloads as used"
+        core_pool::load_contact_pool_claims(&conn, &w).unwrap(),
+        vec![core_pool::ContactPoolClaim {
+            account_index: 0,
+            user_identity_id: [0xC1; 32],
+            friend_identity_id: [0xC2; 32],
+            pool_type: 0,
+            address_index: contact_infos[0].index,
+            script: contact_infos[0].script_pubkey.to_bytes(),
+        }],
+        "only the unsettled contact reservation is claimed"
+    );
+    assert!(
+        core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+            .unwrap()
+            .is_empty(),
+        "no reservation reads back as a used funds address"
     );
 }
 

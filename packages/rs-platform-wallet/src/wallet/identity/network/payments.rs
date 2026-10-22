@@ -1636,7 +1636,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Addresses a resident record pays but the pool still shows
         // available are marked used and stored first, on their own: the
         // send below can still fail before it stores anything, and that
-        // evidence must not depend on it.
+        // evidence must not depend on it. A failed store is only logged: the
+        // mark stays in memory and rides the contact's next pool snapshot —
+        // this send's own reservation when the send gets that far, and that
+        // store failing stops the send. (The prepared path returns the
+        // failure instead: it is refusing the send anyway.)
         let found_paid = {
             let mut wm = self.wallet_manager.write().await;
             record_contact_addresses_paid_on_chain(
@@ -14110,5 +14114,70 @@ mod tests {
                     .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
             });
         assert!(stored_used, "the address found paid reaches disk");
+    }
+
+    /// A prepared send refused because a record pays its address reports a
+    /// failure to store that evidence, not the plain conflict — and still
+    /// gives back its inputs and keeps the mark in memory.
+    #[tokio::test]
+    async fn prepared_payment_refused_on_a_paid_address_reports_a_failed_store() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xE2, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let paid = dashcore::Address::from_script(
+            &payment_script(prepared.transaction(), 100_000),
+            Network::Testnet,
+        )
+        .expect("a P2PKH payment output");
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+        *persister.fail_stores.lock().unwrap() = true;
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a paid address must not be paid again");
+        *persister.fail_stores.lock().unwrap() = false;
+        assert!(
+            matches!(err, PlatformWalletError::PersisterStore(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the mark stays in memory"
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the refused send released the only coin");
+        iw.dashpay().abandon_prepared_payment(retry).await;
     }
 }

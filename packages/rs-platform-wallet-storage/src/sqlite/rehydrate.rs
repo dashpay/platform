@@ -195,7 +195,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   funds were since spent is never re-handed-out as a fresh receive address
 ///   from its own account (address-reuse guard). An owner absent from this
 ///   wallet's funds accounts, or a `None` owner, falls back to the first
-///   account. Empty = no pool used-state carried.
+///   account. Empty = no pool used-state carried. An address a DashPay
+///   contact's external account owns is skipped: that account is no funds
+///   account, and `restore_contact_pool_claims` restores it.
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
@@ -364,7 +366,8 @@ pub fn apply_persisted_core_state(
         // empty map marks only the unspent-UTXO addresses.
         for (addr, owner) in used_pool_addresses {
             // A contact's external account is no funds account; its
-            // addresses are restored on that account below.
+            // addresses are restored at their stored coordinates by
+            // `restore_contact_pool_claims`.
             if contact_external_key(owner.as_ref()).is_some() {
                 continue;
             }
@@ -410,47 +413,6 @@ pub fn apply_persisted_core_state(
         }
     }
 
-    // A DashPay contact's external account holds the addresses this wallet
-    // pays that contact at. It is no funds account, so the routing above
-    // skips it; its used addresses — and the reservations of contact
-    // payments a crash interrupted, which the loader returns as used — are
-    // restored on the account itself. Without this a relaunch hands a paid
-    // contact address out again, linking two payments on-chain.
-    let mut contact_addrs: std::collections::BTreeMap<DashpayAccountKey, Vec<key_wallet::Address>> =
-        std::collections::BTreeMap::new();
-    for (addr, owner) in used_pool_addresses {
-        if let Some(key) = contact_external_key(owner.as_ref()) {
-            contact_addrs.entry(key).or_default().push(addr.clone());
-        }
-    }
-    let mut missing_contact_accounts: Vec<String> = Vec::new();
-    for (key, addrs) in &contact_addrs {
-        match wallet_info.accounts.dashpay_external_accounts.get_mut(key) {
-            Some(account) => {
-                extend_pools_for_restored_addresses(account, manifest, addrs, wallet_id, ctx)?
-            }
-            None => missing_contact_accounts.push(format!(
-                "dashpay_external[{}] {}→{}",
-                key.index,
-                hex::encode(key.user_identity_id),
-                hex::encode(key.friend_identity_id)
-            )),
-        }
-    }
-    if !missing_contact_accounts.is_empty() {
-        ctx.note_degraded(
-            LoadSite::OrphanedUtxoOwner,
-            SiteCoords {
-                wallet_id: Some(wallet_id),
-                account_type: &missing_contact_accounts,
-                affected: missing_contact_accounts.len(),
-                detail: None,
-            },
-            "used contact-payment addresses belong to DashPay external accounts this wallet \
-             does not register; their used state is not restored",
-        );
-    }
-
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
     // UTXOs it finds, so running it earlier would record the txid and mark
     // nothing. Without it, instant-locked funds come back as merely confirmed
@@ -463,6 +425,174 @@ pub fn apply_persisted_core_state(
     // After this, a non-zero persisted balance is non-zero here — a
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
+    Ok(())
+}
+
+/// Mark used, on each DashPay contact's external account, the addresses
+/// the store recorded used or reserved there ([`core_pool::load_contact_pool_claims`]).
+/// A contact account is no funds account, so [`apply_persisted_core_state`]
+/// skips it. Each address is derived at its stored `(pool, index)` slot —
+/// concurrent sends each take the next address and the rejected ones release
+/// theirs, so a reservation can sit past any gap window with every address
+/// below it available — and the gap window is then refilled past the
+/// deepest, as sync would. Without this a relaunch hands such an address out
+/// again, linking two payments on-chain.
+///
+/// Degraded: a claim on a contact account this wallet does not register,
+/// and one whose slot does not derive the stored address — a
+/// re-sent contact request replaced the contact's xpub under the same
+/// account key, or the row is corrupt. Neither address is in a pool this
+/// wallet hands addresses out from. A claim past
+/// [`MAX_REHYDRATION_DERIVATION_INDEX`] is left as well; reaching it would
+/// take that many payments to one contact. A failed gap refill is treated
+/// as on the funds accounts — fatal under Strict — and so is a matching
+/// address that cannot be derived into the pool.
+///
+/// Never touches key material — the xpub is the keyless account public key.
+pub fn restore_contact_pool_claims(
+    wallet_info: &mut ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
+    claims: &[core_pool::ContactPoolClaim],
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let wallet_id = wallet_info.wallet_id;
+    let mut by_account: std::collections::BTreeMap<
+        DashpayAccountKey,
+        Vec<&core_pool::ContactPoolClaim>,
+    > = std::collections::BTreeMap::new();
+    for claim in claims {
+        by_account
+            .entry(DashpayAccountKey {
+                index: claim.account_index,
+                user_identity_id: claim.user_identity_id,
+                friend_identity_id: claim.friend_identity_id,
+            })
+            .or_default()
+            .push(claim);
+    }
+
+    let mut missing_accounts: Vec<String> = Vec::new();
+    for (key, claims) in &by_account {
+        let account_type = AccountType::DashpayExternalAccount {
+            index: key.index,
+            user_identity_id: key.user_identity_id,
+            friend_identity_id: key.friend_identity_id,
+        };
+        let Some(account) = wallet_info.accounts.dashpay_external_accounts.get_mut(key) else {
+            missing_accounts.push(format!(
+                "dashpay_external[{}] {}→{}",
+                key.index,
+                hex::encode(key.user_identity_id),
+                hex::encode(key.friend_identity_id)
+            ));
+            continue;
+        };
+        let key_source = manifest
+            .iter()
+            .find(|entry| entry.account_type == account_type)
+            .map(|entry| KeySource::Public(entry.account_xpub));
+        let mut pools = account.managed_account_type_mut().address_pools_mut();
+        // The stored address is checked on a throwaway probe of its pool, so
+        // a row that does not match — a replaced xpub, or a corrupt deep
+        // index — derives nothing into the real pool.
+        let mut probes: std::collections::BTreeMap<i64, AddressPool> =
+            std::collections::BTreeMap::new();
+        let mut unresolved = 0usize;
+        for claim in claims {
+            // Bounded like the funds accounts' discovery, so a corrupt index
+            // cannot make the load derive without end.
+            let pool = pools
+                .iter_mut()
+                .find(|pool| core_pool::pool_type_to_i64(pool.pool_type) == claim.pool_type)
+                .filter(|_| claim.address_index <= MAX_REHYDRATION_DERIVATION_INDEX);
+            let Some(pool) = pool else {
+                unresolved += 1;
+                continue;
+            };
+            // The pool's own address when it already holds the slot;
+            // otherwise the probe's, so a row that does not match derives
+            // nothing into the real pool.
+            let address = pool.address_at_index(claim.address_index).or_else(|| {
+                let key_source = key_source.as_ref()?;
+                let probe = probes.entry(claim.pool_type).or_insert_with(|| {
+                    AddressPool::new_without_generation(
+                        pool.base_path.clone(),
+                        pool.pool_type,
+                        pool.gap_limit,
+                        pool.network,
+                    )
+                });
+                ensure_derived(probe, key_source, claim.address_index)
+            });
+            if !address.is_some_and(|address| {
+                address.script_pubkey().as_bytes() == claim.script.as_slice()
+            }) {
+                unresolved += 1;
+                continue;
+            }
+            // The stored address is this account's: failing to put it into
+            // the pool would hand it out again, so this is fatal under
+            // Strict, as on the funds accounts.
+            let derived = match key_source.as_ref() {
+                Some(key_source) => ensure_derived(pool, key_source, claim.address_index).is_some(),
+                None => true,
+            };
+            if !derived {
+                ctx.tolerate_at(
+                    LoadSite::RehydrationEnsureDerived,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
+                    WalletStorageError::RehydrationEnsureDerivedFailed {
+                        index: claim.address_index,
+                    },
+                )?;
+                continue;
+            }
+            pool.mark_index_used(claim.address_index);
+        }
+        if unresolved > 0 {
+            ctx.note_degraded(
+                LoadSite::UnresolvedUtxoAddress,
+                SiteCoords {
+                    wallet_id: Some(wallet_id),
+                    account_type: &account_type,
+                    affected: unresolved,
+                    detail: None,
+                },
+                "stored contact-payment addresses do not derive from the contact's current \
+                 xpub at their index — a re-sent contact request replaced it, the rows are \
+                 corrupt, or the index is past the derivation cap; the current pool cannot \
+                 hand them out",
+            );
+        }
+        // Refill the window past the deepest claim, so a payment another
+        // device made just beyond it is recognised.
+        if let Some(key_source) = key_source.as_ref() {
+            for pool in pools.iter_mut() {
+                refill_gap_window(pool, key_source, &account_type, wallet_id, ctx)?;
+            }
+        }
+    }
+    if !missing_accounts.is_empty() {
+        ctx.note_degraded(
+            LoadSite::OrphanedUtxoOwner,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type: &missing_accounts,
+                affected: missing_accounts.len(),
+                detail: None,
+            },
+            "used contact-payment addresses belong to DashPay external accounts this wallet \
+             does not register; their used state is not restored",
+        );
+    }
     Ok(())
 }
 
@@ -816,71 +946,84 @@ fn extend_pools_for_restored_addresses(
             let Some(key_source) = key_source.as_ref() else {
                 break;
             };
-            // Bound the refill before it runs, so nothing is allocated on
-            // the way out. Validity first: an unrepresentable target has no
-            // meaningful cost to weigh against the cap, and upstream panics
-            // computing it (debug) or wraps it into a bogus one (release).
-            let refill = match ImpliedRefill::of(
-                pool.highest_used,
-                pool.highest_generated,
-                pool.gap_limit,
-            ) {
-                Ok(refill) => refill,
-                Err(error) => {
-                    ctx.tolerate_at(
-                        LoadSite::RehydrationMaintainGapLimit,
-                        SiteCoords {
-                            wallet_id: Some(wallet_id),
-                            account_type: &account_type,
-                            affected: 1,
-                            detail: Some(&pool.pool_type),
-                        },
-                        error,
-                    )?;
-                    break;
-                }
-            };
-            if refill.implied > MAX_REHYDRATION_GAP_REFILL {
-                ctx.tolerate_at(
-                    LoadSite::RehydrationGapLimit,
-                    SiteCoords {
-                        wallet_id: Some(wallet_id),
-                        account_type: &account_type,
-                        affected: 1,
-                        detail: Some(&pool.pool_type),
-                    },
-                    WalletStorageError::RehydrationGapLimitRefillTooLarge {
-                        refill_target: refill.target,
-                        already_generated: refill.already_generated,
-                        implied: refill.implied,
-                        cap: MAX_REHYDRATION_GAP_REFILL,
-                    },
-                )?;
-                break;
-            }
-
-            // Defense in depth against an upstream derivation failure. The
-            // pre-flight above rejects every target this crate can compute as
-            // out of range, so no fixture currently reaches this branch.
-            //
-            // Kept fail-closed like `ensure_derived` above: a short window
-            // means a previously-used address can be re-issued as fresh.
-            if let Err(e) = pool.maintain_gap_limit(key_source) {
-                ctx.tolerate_at(
-                    LoadSite::RehydrationMaintainGapLimit,
-                    SiteCoords {
-                        wallet_id: Some(wallet_id),
-                        account_type: &account_type,
-                        affected: 1,
-                        detail: Some(&pool.pool_type),
-                    },
-                    WalletStorageError::RehydrationGapLimitFailed { source: e },
-                )?;
+            if !refill_gap_window(pool, key_source, &account_type, wallet_id, ctx)? {
                 break;
             }
         }
     }
     Ok(())
+}
+
+/// Refill `pool`'s gap window past its deepest used index, bounded before
+/// it runs. Returns `false` when a tolerated failure (Recovery) left the
+/// window short; under Strict that failure is the error.
+fn refill_gap_window(
+    pool: &mut key_wallet::managed_account::address_pool::AddressPool,
+    key_source: &key_wallet::managed_account::address_pool::KeySource,
+    account_type: &AccountType,
+    wallet_id: [u8; 32],
+    ctx: &LoadCtx,
+) -> Result<bool, WalletStorageError> {
+    // Bound the refill before it runs, so nothing is allocated on
+    // the way out. Validity first: an unrepresentable target has no
+    // meaningful cost to weigh against the cap, and upstream panics
+    // computing it (debug) or wraps it into a bogus one (release).
+    let refill = match ImpliedRefill::of(pool.highest_used, pool.highest_generated, pool.gap_limit)
+    {
+        Ok(refill) => refill,
+        Err(error) => {
+            ctx.tolerate_at(
+                LoadSite::RehydrationMaintainGapLimit,
+                SiteCoords {
+                    wallet_id: Some(wallet_id),
+                    account_type,
+                    affected: 1,
+                    detail: Some(&pool.pool_type),
+                },
+                error,
+            )?;
+            return Ok(false);
+        }
+    };
+    if refill.implied > MAX_REHYDRATION_GAP_REFILL {
+        ctx.tolerate_at(
+            LoadSite::RehydrationGapLimit,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type,
+                affected: 1,
+                detail: Some(&pool.pool_type),
+            },
+            WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                refill_target: refill.target,
+                already_generated: refill.already_generated,
+                implied: refill.implied,
+                cap: MAX_REHYDRATION_GAP_REFILL,
+            },
+        )?;
+        return Ok(false);
+    }
+
+    // Defense in depth against an upstream derivation failure. The
+    // pre-flight above rejects every target this crate can compute as
+    // out of range, so no fixture currently reaches this branch.
+    //
+    // Kept fail-closed like the callers' `ensure_derived`: a short
+    // window means a previously-used address can be re-issued as fresh.
+    if let Err(e) = pool.maintain_gap_limit(key_source) {
+        ctx.tolerate_at(
+            LoadSite::RehydrationMaintainGapLimit,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type,
+                affected: 1,
+                detail: Some(&pool.pool_type),
+            },
+            WalletStorageError::RehydrationGapLimitFailed { source: e },
+        )?;
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 /// What a `maintain_gap_limit` call on a pool would cost, costed before it

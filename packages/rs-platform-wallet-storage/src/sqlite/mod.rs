@@ -51,3 +51,7 @@ pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersis
 pub use reports::{CommitReport, DeleteWalletReport};
 #[doc(inline)]
 pub use schema::core_pool::OwningAccount;
+// Named by `rehydrate::restore_contact_pool_claims`, the contact-pool half of
+// the public rehydration entry point; re-exported for the same reason.
+#[doc(inline)]
+pub use schema::core_pool::ContactPoolClaim;

@@ -323,16 +323,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         {
             Ok(changeset) => changeset,
             Err(refusal) => {
-                if let Some(found_paid) = refusal.found_paid {
-                    if let Err(e) = self.store_durably(*found_paid) {
-                        tracing::warn!(
-                            error = %e,
-                            "failed to persist a contact address found paid on-chain"
-                        );
-                    }
-                }
+                // A failed store outranks the refusal: the caller learns the
+                // store is failing, not just to try again. The mark stays in
+                // memory and rides the contact's next pool snapshot.
+                let stored = refusal
+                    .found_paid
+                    .map_or(Ok(()), |found_paid| self.store_durably(*found_paid));
                 core.abandon_transaction(&signed).await;
-                return Err(refusal.error);
+                return Err(match stored {
+                    Ok(()) => refusal.error,
+                    Err(e) => {
+                        tracing::warn!(
+                            refusal = %refusal.error,
+                            "a contact payment was refused and the address found paid could \
+                             not be stored"
+                        );
+                        e
+                    }
+                });
             }
         };
         let stored = self.store_durably(reserved);

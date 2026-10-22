@@ -147,24 +147,24 @@ fn spent_utxo_address_is_marked_used() {
         "a spent UTXO's address must still be marked used in the pool"
     );
 }
+/// A wallet with one registered DashPay contact account, stored and closed.
+struct ContactFixture {
+    _tmp: tempfile::TempDir,
+    path: std::path::PathBuf,
+    w: [u8; 32],
+    key: key_wallet::account::account_collection::DashpayAccountKey,
+    contact: key_wallet::account::AccountType,
+    contact_xpub: key_wallet::bip32::ExtendedPubKey,
+}
 
-/// A contact's external account is no funds account, yet its used
-/// addresses must come back on it: a relaunch that handed a paid contact
-/// address out again would link two payments on-chain. A contact payment
-/// stores its address reserved before the broadcast, so an unsettled
-/// reservation — the process died mid-send — reloads used as well, while a
-/// released one reloads available.
-#[test]
-fn contact_pool_reloads_used_and_unsettled_reserved_addresses() {
+fn contact_fixture(seed: u8) -> ContactFixture {
     use key_wallet::account::account_collection::DashpayAccountKey;
     use key_wallet::account::{AccountType, StandardAccountType};
-    use key_wallet::managed_account::address_pool::AddressState;
-    use platform_wallet::changeset::AccountAddressPoolEntry;
 
-    let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0xDE);
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(seed);
     let wallet = Wallet::from_seed_bytes(
-        [0x43; 64],
+        [seed; 64],
         key_wallet::Network::Testnet,
         WalletAccountCreationOptions::Default,
     )
@@ -220,73 +220,356 @@ fn contact_pool_reloads_used_and_unsettled_reserved_addresses() {
             },
         )
         .unwrap();
-    drop(persister);
+    ContactFixture {
+        _tmp: tmp,
+        path,
+        w,
+        key,
+        contact,
+        contact_xpub,
+    }
+}
 
-    let contact_pool = |persister: &SqlitePersister| {
+impl ContactFixture {
+    /// The contact pool as `persister` loads it.
+    fn loaded_pool(
+        &self,
+        persister: &SqlitePersister,
+    ) -> key_wallet::managed_account::address_pool::AddressPool {
         let state = persister.load().expect("load");
-        let info = &state.wallets.get(&w).expect("wallet slice").wallet_info;
-        let account = info
-            .accounts
+        let info = &state
+            .wallets
+            .get(&self.w)
+            .expect("wallet slice")
+            .wallet_info;
+        info.accounts
             .dashpay_external_accounts
-            .get(&key)
-            .expect("the contact's external account is rebuilt");
-        let pool = account
+            .get(&self.key)
+            .expect("the contact's external account is rebuilt")
             .managed_account_type()
             .address_pools()
             .into_iter()
             .next()
-            .expect("contact pool");
-        let mut infos: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
-        infos.sort_by_key(|info| info.index);
-        (pool.pool_type, infos)
-    };
+            .expect("contact pool")
+            .clone()
+    }
 
-    // Index 0: paid. Index 1: reserved, then the process dies mid-send.
-    // Index 2: reserved, then released after a rejection.
-    let persister = reopen(&path);
-    let (pool_type, mut infos) = contact_pool(&persister);
-    infos.truncate(3);
-    infos[0].state = AddressState::Used;
-    infos[1].state = AddressState::Reserved { at: 1_752_528_626 };
-    infos[2].state = AddressState::Reserved { at: 1_752_528_626 };
-    let store_pool = |infos: Vec<key_wallet::AddressInfo>| {
+    /// The contact pool's type and addresses as `persister` loads them,
+    /// sorted by index.
+    fn pool(
+        &self,
+        persister: &SqlitePersister,
+    ) -> (
+        key_wallet::managed_account::address_pool::AddressPoolType,
+        Vec<key_wallet::AddressInfo>,
+    ) {
+        let pool = self.loaded_pool(persister);
+        (pool.pool_type, sorted_infos(&pool))
+    }
+
+    fn store_pool(
+        &self,
+        persister: &SqlitePersister,
+        pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
+        infos: Vec<key_wallet::AddressInfo>,
+    ) {
         persister
             .store(
-                w,
+                self.w,
                 PlatformWalletChangeSet {
-                    account_address_pools: vec![AccountAddressPoolEntry {
-                        account_type: contact,
-                        pool_type,
-                        addresses: infos,
-                    }],
+                    account_address_pools: vec![
+                        platform_wallet::changeset::AccountAddressPoolEntry {
+                            account_type: self.contact,
+                            pool_type,
+                            addresses: infos,
+                        },
+                    ],
                     ..Default::default()
                 },
             )
             .unwrap();
-    };
-    store_pool(infos.clone());
+    }
+}
+
+fn sorted_infos(
+    pool: &key_wallet::managed_account::address_pool::AddressPool,
+) -> Vec<key_wallet::AddressInfo> {
+    let mut infos: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
+    infos.sort_by_key(|info| info.index);
+    infos
+}
+
+fn state_at(
+    infos: &[key_wallet::AddressInfo],
+    index: u32,
+) -> key_wallet::managed_account::address_pool::AddressState {
+    infos
+        .iter()
+        .find(|info| info.index == index)
+        .map(|info| info.state)
+        .expect("index in the restored pool")
+}
+
+/// A contact's external account is no funds account, yet its used
+/// addresses must come back on it: a relaunch that handed a paid contact
+/// address out again would link two payments on-chain. A contact payment
+/// stores its address reserved before the broadcast, so an unsettled
+/// reservation — the process died mid-send — reloads used as well, while a
+/// released one reloads available.
+#[test]
+fn contact_pool_reloads_used_and_unsettled_reserved_addresses() {
+    use key_wallet::managed_account::address_pool::AddressState;
+
+    let fixture = contact_fixture(0x43);
+
+    // Index 0: paid. Index 1: reserved, then the process dies mid-send.
+    // Index 2: reserved, then released after a rejection.
+    let persister = reopen(&fixture.path);
+    let (pool_type, mut infos) = fixture.pool(&persister);
+    infos.truncate(3);
+    infos[0].state = AddressState::Used;
+    infos[1].state = AddressState::Reserved { at: 1_752_528_626 };
+    infos[2].state = AddressState::Reserved { at: 1_752_528_626 };
+    fixture.store_pool(&persister, pool_type, infos.clone());
     infos[2].state = AddressState::Available;
-    store_pool(infos.clone());
+    fixture.store_pool(&persister, pool_type, infos);
     drop(persister);
 
-    let (_, reloaded) = contact_pool(&reopen(&path));
-    let state_of = |index: u32| {
-        reloaded
-            .iter()
-            .find(|info| info.index == index)
-            .map(|info| info.state)
-            .expect("index in the restored pool")
-    };
+    let (_, reloaded) = fixture.pool(&reopen(&fixture.path));
     assert!(
-        matches!(state_of(0), AddressState::Used),
+        matches!(state_at(&reloaded, 0), AddressState::Used),
         "a paid contact address reloads used"
     );
     assert!(
-        matches!(state_of(1), AddressState::Used),
+        matches!(state_at(&reloaded, 1), AddressState::Used),
         "an unsettled reservation must not reload as a fresh address"
     );
     assert!(
-        matches!(state_of(2), AddressState::Available),
+        matches!(state_at(&reloaded, 2), AddressState::Available),
         "a released reservation reloads available"
     );
+}
+
+/// Concurrent sends each take the next contact address, and the ones that
+/// were rejected release theirs, so an unsettled reservation can sit past the
+/// gap window with every address below it available. It must still reload
+/// used, at its own index.
+#[test]
+fn contact_reservation_past_the_gap_window_reloads_used() {
+    use key_wallet::managed_account::address_pool::{AddressState, KeySource};
+
+    let fixture = contact_fixture(0x44);
+    let persister = reopen(&fixture.path);
+    let mut pool = fixture.loaded_pool(&persister);
+    let deep = pool.gap_limit + 1;
+    let start = pool.highest_generated.map_or(0, |h| h + 1);
+    pool.generate_addresses(
+        deep + 1 - start,
+        &KeySource::Public(fixture.contact_xpub),
+        true,
+    )
+    .expect("derive past the gap window");
+    let mut infos = sorted_infos(&pool);
+    for info in &mut infos {
+        info.state = if info.index == deep {
+            AddressState::Reserved { at: 1_752_528_626 }
+        } else {
+            AddressState::Available
+        };
+    }
+    fixture.store_pool(&persister, pool.pool_type, infos);
+    drop(persister);
+
+    let (_, reloaded) = fixture.pool(&reopen(&fixture.path));
+    assert!(
+        matches!(state_at(&reloaded, deep), AddressState::Used),
+        "an unsettled reservation past the gap window must not reload as a fresh address"
+    );
+    assert!(
+        (0..deep).all(|index| matches!(state_at(&reloaded, index), AddressState::Available)),
+        "the released addresses below it reload available"
+    );
+    assert!(
+        reloaded.iter().any(|info| info.index > deep),
+        "the gap window is refilled past it"
+    );
+}
+
+/// A contact claim whose slot derives a different address — a re-sent
+/// contact request replaced the contact's xpub, or the row is corrupt — is
+/// in no pool this wallet hands out from: the load goes ahead under Strict,
+/// with the site counted, and the slot keeps the address it derives.
+#[test]
+fn contact_claim_off_the_current_xpub_degrades_a_strict_load() {
+    use key_wallet::managed_account::address_pool::AddressState;
+    use platform_wallet_storage::sqlite::LoadSite;
+
+    let fixture = contact_fixture(0x45);
+    let persister = reopen(&fixture.path);
+    let (pool_type, mut infos) = fixture.pool(&persister);
+    // Index 0 stored with index 1's address, and a deep index likewise.
+    infos[0].address = infos[1].address.clone();
+    infos[0].script_pubkey = infos[1].script_pubkey.clone();
+    infos[0].state = AddressState::Used;
+    let mut deep = infos[0].clone();
+    deep.index = 50;
+    infos.truncate(1);
+    infos.push(deep);
+    fixture.store_pool(&persister, pool_type, infos);
+    drop(persister);
+
+    let persister = reopen(&fixture.path);
+    let (_, reloaded) = fixture.pool(&persister);
+    assert!(
+        matches!(state_at(&reloaded, 0), AddressState::Available),
+        "the slot's own address was never claimed"
+    );
+    assert!(
+        reloaded.iter().all(|info| info.index < 50),
+        "a claim that does not match derives nothing into the pool"
+    );
+    assert_eq!(
+        persister
+            .last_load_degradation()
+            .by_site
+            .get(&LoadSite::UnresolvedUtxoAddress)
+            .copied(),
+        Some(2)
+    );
+}
+
+/// A script a contact's external row shares with a funds-account row, with
+/// a UTXO on it: the pool and UTXO sources must name the same owner, or a
+/// Strict load fails on the conflict. Neither names the external account,
+/// which never owns this wallet's funds.
+#[test]
+fn utxo_on_a_script_a_contact_external_row_shares_loads_strict() {
+    use key_wallet::managed_account::address_pool::AddressState;
+
+    shared_script_with_a_utxo_loads_strict(0x46, AddressState::Used);
+    // The funds row not yet marked: the pool source then has no row for the
+    // script, and the UTXO source must not name the external account.
+    shared_script_with_a_utxo_loads_strict(0x47, AddressState::Available);
+}
+
+fn shared_script_with_a_utxo_loads_strict(
+    seed: u8,
+    funds_state: key_wallet::managed_account::address_pool::AddressState,
+) {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let fixture = contact_fixture(seed);
+    let persister = reopen(&fixture.path);
+    let (pool_type, mut infos) = fixture.pool(&persister);
+    infos.truncate(1);
+    infos[0].state = AddressState::Used;
+    fixture.store_pool(&persister, pool_type, infos.clone());
+    let mut shared = infos[0].clone();
+    shared.state = funds_state;
+    persister
+        .store(
+            fixture.w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![AccountAddressPoolEntry {
+                    account_type: AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    pool_type: AddressPoolType::External,
+                    addresses: vec![shared.clone()],
+                }],
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![key_wallet::Utxo {
+                        outpoint: dashcore::OutPoint {
+                            txid: {
+                                use dashcore::hashes::Hash;
+                                dashcore::Txid::from_byte_array([0x98; 32])
+                            },
+                            vout: 0,
+                        },
+                        txout: dashcore::TxOut {
+                            value: 500_000,
+                            script_pubkey: shared.script_pubkey.clone(),
+                        },
+                        address: shared.address.clone(),
+                        height: 5,
+                        is_coinbase: false,
+                        is_confirmed: true,
+                        is_instantlocked: false,
+                        is_locked: false,
+                        is_trusted: false,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&fixture.path)
+        .load()
+        .expect("a strict load must not see an owner conflict");
+    let info = &state
+        .wallets
+        .get(&fixture.w)
+        .expect("wallet slice")
+        .wallet_info;
+    assert_eq!(info.balance.total(), 500_000);
+}
+
+/// A pre-fix build stored an output to the contact as this wallet's UTXO,
+/// and the contact row's used mark never reached disk: the stored coin alone
+/// reloads the address used, at its index.
+#[test]
+fn contact_address_with_a_stored_utxo_reloads_used() {
+    use key_wallet::managed_account::address_pool::AddressState;
+
+    let fixture = contact_fixture(0x48);
+    let persister = reopen(&fixture.path);
+    let (pool_type, mut infos) = fixture.pool(&persister);
+    infos.truncate(4);
+    fixture.store_pool(&persister, pool_type, infos.clone());
+    let paid = infos[3].clone();
+    persister
+        .store(
+            fixture.w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![key_wallet::Utxo {
+                        outpoint: dashcore::OutPoint {
+                            txid: {
+                                use dashcore::hashes::Hash;
+                                dashcore::Txid::from_byte_array([0x97; 32])
+                            },
+                            vout: 0,
+                        },
+                        txout: dashcore::TxOut {
+                            value: 500_000,
+                            script_pubkey: paid.script_pubkey.clone(),
+                        },
+                        address: paid.address.clone(),
+                        height: 5,
+                        is_coinbase: false,
+                        is_confirmed: true,
+                        is_instantlocked: false,
+                        is_locked: false,
+                        is_trusted: false,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let (_, reloaded) = fixture.pool(&reopen(&fixture.path));
+    assert!(
+        matches!(state_at(&reloaded, 3), AddressState::Used),
+        "a contact address with a stored coin must not reload as fresh"
+    );
+    assert!(matches!(state_at(&reloaded, 2), AddressState::Available));
 }
