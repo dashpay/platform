@@ -1188,9 +1188,18 @@ mod tests {
         }
         .distinct_sum_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
         .expect("expected the client's path query");
-        let (_, elements) =
+        let (proof_root, elements) =
             GroveDb::verify_query(&proof, &path_query, &platform_version.drive.grove_version)
                 .expect("expected the proof to verify");
+        let live_root = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .value
+            .expect("expected the current Drive root");
+        assert_eq!(
+            proof_root, live_root,
+            "the depth proof authenticates the state holding the orders"
+        );
         let sums: Vec<i64> = elements
             .iter()
             .filter_map(|(_, _, element)| {
