@@ -16,18 +16,11 @@ class AppState: ObservableObject {
     /// UI binds to).
     @Published private(set) var quorumSource: SDK.QuorumSource = .trusted
 
+    /// Changes only with the SDK, through `publish(_:for:)`.
     @Published private(set) var currentNetwork: Network {
         didSet {
             UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
         }
-    }
-
-    /// Publish `network` as the current network. Publishing rebuilds
-    /// nothing: call it from the `apply` step of
-    /// `rebuildSdkAndMoveWalletManager`, which then builds that network's
-    /// SDK and moves the wallet manager onto it.
-    func publishCurrentNetwork(_ network: Network) {
-        currentNetwork = network
     }
 
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
@@ -41,14 +34,12 @@ class AppState: ObservableObject {
     @Published var platformProtocolVersion: UInt32?
 
     /// Monotonic tick bumped after OptionsView moves the wallet manager
-    /// onto a rebuilt SDK: a network switch, the Docker toggle or a devnet
-    /// edit. SwiftExampleAppApp observes it to re-run
-    /// `rebindWalletScopedServices()` against the new manager. A network
-    /// change is published before the wallet manager moves onto the new
-    /// network's SDK, and a same-network rebuild changes neither the
-    /// network nor the wallet ID set, so neither can trigger the rebind;
-    /// `PlatformBalanceSyncService` and `ShieldedService` would otherwise
-    /// keep the old manager.
+    /// onto a rebuilt SDK and publishes it: a network switch, the Docker
+    /// toggle or a devnet edit. SwiftExampleAppApp observes it to re-run
+    /// `rebindWalletScopedServices()` against the new manager. A
+    /// same-network rebuild changes neither the network nor the wallet ID
+    /// set, so without the tick `PlatformBalanceSyncService` and
+    /// `ShieldedService` would keep the old manager.
     @Published var walletScopedServicesRebindTick: Int = 0
 
     @Published var useDockerSetup: Bool {
@@ -205,49 +196,47 @@ class AppState: ObservableObject {
         showError = true
     }
 
-    /// Build and publish an SDK for `network`. Returns that SDK, or `nil`
-    /// before `initializeSDK` has run or after a build failure, which it
-    /// shows and which also clears `sdk`. The wallet manager stays on its
-    /// old SDK either way; `rebuildSdkAndMoveWalletManager` moves it.
-    func switchNetwork(to network: Network) async -> SDK? {
-        guard let modelContext = modelContext else { return nil }
-
-        // Identities, contracts, documents, and token balances are
-        // scoped per-network inside SwiftData. `@Query` consumers
-        // filter by `network` and update reactively once we swap
-        // the DataManager's scope below — nothing to clear here.
-
-        // Update DataManager's current network
-        dataManager?.currentNetwork = network
-
-        // Re-initialize SDK with new network
+    /// Build an SDK for `network`, with the current quorum mode applied and
+    /// the stored contracts loaded, without publishing it. Returns `nil`
+    /// after showing the failure. `rebuildSdkAndMoveWalletManager` publishes
+    /// the SDK, with its network, once the wallet manager has moved onto it.
+    func buildSdk(for network: Network) async -> SDK? {
+        isLoading = true
+        defer { isLoading = false }
         do {
-            isLoading = true
-
-            // Create a new SDK instance for the network. Its manager leases
-            // the adaptive provider's SPV source after SPV starts.
             let newSDK = try SDK(network: network, contextProvider: .adaptive)
             try newSDK.setQuorumMode(sdkQuorumMode)
-            sdk = newSDK
-            quorumSource = newSDK.quorumSource
-
-            // Eagerly learn the new network's protocol version (see
-            // `initializeSDK`). Non-fatal: the SDK still ratchets from
-            // metadata if this fails.
-            refreshProtocolVersion(for: newSDK)
-
-            // Load known contracts into the SDK's trusted provider
-            await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-            isLoading = false
+            if let modelContext {
+                await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            }
             return newSDK
         } catch {
-            sdk = nil
-            showError(message: "Failed to switch network: \(error.localizedDescription)")
-            NSLog("❌ AppState.switchNetwork: \(error)")
-            isLoading = false
+            showError(
+                message: "Could not build the SDK for \(network.displayName), so the app stays on its current SDK. SPV stays stopped until you restart it from the Wallet tab. \(error.localizedDescription)"
+            )
+            NSLog("❌ AppState.buildSdk: \(error)")
             return nil
         }
+    }
+
+    /// Make `sdk`, built for `network`, the current SDK and `network` the
+    /// current network, together. Call it from the `publish` step of
+    /// `rebuildSdkAndMoveWalletManager`, after the wallet manager moved onto
+    /// `sdk`, so the selected network, the SDK and the manager change in one
+    /// main-actor turn.
+    func publish(_ sdk: SDK, for network: Network) {
+        // Identities, contracts, documents and token balances are scoped
+        // per network inside SwiftData; `@Query` consumers filter by
+        // `network` and follow the DataManager's scope.
+        dataManager?.currentNetwork = network
+        currentNetwork = network
+        self.sdk = sdk
+        quorumSource = sdk.quorumSource
+        // Eagerly learn the network's protocol version (see
+        // `initializeSDK`). Non-fatal: the SDK still ratchets from metadata
+        // if this fails.
+        refreshProtocolVersion(for: sdk)
+        applyQuorumMode()
     }
 
     private var sdkQuorumMode: SDK.QuorumMode {

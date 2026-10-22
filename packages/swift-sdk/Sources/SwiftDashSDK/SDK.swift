@@ -343,8 +343,8 @@ public final class SDK: @unchecked Sendable {
       } else {
         // Quorum URL unset, or /masternodes unreachable / wrong shape.
         // Fall through with nil; Rust will refuse to build the SDK
-        // and the resulting error surfaces in the iOS UI as
-        // "Disconnected", prompting the user to fix the Quorum URL.
+        // and the build error reaches the caller, which can prompt the
+        // user to fix the Quorum URL.
         overrideAddresses = nil
       }
     } else if useOverrideAddresses {

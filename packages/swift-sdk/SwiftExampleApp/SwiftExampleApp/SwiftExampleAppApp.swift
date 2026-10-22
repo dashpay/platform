@@ -171,12 +171,12 @@ struct SwiftExampleAppApp: App {
                     rebindWalletScopedServices()
                 }
                 // SDK rebuilds from OptionsView: a network switch, the
-                // Docker toggle or a devnet edit. OptionsView rebuilds the
-                // SDK, moves the wallet manager onto it, then bumps this
-                // tick, so the services rebind against the new manager.
-                // The network itself is not observed here: it is published
-                // before the wallet manager moves onto the new network's
-                // SDK, and `rebindWalletScopedServices` reads `walletManager`.
+                // Docker toggle or a devnet edit. OptionsView builds the
+                // SDK, moves the wallet manager onto it, publishes the SDK
+                // and its network, then bumps this tick, so the services
+                // rebind against the new manager. A same-network rebuild
+                // changes neither the network nor the wallet ID set, so
+                // only this tick covers it.
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }

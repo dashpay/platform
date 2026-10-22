@@ -199,8 +199,8 @@ final class WalletManagerStore: ObservableObject {
         // If `AppState` has rebuilt the SDK since (network switch or
         // UserDefaults endpoint override change), the cached manager
         // is still pointing at the old endpoints and would keep
-        // failing proof verification. Drop it so the rebuild below
-        // picks up the fresh SDK.
+        // failing proof verification. The manager built below against
+        // the fresh SDK replaces it once `configure` succeeds.
         if let existing = managers[network] {
             if managerSdks[network] === sdk {
                 if makeActive && existing !== activeManager {
@@ -222,14 +222,10 @@ final class WalletManagerStore: ObservableObject {
                     "reason": .publicText("sdk_changed"),
                 ]
             )
-            // No `activeManager = nil` — the field isn't optional. The
-            // rebuild below will overwrite it via `if makeActive {
-            // activeManager = manager }`. Until that line runs, the
-            // old `activeManager` reference still points at the
-            // now-stale cached manager, but it'll be replaced before
-            // any caller observes it (this method is synchronous).
-            managers[network] = nil
-            managerSdks[network] = nil
+            // The stale entry stays cached, and active if it was, until
+            // the manager built below replaces it. If `configure` throws,
+            // the store still tracks the manager that stays active on the
+            // SDK the app keeps.
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
