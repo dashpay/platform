@@ -6,11 +6,13 @@
 //! batch must be priced at the deeper one, whichever write registers its description first.
 
 use crate::error::Error;
+use crate::fees::op::DriveCost;
+use dpp::fee::Credits;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes;
-use grovedb_version::version::GroveVersion;
+use grovedb_merk::estimated_costs::average_case_costs::average_case_merk_propagate;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -41,71 +43,55 @@ pub(crate) fn insert_estimated_layer_keeping_deeper(
     estimated_costs_only_with_layer_info.insert(path, layer);
 }
 
-/// The bytes the estimation prices one node of a layer described as `layer` with: its average key
-/// and its value with feature and flags, the larger of each part of a mixed layer.
-fn node_bytes(
+/// What GroveDB's own estimator charges to carry a change through a layer described as `layer`
+/// (`average_case_merk_propagate`: the nodes it rewrites, the bytes it loads and replaces, the
+/// hashes), in credits at `platform_version`'s fees. Drive keeps no cost model of its own for a
+/// description: GroveDB prices it, and Drive only compares the prices.
+fn propagation_credits(
     layer: &EstimatedLayerInformation,
-    grove_version: &GroveVersion,
-) -> Result<u32, Error> {
-    let key = match &layer.estimated_layer_sizes {
-        EstimatedLayerSizes::AllSubtrees(key, _, _)
-        | EstimatedLayerSizes::AllItems(key, _, _)
-        | EstimatedLayerSizes::AllReference(key, _, _)
-        | EstimatedLayerSizes::AllItemsWithSumItem(key, _, _)
-        | EstimatedLayerSizes::AllReferencesWithSumItem(key, _, _) => *key,
-        EstimatedLayerSizes::Mix {
-            subtrees_size,
-            items_size,
-            references_size,
-            items_with_sum_item_size,
-            references_with_sum_item_size,
-        } => [
-            subtrees_size.map(|(key, ..)| key),
-            items_size.map(|(key, ..)| key),
-            references_size.map(|(key, ..)| key),
-            items_with_sum_item_size.map(|(key, ..)| key),
-            references_with_sum_item_size.map(|(key, ..)| key),
-        ]
-        .into_iter()
-        .flatten()
-        .max()
-        .unwrap_or_default(),
-    };
-    let value = layer
-        .estimated_layer_sizes
-        .value_with_feature_and_flags_size(grove_version)
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let propagation = average_case_merk_propagate(layer, &platform_version.drive.grove_version);
+    propagation
+        .value
         .map_err(|error| Error::GroveDB(Box::new(error.into())))?;
-    Ok(u32::from(key) + value)
+    propagation
+        .cost
+        .ephemeral_cost(&platform_version.fee_version)
 }
 
-/// Orders two descriptions of one layer by what they price an update through it at: the
-/// deeper first (`estimate_levels`, which gives a description by element count a depth too),
-/// then at one depth the larger node, then, for two that price alike, by their contents, so
-/// the order is total and the same whichever is seen first.
+/// Orders two descriptions of one layer: the deeper first (`estimate_levels`, which gives a
+/// description by element count a depth too), as the depth sets how many nodes every use of the
+/// description touches; then at one depth the one GroveDB prices dearer
+/// ([`propagation_credits`]); then, for two priced alike, by their contents, so the order is
+/// total and the same whichever is seen first.
 fn compare_layer_cost(
     a: &EstimatedLayerInformation,
     b: &EstimatedLayerInformation,
-    grove_version: &GroveVersion,
+    platform_version: &PlatformVersion,
 ) -> Result<Ordering, Error> {
     Ok(a.estimated_layer_count
         .estimate_levels()
         .cmp(&b.estimated_layer_count.estimate_levels())
-        .then(node_bytes(a, grove_version)?.cmp(&node_bytes(b, grove_version)?))
+        .then(
+            propagation_credits(a, platform_version)?
+                .cmp(&propagation_credits(b, platform_version)?),
+        )
         .then_with(|| format!("{a:?}").cmp(&format!("{b:?}"))))
 }
 
 /// Merges `layer` into the batch's description of the layer at `path`, keeping the costlier of
 /// the two ([`compare_layer_cost`]). The order two operations of a batch register their
 /// descriptions of a shared layer in no longer matters: the batch's estimate keeps the deeper,
-/// and of two at one depth the one pricing a larger node.
+/// and of two at one depth the one GroveDB prices dearer.
 pub(crate) fn merge_estimated_layer(
     estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     path: KeyInfoPath,
     layer: EstimatedLayerInformation,
-    grove_version: &GroveVersion,
+    platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
     if let Some(existing) = estimated_costs_only_with_layer_info.get(&path) {
-        if compare_layer_cost(existing, &layer, grove_version)? != Ordering::Less {
+        if compare_layer_cost(existing, &layer, platform_version)? != Ordering::Less {
             return Ok(());
         }
     }
@@ -138,8 +124,8 @@ pub(crate) fn register_keeping_deeper_estimated_layers(
 mod tests {
     use super::*;
     use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-    use grovedb::EstimatedLayerSizes::AllSubtrees;
-    use grovedb::EstimatedSumTrees::NoSumTrees;
+    use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
+    use grovedb::EstimatedSumTrees::{AllBigSumTrees, NoSumTrees};
     use grovedb::TreeType;
 
     fn layer(level: u32) -> EstimatedLayerInformation {
@@ -179,44 +165,52 @@ mod tests {
         assert_eq!(level_at(&estimation, &path), Some(1));
     }
 
-    /// Two descriptions of one layer at one depth that price a node differently merge to the
-    /// costlier, in either order; a deeper one wins whatever its node; and two that price alike
-    /// merge to the same one in either order.
+    /// Two descriptions of one layer merge to the same one in either order: the deeper, then at
+    /// one depth the one GroveDB's propagation estimate prices dearer, then, for two it prices
+    /// alike, a fixed choice.
     #[test]
     fn should_merge_two_descriptions_of_a_layer_alike_in_either_order() {
-        let grove_version = GroveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
-        let wide_key = EstimatedLayerInformation {
-            estimated_layer_sizes: AllSubtrees(17, NoSumTrees, None),
-            ..layer(3)
-        };
-        let narrow_key = EstimatedLayerInformation {
-            estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
+        let at_depth_3 = |estimated_layer_sizes| EstimatedLayerInformation {
+            estimated_layer_sizes,
             ..layer(3)
         };
         let merged = |first: EstimatedLayerInformation, second: EstimatedLayerInformation| {
             let mut estimation = HashMap::new();
-            merge_estimated_layer(&mut estimation, path.clone(), first, grove_version)
+            merge_estimated_layer(&mut estimation, path.clone(), first, platform_version)
                 .expect("expected to merge");
-            merge_estimated_layer(&mut estimation, path.clone(), second, grove_version)
+            merge_estimated_layer(&mut estimation, path.clone(), second, platform_version)
                 .expect("expected to merge");
             estimation[&path]
         };
-        assert_eq!(merged(wide_key, narrow_key), wide_key);
-        assert_eq!(merged(narrow_key, wide_key), wide_key);
+        let credits = |layer: &EstimatedLayerInformation| {
+            propagation_credits(layer, platform_version).expect("expected a price")
+        };
 
+        // Items of 8 bytes under 32-byte keys cost more to carry a change through than big sum
+        // subtrees under the same keys, though a subtree's element is the larger: GroveDB
+        // counts the item's two stored hashes.
+        let items = at_depth_3(AllItems(32, 8, None));
+        let subtrees = at_depth_3(AllSubtrees(32, AllBigSumTrees, None));
+        assert!(credits(&items) > credits(&subtrees));
+        assert_eq!(merged(items, subtrees), items);
+        assert_eq!(merged(subtrees, items), items);
+
+        // A deeper description wins whatever its nodes.
         let deeper_narrow = EstimatedLayerInformation {
             estimated_layer_count: EstimatedLevel(4, false),
-            ..narrow_key
+            ..at_depth_3(AllSubtrees(1, NoSumTrees, None))
         };
-        assert_eq!(merged(wide_key, deeper_narrow), deeper_narrow);
-        assert_eq!(merged(deeper_narrow, wide_key), deeper_narrow);
+        assert!(credits(&deeper_narrow) < credits(&items));
+        assert_eq!(merged(items, deeper_narrow), deeper_narrow);
+        assert_eq!(merged(deeper_narrow, items), deeper_narrow);
 
-        let flagged = EstimatedLayerInformation {
-            estimated_layer_sizes: AllSubtrees(1, NoSumTrees, Some(16)),
-            ..layer(3)
-        };
-        assert_eq!(merged(narrow_key, flagged), merged(flagged, narrow_key));
+        // Two different descriptions GroveDB prices alike.
+        let references = at_depth_3(AllReference(32, 8, None));
+        assert_ne!(items, references);
+        assert_eq!(credits(&items), credits(&references));
+        assert_eq!(merged(items, references), merged(references, items));
     }
 
     #[test]
