@@ -127,6 +127,9 @@ public enum ErrorFormatter {
         if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
             return sdkError.localizedDescription
         }
+        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
+            return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(walletError.localizedDescription)"
+        }
         // Handle specific SDK error types
         let errorString = String(describing: error)
 
@@ -332,6 +335,15 @@ public enum ErrorCategorizer {
                 message: sdkError.localizedDescription,
                 category: .unknown,
                 underlyingError: String(describing: sdkError),
+                isRetryable: false
+            )
+        }
+        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
+            return UserFacingError(
+                title: "Submission unconfirmed",
+                message: ErrorFormatter.userFriendlyMessage(from: walletError),
+                category: .unknown,
+                underlyingError: String(describing: walletError),
                 isRetryable: false
             )
         }

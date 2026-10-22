@@ -195,6 +195,8 @@ class DashSdkErrorTest {
         )
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+        assertTrue(broadcastUnconfirmed.message!!.contains("reconcile the original operation"))
+        assertFalse(broadcastUnconfirmed.message!!.contains("inputs reserved"))
 
         // Definitive broadcast rejection (26) must reach callers as its own type,
         // NOT as Generic: it is the definitive counterpart to the ambiguous
