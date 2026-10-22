@@ -3729,9 +3729,19 @@ extension ManagedPlatformWallet {
     /// otherwise subsequent operations that try to sign with the
     /// newly-added keys will fail. The signer here only signs the
     /// update transition itself with an existing MASTER key.
+    ///
+    /// `externalKeyIds` names the added keys that do not come from the
+    /// wallet's derivation (a key generated or received outside it, such
+    /// as a browser session key, whose private key the wallet cannot
+    /// derive from its seed). They are persisted without a derivation
+    /// path, so the signer never takes them for keys it can derive. Every
+    /// other added key is persisted as derived at the identity's index and
+    /// the key's id. An id that names no added key throws before anything
+    /// is signed.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
+        externalKeyIds: [UInt32] = [],
         disablePublicKeyIds: [UInt32] = [],
         signer: KeychainSigner
     ) async throws {
@@ -3741,6 +3751,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         let addPubkeys = addPublicKeys
+        let externalIds = externalKeyIds
         let disableIds = disablePublicKeyIds
         try await Task.detached(priority: .userInitiated) {
             _ = signer
@@ -3750,31 +3761,39 @@ extension ManagedPlatformWallet {
             let pubkeyBuffers: [Data] = addPubkeys.map { $0.pubkeyBytes }
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
-                disableIds.withUnsafeBufferPointer { disableBp in
-                    if addPubkeys.isEmpty {
-                        return platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            nil,
-                            0,
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
-                    }
-                    return ManagedPlatformWallet.withPubkeyFFIArray(
-                        addPubkeys,
-                        buffers: pubkeyBuffers
-                    ) { ffiRowsPtr, ffiRowsCount in
-                        platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            ffiRowsPtr,
-                            UInt(ffiRowsCount),
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
+                externalIds.withUnsafeBufferPointer { externalBp -> PlatformWalletFFIResult in
+                    disableIds.withUnsafeBufferPointer { disableBp in
+                        let external = externalIds.isEmpty ? nil : externalBp.baseAddress
+                        let disable = disableIds.isEmpty ? nil : disableBp.baseAddress
+                        if addPubkeys.isEmpty {
+                            return platform_wallet_update_identity_with_signer(
+                                handle,
+                                idBp.baseAddress!,
+                                nil,
+                                0,
+                                external,
+                                UInt(externalIds.count),
+                                disable,
+                                UInt(disableIds.count),
+                                signerHandle
+                            )
+                        }
+                        return ManagedPlatformWallet.withPubkeyFFIArray(
+                            addPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            platform_wallet_update_identity_with_signer(
+                                handle,
+                                idBp.baseAddress!,
+                                ffiRowsPtr,
+                                UInt(ffiRowsCount),
+                                external,
+                                UInt(externalIds.count),
+                                disable,
+                                UInt(disableIds.count),
+                                signerHandle
+                            )
+                        }
                     }
                 }
             }
