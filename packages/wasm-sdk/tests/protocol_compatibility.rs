@@ -1,6 +1,7 @@
 //! Exercise the SDK lifecycle on the browser executor, without network I/O.
 #![cfg(target_arch = "wasm32")]
 
+use dash_sdk::platform::MockContextProvider;
 use dash_sdk::{ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason, SdkBuilder};
 use rs_dapi_client::AddressList;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
@@ -11,7 +12,10 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn should_begin_and_refresh_on_browser_executor_without_tokio_timers() {
     // No addresses: query failure is immediate and entirely local. The
     // refresh still starts its budget timer before polling the query.
-    let sdk = SdkBuilder::new(AddressList::default()).build().unwrap();
+    let sdk = SdkBuilder::new(AddressList::default())
+        .with_context_provider(MockContextProvider::new())
+        .build()
+        .unwrap();
     let generation = sdk.begin_protocol_compatibility_check();
     assert_eq!(
         sdk.protocol_compatibility().state,
@@ -32,6 +36,7 @@ async fn should_begin_and_refresh_on_browser_executor_without_tokio_timers() {
 #[wasm_bindgen_test]
 async fn should_report_proofs_disabled_on_browser_executor() {
     let sdk = SdkBuilder::new(AddressList::default())
+        .with_context_provider(MockContextProvider::new())
         .with_proofs(false)
         .build()
         .unwrap();
