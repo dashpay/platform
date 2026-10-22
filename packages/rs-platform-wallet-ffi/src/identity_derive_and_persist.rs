@@ -312,12 +312,12 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
 
         // Materialize pubkey + hash160 once.
         let extended_pub = ExtendedPubKey::from_priv(&derived);
-        let pub_bytes: [u8; 33] = extended_pub.public_key.serialize();
+        let pub_bytes: [u8; 33] = extended_pub.public_key.to_compressed();
         let pub_hash: [u8; 20] = dashcore::hashes::hash160::Hash::hash(&pub_bytes).to_byte_array();
 
         // Hold the secret scalar in a buffer that drops with
         // `zeroize::Zeroize::zeroize` at scope end.
-        let mut priv_scalar: [u8; 32] = derived.private_key.to_secret_bytes();
+        let mut priv_scalar: [u8; 32] = *derived.private_key.to_bytes();
 
         let path_cstring = match CString::new(path.to_string()) {
             Ok(s) => s,

@@ -296,7 +296,8 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::dashcore::{signer, Network, PrivateKey};
+    use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -338,8 +339,6 @@ mod tests {
     use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
-    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -357,6 +356,8 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
+    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::secp256k1::rand::SeedableRng as _;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;

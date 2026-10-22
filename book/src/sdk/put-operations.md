@@ -242,7 +242,21 @@ for a proof made at an earlier version or a transition without an owner);
 `wait_for_document_and_owner_balance` and
 `put_to_platform_and_wait_for_response_with_owner_balance` return it next to
 the document. The balance is a snapshot at the proof's block: it may already
-include later transitions of the same identity. A wait that asks for no proof
+include later transitions of the same identity.
+`put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also
+returns the verified response metadata, whose `height` is that block, so a
+wallet keeping the balance can order it against balances it read elsewhere; it
+checks the proof as strictly as `put_to_platform_and_wait_for_response` does
+(this write must be proved executed unless the document type is indexOnly),
+where `put_to_platform_and_wait_for_response_with_owner_balance` accepts an
+affected-state snapshot for any document type. For a DPNS registration,
+`Sdk::register_dpns_name_with_owner_balance_and_metadata` returns the
+registration result with the balance and metadata of the domain's proof, the
+registration's last write. For a DashPay profile,
+`Sdk::create_profile_with_owner_balance_and_metadata` and
+`Sdk::update_profile_with_owner_balance_and_metadata` return the confirmed
+profile document with the balance and metadata of its proof, which must show
+the write executed. A wait that asks for no proof
 but sets `request_user_balance` gets the owner's balance back unverified, as
 the response's `success_with_owner_balance` result, read from a Drive state at
 or past the block that executed the write; that works for any transition with
