@@ -40,6 +40,7 @@ use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identifier, Revision};
 
@@ -1031,8 +1032,9 @@ pub struct KeyWithBreadcrumb {
 /// derivation that produced it. No private material crosses here: the client
 /// derives the key on demand from the Keychain seed at the breadcrumb path
 /// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). When
-/// `derivation_indices` is `None` the key is watch-only from this wallet's
-/// point of view.
+/// `derivation_indices` is `None`, the entry supplies no new coordinates;
+/// an update preserves any breadcrumb the persister already holds (see the
+/// field).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
@@ -1088,11 +1090,17 @@ impl Merge for IdentityKeysChangeSet {
         // entry without a derivation breadcrumb (a refresh, a limits
         // update) keeps the earlier one's, as every persister keeps a
         // stored one: a buffered write that only knows the key's new state
-        // must not turn a wallet-derived key watch-only.
+        // must not turn a wallet-derived key watch-only. Only for the same
+        // public key in the same wallet scope (or none): the coordinates
+        // derive that key, not another one under the same row id.
         for (id, mut entry) in other.upserts {
             if entry.derivation_indices.is_none() {
                 if let Some(earlier) = self.upserts.get(&id) {
-                    if earlier.derivation_indices.is_some() {
+                    let same_key = earlier.public_key_hash == entry.public_key_hash
+                        && earlier.public_key.data() == entry.public_key.data();
+                    let same_scope =
+                        entry.wallet_id.is_none() || entry.wallet_id == earlier.wallet_id;
+                    if earlier.derivation_indices.is_some() && same_key && same_scope {
                         entry.wallet_id = earlier.wallet_id;
                         entry.derivation_indices = earlier.derivation_indices;
                     }
@@ -2587,6 +2595,59 @@ mod tests {
         let mut merged = changeset(entry(None, None));
         merged.merge(changeset(entry(Some(9), None)));
         assert_eq!(merged.upserts[&(id, 3)], entry(Some(9), None));
+    }
+
+    /// A later entry without a breadcrumb takes the earlier one's only for
+    /// the same public key (data and hash) in the same wallet scope or none:
+    /// a replacement key under the same row id, or an entry scoped to
+    /// another wallet, stands as it is.
+    #[test]
+    fn should_lend_a_breadcrumb_only_to_the_same_public_key_in_the_same_scope() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x55; 32]);
+        let entry = |byte: u8, hash: u8, wallet_id: Option<[u8; 32]>, key_index: Option<u32>| {
+            IdentityKeyEntry {
+                identity_id: id,
+                key_id: 3,
+                public_key: IdentityPublicKeyV0 {
+                    id: 3,
+                    data: vec![byte; 33].into(),
+                    ..Default::default()
+                }
+                .into(),
+                public_key_hash: [hash; 20],
+                wallet_id,
+                derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index,
+                }),
+            }
+        };
+        let merged = |later: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts
+                .insert((id, 3), entry(1, 1, Some([9; 32]), Some(3)));
+            let mut next = IdentityKeysChangeSet::default();
+            next.upserts.insert((id, 3), later);
+            cs.merge(next);
+            cs.upserts[&(id, 3)].clone()
+        };
+
+        for later in [entry(1, 1, None, None), entry(1, 1, Some([9; 32]), None)] {
+            assert_eq!(merged(later), entry(1, 1, Some([9; 32]), Some(3)));
+        }
+        for later in [
+            // A replacement key: other data, other hash.
+            entry(2, 2, None, None),
+            // The same hash over other data.
+            entry(2, 1, None, None),
+            // The same data with another hash.
+            entry(1, 2, None, None),
+            // Another wallet's scope.
+            entry(1, 1, Some([8; 32]), None),
+        ] {
+            assert_eq!(merged(later.clone()), later);
+        }
     }
 
     #[test]
