@@ -1384,7 +1384,9 @@ impl Drive {
                                     VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
                                 ))
                             }
-                            // An offer is proven by its `bid` document, like a listing.
+                            // An offer is proven by its `bid` document, like a listing, after
+                            // sales too: they leave `remaining` lower and the escrow at what the
+                            // offer is worth less what was paid for what is filled.
                             TokenTransition::PlaceBid(token_place_bid_transition) => {
                                 let order_id = TokenOrderSide::Bid.order_id(
                                     token_id,
@@ -1410,15 +1412,9 @@ impl Drive {
                                     || order.maker_id != owner_id
                                     || order.price != token_place_bid_transition.price()
                                     || order.amount != token_place_bid_transition.amount()
-                                    // An offer just placed has nothing filled yet, and holds what
-                                    // it is worth at the decimals it records.
-                                    || order.remaining != token_place_bid_transition.amount()
-                                    || Some(order.escrow)
-                                        != TokenOrder::order_value(
-                                            order.amount,
-                                            order.price,
-                                            order.decimals,
-                                        )
+                                    || order.remaining == 0
+                                    || order.remaining > order.amount
+                                    || Some(order.escrow) != order.escrow_after_fills()
                                     || order.min_fill != token_place_bid_transition.min_fill()
                                     || order.expires_at != token_place_bid_transition.expires_at()
                                 {

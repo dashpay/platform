@@ -1420,6 +1420,40 @@ mod offers {
         );
     }
 
+    /// An offer's `bid` still proves its placement after a sale into it: the order id is the
+    /// transition's alone, and the document holds its terms with less open and the escrow less
+    /// what was paid. An offer filled entirely is gone, so its document no longer proves it.
+    #[tokio::test]
+    async fn should_prove_an_offer_after_it_is_partly_filled() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        market.executes(&place);
+        let sale = market.fill_bid(order_id, 1, 400, 4_000, false).await;
+        market.executes(&sale);
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            market.prove_and_verify(&place)
+        else {
+            panic!("expected the offer's document to be proved");
+        };
+        let order = TokenOrder::from_document(
+            documents
+                .get(&order_id)
+                .and_then(Option::as_ref)
+                .expect("expected the proof to hold the offer"),
+            TokenOrderSide::Bid,
+        )
+        .expect("expected an order");
+        assert_eq!(
+            (order.amount, order.remaining, order.escrow),
+            (1_000, 600, 6_000)
+        );
+
+        let sale = market.fill_bid(order_id, 1, 600, 1, false).await;
+        market.executes(&sale);
+        assert!(market.prove_and_try_verify(&place).is_err());
+    }
+
     #[tokio::test]
     async fn should_sell_into_part_of_an_offer_and_then_the_rest() {
         let mut market = tradeable_market();
