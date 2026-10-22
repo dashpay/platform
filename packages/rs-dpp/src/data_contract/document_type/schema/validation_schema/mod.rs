@@ -174,7 +174,7 @@ pub struct SchemaNode {
 /// The [`ObjectKeyword`]s of a node.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectConstraints {
-    /// `properties`, in declared order.
+    /// `properties`, in declared order, each name once.
     pub properties: Option<Vec<(String, SchemaNode)>>,
     /// `additionalProperties`. Every document meta-schema holds it to `false` on the
     /// document schema and the property schemas it restricts; a system property's schema

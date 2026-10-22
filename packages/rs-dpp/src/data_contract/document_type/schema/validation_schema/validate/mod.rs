@@ -341,10 +341,14 @@ impl<'v> Walk<'v> {
         object: &'v ObjectConstraints,
         map: &JsonMap<String, JsonValue>,
     ) -> Result<(), ProtocolError> {
+        // The declared properties the value holds: each name is declared once, so when they
+        // are all its keys, it holds no other
+        let mut declared_keys = 0;
         for (name, property) in object.properties.iter().flatten() {
             let Some(value) = map.get(name) else {
                 continue;
             };
+            declared_keys += 1;
             self.schema_path.push(Segment::Name("properties"));
             self.schema_path.push(Segment::Name(name));
             self.instance_path.push(Segment::Name(name));
@@ -356,7 +360,7 @@ impl<'v> Walk<'v> {
                 return Ok(());
             }
         }
-        if object.additional_properties == Some(false) {
+        if object.additional_properties == Some(false) && declared_keys < map.len() {
             let unexpected: Vec<&String> = map
                 .keys()
                 .filter(|key| {
