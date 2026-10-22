@@ -189,21 +189,24 @@ async fn should_fetch_nonunique_identities_with_v0_until_protocol_14_is_verified
     }
 }
 
-/// An SDK seeded above the network, as devnet SDKs are, keeps sending V0 to a protocol
-/// 13 network: its own seed never selects V1, only a verified answer can.
+/// An SDK seeded above the network, as devnet SDKs are, keeps sending V0 to a network
+/// below protocol 14: its own seed never selects V1, only a verified answer can.
 #[tokio::test]
-async fn should_keep_v0_on_a_protocol_13_network_whatever_the_seed() {
-    for (seed, pinned) in [(14, false), (14, true), (13, false)] {
-        let sdk = sdk_from(seed, pinned, false, Network::Testnet);
-        for (page, (after, expected)) in PAGES.into_iter().enumerate() {
-            register(&sdk, 0, response(13, 0, page), after).await;
-            assert_eq!(
-                fetch(&sdk, after).await,
-                expected,
-                "seed {seed}, page {page}"
-            );
-            assert_eq!(verified_version(&sdk), 13);
-            assert_eq!(sdk.protocol_version_number(), seed.max(13));
+async fn should_keep_v0_on_a_network_below_protocol_14_whatever_the_seed() {
+    for network in [12, 13] {
+        for (seed, pinned) in [(14, false), (14, true), (13, false)] {
+            let sdk = sdk_from(seed, pinned, false, Network::Testnet);
+            for (page, (after, expected)) in PAGES.into_iter().enumerate() {
+                register(&sdk, 0, response(network, 0, page), after).await;
+                let context = format!("network {network}, seed {seed}, page {page}");
+                assert_eq!(fetch(&sdk, after).await, expected, "{context}");
+                assert_eq!(verified_version(&sdk), network, "{context}");
+                assert_eq!(
+                    sdk.protocol_version_number(),
+                    seed.max(network),
+                    "{context}"
+                );
+            }
         }
     }
 }
@@ -339,4 +342,67 @@ async fn should_read_nonunique_answers_signed_by_an_unknown_newer_version() {
         assert_eq!(sdk.protocol_version_number(), 12);
         assert_eq!(verified_version(&sdk), metadata.protocol_version);
     }
+}
+/// Mock expectations answer with made-up metadata, which must not count as verified:
+/// otherwise a lookup registered before an earlier mocked fetch would be keyed in V0
+/// while the SDK goes on to send V1.
+#[tokio::test]
+async fn should_answer_nonunique_expectations_registered_up_front() {
+    let mut sdk = SdkBuilder::new_mock().build().unwrap();
+    let identity = Identity::random_identity(3, Some(14), PlatformVersion::latest()).unwrap();
+    let queries = [None, Some([0x10; 32])].map(|after| NonUniquePublicKeyHashQuery {
+        key_hash: hash(),
+        after,
+    });
+    for query in &queries {
+        sdk.mock()
+            .expect_fetch(query.clone(), Some(identity.clone()))
+            .await
+            .unwrap();
+    }
+    for query in queries {
+        assert_eq!(
+            Identity::fetch(&sdk, query).await.unwrap(),
+            Some(identity.clone())
+        );
+    }
+    assert_eq!(verified_version(&sdk), 0);
+}
+
+/// Any verified answer is evidence of the network's version, not only a lookup: once
+/// another query has verified protocol 14, the next lookup goes out as V1.
+#[test]
+fn should_send_nonunique_v1_after_another_query_verified_protocol_14() {
+    use crate::platform::Query;
+    let sdk = sdk(false, false, Network::Testnet);
+    let encoded = |sdk: &Sdk| {
+        let IdentityRequest::GetIdentityByNonUniquePublicKeyHash(request) =
+            NonUniquePublicKeyHashQuery {
+                key_hash: hash(),
+                after: None,
+            }
+            .query(&sdk.query_settings())
+            .unwrap()
+        else {
+            panic!("non-unique lookup request")
+        };
+        request.version.unwrap()
+    };
+    assert!(matches!(
+        encoded(&sdk),
+        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version::V0(_)
+    ));
+    sdk.verify_response_metadata(
+        "get_epochs_info",
+        &dapi_grpc::platform::v0::ResponseMetadata {
+            protocol_version: 14,
+            height: 10,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        encoded(&sdk),
+        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version::V1(_)
+    ));
 }

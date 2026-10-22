@@ -432,13 +432,17 @@ impl Sdk {
     /// Verify response metadata against the current state of the SDK.
     ///
     /// The metadata must come from a proof whose quorum signature has already
-    /// been verified: this method learns the reported protocol version.
+    /// been verified: this method learns the reported protocol version, and
+    /// records it as evidence of what the network runs, which decides whether
+    /// some requests are sent in a newer version.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None)
+        self.verify_response_metadata_as_of(method_name, metadata, None)?;
+        self.record_verified_protocol_version(metadata.protocol_version);
+        Ok(())
     }
 
     /// [`Self::verify_response_metadata`], with optional arrival-time height
@@ -470,11 +474,16 @@ impl Sdk {
             )?;
         };
 
-        self.verified_protocol_version
-            .fetch_max(metadata.protocol_version, Ordering::Relaxed);
         self.maybe_update_protocol_version(metadata.protocol_version);
 
         Ok(())
+    }
+
+    /// Record the protocol version of a fresh response whose proof and signature
+    /// were verified. Never lowers it; unknown versions are recorded too.
+    fn record_verified_protocol_version(&self, protocol_version: u32) {
+        self.verified_protocol_version
+            .fetch_max(protocol_version, Ordering::Relaxed);
     }
 
     /// Accept the metadata of a response whose proof and signature were
@@ -503,7 +512,9 @@ impl Sdk {
         self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
-            })
+            })?;
+        self.record_verified_protocol_version(metadata.protocol_version);
+        Ok(())
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -637,14 +648,23 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let verified = mock.lock().await.parse_proof_with_metadata(
+                let (verified, from_expectation) = mock.lock().await.parse_proof_with_metadata(
                     request,
                     response,
                     self.version(),
                 )?;
-                // Proof and signature verification (the `?`) must precede this
-                // call; see `accept_verified_metadata`.
-                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                if from_expectation {
+                    // An expectation's metadata is made up, not verified: it moves
+                    // the stored version as a real answer would, but is no evidence
+                    // of what a network serves. Recording it would also change the
+                    // request versions later fetches send, and so the keys of
+                    // expectations registered before this fetch.
+                    self.verify_response_metadata_as_of(method_name, &verified.1, None)?;
+                } else {
+                    // Proof and signature verification (the `?`) must precede this
+                    // call; see `accept_verified_metadata`.
+                    self.accept_verified_metadata(method_name, &verified.1, None)?;
+                }
                 Ok(verified)
             }
         }

@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceReq
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::{
     GetIdentityByNonUniquePublicKeyHashRequestV0, GetIdentityByNonUniquePublicKeyHashRequestV1,
 };
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::Version as NonUniqueResponseVersion;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
@@ -47,21 +47,18 @@ impl ProofResponseMetadata for IdentityResponse {
             Self::GetIdentity(response) => response.response_metadata(),
             Self::GetIdentityByPublicKeyHash(response) => response.response_metadata(),
             // V0 carries two proofs, so this response has no generic proof accessor.
-            Self::GetIdentityByNonUniquePublicKeyHash(response) => {
-                use get_identity_by_non_unique_public_key_hash_response::Version;
-                match &response.version {
-                    Some(Version::V0(v0)) => v0.metadata.as_ref(),
-                    Some(Version::V1(v1)) => v1.metadata.as_ref(),
-                    None => {
-                        return Err(drive_proof_verifier::Error::ResponseDecodeError {
-                            error: "result did not have a version".to_string(),
-                        })
-                    }
+            Self::GetIdentityByNonUniquePublicKeyHash(response) => match &response.version {
+                Some(NonUniqueResponseVersion::V0(v0)) => v0.metadata.as_ref(),
+                Some(NonUniqueResponseVersion::V1(v1)) => v1.metadata.as_ref(),
+                None => {
+                    return Err(drive_proof_verifier::Error::ResponseDecodeError {
+                        error: "result did not have a version".to_string(),
+                    })
                 }
-                .ok_or_else(|| drive_proof_verifier::Error::ResponseDecodeError {
-                    error: "result did not have metadata".to_string(),
-                })
             }
+            .ok_or_else(|| drive_proof_verifier::Error::ResponseDecodeError {
+                error: "result did not have metadata".to_string(),
+            }),
             Self::Unknown => Err(drive_proof_verifier::Error::EmptyVersion),
         }
     }
@@ -405,6 +402,56 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The lookup's response has no generic accessor, so its metadata is read per version;
+    /// it selects the verification rules before the proof is checked.
+    #[test]
+    fn should_read_nonunique_response_metadata_of_either_version() {
+        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
+        };
+        use dapi_grpc::platform::v0::{
+            GetIdentityByNonUniquePublicKeyHashResponse, ResponseMetadata,
+        };
+        let metadata = ResponseMetadata {
+            protocol_version: 14,
+            height: 7,
+            ..Default::default()
+        };
+        let response = |version: Option<NonUniqueResponseVersion>| {
+            IdentityResponse::GetIdentityByNonUniquePublicKeyHash(
+                GetIdentityByNonUniquePublicKeyHashResponse { version },
+            )
+        };
+        for with_metadata in [Some(metadata.clone()), None] {
+            for version in [
+                NonUniqueResponseVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: None,
+                    metadata: with_metadata.clone(),
+                }),
+                NonUniqueResponseVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                    result: None,
+                    metadata: with_metadata.clone(),
+                }),
+            ] {
+                let read = response(Some(version)).response_metadata().cloned();
+                match &with_metadata {
+                    Some(metadata) => assert_eq!(read.unwrap(), *metadata),
+                    None => assert!(matches!(
+                        read,
+                        Err(drive_proof_verifier::Error::ResponseDecodeError { error })
+                            if error.contains("did not have metadata")
+                    )),
+                }
+            }
+        }
+        assert!(matches!(
+            response(None).response_metadata(),
+            Err(drive_proof_verifier::Error::ResponseDecodeError { error })
+                if error.contains("did not have a version")
+        ));
     }
 
     /// V1 goes out only when both the stored version and a version the network proved
