@@ -80,6 +80,8 @@ use crate::tokens::token_amount_on_contract_token::{
 };
 use indexmap::IndexMap;
 
+#[cfg(feature = "validation")]
+use super::native_schema;
 use super::{insert_values, insert_values_nested};
 
 #[cfg(feature = "validation")]
@@ -220,6 +222,11 @@ pub(super) struct ParserGeneration {
     /// unknown `document_type_schema`. Differs per generation, so it is a
     /// parameter rather than a constant.
     pub meta_schema_method_name: &'static str,
+    /// Whether full validation checks the enriched schema natively
+    /// ([`super::native_schema`]) instead of against the document meta-schema through the
+    /// `jsonschema` crate, which then also compiles it. Generation 4 (protocol version 15)
+    /// and later.
+    pub native_schema_checks: bool,
 
     // ---- RANKED: generation-3 additions ----
     // Every field below exists only because generation 3 does. Drop them
@@ -702,13 +709,17 @@ fn validate_document_type_schema(
         ctx.platform_version,
     )?;
 
-    validate_against_meta_schema_and_compile(
-        root_schema,
-        ctx.generation.document_type_schema_version,
-        ctx.generation.meta_schema_method_name,
-        json_schema_validator,
-        ctx.platform_version,
-    )?;
+    if ctx.generation.native_schema_checks {
+        native_schema::check_document_type_schema(root_schema)?;
+    } else {
+        validate_against_meta_schema_and_compile(
+            root_schema,
+            ctx.generation.document_type_schema_version,
+            ctx.generation.meta_schema_method_name,
+            json_schema_validator,
+            ctx.platform_version,
+        )?;
+    }
 
     Ok(())
 }

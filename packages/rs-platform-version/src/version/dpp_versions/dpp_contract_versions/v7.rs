@@ -9,7 +9,9 @@ use versioned_feature_core::FeatureVersionBounds;
 // whose generation checks a document against its type's native validator (the typed
 // validation schema of `document_type::schema::validation_schema`) instead of the
 // `jsonschema` crate. A document type whose schema has no validation schema keeps
-// generation 1's check. Every other entry is V6's.
+// generation 1's check. `try_from_schema` 4 selects parser generation 4, which checks a
+// schema at registration natively instead of against the document meta-schema through the
+// `jsonschema` crate. Every other entry is V6's.
 pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
@@ -48,7 +50,9 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 3, // changed: parser generation 3 — generation 2 plus the ranked index keywords
+            // changed: parser generation 4, generation 3 with native schema checks in place
+            // of the document meta-schema
+            try_from_schema: 4,
             create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,

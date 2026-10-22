@@ -84,6 +84,9 @@ pub use keyword::{
     ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
     StringKeyword,
 };
+/// Parser generation 4 reads list uniqueness as the document validator does.
+#[cfg(feature = "validation")]
+pub(crate) use validate::is_unique;
 pub use validate::{DocumentSchemaValidator, SchemaViolation};
 
 /// A JSON Schema simple type.
@@ -630,6 +633,16 @@ fn compiles_as_validator_pattern(pattern: &str) -> bool {
 /// `pattern` compiled as the JSON Schema validator compiles it (see
 /// [`compiles_as_validator_pattern`]), `None` when it does not compile.
 fn validator_regex(pattern: &str) -> Option<regex::Regex> {
+    validator_regex_within(pattern, None)
+}
+
+/// `pattern` compiled as the JSON Schema validator compiles it under a regex size limit:
+/// `None` for the `regex` crate's default, as for a contract loaded from state, or the
+/// smaller one registration compiles a schema under. `None` when it does not compile.
+pub(crate) fn validator_regex_within(
+    pattern: &str,
+    size_limit: Option<usize>,
+) -> Option<regex::Regex> {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
         captures
@@ -664,7 +677,11 @@ fn validator_regex(pattern: &str) -> Option<regex::Regex> {
             None => converted.push(current),
         }
     }
-    regex::Regex::new(&converted).ok()
+    let mut builder = regex::RegexBuilder::new(&converted);
+    if let Some(size_limit) = size_limit {
+        builder.size_limit(size_limit);
+    }
+    builder.build().ok()
 }
 
 /// What building a schema reaches besides its nodes.
@@ -776,7 +793,7 @@ fn refuse_a_property_reference_the_parser_resolves_elsewhere(
 /// `$ref` against the URL the `$id`s of the schemas above it set, looks it up first among
 /// the schemas an `$id` anywhere names, and fails the whole schema on an `$id` it cannot
 /// join. Without a document schema `$id`, a plain name, made of ASCII letters, digits, `_`,
-/// `-` and `.`, does none of this: it resolves to a `json-schema:` URL, which the validator
+/// `-`, `.` and `$`, does none of this: it resolves to a `json-schema:` URL, which the validator
 /// reads as no `$id` at all, and it names no fragment a `$ref` could reach. Such names occur
 /// in the data of Platform keywords the validator's resolver walks as it walks a schema,
 /// such as a `refersTo` `findBy`, so any other `$id` is refused wherever it is written.
@@ -806,11 +823,11 @@ fn refuse_identifiers_that_are_not_plain_names(value: &Value) -> Result<(), Data
                 let plain = !id.is_empty()
                     && id
                         .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '$'));
                 if !plain {
                     return Err(structure_error(format!(
-                        "`$id` `{id}` is not a plain name (ASCII letters, digits, `_`, `-` and \
-                         `.`), so the JSON Schema validator may resolve a `$ref` through it or \
+                        "`$id` `{id}` is not a plain name (ASCII letters, digits, `_`, `-`, `.` \
+                         and `$`), so the JSON Schema validator may resolve a `$ref` through it or \
                          against it, which the validation schema does not represent"
                     )));
                 }

@@ -28,6 +28,7 @@ fn parse_with(
         &BTreeMap::new(),
         &config,
         full_validation,
+        false,
         &mut vec![],
         platform_version,
     )
