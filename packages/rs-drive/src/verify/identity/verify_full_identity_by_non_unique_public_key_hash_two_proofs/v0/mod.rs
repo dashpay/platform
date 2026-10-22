@@ -92,9 +92,12 @@ impl Drive {
 
     /// Verifies the full identity of a user using their non-unique public key hash.
     ///
-    /// This is the 4.1 verifier, unchanged. Its proof checks are not strict, so it is
-    /// only called after the checks above have proved both queries complete; it then
-    /// assembles the identity from the same proofs.
+    /// Both inner `verify_query` calls are strict, but this decoder does not check
+    /// the answer's shape or how the two proofs pair up: it ignores the index row's
+    /// value instead of requiring an empty Item, it returns absence even when an
+    /// identity proof is attached, and it does not check that the decoded identity
+    /// has the ID the index entry names. The guarded verifier above makes those
+    /// checks and only uses this function to assemble the identity.
     ///
     /// This function performs a two-step verification process:
     /// 1. It verifies the identity ID associated with the given public key hash
