@@ -19,7 +19,6 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V0: DriveAbciQueryVersions = DriveAbciQueryV
     max_returned_elements: 100,
     response_metadata: 0,
     proofs_query: 0,
-    identity_by_non_unique_public_key_hash_handler: 0,
     document_query: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,

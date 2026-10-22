@@ -66,6 +66,12 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   and `convert_drive_operations_to_grove_operations` 1 refuse a batch
 ///   moving one document type's summableOffCountIndex counters for more than
 ///   one document; convert 1 then converts as 0 does.
+/// * **Non-unique key lookups with two proofs**: `methods.identity.prove` gains
+///   `prove_full_identity_by_non_unique_public_key_hash_two_proofs` and
+///   `methods.verify.identity` gains
+///   `verify_full_identity_by_non_unique_public_key_hash_two_proofs`, both 0
+///   in every table: the separate index and identity proofs answering a
+///   `getIdentityByNonUniquePublicKeyHash` V0 request.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
