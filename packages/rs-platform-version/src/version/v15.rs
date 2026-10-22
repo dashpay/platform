@@ -144,8 +144,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
 ///    `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
 ///    token conservation check; the credit check already counts every prefunded specialized
-///    balance. `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
-///    `ask` and `bid` types hold the open orders: registered at genesis from this version and
+///    balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
+///    escrow key sits two levels into the prefunded specialized balances layer, below the keys
+///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
+///    deeper description of that layer another write of the batch registered.
+///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
+///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
+///    placed, which prices its fills: registered at genesis from this version and
 ///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
@@ -158,15 +163,21 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    as software that cannot decode them refuses them. The checks that read nothing beyond the
 ///    contract and the block (a tradeable token, a listing's value and expiry) run with the batch
 ///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
-///    Their structure and state validations and their high-level operation converters are 0 in
-///    every table, which only this version reaches.
+///    A listing's terms, its expiry included (at most `i64::MAX`, `InvalidTokenOrderExpiryError`
+///    10464), are checked with the transition's structure, unpaid. A listing records the token's
+///    decimals and its fills are priced at them; a listing of a token its contract does not
+///    define bumps the nonce with the token base rules' error. Their structure and state
+///    validations and their high-level operation converters are 0 in every table, which only this
+///    version reaches.
 ///
 /// 8. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
 ///    tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
 ///    the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///    the change in the offer's running total rounded down out of the escrow); a
 ///    `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
-///    same `is_allowed` gate. Their validations and converters are 0 in every table.
+///    same `is_allowed` gate. An offer's terms are checked as a listing's are, and an offer records
+///    the token's decimals: its escrow and every sale into it are priced at them. Their
+///    validations and converters are 0 in every table.
 ///
 /// 9. **Token marketplace history**: `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token history
 ///    contract v3, v2 plus the `orderPlaced`, `orderFilled` and `orderCancelled` document types.

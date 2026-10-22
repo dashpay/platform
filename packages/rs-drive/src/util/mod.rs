@@ -11,6 +11,9 @@ pub mod object_size_info;
 /// Common
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod common;
+/// Layer descriptions several writes of one batch register
+#[cfg(feature = "server")]
+pub(crate) mod estimated_layers;
 #[cfg(feature = "server")]
 mod operations;
 

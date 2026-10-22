@@ -17,12 +17,15 @@ pub mod property_names {
     pub const MIN_FILL: &str = "minFill";
     pub const EXPIRES_AT: &str = "expiresAt";
     pub const ESCROW: &str = "escrow";
+    pub const DECIMALS: &str = "decimals";
 }
 
 /// An open order of the token marketplace (protocol version 15), as the token market contract
 /// stores it: a listing (`Ask`) of tokens for sale, or an offer (`Bid`) to buy them.
 ///
-/// The price is in credits per whole token, 10 to the power of the token's decimals base units.
+/// The price is in credits per whole token: 10 to the power of `decimals` base units, the token's
+/// decimals when the order was placed. Every fill prices the order at that scale, so a later
+/// change to the token's decimals changes neither what a listing costs nor what an offer pays.
 /// A fill pays the change in the order's rounded running total, so splitting an order into
 /// several fills never changes what it costs in all: a listing's buyers pay
 /// `ceil((filled + q) * price / unit) - ceil(filled * price / unit)` for `q` base units, and an
@@ -52,6 +55,8 @@ pub struct TokenOrder {
     /// For an offer, the credits still held in escrow; 0 for a listing, whose escrow holds
     /// tokens (`remaining`).
     pub escrow: Credits,
+    /// The token's decimals when the order was placed, the scale of its price.
+    pub decimals: u8,
 }
 
 fn unit(decimals: u8) -> Result<u128, ProtocolError> {
@@ -111,13 +116,9 @@ impl TokenOrder {
 
     /// The credits a fill of `fill_amount` moves: what a listing's buyer pays, rounded up, or
     /// what an offer's seller receives, rounded down, as the change in the order's running total
-    /// for a token with `decimals` decimals.
-    pub fn fill_credits(
-        &self,
-        fill_amount: TokenAmount,
-        decimals: u8,
-    ) -> Result<Credits, ProtocolError> {
-        let unit = unit(decimals)?;
+    /// at the order's own `decimals`.
+    pub fn fill_credits(&self, fill_amount: TokenAmount) -> Result<Credits, ProtocolError> {
+        let unit = unit(self.decimals)?;
         let filled = self.filled();
         let filled_after = filled
             .checked_add(fill_amount)
@@ -179,6 +180,11 @@ impl TokenOrder {
             TokenOrderSide::Ask => 0,
             TokenOrderSide::Bid => integer(property_names::ESCROW)?,
         };
+        let decimals = u8::try_from(integer(property_names::DECIMALS)?).map_err(|_| {
+            ProtocolError::CorruptedCodeExecution(
+                "a token order document's decimals are above 255".to_string(),
+            )
+        })?;
         Ok(TokenOrder {
             id: document.id(),
             side,
@@ -190,6 +196,7 @@ impl TokenOrder {
             min_fill: integer(property_names::MIN_FILL)?,
             expires_at,
             escrow,
+            decimals,
         })
     }
 
@@ -213,6 +220,10 @@ impl TokenOrder {
                 signed(self.remaining)?,
             ),
             (property_names::MIN_FILL.to_string(), signed(self.min_fill)?),
+            (
+                property_names::DECIMALS.to_string(),
+                Value::I64(self.decimals as i64),
+            ),
         ]);
         if let Some(expires_at) = self.expires_at {
             properties.insert(property_names::EXPIRES_AT.to_string(), signed(expires_at)?);
@@ -285,6 +296,7 @@ mod tests {
             min_fill,
             expires_at: None,
             escrow: 0,
+            decimals: 2,
         }
     }
 
@@ -323,13 +335,13 @@ mod tests {
         let mut listing = order(TokenOrderSide::Ask, 3, 3, 1);
         let mut paid = vec![];
         for _ in 0..3 {
-            let credits = listing.fill_credits(1, 2).expect("expected the cost");
+            let credits = listing.fill_credits(1).expect("expected the cost");
             paid.push(credits);
             listing.remaining -= 1;
         }
         assert_eq!(paid, vec![4, 3, 3]);
         let whole = order(TokenOrderSide::Ask, 3, 3, 1);
-        assert_eq!(whole.fill_credits(3, 2).expect("expected the cost"), 10);
+        assert_eq!(whole.fill_credits(3).expect("expected the cost"), 10);
     }
 
     #[test]
@@ -340,11 +352,22 @@ mod tests {
         let mut paid = 0;
         while offer.remaining > 0 {
             let take = offer.remaining.min(7);
-            paid += offer.fill_credits(take, 2).expect("expected the payout");
+            paid += offer.fill_credits(take).expect("expected the payout");
             offer.remaining -= take;
         }
         assert_eq!(paid, 3333);
         assert!(paid <= escrow);
+    }
+
+    /// An order prices its fills at the decimals it records, whatever the token's are now: the
+    /// same price and amount cost 100 times more at 0 decimals than at 2.
+    #[test]
+    fn should_price_fills_at_the_orders_own_decimals() {
+        let mut listing = order(TokenOrderSide::Ask, 100, 100, 1);
+        listing.price = 100;
+        assert_eq!(listing.fill_credits(10).expect("expected the cost"), 10);
+        listing.decimals = 0;
+        assert_eq!(listing.fill_credits(10).expect("expected the cost"), 1_000);
     }
 
     #[test]

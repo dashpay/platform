@@ -21,11 +21,12 @@ Tokens a holder offers for sale at a price.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `tokenId` | identifier, required | The token for sale |
-| `price` | integer, required | The credits the seller asks per whole token (10 to the power of the token's decimals base units) |
+| `price` | integer, required | The credits the seller asks per whole token (10 to the power of `decimals` base units) |
 | `amount` | integer, required | The base units listed when the order was placed |
 | `remaining` | integer, required | The base units still for sale; the order is deleted when it is filled entirely |
 | `minFill` | integer, required | The smallest fill the seller accepts, unless it takes everything still open; a fill may not leave less than this open either |
 | `expiresAt` | integer | The block time, in milliseconds, from which the order can no longer be filled; it can still be cancelled |
+| `decimals` | integer, required | The token's decimals when the order was placed. Every fill prices the order at this scale, so a later change to the token's decimals does not change what an open order costs or pays |
 
 ## `bid`
 
@@ -41,7 +42,10 @@ the buyer's side, and `escrow`.
 Both types have the same three:
 
 - `book` (`tokenId`, `price`, `$createdAt`): the order book of a token, by
-  price and then by age.
+  price and then by age. Prices are per whole token at each order's own
+  `decimals`: after a token changes its decimals, orders placed before and
+  after the change are priced at different scales until the older ones close,
+  and a client comparing them scales each by its `decimals`.
 - `depth` (`tokenId`, `price`): keeps a sum per price, and over any range of
   prices, of what is open: the base units of the asks (`remaining`) and the
   credits of the bids (`escrow`). Each side sums what it holds in escrow, which

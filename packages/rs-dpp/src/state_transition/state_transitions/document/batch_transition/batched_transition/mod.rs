@@ -31,6 +31,7 @@ pub mod token_fill_bid_transition;
 pub mod token_freeze_transition;
 pub mod token_mint_to_pool_transition;
 pub mod token_mint_transition;
+mod token_order_terms;
 pub mod token_place_ask_transition;
 pub mod token_place_bid_transition;
 pub mod token_set_price_for_direct_purchase_transition;

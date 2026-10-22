@@ -1,8 +1,5 @@
 use std::borrow::Cow;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
-use dpp::tokens::token_event::TokenEvent;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use platform_version::version::PlatformVersion;
@@ -44,7 +41,7 @@ impl DriveHighLevelBatchOperationConverter for TokenPlaceBidTransitionAction {
                 let storage_flags =
                     StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-                let mut ops = vec![
+                let ops = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),
                         contract_id: data_contract_id.into_buffer(),
@@ -75,27 +72,6 @@ impl DriveHighLevelBatchOperationConverter for TokenPlaceBidTransitionAction {
                         override_document: false,
                     }),
                 ];
-
-                // The marketplace's events are a token's transfers, recorded when it keeps transfer
-                // history.
-                if self
-                    .base()
-                    .token_configuration()?
-                    .keeps_history()
-                    .keeps_transfer_history()
-                {
-                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                        token_id: self.token_id(),
-                        owner_id,
-                        nonce: identity_contract_nonce,
-                        event: TokenEvent::OrderPlaced(
-                            self.order_id(),
-                            TokenOrderSide::Bid,
-                            self.amount(),
-                            self.price(),
-                        ),
-                    }));
-                }
 
                 Ok(ops)
             }

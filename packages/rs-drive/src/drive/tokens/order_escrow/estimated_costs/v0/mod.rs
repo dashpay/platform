@@ -6,6 +6,7 @@ use crate::drive::tokens::paths::{
     token_order_escrow_path, token_order_escrow_root_path, tokens_root_path,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::insert_estimated_layer_keeping_deeper;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
@@ -17,6 +18,11 @@ use std::collections::HashMap;
 /// The level of the Tokens Merk the escrow key sits on.
 const TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS: u32 = 3;
 
+/// The level of the prefunded specialized balances Merk the offers' escrow key sits on: its root
+/// is the voting balances, 128, over the fee pots, 64 and 192, and the escrow key, 32, sits below
+/// 64.
+const CREDIT_ORDER_ESCROW_LEVEL_IN_PREFUNDED_BALANCES: u32 = 2;
+
 impl Drive {
     /// The layers a write to one listing's escrow entry goes through: the root, the Tokens
     /// tree, where the escrow BigSumTree is a leaf on the third level, the escrow BigSumTree of
@@ -25,7 +31,9 @@ impl Drive {
         token_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        estimated_costs_only_with_layer_info.insert(
+        // Every description below keeps a deeper one another write of the batch registered.
+        insert_estimated_layer_keeping_deeper(
+            estimated_costs_only_with_layer_info,
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
@@ -36,28 +44,17 @@ impl Drive {
 
         // The escrow key sits deeper in the Tokens Merk than the balances key the token balance
         // estimation describes at level 0, and a batch moving tokens into or out of escrow writes
-        // both. One description covers the whole layer, so the deeper one is kept whichever is
-        // registered first: this estimation never lowers what is there. The balance estimation
-        // overwrites what it finds and belongs to every earlier protocol version's fees, so the
-        // escrow operations register theirs after it (`TokenPlaceInOrderEscrow`,
-        // `TokenReleaseFromOrderEscrow`).
-        let tokens_layer = EstimatedLayerInformation {
-            tree_type: TreeType::NormalTree,
-            estimated_layer_count: EstimatedLevel(TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS, false),
-            estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
-        };
-        match estimated_costs_only_with_layer_info
-            .get(&KeyInfoPath::from_known_path(tokens_root_path()))
-            .map(|existing| &existing.estimated_layer_count)
-        {
-            Some(EstimatedLevel(level, _)) if *level >= TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS => {}
-            _ => {
-                estimated_costs_only_with_layer_info.insert(
-                    KeyInfoPath::from_known_path(tokens_root_path()),
-                    tokens_layer,
-                );
-            }
-        }
+        // both. From protocol version 15 the token balance estimation keeps this deeper
+        // description too (`for_token_balances` 1), whichever registers first.
+        insert_estimated_layer_keeping_deeper(
+            estimated_costs_only_with_layer_info,
+            KeyInfoPath::from_known_path(tokens_root_path()),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                estimated_layer_count: EstimatedLevel(TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS, false),
+                estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
+            },
+        );
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(token_order_escrow_root_path()),
@@ -79,13 +76,16 @@ impl Drive {
     }
 
     /// The layers a write to one offer's escrowed credits goes through: the root, the prefunded
-    /// specialized balances, described as the prefunded balance and contract fee pot estimations
-    /// describe it so a batch writing to several of its trees gets one answer, and the SumTree of
-    /// one entry per open offer.
+    /// specialized balances, where the escrow key is a leaf on the third level, and the SumTree
+    /// of one entry per open offer. The prefunded balance and contract fee pot estimations
+    /// describe the prefunded balances layer at level 1, their keys' depth: from protocol version
+    /// 15 they keep a deeper description too, so a batch writing to the escrow and to one of
+    /// them is priced at the escrow's depth whichever registers first.
     pub(super) fn add_estimation_costs_for_credit_order_escrow_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        estimated_costs_only_with_layer_info.insert(
+        insert_estimated_layer_keeping_deeper(
+            estimated_costs_only_with_layer_info,
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
@@ -108,11 +108,15 @@ impl Drive {
             },
         );
 
-        estimated_costs_only_with_layer_info.insert(
+        insert_estimated_layer_keeping_deeper(
+            estimated_costs_only_with_layer_info,
             KeyInfoPath::from_known_path(prefunded_specialized_balances_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                estimated_layer_count: EstimatedLevel(1, false),
+                estimated_layer_count: EstimatedLevel(
+                    CREDIT_ORDER_ESCROW_LEVEL_IN_PREFUNDED_BALANCES,
+                    false,
+                ),
                 estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
             },
         );

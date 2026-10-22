@@ -120,28 +120,34 @@ impl TokenFillBidTransitionWasm {
         Ok(())
     }
 
+    // Each integer setter converts with `try_to_u64` and leaves the transition unchanged when the
+    // value is out of range, rather than letting the ABI narrow it to another valid term.
     #[wasm_bindgen(setter = minAmount)]
     pub fn set_min_amount(
         &mut self,
-        #[wasm_bindgen(js_name = "minAmount")] min_amount: TokenAmount,
-    ) {
-        self.0.set_min_amount(min_amount)
+        #[wasm_bindgen(js_name = "minAmount")] min_amount: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.0.set_min_amount(try_to_u64(min_amount, "minAmount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = maxAmount)]
     pub fn set_max_amount(
         &mut self,
-        #[wasm_bindgen(js_name = "maxAmount")] max_amount: TokenAmount,
-    ) {
-        self.0.set_max_amount(max_amount)
+        #[wasm_bindgen(js_name = "maxAmount")] max_amount: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.0.set_max_amount(try_to_u64(max_amount, "maxAmount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = minTotalReceived)]
     pub fn set_min_total_received(
         &mut self,
-        #[wasm_bindgen(js_name = "minTotalReceived")] min_total_received: Credits,
-    ) {
-        self.0.set_min_total_received(min_total_received)
+        #[wasm_bindgen(js_name = "minTotalReceived")] min_total_received: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.0
+            .set_min_total_received(try_to_u64(min_total_received, "minTotalReceived")?);
+        Ok(())
     }
 }
 

@@ -6,7 +6,9 @@ use crate::errors::consensus::basic::{
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
-use dpp::consensus::basic::token::{InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError};
+use dpp::consensus::basic::token::{
+    InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
+};
 use dpp::consensus::state::token::{
     TokenNotTradeableError, TokenOrderExpiredError, TokenOrderFillAmountError,
     TokenOrderNotFoundError, TokenOrderNotOwnedError, TokenOrderPriceLimitError,
@@ -1459,6 +1461,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidTokenOrderFillRangeError(e) => {
             generic_consensus_error!(InvalidTokenOrderFillRangeError, e).into()
+        }
+        BasicError::InvalidTokenOrderExpiryError(e) => {
+            generic_consensus_error!(InvalidTokenOrderExpiryError, e).into()
         }
     }
 }

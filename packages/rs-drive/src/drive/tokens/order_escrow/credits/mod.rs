@@ -30,16 +30,20 @@ impl Drive {
             .order_escrow
             .add_credits
         {
-            0 => self.add_to_credit_order_escrow_operations_v0(
+            Some(0) => self.add_to_credit_order_escrow_operations_v0(
                 order_id,
                 credits,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_credit_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_to_credit_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -62,16 +66,20 @@ impl Drive {
             .order_escrow
             .set_credits
         {
-            0 => self.set_credit_order_escrow_operations_v0(
+            Some(0) => self.set_credit_order_escrow_operations_v0(
                 order_id,
                 credits,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "set_credit_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "set_credit_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -93,15 +101,19 @@ impl Drive {
             .order_escrow
             .remove_credits
         {
-            0 => self.remove_credit_order_escrow_operations_v0(
+            Some(0) => self.remove_credit_order_escrow_operations_v0(
                 order_id,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_credit_order_escrow_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "remove_credit_order_escrow_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -121,16 +133,20 @@ impl Drive {
             .order_escrow
             .fetch_credits
         {
-            0 => self.fetch_credit_order_escrow_v0(
+            Some(0) => self.fetch_credit_order_escrow_v0(
                 order_id,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_credit_order_escrow".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_credit_order_escrow".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
