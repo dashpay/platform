@@ -2386,6 +2386,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
  "zeroize",
 ]
 
@@ -4315,7 +4316,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.18.0"
-source = "git+https://github.com/dashpay/jsonschema-rs?branch=configure_regexp#aacc1ab5140daac30eb65d376852f01f5381979d"
+source = "git+https://github.com/dashpay/jsonschema-rs?rev=aacc1ab5140daac30eb65d376852f01f5381979d#aacc1ab5140daac30eb65d376852f01f5381979d"
 dependencies = [
  "ahash",
  "anyhow",
