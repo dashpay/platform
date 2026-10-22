@@ -117,23 +117,13 @@ pub(super) fn credit_signing_key<'a>(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use crate::changeset::{
-        ClientStartState, IdentityKeyEntry, PersistenceError, PlatformWalletChangeSet,
-        PlatformWalletPersistence,
-    };
-    use crate::wallet::persister::NoPlatformPersistence;
-    use crate::wallet::platform_wallet::WalletId;
-    use crate::PlatformWallet;
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::KeyID;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Mutex};
 
     /// Test signer that can sign with the keys `F` accepts; selection must never sign.
     pub(crate) struct KeyFilter<F: Fn(&IdentityPublicKey) -> bool>(pub F);
@@ -376,134 +366,54 @@ pub(super) mod tests {
 
     /// Records every changeset, so a test can read what reached the store.
     #[derive(Default)]
-    pub(crate) struct CapturingStore(Mutex<Vec<PlatformWalletChangeSet>>);
+    pub(crate) struct CapturingStore(
+        std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    );
 
-    impl PlatformWalletPersistence for CapturingStore {
+    impl crate::changeset::PlatformWalletPersistence for CapturingStore {
         fn store(
             &self,
-            _: WalletId,
-            changeset: PlatformWalletChangeSet,
-        ) -> Result<(), PersistenceError> {
+            _: crate::wallet::platform_wallet::WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
             self.0.lock().unwrap().push(changeset);
             Ok(())
         }
-        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        fn flush(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
             Ok(())
         }
-        fn load(&self) -> Result<ClientStartState, PersistenceError> {
-            Ok(ClientStartState::default())
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
         }
     }
 
     impl CapturingStore {
-        /// Every key row stored, oldest first.
-        pub(crate) fn key_rows(&self) -> Vec<IdentityKeyEntry> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .flat_map(|changeset| changeset.identity_keys.iter())
-                .flat_map(|keys| keys.upserts.values().cloned())
-                .collect()
-        }
-
         /// The last key row stored for `key_id`.
         pub(crate) fn stored_key(
             &self,
             identity_id: Identifier,
-            key_id: KeyID,
-        ) -> Option<IdentityKeyEntry> {
-            self.key_rows()
-                .into_iter()
+            key_id: dpp::identity::KeyID,
+        ) -> Option<crate::changeset::IdentityKeyEntry> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
                 .rev()
-                .find(|row| row.identity_id == identity_id && row.key_id == key_id)
-        }
-
-        /// The last revision stored for `identity_id`.
-        pub(crate) fn stored_revision(&self, identity_id: Identifier) -> Option<u64> {
-            self.0.lock().unwrap().iter().rev().find_map(|changeset| {
-                Some(
-                    changeset
-                        .identities
-                        .as_ref()?
-                        .identities
-                        .get(&identity_id)?
-                        .revision,
-                )
-            })
-        }
-
-        pub(crate) fn changeset_count(&self) -> usize {
-            self.0.lock().unwrap().len()
-        }
-
-        pub(crate) fn clear(&self) {
-            self.0.lock().unwrap().clear();
+                .filter_map(|changeset| changeset.identity_keys.as_ref())
+                .find_map(|keys| keys.upserts.get(&(identity_id, key_id)).cloned())
         }
     }
 
-    /// Takes every changeset until armed, then refuses each; what it takes is
-    /// recorded as [`CapturingStore`] records it.
-    #[derive(Default)]
-    pub(crate) struct FailingStore(
-        AtomicBool,
-        CapturingStore,
-        AtomicBool,
-        std::sync::atomic::AtomicUsize,
-    );
-
-    impl FailingStore {
-        /// What the store took, while disarmed.
-        pub(crate) fn taken(&self) -> &CapturingStore {
-            &self.1
-        }
-
-        pub(crate) fn arm(&self) {
-            self.0.store(true, Ordering::SeqCst);
-        }
-
-        pub(crate) fn disarm(&self) {
-            self.0.store(false, Ordering::SeqCst);
-            self.2.store(false, Ordering::SeqCst);
-        }
-
-        /// Take the next `stores` changesets, then refuse each.
-        pub(crate) fn arm_after(&self, stores: usize) {
-            self.3.store(stores, Ordering::SeqCst);
-            self.2.store(true, Ordering::SeqCst);
-        }
-    }
-
-    impl PlatformWalletPersistence for FailingStore {
-        fn store(
-            &self,
-            wallet_id: WalletId,
-            changeset: PlatformWalletChangeSet,
-        ) -> Result<(), PersistenceError> {
-            if self.0.load(Ordering::SeqCst) {
-                return Err(PersistenceError::backend("store armed to fail"));
-            }
-            if self.2.load(Ordering::SeqCst) {
-                let left = self.3.load(Ordering::SeqCst);
-                if left == 0 {
-                    return Err(PersistenceError::backend("store armed to fail"));
-                }
-                self.3.store(left - 1, Ordering::SeqCst);
-            }
-            self.1.store(wallet_id, changeset)
-        }
-        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
-            Ok(())
-        }
-        fn load(&self) -> Result<ClientStartState, PersistenceError> {
-            Ok(ClientStartState::default())
-        }
-    }
-
-    pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
+    pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
         wallet_with_signing_keys_on(
             dash_sdk::SdkBuilder::new_mock().build().unwrap(),
-            Arc::new(NoPlatformPersistence),
+            std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
         )
         .await
     }
@@ -512,14 +422,15 @@ pub(super) mod tests {
     /// that sets mock expectations first or reads what was persisted.
     pub(crate) async fn wallet_with_signing_keys_on<P>(
         sdk: dash_sdk::Sdk,
-        persistence: Arc<P>,
-    ) -> Arc<PlatformWallet>
+        persistence: std::sync::Arc<P>,
+    ) -> std::sync::Arc<crate::PlatformWallet>
     where
-        P: PlatformWalletPersistence + 'static,
+        P: crate::changeset::PlatformWalletPersistence + 'static,
     {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use std::sync::Arc;
 
         struct Events;
         impl EventHandler for Events {}

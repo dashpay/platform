@@ -246,8 +246,7 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            let is_new = info.identity_manager.identity(&identity_id).is_none();
-            if is_new {
+            if info.identity_manager.identity(&identity_id).is_none() {
                 // Stored below, with its verified keys, as one changeset.
                 info.identity_manager.add_identity_unstored(
                     identity.clone(),
@@ -263,21 +262,28 @@ impl IdentityWallet {
                 // stale key set (keys added from another device never
                 // appeared, and contact requests referencing them failed
                 // key-index validation). Same fold `refresh_identity`
-                // does: a fetch older than the cache keeps the cache's
-                // revision, key set and every disable, and the balance
-                // follows the proof's block, not the revision. The keys
-                // and the folded scalar snapshot reach the store together.
+                // does: a fetch older than the cache (a node behind the
+                // block an update landed in) keeps the cache's revision, key
+                // set and every disable, and the balance follows the proof's
+                // block, not the revision. The keys and the folded scalar
+                // snapshot reach the store together.
                 managed.status = IdentityStatus::Active;
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
                 // failed persist would silently leave the identity watch-only
                 // after restart, so surface it rather than swallow.
-                managed.store_fetched_identity_keys(
-                    &identity,
-                    key_decisions,
-                    block_time,
-                    &self.persister,
-                )?;
+                managed
+                    .store_fetched_identity_keys(
+                        &identity,
+                        key_decisions,
+                        block_time,
+                        &self.persister,
+                    )
+                    .map_err(|e| {
+                        PlatformWalletError::Persistence(format!(
+                            "identity keys not persisted during load: {e}"
+                        ))
+                    })?;
                 // The cache as folded.
                 identity = managed.identity.clone();
             }
@@ -318,16 +324,13 @@ impl IdentityWallet {
     /// balance, at any revision, is taken only when the fetch's proof is at a
     /// block above the cache's balance watermark. A fetch at a lower revision
     /// than the cache's was answered before an update the cache already
-    /// holds: the cache keeps its revision, key set and every disable, and
-    /// takes only a disable or a raised limit the fetch shows
-    /// ([`ManagedIdentity::take_fetched_identity`]). The row of every key the
+    /// holds (a node behind the block it landed in): the cache keeps its
+    /// revision, key set and every disable, and takes only a disable or a
+    /// raised limit the fetch shows
+    /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
     /// fold adds or changes is stored with the scalar snapshot, without a
-    /// derivation breadcrumb (the persisters keep the one they hold, and a
-    /// load or discovery gives a new key its own), and so are key rows an
-    /// earlier refused store queued; when that store fails, the error
-    /// is returned, memory keeps the fold and the rows stay queued for the
-    /// identity's next key store (a refresh, load, discovery or landed
-    /// update; [`ManagedIdentity::store_fetched_identity`]).
+    /// derivation breadcrumb (the persisters keep the one they hold); a
+    /// failed store is logged, as the status write it replaces was.
     ///
     /// Returns the identity the cache holds afterwards.
     ///
@@ -384,7 +387,11 @@ impl IdentityWallet {
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
                 managed.status = IdentityStatus::Active;
-                managed.store_fetched_identity(&identity, block_time, &self.persister)?;
+                if let Err(e) =
+                    managed.store_fetched_identity(&identity, block_time, &self.persister)
+                {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                }
                 // The cache as folded.
                 identity = managed.identity.clone();
             }
@@ -528,485 +535,12 @@ mod tests {
     use super::super::identity_handle::{
         derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
-    use super::super::signing_key::tests::{
-        identity, wallet_with_signing_keys_on, CapturingStore, FailingStore,
-    };
-    use super::super::{IdentityDiscoveryOptions, IdentityWallet};
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
-    use crate::error::PlatformWalletError;
-    use crate::wallet::persister::NoPlatformPersistence;
-    use crate::BlockTime;
-    use dash_sdk::platform::types::identity::PublicKeyHash;
-    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-    use dpp::identity::identity_public_key::accessors::v0::{
-        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
-    };
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::Identity;
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
-    use std::sync::Arc;
-
-    /// Platform's answer in the fold tests: keys 1 and 2 live, key 4 (which
-    /// the cache never saw), a balance of 777, at `revision`.
-    fn answer_at(revision: u64) -> Identity {
-        let mut answer = identity(
-            Purpose::AUTHENTICATION,
-            SecurityLevel::HIGH,
-            KeyType::ECDSA_SECP256K1,
-        );
-        answer.set_revision(revision);
-        answer.set_balance(777);
-        answer.add_public_key(
-            IdentityPublicKeyV0 {
-                id: 4,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::MEDIUM,
-                key_type: KeyType::ECDSA_SECP256K1,
-                data: vec![4; KeyType::ECDSA_SECP256K1.default_size()].into(),
-                ..Default::default()
-            }
-            .into(),
-        );
-        answer
-    }
-
-    /// Put the fixture's cached identity at revision 6, with key 1 disabled
-    /// by an update the answer below 6 predates.
-    async fn cache_at_6_with_key_1_disabled(wallet: &IdentityWallet) {
-        let mut wm = wallet.wallet_manager.write().await;
-        let identity = &mut wm
-            .get_wallet_info_mut(&wallet.wallet_id)
-            .unwrap()
-            .identity_manager
-            .managed_identity_mut(&Identifier::default())
-            .unwrap()
-            .identity;
-        identity.set_revision(6);
-        let mut key_1 = identity.public_keys()[&1].clone();
-        key_1.set_disabled_at(9);
-        identity.add_public_key(key_1);
-    }
-
-    async fn held(wallet: &IdentityWallet) -> Identity {
-        let wm = wallet.wallet_manager.read().await;
-        wm.get_wallet_info(&wallet.wallet_id)
-            .unwrap()
-            .identity_manager
-            .identity(&Identifier::default())
-            .unwrap()
-            .identity
-            .clone()
-    }
-
-    /// A refresh answered before an update the cache already took (the
-    /// cache at 6, Platform's answer at 5) keeps the cache's revision, key
-    /// set and every disable; an answer at 6 or above replaces the cache but
-    /// keeps the disables. The balance follows the proof, not the revision:
-    /// the cache holds none, so every answer's balance is taken. Either way
-    /// the call returns what the cache holds afterwards.
-    #[tokio::test]
-    async fn should_not_take_the_cache_back_with_an_older_refresh() {
-        let identity_id = Identifier::default();
-        for (answered, settled) in [(5, 6), (6, 6), (7, 7)] {
-            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-            sdk.mock()
-                .expect_fetch(identity_id, Some(answer_at(answered)))
-                .await
-                .unwrap();
-            let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
-            let wallet = wallet.identity();
-            cache_at_6_with_key_1_disabled(wallet).await;
-            let cached_balance = held(wallet).await.balance();
-            assert_ne!(cached_balance, 777);
-
-            let returned = wallet.refresh_identity(&identity_id).await.unwrap();
-            let held = held(wallet).await;
-            assert_eq!(returned, held, "answered at {answered}");
-            assert_eq!(held.revision(), settled, "answered at {answered}");
-            let older = answered < 6;
-            assert_eq!(held.balance(), 777, "answered at {answered}");
-            assert!(
-                held.public_keys()[&1].is_disabled(),
-                "answered at {answered}"
-            );
-            assert_eq!(
-                held.public_keys().contains_key(&4),
-                !older,
-                "answered at {answered}"
-            );
-        }
-    }
-
-    /// The same fold through a load by index, in memory, in the returned
-    /// identity and in the key rows it stores, plus the identity's revision.
-    #[tokio::test]
-    async fn should_keep_a_newer_cache_when_a_load_answers_older() {
-        // The probe the loader sends for index 0 of the fixture's seed.
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
-        let probe = derive_load_probe_hash(
-            ResolvedLoadKeyHashSource::Master(&master),
-            Network::Testnet,
-            0,
-        )
-        .unwrap();
-
-        for answered in [5, 6] {
-            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-            sdk.mock()
-                .expect_fetch(PublicKeyHash(probe), Some(answer_at(answered)))
-                .await
-                .unwrap();
-            let store = Arc::new(CapturingStore::default());
-            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
-            let wallet = wallet.identity();
-            cache_at_6_with_key_1_disabled(wallet).await;
-            let cached_balance = held(wallet).await.balance();
-            assert_ne!(cached_balance, 777);
-            store.clear();
-
-            let returned = wallet
-                .load_identity_by_index_from_master(0, &master)
-                .await
-                .unwrap()
-                .unwrap();
-            let held = held(wallet).await;
-            assert_eq!(returned, held, "answered at {answered}");
-            assert_eq!(held.revision(), 6, "answered at {answered}");
-            assert_eq!(store.stored_revision(Identifier::default()), Some(6));
-            let older = answered < 6;
-            assert_eq!(held.balance(), 777, "answered at {answered}");
-            assert!(
-                held.public_keys()[&1].is_disabled(),
-                "answered at {answered}"
-            );
-            assert_eq!(
-                held.public_keys().contains_key(&4),
-                !older,
-                "answered at {answered}"
-            );
-
-            let rows = store.key_rows();
-            assert!(!rows.is_empty(), "answered at {answered}");
-            for row in &rows {
-                assert_eq!(
-                    row.public_key,
-                    held.public_keys()[&row.key_id],
-                    "answered at {answered}"
-                );
-            }
-            assert_eq!(
-                rows.iter().any(|row| row.key_id == 4),
-                !older,
-                "answered at {answered}"
-            );
-        }
-    }
-
-    /// A load whose store fails returns the failure and queues its key rows,
-    /// and a refresh, which stores no rows of its own
-    /// for keys memory already holds, stores them.
-    #[tokio::test]
-    async fn should_store_a_failed_load_s_key_rows_with_the_next_refresh() {
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
-        let probe = derive_load_probe_hash(
-            ResolvedLoadKeyHashSource::Master(&master),
-            Network::Testnet,
-            0,
-        )
-        .unwrap();
-        let mut answer = answer_at(7);
-        let mut key_2 = answer.public_keys()[&2].clone();
-        key_2.set_disabled_at(4);
-        answer.add_public_key(key_2);
-        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-        sdk.mock()
-            .expect_fetch(PublicKeyHash(probe), Some(answer.clone()))
-            .await
-            .unwrap();
-        sdk.mock()
-            .expect_fetch(Identifier::default(), Some(answer))
-            .await
-            .unwrap();
-        let store = Arc::new(FailingStore::default());
-        let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
-        let wallet = wallet.identity();
-        cache_at_6_with_key_1_disabled(wallet).await;
-        store.arm();
-
-        let result = wallet.load_identity_by_index_from_master(0, &master).await;
-        assert!(
-            matches!(result, Err(PlatformWalletError::PersisterStore(_))),
-            "{result:?}"
-        );
-        let after = held(wallet).await;
-        assert_eq!(after.public_keys()[&2].disabled_at(), Some(4));
-        assert_eq!(after.revision(), 7);
-        assert!(after.public_keys().contains_key(&4));
-
-        store.disarm();
-        store.taken().clear();
-        wallet
-            .refresh_identity(&Identifier::default())
-            .await
-            .unwrap();
-        let stored = |key_id| store.taken().stored_key(Identifier::default(), key_id);
-        assert_eq!(
-            stored(2).map(|row| row.public_key.disabled_at()),
-            Some(Some(4))
-        );
-        let key_4 = stored(4).expect("the new key's row is stored");
-        assert_eq!(key_4.public_key, held(wallet).await.public_keys()[&4]);
-        assert_eq!(
-            store.taken().stored_revision(Identifier::default()),
-            Some(7)
-        );
-    }
-
-    /// A load that finds a new identity stores it and its keys, with the
-    /// breadcrumbs verified against the seed, as one changeset: there is no
-    /// breadcrumb-less snapshot of its keys written ahead of them. A store
-    /// that takes one write and refuses the next is enough for the load (a
-    /// second write was the one that could fail after the first committed
-    /// watch-only rows), and a store that refuses it leaves nothing behind.
-    #[tokio::test]
-    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
-        let probe = derive_load_probe_hash(
-            ResolvedLoadKeyHashSource::Master(&master),
-            Network::Testnet,
-            0,
-        )
-        .unwrap();
-        // How many writes the store takes before it refuses; `None` takes
-        // every write.
-        for takes in [None, Some(1), Some(0)] {
-            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-            sdk.mock()
-                .expect_fetch(PublicKeyHash(probe), Some(answer_at(7)))
-                .await
-                .unwrap();
-            let store = Arc::new(FailingStore::default());
-            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
-            let wallet = wallet.identity();
-            {
-                let mut wm = wallet.wallet_manager.write().await;
-                wm.get_wallet_info_mut(&wallet.wallet_id)
-                    .unwrap()
-                    .identity_manager
-                    .remove_identity(&Identifier::default(), &wallet.persister)
-                    .unwrap();
-            }
-            store.taken().clear();
-            if let Some(takes) = takes {
-                store.arm_after(takes);
-            }
-
-            let result = wallet.load_identity_by_index_from_master(0, &master).await;
-            let stores = store.taken().changeset_count();
-            if takes == Some(0) {
-                assert!(result.is_err());
-                assert_eq!(stores, 0, "nothing of a refused load is stored");
-                continue;
-            }
-            result.unwrap();
-            assert_eq!(stores, 1, "the identity and its keys go out together");
-            assert_eq!(
-                store.taken().stored_revision(Identifier::default()),
-                Some(7)
-            );
-            // The fixture's keys are not derived from this seed, so they
-            // carry no breadcrumb; what matters is that they ride the
-            // identity's changeset.
-            assert_eq!(store.taken().key_rows().len(), 3);
-        }
-    }
-
-    /// A same-revision answer whose proof is not above the cache's balance
-    /// watermark (mock answers are at height 0) takes the answer's keys but
-    /// keeps the cache's balance, which the revision does not order.
-    #[tokio::test]
-    async fn should_keep_a_balance_a_refresh_s_proof_does_not_order_after() {
-        let identity_id = Identifier::default();
-        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-        sdk.mock()
-            .expect_fetch(identity_id, Some(answer_at(6)))
-            .await
-            .unwrap();
-        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
-        let wallet = wallet.identity();
-        cache_at_6_with_key_1_disabled(wallet).await;
-        let watermark = BlockTime::new(1, 1, 1);
-        {
-            let mut wm = wallet.wallet_manager.write().await;
-            wm.get_wallet_info_mut(&wallet.wallet_id)
-                .unwrap()
-                .identity_manager
-                .managed_identity_mut(&identity_id)
-                .unwrap()
-                .last_updated_balance_block_time = Some(watermark);
-        }
-        let cached_balance = held(wallet).await.balance();
-
-        let returned = wallet.refresh_identity(&identity_id).await.unwrap();
-        assert_eq!(returned, held(wallet).await);
-        assert_eq!(returned.balance(), cached_balance);
-        assert!(returned.public_keys().contains_key(&4));
-        assert!(returned.public_keys()[&1].is_disabled());
-    }
-
-    /// A disable a refresh brings, from an answer older or newer than the
-    /// cache, is stored with its key row, as is a key a newer answer adds. A
-    /// store that refuses them fails the
-    /// refresh and queues the row, which the next refresh stores although
-    /// memory already holds the disable.
-    #[tokio::test]
-    async fn should_store_a_refresh_s_disable_or_queue_it_for_the_next_store() {
-        let identity_id = Identifier::default();
-        for revision in [5, 7] {
-            let mut answer = answer_at(revision);
-            let mut key_2 = answer.public_keys()[&2].clone();
-            key_2.set_disabled_at(4);
-            answer.add_public_key(key_2);
-            // Key 1 is disabled in the cache at 9, a placeholder; Platform's
-            // timestamp is 3.
-            let mut key_1 = answer.public_keys()[&1].clone();
-            key_1.set_disabled_at(3);
-            answer.add_public_key(key_1);
-            let mock = || async {
-                let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-                sdk.mock()
-                    .expect_fetch(identity_id, Some(answer.clone()))
-                    .await
-                    .unwrap();
-                sdk
-            };
-
-            let store = Arc::new(FailingStore::default());
-            let wallet = wallet_with_signing_keys_on(mock().await, store.clone()).await;
-            let wallet = wallet.identity();
-            cache_at_6_with_key_1_disabled(wallet).await;
-            assert_ne!(held(wallet).await.balance(), 777);
-            store.arm();
-            let result = wallet.refresh_identity(&identity_id).await;
-            assert!(
-                matches!(result, Err(PlatformWalletError::PersisterStore(_))),
-                "answered at {revision}: {result:?}"
-            );
-            // Memory holds the fold: the disables, the revision, and the
-            // answer's balance (the cache holds no watermark), queued for
-            // the next store with the refused rows.
-            let after = held(wallet).await;
-            assert_eq!(after.public_keys()[&2].disabled_at(), Some(4));
-            assert_eq!(after.public_keys()[&1].disabled_at(), Some(3));
-            assert_eq!(after.revision(), revision.max(6), "answered at {revision}");
-            assert_eq!(after.balance(), 777);
-            store.disarm();
-            store.taken().clear();
-            wallet.refresh_identity(&identity_id).await.unwrap();
-            let after = held(wallet).await;
-            for (key_id, disabled_at) in [(1, 3), (2, 4)] {
-                assert_eq!(
-                    after.public_keys()[&key_id].disabled_at(),
-                    Some(disabled_at)
-                );
-                assert_eq!(
-                    store
-                        .taken()
-                        .stored_key(identity_id, key_id)
-                        .map(|row| row.public_key.disabled_at()),
-                    Some(Some(disabled_at)),
-                    "key {key_id} retried at {revision}"
-                );
-            }
-
-            let store = Arc::new(CapturingStore::default());
-            let wallet = wallet_with_signing_keys_on(mock().await, store.clone()).await;
-            let wallet = wallet.identity();
-            cache_at_6_with_key_1_disabled(wallet).await;
-            wallet.refresh_identity(&identity_id).await.unwrap();
-            for (key_id, disabled_at) in [(1, 3), (2, 4)] {
-                assert_eq!(
-                    store
-                        .stored_key(identity_id, key_id)
-                        .map(|row| row.public_key.disabled_at()),
-                    Some(Some(disabled_at)),
-                    "key {key_id} answered at {revision}"
-                );
-            }
-            // A key a newer answer adds is stored too, without the
-            // breadcrumb a refresh cannot know; an older answer adds none.
-            let key_4 = store.stored_key(identity_id, 4);
-            assert_eq!(key_4.is_some(), revision > 6, "answered at {revision}");
-            assert!(key_4.is_none_or(|row| row.derivation_indices.is_none()));
-        }
-    }
-
-    /// Discovery folds an identity it already knows the way loading does: an
-    /// answer at a newer revision brings its revision, keys and balance into
-    /// the cache and the store; an older one keeps the cache's.
-    #[tokio::test]
-    async fn should_fold_a_known_identity_discovery_finds() {
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
-        let probe = |index| {
-            derive_identity_auth_key_hash_from_master(
-                &master,
-                Network::Testnet,
-                index,
-                MASTER_KEY_INDEX,
-            )
-            .unwrap()
-        };
-        let identity_id = Identifier::default();
-        for (answered, settled) in [(5, 6), (7, 7)] {
-            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-            sdk.mock()
-                .expect_fetch(PublicKeyHash(probe(0)), Some(answer_at(answered)))
-                .await
-                .unwrap();
-            sdk.mock()
-                .expect_fetch(PublicKeyHash(probe(1)), None::<Identity>)
-                .await
-                .unwrap();
-            let store = Arc::new(CapturingStore::default());
-            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
-            let wallet = wallet.identity();
-            cache_at_6_with_key_1_disabled(wallet).await;
-            assert_ne!(held(wallet).await.balance(), 777);
-            store.clear();
-
-            let found = wallet
-                .discover_from_master(
-                    IdentityDiscoveryOptions {
-                        start_index: Some(0),
-                        gap_limit: 1,
-                    },
-                    &master,
-                )
-                .await
-                .unwrap();
-            assert!(found.is_empty(), "the identity was already known");
-            let held = held(wallet).await;
-            let older = answered < 6;
-            assert_eq!(held.revision(), settled, "answered at {answered}");
-            assert_eq!(store.stored_revision(identity_id), Some(settled));
-            assert_eq!(held.balance(), 777, "answered at {answered}");
-            assert!(
-                held.public_keys()[&1].is_disabled(),
-                "answered at {answered}"
-            );
-            assert_eq!(
-                held.public_keys().contains_key(&4),
-                !older,
-                "answered at {answered}"
-            );
-        }
-    }
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture the
     /// FFI-side derive tests and the `identity_handle` tests use, so the

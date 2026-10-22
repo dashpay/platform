@@ -7,7 +7,7 @@
 //! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{IdentityChangeSet, IdentityEntry};
+use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
@@ -47,11 +47,26 @@ impl IdentityManager {
             .managed_identity_mut(&identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
 
-        // The identity and its key rows go out as one changeset. A refused
-        // store is logged, not returned (the identity is already held), and
-        // its key rows stay queued for the identity's next key store.
+        let entry = IdentityEntry::from_managed(managed_identity);
+        // No `key_storage` to snapshot here anymore — the field is
+        // dropped from `ManagedIdentity`. Public keys still arrive
+        // via the separate `IdentityKeysChangeSet` path.
         let keys_cs = managed_identity.keys_snapshot_changeset();
-        if let Err(e) = managed_identity.store_with_queued_key_rows(keys_cs, persister) {
+
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.identities.insert(identity_id, entry);
+
+        let cs = PlatformWalletChangeSet {
+            identities: Some(id_cs),
+            identity_keys: if keys_cs.upserts.is_empty() {
+                None
+            } else {
+                Some(keys_cs)
+            },
+            ..Default::default()
+        };
+
+        if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
 
@@ -62,7 +77,8 @@ impl IdentityManager {
     /// and its keys itself, as one changeset. Load and discovery use it, so
     /// the keys they verified against the seed reach the store with the
     /// identity, never after a breadcrumb-less snapshot of them that could
-    /// commit on its own.
+    /// commit on its own (a disk that fills between the two writes would
+    /// otherwise leave every key row without its breadcrumb).
     pub(crate) fn add_identity_unstored(
         &mut self,
         identity: Identity,

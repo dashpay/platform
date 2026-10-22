@@ -3,7 +3,6 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
-use std::collections::BTreeSet;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
@@ -75,34 +74,14 @@ fn breadcrumb_decisions(
         .public_keys()
         .iter()
         .map(|(key_id, on_chain_key)| {
-            // `None` when there is no candidate (its derivation failed) or
-            // the check failed on an ECDSA key: the origin stays unknown. A
-            // check that cannot run on another key type (BLS, EdDSA, a script
-            // hash) settles it as not this wallet's: the wallet only derives
-            // ECDSA identity keys.
-            let ecdsa = matches!(
-                on_chain_key.key_type(),
-                KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
-            );
-            let checked = candidate_scalars.get(key_id).and_then(|scalar| {
-                match on_chain_key.validate_private_key_bytes(scalar, network) {
-                    Ok(reproduces) => Some(reproduces),
-                    Err(_) if !ecdsa => Some(false),
-                    Err(_) => None,
-                }
-            });
-            let reproduces = checked == Some(true);
-            // A candidate that does not reproduce the key refutes exactly the
-            // coordinates it was derived at, `(identity_index, key_id)`, which
-            // clears a stale breadcrumb a client holds there; a breadcrumb
-            // stored at other coordinates is kept.
-            let derivation_rejected: BTreeSet<_> = (checked == Some(false))
-                .then_some(crate::changeset::IdentityKeyDerivationIndices {
-                    identity_index,
-                    key_index: *key_id,
+            let reproduces = candidate_scalars
+                .get(key_id)
+                .map(|scalar| {
+                    on_chain_key
+                        .validate_private_key_bytes(scalar, network)
+                        .unwrap_or(false)
                 })
-                .into_iter()
-                .collect();
+                .unwrap_or(false);
             let breadcrumb = if reproduces {
                 // The candidate scalar reproduced the on-chain key, so this
                 // wallet owns it: emit the DIP-9 coordinates. The scalar is
@@ -127,7 +106,6 @@ fn breadcrumb_decisions(
             crate::changeset::KeyWithBreadcrumb {
                 key: on_chain_key.clone(),
                 breadcrumb,
-                derivation_rejected,
             }
         })
         .collect()
@@ -476,6 +454,8 @@ impl IdentityWallet {
                                 })?;
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
+                            // Stored below, with its verified keys, as one
+                            // changeset.
                             info_guard.identity_manager.add_identity_unstored(
                                 identity.clone(),
                                 identity_index,
@@ -496,19 +476,22 @@ impl IdentityWallet {
                             // imported identity cannot sign with its HIGH /
                             // CRITICAL authentication keys. A failed persist here
                             // would silently leave the identity watch-only after
-                            // restart, so surface it.
-                            // A fetch older than a known identity's cache stores
-                            // only the keys the cache has, with their disables.
-                            // A known identity is folded as loading and refresh
-                            // fold it (a newer fetch's revision and keys, the
-                            // balance by proof block), stored with its keys, so
-                            // an update is not built from a stale revision.
-                            managed.store_fetched_identity_keys(
-                                &identity,
-                                key_decisions,
-                                block_time,
-                                &self.persister,
-                            )?;
+                            // restart, so surface it. A known identity is folded
+                            // as loading and refresh fold it (a fetch older than
+                            // the cache keeps the cache's revision, keys and
+                            // disables; the balance follows the proof's block).
+                            managed
+                                .store_fetched_identity_keys(
+                                    &identity,
+                                    key_decisions,
+                                    block_time,
+                                    &self.persister,
+                                )
+                                .map_err(|e| {
+                                    PlatformWalletError::Persistence(format!(
+                                        "identity keys not persisted during discovery: {e}"
+                                    ))
+                                })?;
                         }
                         drop(wm_guard);
 
@@ -867,7 +850,6 @@ mod tests {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
-    use std::collections::BTreeSet;
 
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
@@ -983,23 +965,6 @@ mod tests {
             "reproducible key breadcrumbed"
         );
         assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
-        assert!(by_id[&0].derivation_rejected.is_empty());
-        assert_eq!(
-            by_id[&1].derivation_rejected,
-            BTreeSet::from([crate::changeset::IdentityKeyDerivationIndices {
-                identity_index: 0,
-                key_index: 1,
-            }]),
-            "a checked candidate that does not reproduce the key refutes its coordinates"
-        );
-
-        // With no candidate for a key (its derivation failed), its origin
-        // stays unknown.
-        scalars.remove(&1);
-        let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
-        let unchecked = decisions.iter().find(|d| d.key.id() == 1).unwrap();
-        assert_eq!(unchecked.breadcrumb, None);
-        assert!(unchecked.derivation_rejected.is_empty());
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of
@@ -1039,40 +1004,6 @@ mod tests {
             decisions[0].breadcrumb,
             Some((wallet_id, 0, 0)),
             "HASH160 key must verify by hash"
-        );
-    }
-
-    /// A key of a type the wallet never derives (here a script hash), whose
-    /// check cannot run, is settled as not this wallet's: no breadcrumb, and
-    /// its candidate's coordinates refuted.
-    #[test]
-    fn breadcrumb_decisions_refutes_a_key_type_the_wallet_never_derives() {
-        let master = test_master();
-        let wallet_id = [0xAB; 32];
-        let kp = derive_ecdsa_identity_auth_keypair_from_master(&master, Network::Testnet, 0, 2)
-            .expect("derive");
-        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 2,
-            purpose: Purpose::TRANSFER,
-            security_level: SecurityLevel::CRITICAL,
-            contract_bounds: None,
-            key_type: KeyType::BIP13_SCRIPT_HASH,
-            read_only: false,
-            data: dpp::platform_value::BinaryData::new(vec![0x11; 20]),
-            disabled_at: None,
-        });
-        let mut scalars = BTreeMap::new();
-        scalars.insert(2u32, kp.private_key);
-        let identity = identity_with_keys(vec![key]);
-
-        let decisions = breadcrumb_decisions(&identity, 4, wallet_id, Network::Testnet, &scalars);
-        assert_eq!(decisions[0].breadcrumb, None);
-        assert_eq!(
-            decisions[0].derivation_rejected,
-            BTreeSet::from([crate::changeset::IdentityKeyDerivationIndices {
-                identity_index: 4,
-                key_index: 2,
-            }]),
         );
     }
 
