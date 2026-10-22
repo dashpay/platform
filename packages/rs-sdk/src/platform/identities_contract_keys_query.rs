@@ -70,13 +70,22 @@ pub struct IdentitiesContractKeysQuery {
 
 impl IdentitiesContractKeysQuery {
     /// Create new IdentitiesContractKeysQuery for provided identities ids, contract id, the document
-    /// type (if we want to make the query on the document type level), and purposes
+    /// type (if we want to make the query on the document type level), and purposes.
+    ///
+    /// A query about identities must name at least one purpose: no node answers a proof of
+    /// nothing, so it is refused here, as [`Error::Config`], rather than at the transport. A query
+    /// for no identities may name none; it asks about nothing either way.
     pub fn new(
         identities_ids: Vec<Identifier>,
         contract_id: Identifier,
         document_type_name: Option<String>,
         purposes: Vec<Purpose>,
     ) -> Result<Self, Error> {
+        if !identities_ids.is_empty() && purposes.is_empty() {
+            return Err(Error::Config(
+                "a contract keys query about identities needs at least one key purpose".to_string(),
+            ));
+        }
         Ok(Self {
             identities_ids,
             contract_id,
@@ -243,12 +252,32 @@ mod tests {
         assert!(sent.prove);
     }
 
+    /// Built field by field, so a request `new` refuses can still be checked against the
+    /// transport's own refusal.
     fn query_for(
         identities_ids: Vec<Identifier>,
         purposes: Vec<Purpose>,
     ) -> IdentitiesContractKeysQuery {
-        IdentitiesContractKeysQuery::new(identities_ids, Identifier::from([3; 32]), None, purposes)
-            .expect("valid query")
+        IdentitiesContractKeysQuery {
+            identities_ids,
+            contract_id: Identifier::from([3; 32]),
+            document_type_name: None,
+            purposes,
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_query_about_identities_with_no_purpose() {
+        let refused = IdentitiesContractKeysQuery::new(
+            vec![Identifier::from([1; 32])],
+            Identifier::from([3; 32]),
+            None,
+            vec![],
+        );
+        assert!(matches!(refused, Err(Error::Config(_))), "{refused:?}");
+        // No identities and no purposes asks about nothing, which `fetch` answers empty.
+        IdentitiesContractKeysQuery::new(vec![], Identifier::from([3; 32]), None, vec![])
+            .expect("a query about nothing");
     }
 
     /// The mock knows no request, so anything sent fails and is counted.
@@ -318,15 +347,14 @@ mod tests {
 
     #[test]
     fn should_name_nothing_like_the_request_it_sends() {
-        let query = |identities_ids: Vec<Identifier>, purposes: Vec<Purpose>| {
-            IdentitiesContractKeysQuery::new(
+        // Built field by field: `new` already refuses identities with no purpose.
+        let query =
+            |identities_ids: Vec<Identifier>, purposes: Vec<Purpose>| IdentitiesContractKeysQuery {
                 identities_ids,
-                Identifier::from([2; 32]),
-                None,
+                contract_id: Identifier::from([2; 32]),
+                document_type_name: None,
                 purposes,
-            )
-            .expect("valid query")
-        };
+            };
 
         assert_eq!(
             query(vec![], vec![Purpose::AUTHENTICATION]).names_nothing(),

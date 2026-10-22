@@ -128,8 +128,8 @@ class Identities internal constructor(private val sdk: Sdk) {
      * key purpose numbers (0 authentication … 6 owner). [documentTypeName]
      * may be null. The arguments are checked and answered by the Rust SDK
      * (see `dash_sdk_identities_fetch_contract_keys`): no identity ids answer
-     * `"{}"` without a query, and an empty or unknown purpose is refused.
-     * Returns JSON, or null.
+     * `"{}"` without a query, an unknown purpose is refused, and no purposes
+     * for some identities is refused (invalid parameter). Returns the JSON.
      */
     suspend fun fetchContractKeys(
         identityIds: List<String>,

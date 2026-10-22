@@ -21,12 +21,14 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs. An empty (or blank)
 ///   string is the empty list, which the SDK answers with `{}` without a query. A repeated ID is
 ///   asked for once.
-/// - `contract_id`: Base58-encoded contract ID
+/// - `contract_id`: Base58-encoded contract ID (surrounding whitespace is dropped)
 /// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
-///   the same as NULL)
-/// - `purposes`: Comma-separated list of at least one key purpose, as dpp's `Purpose` numbers it:
+///   the same as NULL). Any other name is asked for exactly as given.
+/// - `purposes`: Comma-separated list of key purposes, as dpp's `Purpose` numbers it:
 ///   0 (authentication), 1 (encryption), 2 (decryption), 3 (transfer), 4 (system), 5 (voting),
-///   6 (owner). It is checked even when `identity_ids` is empty. A repeated purpose is asked for
+///   6 (owner). A malformed member or an unknown number is refused, also when `identity_ids` is
+///   empty. A blank string is no purposes: the SDK answers that with `{}` when there are no
+///   identity ids and refuses it otherwise (`InvalidParameter`). A repeated purpose is asked for
 ///   once.
 ///
 /// # Returns
@@ -126,18 +128,21 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     let document_type_name = if document_type_name.is_null() {
         None
     } else {
-        match CStr::from_ptr(document_type_name).to_str().map(str::trim) {
+        match CStr::from_ptr(document_type_name).to_str() {
             // Drive appends the name to the contract id, so an empty one reads the contract's
-            // own keys: say so in the query.
+            // own keys: say so in the query. Any other name is passed on as given.
             Ok("") => None,
             Ok(s) => Some(s.to_string()),
             Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
         }
     };
 
-    // Parse comma-separated purposes: each one a number dpp reads as a `Purpose`
+    // Parse comma-separated purposes: each one a number dpp reads as a `Purpose`. A blank
+    // string is no purposes; the SDK decides what a query for no purposes answers.
+    let purposes_str = purposes_str.trim();
     let purposes: Result<Vec<Purpose>, DashSDKError> = purposes_str
         .split(',')
+        .filter(|_| !purposes_str.is_empty())
         .map(str::trim)
         .map(|purpose_str| {
             purpose_str
@@ -165,7 +170,8 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
             document_type_name,
             purposes.clone(),
         )
-        .map_err(FFIError::from)?;
+        // The query refuses only arguments it cannot ask about.
+        .map_err(|e| FFIError::InvalidParameter(e.to_string()))?;
         let keys = IdentitiesContractKeys::fetch(&wrapper.sdk, query)
             .await
             .map_err(FFIError::from)?;
@@ -454,31 +460,56 @@ mod tests {
 
     #[test]
     fn should_ask_for_the_document_type_it_was_given() {
-        let query = IdentitiesContractKeysQuery::new(
-            vec![Identifier::new(IDENTITY_A)],
-            Identifier::new(CONTRACT),
-            Some("note".to_string()),
-            vec![Purpose::ENCRYPTION],
-        )
-        .expect("query");
-        let handle = create_mock_sdk_handle_answering(query, Some(proved_keys()));
-        let json = unsafe {
-            json_of(fetch_with(
-                handle,
-                &base58(IDENTITY_A),
-                CONTRACT,
-                Some("note"),
-                "1",
-            ))
-        };
-        destroy_mock_sdk_handle(handle);
-        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+        // The name is asked for exactly as given, padding included: Drive reads the namespace
+        // under those bytes.
+        for name in ["note", " note "] {
+            let query = IdentitiesContractKeysQuery::new(
+                vec![Identifier::new(IDENTITY_A)],
+                Identifier::new(CONTRACT),
+                Some(name.to_string()),
+                vec![Purpose::ENCRYPTION],
+            )
+            .expect("query");
+            let handle = create_mock_sdk_handle_answering(query, Some(proved_keys()));
+            let json = unsafe {
+                json_of(fetch_with(
+                    handle,
+                    &base58(IDENTITY_A),
+                    CONTRACT,
+                    Some(name),
+                    "1",
+                ))
+            };
+            destroy_mock_sdk_handle(handle);
+            assert_eq!(
+                json[base58(IDENTITY_A)]["encryption"]["id"],
+                9,
+                "name {name:?}"
+            );
+        }
     }
 
     #[test]
     fn should_refuse_a_purpose_it_does_not_take() {
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        for purposes in ["7", "256", "-1", "1,x", "1,", ""] {
+        for purposes in ["7", "256", "-1", "1,x", "1,"] {
+            let code = unsafe {
+                error_code_of(fetch_with(
+                    handle,
+                    &base58(IDENTITY_A),
+                    CONTRACT,
+                    None,
+                    purposes,
+                ))
+            };
+            assert_eq!(
+                code,
+                DashSDKErrorCode::InvalidParameter,
+                "purposes {purposes:?}"
+            );
+        }
+        // No purposes for an identity is refused by the SDK's query, as an argument error.
+        for purposes in ["", "  "] {
             let code = unsafe {
                 error_code_of(fetch_with(
                     handle,
@@ -556,8 +587,11 @@ mod tests {
             let json = unsafe { json_of(fetch_with(handle, ids, CONTRACT, None, "1")) };
             assert_eq!(json, serde_json::json!({}));
         }
-        // The purposes are still checked.
-        for purposes in ["", "9"] {
+        // No identities and no purposes asks about nothing either.
+        let json = unsafe { json_of(fetch_with(handle, "", CONTRACT, None, "")) };
+        assert_eq!(json, serde_json::json!({}));
+        // A malformed purpose is still refused.
+        for purposes in ["9", "1,"] {
             let code = unsafe { error_code_of(fetch_with(handle, "", CONTRACT, None, purposes)) };
             assert_eq!(
                 code,
@@ -587,7 +621,7 @@ mod tests {
         // The mock knows only `query()`, which has no document type.
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
         let ids = format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B));
-        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, Some(" "), "1,2")) };
+        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, Some(""), "1,2")) };
         destroy_mock_sdk_handle(handle);
         assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
     }
