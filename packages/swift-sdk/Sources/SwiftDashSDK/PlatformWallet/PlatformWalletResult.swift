@@ -608,8 +608,10 @@ public enum PlatformWalletError: LocalizedError {
     /// A key of the DashPay invitation claim is already registered to
     /// another identity (base58 `identityId`, `nil` when Platform refused the
     /// broadcast without naming it), so the claim cannot be made with these
-    /// keys.
-    case invitationKeysAlreadyRegistered(identityId: String?)
+    /// keys. `consensus` is Platform's refusal (40207, or 10501 before
+    /// protocol v11) when it came from the broadcast, `nil` when the claim's
+    /// own lookup found the owner and nothing was sent.
+    case invitationKeysAlreadyRegistered(identityId: String?, consensus: PlatformConsensusError?)
     /// The invitation's identity (base58 `identityId`) is this wallet's: it
     /// holds this claim's master key (an earlier claim landed) or the wallet
     /// already records it. Nothing was recorded, and nothing was broadcast
@@ -818,12 +820,18 @@ public enum PlatformWalletError: LocalizedError {
 
     /// Platform's verdict when this error is a consensus rejection the wallet
     /// layer left untyped, so a caller can write
-    /// `error.consensusError?.code == 40722` without pattern matching. `nil`
-    /// for every other case, including the typed promotions of specific
-    /// rejections.
+    /// `error.consensusError?.code == 40722` without pattern matching, and
+    /// the refusal behind `.invitationKeysAlreadyRegistered` when Platform
+    /// refused the broadcast. `nil` for every other case, including the
+    /// other typed promotions of specific rejections.
     public var consensusError: PlatformConsensusError? {
-        guard case .consensusRejection(let consensus, _) = self else { return nil }
-        return consensus
+        switch self {
+        case .consensusRejection(let consensus, _),
+             .invitationKeysAlreadyRegistered(_, let consensus?):
+            return consensus
+        default:
+            return nil
+        }
     }
 
     /// What to show a person. For most cases this is still the diagnostic
@@ -890,7 +898,7 @@ public enum PlatformWalletError: LocalizedError {
                 + "could be confirmed. Nothing was purchased."
         case .insufficientIdentityCredits(let identityId, let required, let available):
             return "Identity \(identityId) has \(available) credits but \(required) are required."
-        case .invitationKeysAlreadyRegistered(let identityId):
+        case .invitationKeysAlreadyRegistered(let identityId, _):
             guard let identityId else {
                 return "A key of this invitation claim is already registered to another identity."
             }
@@ -935,8 +943,9 @@ public enum PlatformWalletError: LocalizedError {
     /// Production callers continue to enter through `init(result:)`.
     ///
     /// `consensus` is Platform's verdict when the result carried one, and is
-    /// consulted on the catch-all code alone: every other code is a
-    /// classification the wallet layer chose deliberately and must keep
+    /// consulted on the catch-all code, where it picks the case, and on code
+    /// 63, which keeps it beside its own classification. Every other code is
+    /// a classification the wallet layer chose deliberately and must keep
     /// reaching its own case.
     init(
         code: PlatformWalletResultCode,
@@ -976,7 +985,9 @@ public enum PlatformWalletError: LocalizedError {
         // payload that does not decode degrades to `.unknown(detail)`.
         case .errorInvitationKeysAlreadyRegistered:
             if let d = InvitationErrorDetail.decode(detail) {
-                self = .invitationKeysAlreadyRegistered(identityId: d.identityId)
+                self = .invitationKeysAlreadyRegistered(
+                    identityId: d.identityId, consensus: consensus
+                )
             } else {
                 self = .unknown(detail)
             }

@@ -458,14 +458,30 @@ final class ErrorHandlingTests: XCTestCase {
         }
 
         let id = "8eTDkBhpQjHeqgbVeriwLeZr1tCa6yBGw76SckvD1cwc"
-        guard case .invitationKeysAlreadyRegistered(let owner) = PlatformWalletError(
+        // Found by the claim's own lookup: nothing was broadcast, so there is
+        // no refusal to carry.
+        let found = PlatformWalletError(
             code: .errorInvitationKeysAlreadyRegistered, message: "{\"identityId\":\"\(id)\"}"
-        ) else { return XCTFail("lost typed keys-already-registered error") }
+        )
+        guard case .invitationKeysAlreadyRegistered(let owner, nil) = found
+        else { return XCTFail("lost typed keys-already-registered error") }
         XCTAssertEqual(owner, id)
-        guard case .invitationKeysAlreadyRegistered(let unknownOwner) = PlatformWalletError(
-            code: .errorInvitationKeysAlreadyRegistered, message: "{\"identityId\":null}"
-        ) else { return XCTFail("lost the owner-less keys-already-registered error") }
-        XCTAssertNil(unknownOwner)
+        XCTAssertNil(found.consensusError)
+        // Refused by Platform after the broadcast: the typed case keeps the
+        // refusal, before and after protocol v11.
+        for refusal in [
+            PlatformConsensusError(code: 40207, kind: .state),
+            PlatformConsensusError(code: 10501, kind: .basic),
+        ] {
+            let refused = PlatformWalletError(
+                code: .errorInvitationKeysAlreadyRegistered,
+                message: "{\"identityId\":null}",
+                consensus: refusal
+            )
+            guard case .invitationKeysAlreadyRegistered(nil, refusal) = refused
+            else { return XCTFail("lost the refusal behind keys-already-registered") }
+            XCTAssertEqual(refused.consensusError, refusal)
+        }
         guard case .invitationClaimedByThisWallet(let claimed) = PlatformWalletError(
             code: .errorInvitationClaimedByThisWallet, message: "{\"identityId\":\"\(id)\"}"
         ) else { return XCTFail("lost typed claimed-by-this-wallet error") }
