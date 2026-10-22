@@ -124,7 +124,7 @@ impl Fixture {
                 }),
             })
         } else {
-            // Reproduce the single-proof format already deployed by some PV13 nodes.
+            // Force the single-proof producer so older versions can be signed over it too.
             let mut producer = self.producer.clone();
             producer
                 .drive
@@ -271,31 +271,66 @@ fn proof(response: &mut GetIdentityByNonUniquePublicKeyHashResponse) -> &mut Pro
         _ => panic!("proof"),
     }
 }
+/// The newest version whose nodes answer in the given wire format.
+fn producer_for(legacy: bool) -> u32 {
+    if legacy {
+        13
+    } else {
+        PlatformVersion::latest().protocol_version
+    }
+}
+fn assert_format_refused(
+    result: Result<Option<Identity>, Box<drive_proof_verifier::Error>>,
+    context: &str,
+) {
+    let error = result.expect_err(context);
+    assert!(
+        matches!(&*error, drive_proof_verifier::Error::ResponseDecodeError { error } if error.contains("proof format")),
+        "{context}: {error}"
+    );
+}
 #[test]
-fn should_verify_legacy_and_current_nonunique_pagination_at_supported_producer_versions() {
+fn should_verify_nonunique_pagination_in_the_format_each_producer_version_emits() {
     for version in [12, 13, PlatformVersion::latest().protocol_version] {
         let f = Fixture::new(version);
-        for legacy in [true, false] {
-            for (after, expected) in [
-                (None, Some(&f.identities[0])),
-                (Some([0x10; 32]), Some(&f.identities[1])),
-                (Some([0x20; 32]), None),
-            ] {
-                assert_eq!(
-                    verify(f.response(legacy, after), f.hash, after)
-                        .unwrap()
-                        .as_ref(),
-                    expected,
-                    "PV{version}, legacy={legacy}"
-                );
-            }
+        let legacy = version <= 13;
+        for (after, expected) in [
+            (None, Some(&f.identities[0])),
+            (Some([0x10; 32]), Some(&f.identities[1])),
+            (Some([0x20; 32]), None),
+        ] {
+            assert_eq!(
+                verify(f.response(legacy, after), f.hash, after)
+                    .unwrap()
+                    .as_ref(),
+                expected,
+                "PV{version}, legacy={legacy}"
+            );
+        }
+    }
+}
+/// A node must not choose the format: a correctly signed, otherwise valid answer in the
+/// format its signed version does not emit is refused, never reinterpreted.
+#[test]
+fn should_refuse_nonunique_answers_in_a_format_the_signed_version_does_not_emit() {
+    for (version, legacy) in [
+        (12, false),
+        (13, false),
+        (PlatformVersion::latest().protocol_version, true),
+    ] {
+        let f = Fixture::new(version);
+        for after in [None, Some([0x10; 32]), Some([0x20; 32])] {
+            assert_format_refused(
+                verify(f.response(legacy, after), f.hash, after),
+                &format!("PV{version}, legacy={legacy}, after={after:?}"),
+            );
         }
     }
 }
 #[test]
 fn should_reject_nonunique_wrong_hash_cursor_signature_metadata_and_unsupported_version() {
-    let f = Fixture::new(13);
     for legacy in [true, false] {
+        let f = Fixture::new(producer_for(legacy));
         let response = f.response(legacy, None);
         assert!(verify(response.clone(), [9; 20], None).is_err());
         assert!(verify(response.clone(), f.hash, Some([0x10; 32])).is_err());
@@ -386,10 +421,10 @@ fn should_reject_legacy_unbound_incomplete_malformed_and_v0_proofs() {
 }
 #[test]
 fn should_verify_nonunique_hash_absence_in_both_formats() {
-    let mut f = Fixture::new(13);
-    f.hash = [9; 20];
-    f.identities.clear();
     for legacy in [true, false] {
+        let mut f = Fixture::new(producer_for(legacy));
+        f.hash = [9; 20];
+        f.identities.clear();
         assert!(verify(f.response(legacy, None), f.hash, None)
             .unwrap()
             .is_none());
@@ -398,7 +433,7 @@ fn should_verify_nonunique_hash_absence_in_both_formats() {
 
 #[test]
 fn should_not_interpret_a_malformed_current_nonunique_proof_as_legacy() {
-    let f = Fixture::new(13);
+    let f = Fixture::new(producer_for(false));
     let mut response = f.response(false, None);
     let legacy = f.response(true, None);
     let Some(Version::V0(legacy)) = legacy.version else {
@@ -431,7 +466,11 @@ fn should_export_nonunique_sdk_fixtures() {
                 .enumerate()
             {
                 let response = f.response(legacy, after);
-                verify(response.clone(), f.hash, after).unwrap();
+                if legacy == (version <= 13) {
+                    verify(response.clone(), f.hash, after).unwrap();
+                } else {
+                    assert_format_refused(verify(response.clone(), f.hash, after), "export");
+                }
                 let name = format!(
                     "pv{version}-{}-{page}.bin",
                     if legacy { "legacy" } else { "current" }

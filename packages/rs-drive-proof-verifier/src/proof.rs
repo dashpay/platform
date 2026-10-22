@@ -475,6 +475,32 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
 
         let query_platform_version = proof_query_platform_version(mtd)?;
 
+        // Each producer version answers in exactly one wire format: separate index and
+        // identity proofs (field 2) or one complete proof (field 4). Accept only the format
+        // the signed version emits; the signature then binds that version to the root.
+        let legacy_expected = match query_platform_version
+            .drive_abci
+            .query
+            .identity_by_non_unique_public_key_hash_handler
+        {
+            0 => true,
+            1 => false,
+            generation => {
+                return Err(Error::ResponseDecodeError {
+                    error: format!("unknown non-unique identity response generation {generation}"),
+                })
+            }
+        };
+        if legacy_identity_proof.is_some() != legacy_expected {
+            return Err(Error::ResponseDecodeError {
+                error: format!(
+                    "protocol version {} answers non-unique identity lookups with the {} proof format",
+                    mtd.protocol_version,
+                    if legacy_expected { "legacy" } else { "current" }
+                ),
+            });
+        }
+
         let bytes = supported_grovedb_proof_bytes(proof)?;
         let verified = match legacy_identity_proof {
             Some(identity_proof) => Drive::verify_legacy_identity_by_non_unique_public_key_hash(

@@ -19,7 +19,8 @@ impl Drive {
     /// Verifies the full identity of a user using their non-unique public key hash.
     ///
     /// The explicit proof encoding selects the historical v0 or current v1 verifier.
-    /// Raw bytes mean the current encoding, including on deployed protocol 13 nodes.
+    /// Raw bytes mean the current encoding. Callers that receive a signed response
+    /// must check that its producer version emits the encoding it carries.
     /// The caller's verification rules apply independently of the wire encoding.
     ///
     /// # Parameters

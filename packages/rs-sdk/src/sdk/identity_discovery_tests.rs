@@ -76,6 +76,14 @@ impl ContextProvider for Provider {
         Ok(1)
     }
 }
+/// The vectors' versions answer in one format each: PV12 and PV13 legacy, PV14 current.
+fn producer_for(legacy: bool) -> u32 {
+    if legacy {
+        13
+    } else {
+        14
+    }
+}
 fn sdk(pinned: bool, stale: bool, network: Network) -> Sdk {
     let version = PlatformVersion::get(12).unwrap();
     let builder = SdkBuilder::new_mock()
@@ -123,13 +131,14 @@ async fn register(
 #[tokio::test]
 async fn should_fetch_legacy_and_current_nonunique_identities_through_sdk_and_preserve_pins() {
     for legacy in [true, false] {
+        let version = producer_for(legacy);
         for pinned in [false, true] {
             let sdk = sdk(pinned, false, Network::Testnet);
             for (page, after) in [None, Some([0x10; 32]), Some([0x20; 32])]
                 .into_iter()
                 .enumerate()
             {
-                register(&sdk, response(13, legacy, page), after).await;
+                register(&sdk, response(version, legacy, page), after).await;
                 let found = Identity::fetch(
                     &sdk,
                     NonUniquePublicKeyHashQuery {
@@ -147,7 +156,10 @@ async fn should_fetch_legacy_and_current_nonunique_identities_through_sdk_and_pr
                         _ => None,
                     }
                 );
-                assert_eq!(sdk.protocol_version_number(), if pinned { 12 } else { 13 });
+                assert_eq!(
+                    sdk.protocol_version_number(),
+                    if pinned { 12 } else { version }
+                );
             }
         }
     }
@@ -160,7 +172,7 @@ async fn should_not_learn_nonunique_version_from_stale_or_tampered_response() {
     for legacy in [true, false] {
         for stale in [true, false] {
             let sdk = sdk(false, stale, Network::Testnet);
-            let mut response = response(13, legacy, 0);
+            let mut response = response(producer_for(legacy), legacy, 0);
             if !stale {
                 let Some(Version::V0(v0)) = &mut response.version else {
                     panic!("v0")
@@ -201,9 +213,34 @@ async fn should_keep_nonunique_protocol_learning_monotonic_and_network_local() {
             "get_identity_by_non_unique_public_key_hash",
         )
     };
-    let (older, newer) = tokio::join!(verify(12, true), verify(13, false));
+    let (older, newer) = tokio::join!(verify(12, true), verify(14, false));
     older.unwrap();
     newer.unwrap();
-    assert_eq!(mainnet.protocol_version_number(), 13);
+    assert_eq!(mainnet.protocol_version_number(), 14);
     assert_eq!(testnet.protocol_version_number(), 12);
+}
+/// A correctly signed answer in the format its version does not emit is refused, and
+/// the SDK does not learn the version from it.
+#[tokio::test]
+async fn should_refuse_nonunique_answers_in_a_format_their_signed_version_does_not_emit() {
+    for (version, legacy) in [(12, false), (13, false), (14, true)] {
+        let sdk = sdk(false, false, Network::Testnet);
+        let result = sdk
+            .verify_fetching_quorum_key::<IdentityRequest, Identity>(
+                request(None),
+                IdentityResponse::GetIdentityByNonUniquePublicKeyHash(response(version, legacy, 0)),
+                &Provider,
+                "get_identity_by_non_unique_public_key_hash",
+            )
+            .await;
+        assert!(
+            matches!(
+                &result,
+                Err(crate::Error::Proof(drive_proof_verifier::Error::ResponseDecodeError { error }))
+                    if error.contains("proof format")
+            ),
+            "PV{version}, legacy={legacy}: {result:?}"
+        );
+        assert_eq!(sdk.protocol_version_number(), 12);
+    }
 }
