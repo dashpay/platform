@@ -1062,6 +1062,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
+        // A same-id wallet added later is reconciled at once rather than
+        // waiting out the removed one's cadence.
+        self.forget_txo_reconcile(wallet_id);
+
         // Still under the generation's teardown gate: any deferred state naming
         // this generation is dropped in the same critical section as the removal
         // itself, so no payment operation can observe the wallet as live and then

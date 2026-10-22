@@ -21,7 +21,7 @@ use platform_wallet::manager::accessors::{
     AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
     CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
     PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
-    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot, WalletUtxoCursor, WalletUtxoRow,
 };
 
 use crate::check_ptr;
@@ -30,6 +30,7 @@ use crate::core_wallet_types::{
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
     IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
     PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    WalletUtxoCursorFFI, WalletUtxoEntryFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -982,6 +983,78 @@ fn account_spec_from_raw_tags(
     }
 }
 
+/// The resume point a cursor names: its raw account tags validated into an
+/// `AccountType`, and its outpoint. The error is the tag validator's.
+pub(crate) fn wallet_utxo_cursor_from_ffi(
+    cursor: &WalletUtxoCursorFFI,
+) -> Result<WalletUtxoCursor, String> {
+    let spec = account_spec_from_raw_tags(
+        cursor.type_tag,
+        cursor.standard_tag,
+        cursor.index,
+        cursor.registration_index,
+        cursor.key_class,
+        cursor.user_identity_id,
+        cursor.friend_identity_id,
+    );
+    let account_type = account_type_from_spec_ref(&spec)?;
+    Ok((account_type, dashcore::OutPoint::from(&cursor.outpoint)))
+}
+
+/// The C row for one inventory row. Its `address` and `script_pubkey`
+/// allocations move to the caller and are released by
+/// [`release_wallet_utxo_entry`].
+pub(crate) fn wallet_utxo_entry_ffi(row: WalletUtxoRow) -> WalletUtxoEntryFFI {
+    use crate::core_wallet_types::{account_type_to_tags, OutPointFFI};
+
+    let tags = account_type_to_tags(&row.account_type);
+    let script_len = row.script_pubkey.len();
+    let script_ptr = if script_len == 0 {
+        std::ptr::null_mut()
+    } else {
+        Box::into_raw(row.script_pubkey.into_boxed_slice()) as *mut u8
+    };
+    let address = CString::new(row.address)
+        .unwrap_or_else(|_| CString::new("").expect("empty string has no NUL"))
+        .into_raw();
+    WalletUtxoEntryFFI {
+        type_tag: tags.type_tag,
+        standard_tag: tags.standard_tag,
+        index: tags.index,
+        registration_index: tags.registration_index,
+        key_class: tags.key_class,
+        user_identity_id: tags.user_identity_id,
+        friend_identity_id: tags.friend_identity_id,
+        outpoint: OutPointFFI::from(&row.outpoint),
+        value_duffs: row.value_duffs,
+        address,
+        script_pubkey: script_ptr,
+        script_pubkey_len: script_len,
+        height: row.height,
+        is_confirmed: row.is_confirmed,
+        is_instantlocked: row.is_instantlocked,
+        is_coinbase: row.is_coinbase,
+        is_locked: row.is_locked,
+    }
+}
+
+/// Release the allocations one [`wallet_utxo_entry_ffi`] row owns (not the
+/// row itself).
+///
+/// # Safety
+/// `entry` must come from [`wallet_utxo_entry_ffi`], released once.
+pub(crate) unsafe fn release_wallet_utxo_entry(entry: &WalletUtxoEntryFFI) {
+    if !entry.address.is_null() {
+        let _ = CString::from_raw(entry.address);
+    }
+    if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            entry.script_pubkey,
+            entry.script_pubkey_len,
+        ));
+    }
+}
+
 /// One page of a wallet's UTXO inventory across every funds account, in
 /// `(account, outpoint)` order, starting strictly after `cursor` (null =
 /// from the beginning). `limit` is clamped natively (0 = default page,
@@ -1006,7 +1079,6 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
     out_count: *mut usize,
     out_has_more: *mut bool,
 ) -> PlatformWalletFFIResult {
-    use crate::core_wallet_types::{account_type_to_tags, WalletUtxoEntryFFI};
     use platform_wallet::manager::accessors::{wallet_utxos_page, WalletUtxoCursor};
 
     check_ptr!(wallet_id);
@@ -1021,26 +1093,15 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
     let after: Option<WalletUtxoCursor> = if cursor.is_null() {
         None
     } else {
-        let c = &*cursor;
-        let spec = account_spec_from_raw_tags(
-            c.type_tag,
-            c.standard_tag,
-            c.index,
-            c.registration_index,
-            c.key_class,
-            c.user_identity_id,
-            c.friend_identity_id,
-        );
-        let account_type = match account_type_from_spec_ref(&spec) {
-            Ok(at) => at,
+        match wallet_utxo_cursor_from_ffi(&*cursor) {
+            Ok(after) => Some(after),
             Err(e) => {
                 return PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorInvalidParameter,
                     format!("cursor: {e}"),
                 );
             }
-        };
-        Some((account_type, dashcore::OutPoint::from(&c.outpoint)))
+        }
     };
 
     let Some(wallet_manager) =
@@ -1060,40 +1121,7 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
         return PlatformWalletFFIResult::ok();
     }
 
-    let entries: Vec<WalletUtxoEntryFFI> = rows
-        .into_iter()
-        .map(|row| {
-            let tags = account_type_to_tags(&row.account_type);
-            let script_len = row.script_pubkey.len();
-            let script_ptr = if script_len == 0 {
-                std::ptr::null_mut()
-            } else {
-                Box::into_raw(row.script_pubkey.into_boxed_slice()) as *mut u8
-            };
-            let address = CString::new(row.address)
-                .unwrap_or_else(|_| CString::new("").expect("empty string has no NUL"))
-                .into_raw();
-            WalletUtxoEntryFFI {
-                type_tag: tags.type_tag,
-                standard_tag: tags.standard_tag,
-                index: tags.index,
-                registration_index: tags.registration_index,
-                key_class: tags.key_class,
-                user_identity_id: tags.user_identity_id,
-                friend_identity_id: tags.friend_identity_id,
-                outpoint: crate::core_wallet_types::OutPointFFI::from(&row.outpoint),
-                value_duffs: row.value_duffs,
-                address,
-                script_pubkey: script_ptr,
-                script_pubkey_len: script_len,
-                height: row.height,
-                is_confirmed: row.is_confirmed,
-                is_instantlocked: row.is_instantlocked,
-                is_coinbase: row.is_coinbase,
-                is_locked: row.is_locked,
-            }
-        })
-        .collect();
+    let entries: Vec<WalletUtxoEntryFFI> = rows.into_iter().map(wallet_utxo_entry_ffi).collect();
     let count = entries.len();
     *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
     *out_count = count;
@@ -1112,17 +1140,8 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page_free(
     if rows.is_null() || count == 0 {
         return;
     }
-    let slice = std::slice::from_raw_parts(rows, count);
-    for entry in slice {
-        if !entry.address.is_null() {
-            let _ = CString::from_raw(entry.address);
-        }
-        if !entry.script_pubkey.is_null() && entry.script_pubkey_len > 0 {
-            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                entry.script_pubkey,
-                entry.script_pubkey_len,
-            ));
-        }
+    for entry in std::slice::from_raw_parts(rows, count) {
+        release_wallet_utxo_entry(entry);
     }
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count));
 }

@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::pin::pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -79,6 +80,8 @@ pub struct SpvRuntime {
     /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
+    /// Successful [`start`](Self::start)s so far; see [`Self::run_session`].
+    run_sessions: AtomicU64,
     /// Woken (`notify_waiters`) on every transition that can make
     /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
     /// `PeersUpdated` snapshot stored by `peer_tracker`. Losing readiness
@@ -125,6 +128,7 @@ impl SpvRuntime {
             task: Mutex::new(None),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
             peer_tracker: Arc::new(PeerTracker::new(Arc::clone(&readiness_changed))),
+            run_sessions: AtomicU64::new(0),
             readiness_changed,
         }
     }
@@ -177,12 +181,21 @@ impl SpvRuntime {
         let mut client = self.client.write().await;
         *client = Some(spv_client);
         *self.last_config.write().await = Some(retained_config);
+        self.run_sessions.fetch_add(1, Ordering::Relaxed);
         // Release the client before waking readiness waiters so they can
         // read it.
         drop(client);
         self.readiness_changed.notify_waiters();
 
         Ok(())
+    }
+
+    /// Identifies the current run of the client: it changes on every
+    /// successful [`start`](Self::start), so two reads that return the same
+    /// value saw no stop and restart between them, however quickly a host
+    /// cycled the client. 0 before the first start.
+    pub fn run_session(&self) -> u64 {
+        self.run_sessions.load(Ordering::Relaxed)
     }
 
     /// Refuse restart until all previous startup and shutdown work is joined.
