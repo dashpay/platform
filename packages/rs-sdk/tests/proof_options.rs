@@ -174,11 +174,11 @@ proof_only!(
     },
     proto::GetDocumentHistoryRequest,
     |request: proto::GetDocumentHistoryRequest| {
-        let Some(proto::get_document_history_request::Version::V0(v0)) = request.version else {
-            panic!("expected V0 request")
+        let Some(proto::get_document_history_request::Version::V1(v1)) = request.version else {
+            panic!("expected V1 request")
         };
-        assert!(v0.prove);
-        assert_eq!(v0.document_id, other_id().to_vec());
+        assert!(v1.prove);
+        assert_eq!(v1.document_id, other_id().to_vec());
     }
 );
 

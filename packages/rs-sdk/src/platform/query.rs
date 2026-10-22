@@ -312,8 +312,8 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             DocumentHistoryDriveQuery, DocumentHistoryFilter,
         };
         use proto::get_document_history_request::{
-            get_document_history_request_v0::{Cursor, Filter},
-            GetDocumentHistoryRequestV0,
+            get_document_history_request_v1::{Cursor, Filter},
+            GetDocumentHistoryRequestV1,
         };
         // Every history fetch verifies the two GroveDB proofs; there is no
         // unproved decoding path, so a proof-disabled request would only fail
@@ -344,7 +344,7 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             DocumentHistoryFilter::StartAtRevision(revision) => Filter::StartAtRevision(revision),
             DocumentHistoryFilter::Revision(revision) => Filter::Revision(revision),
         };
-        Ok(GetDocumentHistoryRequestV0 {
+        Ok(GetDocumentHistoryRequestV1 {
             data_contract_id: self.data_contract_id.to_vec(),
             document_type_name: self.document_type_name.clone(),
             document_id: self.document_id.to_vec(),
@@ -1694,7 +1694,7 @@ impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
 mod history_query_tests {
     use super::*;
     use crate::platform::QuerySettings;
-    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter;
+    use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
     use dpp::dashcore::Network;
     use dpp::version::PlatformVersion;
     use drive::query::document_history_drive_query::DocumentHistoryFilter;
@@ -1804,7 +1804,7 @@ mod history_query_tests {
             limit: Some(10),
         };
         let request = query.query(&settings).unwrap();
-        let Some(proto::get_document_history_request::Version::V0(request)) = request.version
+        let Some(proto::get_document_history_request::Version::V1(request)) = request.version
         else {
             panic!("expected history version one");
         };

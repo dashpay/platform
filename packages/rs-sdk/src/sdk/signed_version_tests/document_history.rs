@@ -1,10 +1,11 @@
 use super::super::{Sdk, SdkBuilder, SdkInstance};
 use crate::platform::{DocumentHistoryQuery, Fetch};
-use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v0::Filter;
+use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Filter;
 use dapi_grpc::platform::v0::get_document_history_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_document_history_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, GetDocumentHistoryResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dapi_grpc::tonic::{Code, Status};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -18,7 +19,8 @@ use drive_proof_verifier::types::{
     DocumentHistory, DocumentHistoryProofInfo, DocumentHistoryState,
 };
 use drive_proof_verifier::FromProof;
-use rs_dapi_client::{AddressList, ExecutionResponse};
+use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::{AddressList, DapiClientError, ExecutionError, ExecutionResponse};
 use serde::Deserialize;
 use std::sync::Arc;
 use test_case::test_case;
@@ -65,7 +67,7 @@ impl Fixture {
     }
 
     fn query(&self) -> DocumentHistoryQuery {
-        let Some(RequestVersion::V0(request)) = &self.request.version else {
+        let Some(RequestVersion::V1(request)) = &self.request.version else {
             panic!("versioned history request");
         };
         DocumentHistoryQuery {
@@ -146,6 +148,27 @@ impl Fixture {
         let lifecycle = history.lifecycle.as_ref().expect("PV15 lifecycle proof");
         assert_eq!(lifecycle.state, DocumentHistoryState::Active);
         assert_eq!(lifecycle.remaining_revisions, 3);
+    }
+}
+
+#[tokio::test]
+async fn should_surface_history_version_status_without_response_decoding_or_fallback() {
+    for message in [
+        "unsupported version for query: document_history, currently supporting versions 0 to 0 on platform protocol 14, given 1",
+        "decoding error: could not decode document history query",
+    ] {
+        let fixture = Fixture::load(false);
+        let sdk = fixture.sdk(Network::Devnet, true);
+        let SdkInstance::Mock { dapi, .. } = &sdk.inner else { panic!("mock transport") };
+        dapi.lock().await.expect(&fixture.request, &Err(ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(Status::invalid_argument(message))),
+            address: None, retries: 0,
+        })).unwrap();
+        let error = DocumentHistory::fetch(&sdk, fixture.query()).await.unwrap_err();
+        assert!(matches!(error, crate::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)))
+            if status.code() == Code::InvalidArgument && status.message() == message));
+        assert_eq!(dapi.lock().await.request_count(&fixture.request), 1);
+        assert_eq!(sdk.protocol_version_number(), 14);
     }
 }
 
@@ -260,7 +283,7 @@ async fn should_select_signed_history_rules_before_ratchet_and_reject_forged_met
         "fixture requires the newer proof layout"
     );
     let mut forged = fixture.response.clone();
-    let Some(ResponseVersion::V0(response)) = &mut forged.version else {
+    let Some(ResponseVersion::V1(response)) = &mut forged.version else {
         panic!("versioned response");
     };
     response.metadata.as_mut().unwrap().time_ms += 1;

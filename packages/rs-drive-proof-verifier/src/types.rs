@@ -140,7 +140,7 @@ pub struct DocumentHistoryProofInfo {
     /// Original metadata and the quorum-signed proof whose GroveDB payload
     /// carries both underlying GroveDB proofs.
     pub response:
-        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV0,
+        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
 }
 
 /// Multiple data contracts.

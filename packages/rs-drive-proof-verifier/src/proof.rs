@@ -1373,10 +1373,67 @@ fn verify_document_history_response_v0(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
+    let proof = response.proof().or(Err(Error::NoProofInResult))?;
+    let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+    let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
+        Error::ProtocolError {
+            error: error.to_string(),
+        }
+    })?;
+    let document_id =
+        Identifier::from_bytes(&request.document_id).map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let limit = u32_to_u16_opt(request.limit.unwrap_or_default())?;
+    let offset = u32_to_u16_opt(request.offset.unwrap_or_default())?;
+    let contract = provider
+        .get_data_contract(&contract_id, platform_version)?
+        .ok_or(Error::NotFound)?;
+    let document_type = contract
+        .document_type_for_name(&request.document_type_name)
+        .map_err(|error| Error::ProtocolError {
+            error: error.to_string(),
+        })?;
+    let (root, history) = Drive::verify_document_history_legacy(
+        supported_grovedb_proof_bytes(proof)?,
+        contract_id.to_buffer(),
+        &request.document_type_name,
+        document_type,
+        document_id.to_buffer(),
+        request.start_at_ms,
+        limit,
+        offset,
+        platform_version,
+    )
+    .map_drive_error(proof, metadata)?;
+    verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    Ok((
+        history.map(|history| DocumentHistory {
+            entries: history
+                .into_iter()
+                .map(|(time_ms, document)| DocumentHistoryEntry {
+                    time_ms,
+                    revision: document.revision().unwrap_or(1),
+                    document,
+                })
+                .collect(),
+            lifecycle: None,
+        }),
+        metadata.clone(),
+        proof.clone(),
+    ))
+}
+
+fn verify_document_history_response_v1(
+    request: platform::get_document_history_request::GetDocumentHistoryRequestV1,
+    response: &platform::GetDocumentHistoryResponse,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
     use drive::query::document_history_drive_query::{
         DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
-    use platform::get_document_history_request::get_document_history_request_v0::Filter;
+    use platform::get_document_history_request::get_document_history_request_v1::Filter;
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
     let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
     let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
@@ -1420,10 +1477,8 @@ fn verify_document_history_response_v0(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    // The proof arrives in the layout the protocol version stores: one GroveDB
-    // proof before protocol version 15, and from then on one proof object
-    // carrying two. Drive checks the envelope floor on each GroveDB proof, so
-    // only the signature over the authenticated root is checked here.
+    // Drive checks the envelope floor on both GroveDB proofs; this layer
+    // authenticates their shared root against the quorum signature.
     let (root, history) = Drive::verify_document_history(
         &query,
         &proof.grovedb_proof,
@@ -1457,10 +1512,10 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistoryProofInfo
         Self: Sized + 'a,
     {
         let response = response.into();
-        let Some(platform::get_document_history_response::Version::V0(wire)) = &response.version
+        let Some(platform::get_document_history_response::Version::V1(wire)) = &response.version
         else {
             return Err(Error::ResponseDecodeError {
-                error: "history proof info requires a version 0 response".to_owned(),
+                error: "history proof info requires a version 1 response".to_owned(),
             });
         };
         let wire = wire.clone();
@@ -1521,10 +1576,25 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
         // is even looked at, as for every other proved query.
         response.proof().or(Err(Error::NoProofInResult))?;
         response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        match request.version.ok_or(Error::EmptyVersion)? {
-            get_document_history_request::Version::V0(request) => {
+        match (
+            request.version.ok_or(Error::EmptyVersion)?,
+            &response.version,
+        ) {
+            (
+                get_document_history_request::Version::V0(request),
+                Some(platform::get_document_history_response::Version::V0(_)),
+            ) => {
                 verify_document_history_response_v0(request, &response, platform_version, provider)
             }
+            (
+                get_document_history_request::Version::V1(request),
+                Some(platform::get_document_history_response::Version::V1(_)),
+            ) => {
+                verify_document_history_response_v1(request, &response, platform_version, provider)
+            }
+            _ => Err(Error::ResponseDecodeError {
+                error: "document history response version must match its request".to_owned(),
+            }),
         }
     }
 }
@@ -3488,11 +3558,11 @@ mod tests {
 
     fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
         use platform::get_document_history_response::{
-            get_document_history_response_v0, GetDocumentHistoryResponseV0, Version,
+            get_document_history_response_v1, GetDocumentHistoryResponseV1, Version,
         };
         platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(get_document_history_response_v0::Result::Proof(
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                result: Some(get_document_history_response_v1::Result::Proof(
                     Proof::default(),
                 )),
                 metadata: Some(ResponseMetadata::default()),
@@ -3507,9 +3577,9 @@ mod tests {
         limit: Option<u32>,
     ) -> platform::GetDocumentHistoryRequest {
         use dapi_grpc::platform::v0::get_document_history_request::{
-            get_document_history_request_v0::Filter, GetDocumentHistoryRequestV0,
+            get_document_history_request_v1::Filter, GetDocumentHistoryRequestV1,
         };
-        GetDocumentHistoryRequestV0 {
+        GetDocumentHistoryRequestV1 {
             data_contract_id,
             document_type_name: document_type_name.to_string(),
             document_id,
@@ -5034,12 +5104,12 @@ mod tests {
     #[test]
     fn document_history_empty_response_metadata() {
         use platform::get_document_history_response::{
-            get_document_history_response_v0, GetDocumentHistoryResponseV0, Version,
+            get_document_history_response_v1, GetDocumentHistoryResponseV1, Version,
         };
         let request = platform::GetDocumentHistoryRequest::default();
         let response = platform::GetDocumentHistoryResponse {
-            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
-                result: Some(get_document_history_response_v0::Result::Proof(
+            version: Some(Version::V1(GetDocumentHistoryResponseV1 {
+                result: Some(get_document_history_response_v1::Result::Proof(
                     Proof::default(),
                 )),
                 metadata: None,
@@ -5061,6 +5131,31 @@ mod tests {
         let err = document_history_error(request, response, &provider);
 
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_document_history_response_version_mismatches() {
+        use platform::get_document_history_request::GetDocumentHistoryRequestV0;
+        use platform::get_document_history_response::{
+            get_document_history_response_v0, GetDocumentHistoryResponseV0,
+        };
+        let provider = unreachable_provider();
+        let v0_request: platform::GetDocumentHistoryRequest =
+            GetDocumentHistoryRequestV0::default().into();
+        let v1_request = document_history_request(vec![0; 32], "note", vec![1; 32], None);
+        let v0_response: platform::GetDocumentHistoryResponse = GetDocumentHistoryResponseV0 {
+            result: Some(get_document_history_response_v0::Result::Proof(
+                Proof::default(),
+            )),
+            metadata: Some(ResponseMetadata::default()),
+        }
+        .into();
+        let v1_response = document_history_response_with_proof_and_metadata();
+        for (request, response) in [(v0_request, v1_response), (v1_request, v0_response)] {
+            let error = document_history_error(request, response, &provider);
+            assert!(matches!(error, Error::ResponseDecodeError { error }
+                if error == "document history response version must match its request"));
+        }
     }
 
     #[test]
