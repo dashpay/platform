@@ -37,9 +37,14 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 
 use super::super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
+use super::update_revision;
 use super::IdentityWallet;
+use crate::changeset::{
+    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+};
 use crate::events::{EventHandler, PlatformEventHandler};
 use crate::wallet::persister::NoPlatformPersistence;
+use crate::wallet::platform_wallet::WalletId;
 use crate::{BlockTime, PlatformWallet, PlatformWalletManager};
 
 const SEED: [u8; 64] = [7; 64];
@@ -104,14 +109,18 @@ fn probe() -> PublicKeyHash {
 /// A wallet from `SEED` holding the identity at revision 1 at index 0, as a
 /// registration or an earlier load leaves it.
 async fn wallet_on(sdk: dash_sdk::Sdk) -> Arc<PlatformWallet> {
+    wallet_storing_to(sdk, Arc::new(NoPlatformPersistence)).await
+}
+
+/// [`wallet_on`], storing to `persister`.
+async fn wallet_storing_to<P: PlatformWalletPersistence + 'static>(
+    sdk: dash_sdk::Sdk,
+    persister: Arc<P>,
+) -> Arc<PlatformWallet> {
     struct Events;
     impl EventHandler for Events {}
     impl PlatformEventHandler for Events {}
-    let manager = PlatformWalletManager::new(
-        Arc::new(sdk),
-        Arc::new(NoPlatformPersistence),
-        Arc::new(Events),
-    );
+    let manager = PlatformWalletManager::new(Arc::new(sdk), persister, Arc::new(Events));
     let wallet = manager
         .create_wallet_from_seed_bytes(
             Network::Testnet,
@@ -370,5 +379,104 @@ async fn should_not_put_the_cache_past_the_chain_when_a_fetch_lands_before_the_a
             "{fetch:?}: on-chain disable time kept"
         );
         assert!(held.public_keys().contains_key(&3), "{fetch:?}");
+    }
+}
+
+/// The revision of the identity snapshot each store carried, in order.
+#[derive(Default)]
+struct RevisionLog(std::sync::Mutex<Vec<u64>>);
+
+impl PlatformWalletPersistence for RevisionLog {
+    fn store(
+        &self,
+        _wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        if let Some(entry) = changeset
+            .identities
+            .and_then(|ids| ids.identities.get(&Identifier::default()).cloned())
+        {
+            self.0.lock().unwrap().push(entry.revision);
+        }
+        Ok(())
+    }
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        Ok(ClientStartState::default())
+    }
+}
+
+/// A base build hit the A3 race and persisted its result: a fetch took the
+/// update at the chain's revision 2, then the post-broadcast bump stored
+/// `cached + 1` = 3 over the chain's keys (and stamped the disable it
+/// carried with the local clock). The app is then updated, and the restart
+/// restores that state.
+///
+/// A load or refresh answered at the chain's revision 2 takes the cache back
+/// to it, so the next update carries 3 and a caller pinning 3 passes the
+/// revision check; the snapshot stored last carries 2. After an update that
+/// only added keys the first answer does it. After one that also disabled a
+/// key, the first answer replaces the local stamp with Platform's time and
+/// the next one takes the revision.
+#[tokio::test]
+async fn should_take_back_a_revision_a_base_build_put_past_the_chain() {
+    // The update added key 3 only.
+    let mut added = identity_at_revision_1();
+    added.add_public_key(key(3, SecurityLevel::HIGH));
+    added.set_revision(2);
+    added.set_balance(BALANCE_AFTER);
+    // The scenarios' update: add key 3, disable key 1.
+    let added_and_disabled = identity_at_revision_2();
+
+    for (chain, answers_to_heal) in [(added, 1), (added_and_disabled, 2)] {
+        for fetch in [Fetch::Load, Fetch::Refresh] {
+            let log = Arc::new(RevisionLog::default());
+            let wallet =
+                wallet_storing_to(sdk_answering(fetch, chain.clone()).await, log.clone()).await;
+            let wallet = wallet.identity();
+            let mut restored = chain.clone();
+            restored.set_revision(3);
+            if let Some(key_1) = restored.public_keys().get(&1).cloned() {
+                if key_1.is_disabled() {
+                    let mut stamped = key_1;
+                    stamped.set_disabled_at(1_800_000_000_000);
+                    restored.add_public_key(stamped);
+                }
+            }
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&Identifier::default())
+                    .unwrap()
+                    .identity = restored;
+            }
+            let id = Identifier::default();
+            assert!(
+                update_revision(&id, cached(wallet).await.revision(), Some(3)).is_err(),
+                "{fetch:?}: the restored state refuses a pinned 3"
+            );
+
+            for answer in 1..=answers_to_heal {
+                run_fetch(wallet, fetch).await;
+                let held = cached(wallet).await;
+                if answer < answers_to_heal {
+                    assert_eq!(held.revision(), 3, "{fetch:?}: stamps differ");
+                    assert_eq!(held.public_keys(), chain.public_keys(), "{fetch:?}");
+                }
+            }
+            let held = cached(wallet).await;
+            assert_eq!(held.revision(), 2, "{fetch:?}: cache back at the chain");
+            assert_eq!(held.public_keys(), chain.public_keys(), "{fetch:?}");
+            assert_eq!(update_revision(&id, held.revision(), Some(3)).unwrap(), 3);
+            assert_eq!(
+                log.0.lock().unwrap().last(),
+                Some(&2),
+                "{fetch:?}: the store carries the chain's revision"
+            );
+        }
     }
 }
