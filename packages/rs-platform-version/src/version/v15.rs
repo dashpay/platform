@@ -16,12 +16,12 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
@@ -71,15 +71,20 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    earlier keep `advanced_structure` 0, so the blocks committed under them
 ///    replay with the same results. check_tx verifies these proofs at every
 ///    protocol version, which decides mempool admission only.
+///
+/// 3. **Composite document history**: retained revisions move to per-type history trees,
+///    primary entries reference the current revision, and matching queries and verifiers
+///    authenticate history pages. The first block crossing into v15 migrates existing
+///    history after the other activation events in the same transaction.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V2,
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {

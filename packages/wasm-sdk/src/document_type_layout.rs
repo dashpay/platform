@@ -28,12 +28,14 @@ export interface DocumentTypeLayoutNode {
     | { kind: 'fixed'; hex: string; label: string }
     | { kind: 'documentId' }
     | { kind: 'revisionTime' }
+    | { kind: 'revisionTimeAndRevision' }
     | { kind: 'propertyValue'; property: string }
     | { kind: 'timeRangeBucket'; property: string; rangeSeconds: number; stepSeconds: number; phaseSeconds: number }
     | { kind: 'integerRangeBucket'; property: string; range: number; step: number; phase: number }
     | { kind: 'memberKey'; components: string[] };
   role:
     | 'documentType' | 'primaryKey' | 'document' | 'latestRevision' | 'revision'
+    | 'history' | 'documentHistory' | 'retainedRevision'
     | 'indexProperty' | 'indexValue' | 'nextIndexProperty' | 'terminal' | 'member';
   /** The id of the node of Drive's structure description (grovedb-structure.json) this layer is an instance of. */
   structureNode: string;

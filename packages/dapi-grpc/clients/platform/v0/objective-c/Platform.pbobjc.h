@@ -146,9 +146,15 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
 @class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV1;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle;
 @class GetDocumentsRequest_DocumentFieldValue;
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
@@ -735,6 +741,27 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_EnumD
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent = 1,
+};
+
+GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -7060,11 +7087,13 @@ void GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResu
 
 typedef GPB_ENUM(GetDocumentHistoryRequest_FieldNumber) {
   GetDocumentHistoryRequest_FieldNumber_V0 = 1,
+  GetDocumentHistoryRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
   GetDocumentHistoryRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentHistoryRequest_Version_OneOfCase_V0 = 1,
+  GetDocumentHistoryRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
@@ -7072,6 +7101,8 @@ GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
 @property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *v1;
 
 @end
 
@@ -7121,15 +7152,93 @@ GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPB
 
 @end
 
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DataContractId = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentTypeName = 2,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentId = 3,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Limit = 4,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Prove = 5,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Revision = 9,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_Revision = 9,
+};
+
+/**
+ * Reads the retained revisions of a historical document (a type with
+ * documentsKeepHistory), selected by time, revision, or a composite cursor.
+ **/
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@property(nonatomic, readonly) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase filterOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t startAtMs;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor *startAfter;
+
+@property(nonatomic, readwrite) uint64_t startAtRevision;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'filter'.
+ **/
+void GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_ClearFilterOneOfCase(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *message);
+
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_Revision = 2,
+};
+
+/**
+ * Exclusive cursor returned with a page. Several revisions can share a
+ * block time, so resuming needs the revision as well as the time.
+ **/
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@end
+
 #pragma mark - GetDocumentHistoryResponse
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_FieldNumber) {
   GetDocumentHistoryResponse_FieldNumber_V0 = 1,
+  GetDocumentHistoryResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_Version_OneOfCase) {
   GetDocumentHistoryResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentHistoryResponse_Version_OneOfCase_V0 = 1,
+  GetDocumentHistoryResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
@@ -7137,6 +7246,8 @@ GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
 @property(nonatomic, readonly) GetDocumentHistoryResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *v1;
 
 @end
 
@@ -7216,6 +7327,129 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Doc
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry*> *documentEntriesArray;
 /** The number of items in @c documentEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentEntriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_History = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Proof = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_History = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_Proof = 2,
+};
+
+/**
+ * A page of a historical document's retained revisions, with the
+ * document's lifecycle as of the same block. Only document types with
+ * documentsKeepHistory retain history; every field here describes such a
+ * historical document.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History *history;
+
+/**
+ * One proof object. Its grovedb_proof carries two GroveDB proofs in a
+ * small versioned envelope, because they answer two queries GroveDB
+ * cannot merge: the offset-paginated proof over the document's history
+ * tree and the exact-key absence proof over the current pointer, the
+ * lifecycle record and the history tree's count. Both commit to the
+ * same root hash, signed once.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Revision = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Document = 3,
+};
+
+/**
+ * One retained revision of the historical document.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *document;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_RemainingRevisions = 2,
+};
+
+/**
+ * Where the historical document stands: still current, or gone with
+ * nothing retained. Later protocol versions add the states between.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State state;
+
+/** Revisions the history still retains for the document. */
+@property(nonatomic, readwrite) uint64_t remainingRevisions;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle's @c state property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message);
+/**
+ * Sets the raw value of an @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle's @c state property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message, int32_t value);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_EntriesArray = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_Lifecycle = 2,
+};
+
+/**
+ * A page of retained revisions and the document's lifecycle as of the
+ * same block.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *lifecycle;
+/** Test to see if @c lifecycle has been set. */
+@property(nonatomic, readwrite) BOOL hasLifecycle;
 
 @end
 

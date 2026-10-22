@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use dpp::block::block_info::BlockInfo;
 
@@ -59,9 +60,18 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_document_to_primary_storage_v1(
+                document_and_contract_info,
+                block_info,
+                insert_without_check,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_to_primary_storage".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

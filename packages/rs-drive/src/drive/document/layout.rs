@@ -24,8 +24,10 @@ use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
     terminal_member_tree_type, zero_contribution_wrapper,
 };
+use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::sdk_value::{map, number, text, texts};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -92,6 +94,8 @@ pub enum LayoutKey {
     /// One key per stored revision: the block time of the revision in
     /// milliseconds, a u64 big endian with the sign bit flipped.
     RevisionTime,
+    /// The unsigned block time followed by the revision, both u64 big endian.
+    RevisionTimeAndRevision,
     /// One key per distinct value of `property` among the documents,
     /// serialized for ordering; an absent or null value is the empty key.
     PropertyValue {
@@ -144,6 +148,12 @@ pub enum LayoutRole {
     LatestRevision,
     /// One stored revision of a document with history.
     Revision,
+    /// All retained histories of a document type (`[2]`).
+    History,
+    /// One document's count-bound retained history.
+    DocumentHistory,
+    /// One immutable revision in a document's retained history.
+    RetainedRevision,
     /// The first property of an index, or the level of a flat indexOnly
     /// index.
     IndexProperty,
@@ -173,6 +183,13 @@ impl LayoutRole {
             LayoutRole::Revision => {
                 "contracts.contract.documents.document_type.primary_key.document.revision"
             }
+            LayoutRole::History => "contracts.contract.documents.document_type.history",
+            LayoutRole::DocumentHistory => {
+                "contracts.contract.documents.document_type.history.document"
+            }
+            LayoutRole::RetainedRevision => {
+                "contracts.contract.documents.document_type.history.document.revision"
+            }
             LayoutRole::IndexProperty => {
                 "contracts.contract.documents.document_type.index_property"
             }
@@ -199,6 +216,9 @@ impl LayoutRole {
             LayoutRole::Document => "document",
             LayoutRole::LatestRevision => "latestRevision",
             LayoutRole::Revision => "revision",
+            LayoutRole::History => "history",
+            LayoutRole::DocumentHistory => "documentHistory",
+            LayoutRole::RetainedRevision => "retainedRevision",
             LayoutRole::IndexProperty => "indexProperty",
             LayoutRole::IndexValue => "indexValue",
             LayoutRole::NextIndexProperty => "nextIndexProperty",
@@ -457,6 +477,11 @@ pub fn document_type_layout(
 
     if !document_type.index_only() {
         children.push(primary_key_node(document_type, platform_version)?);
+        if document_type.documents_keep_history()
+            && uses_current_document_history_layout(platform_version)?
+        {
+            children.push(history_node());
+        }
     }
 
     for (level_key, level) in document_type.index_structure().sub_levels() {
@@ -535,12 +560,43 @@ pub(crate) fn index_ending_at(
         .collect()
 }
 
+fn history_node() -> LayoutNode {
+    LayoutNode {
+        key: fixed(vec![DOCUMENT_HISTORY_TREE_KEY], "History"),
+        role: LayoutRole::History,
+        element: tree(TreeType::NormalTree),
+        alternative: None,
+        indexes: vec![],
+        notes: vec![],
+        children: vec![LayoutNode {
+            key: LayoutKey::DocumentId,
+            role: LayoutRole::DocumentHistory,
+            element: tree(TreeType::ProvableCountTree),
+            alternative: None,
+            indexes: vec![],
+            notes: vec![],
+            children: vec![leaf(
+                LayoutKey::RevisionTimeAndRevision,
+                LayoutRole::RetainedRevision,
+                element(LayoutElementKind::Item),
+            )],
+        }],
+    }
+}
+
 fn primary_key_node(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<LayoutNode, Error> {
     let summable = document_type.documents_summable().is_some();
-    let document = if document_type.documents_keep_history() {
+    let current_history_layout = uses_current_document_history_layout(platform_version)?;
+    let document = if document_type.documents_keep_history() && current_history_layout {
+        leaf(
+            LayoutKey::DocumentId,
+            LayoutRole::Document,
+            reference(summable),
+        )
+    } else if document_type.documents_keep_history() {
         LayoutNode {
             key: LayoutKey::DocumentId,
             role: LayoutRole::Document,
@@ -949,6 +1005,9 @@ impl LayoutKey {
             ]),
             LayoutKey::DocumentId => map(vec![("kind", text("documentId"))]),
             LayoutKey::RevisionTime => map(vec![("kind", text("revisionTime"))]),
+            LayoutKey::RevisionTimeAndRevision => {
+                map(vec![("kind", text("revisionTimeAndRevision"))])
+            }
             LayoutKey::PropertyValue { property } => map(vec![
                 ("kind", text("propertyValue")),
                 ("property", text(property)),
@@ -1060,10 +1119,10 @@ mod tests {
     };
     use crate::drive::{Drive, RootTree};
     use crate::structure::{drive_structure, ElementKind, StructureNode};
-    use crate::util::test_helpers::setup::{
-        setup_document, setup_drive_with_initial_state_structure,
-    };
+    use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::setup_contract;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
@@ -1245,8 +1304,12 @@ mod tests {
         }
     }
 
-    fn apply(drive: &Drive, index: usize, path: &str) -> DataContract {
-        let platform_version = PlatformVersion::latest();
+    fn apply(
+        drive: &Drive,
+        index: usize,
+        path: &str,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
         let contract = setup_contract(
             drive,
             path,
@@ -1275,7 +1338,24 @@ mod tests {
                         seed == 6,
                     );
                 }
-                setup_document(drive, &document, &contract, document_type.as_ref(), None);
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type: document_type.as_ref(),
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("insert fixture document");
             }
         }
         contract
@@ -1288,7 +1368,7 @@ mod tests {
         let mut walk = Walk::default();
 
         for (index, path) in CONTRACTS.into_iter().enumerate() {
-            let contract = apply(&drive, index, path);
+            let contract = apply(&drive, index, path, platform_version);
             let documents_path = vec![
                 vec![RootTree::DataContractDocuments as u8],
                 contract.id().to_vec(),
@@ -1310,8 +1390,9 @@ mod tests {
         for role in [
             "primaryKey",
             "document",
-            "latestRevision",
-            "revision",
+            "history",
+            "documentHistory",
+            "retainedRevision",
             "indexProperty",
             "indexValue",
             "nextIndexProperty",
@@ -1352,6 +1433,9 @@ mod tests {
             LayoutRole::Document,
             LayoutRole::LatestRevision,
             LayoutRole::Revision,
+            LayoutRole::History,
+            LayoutRole::DocumentHistory,
+            LayoutRole::RetainedRevision,
             LayoutRole::IndexProperty,
             LayoutRole::IndexValue,
             LayoutRole::NextIndexProperty,
@@ -1370,7 +1454,7 @@ mod tests {
     fn should_skip_only_an_optional_property_of_an_index_only_type_when_absent() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = apply(&drive, 0, CONTRACTS[9]);
+        let contract = apply(&drive, 0, CONTRACTS[9], platform_version);
         let mark = contract.document_type_for_name("mark").expect("mark");
         let layout = document_type_layout(mark, platform_version).expect("layout");
         let skipped = |label: &str| {
@@ -1400,9 +1484,9 @@ mod tests {
 
     #[test]
     fn should_store_each_document_of_a_type_with_history_as_a_tree_of_revisions() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = apply(&drive, 0, CONTRACTS[3]);
+        let contract = apply(&drive, 0, CONTRACTS[3], platform_version);
         let person = contract.document_type_for_name("person").expect("person");
         let layout = document_type_layout(person, platform_version).expect("layout");
 
@@ -1417,13 +1501,82 @@ mod tests {
             document.children.iter().map(|c| c.role).collect::<Vec<_>>(),
             vec![LayoutRole::LatestRevision, LayoutRole::Revision]
         );
+        let mut walk = Walk::default();
+        walk.layer(
+            &drive,
+            vec![
+                vec![RootTree::DataContractDocuments as u8],
+                contract.id().to_vec(),
+                vec![1],
+                b"person".to_vec(),
+            ],
+            &layout.root,
+        );
+        assert!(
+            walk.mismatches.is_empty(),
+            "legacy layout differs from stored state: {:?}",
+            walk.mismatches
+        );
+    }
+
+    #[test]
+    fn should_reject_an_unknown_history_layout_instead_of_describing_legacy_history() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = apply(&drive, 0, CONTRACTS[3], platform_version);
+        let person = contract.document_type_for_name("person").expect("person");
+        let mut unknown = platform_version.clone();
+        unknown
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 2;
+        assert!(matches!(
+            document_type_layout(person, &unknown),
+            Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                received: 2,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn should_describe_current_history_pointers_and_separate_retained_revisions() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = apply(&drive, 0, CONTRACTS[3], platform_version);
+        let person = contract.document_type_for_name("person").expect("person");
+        let layout = document_type_layout(person, platform_version).expect("layout");
+        let primary = &layout.root.children[0];
+        assert_eq!(
+            primary.children[0].element.kind,
+            LayoutElementKind::Reference
+        );
+        let history = layout
+            .root
+            .children
+            .iter()
+            .find(|child| matches!(&child.key, LayoutKey::Fixed { bytes, .. } if bytes == &[2]))
+            .expect("per-type history root");
+        assert_eq!(
+            history.children[0].element.kind,
+            LayoutElementKind::Tree(TreeType::ProvableCountTree)
+        );
+        assert_eq!(
+            history.children[0].children[0].element.kind,
+            LayoutElementKind::Item
+        );
+        assert_eq!(
+            history.children[0].children[0].key,
+            LayoutKey::RevisionTimeAndRevision
+        );
     }
 
     #[test]
     fn should_refuse_a_version_that_selects_other_index_walkers() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = apply(&drive, 0, CONTRACTS[0]);
+        let contract = apply(&drive, 0, CONTRACTS[0], platform_version);
         let person = contract.document_type_for_name("person").expect("person");
         let version_13 = PlatformVersion::get(13).expect("protocol version 13");
         assert!(matches!(
