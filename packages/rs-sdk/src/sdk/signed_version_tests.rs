@@ -766,12 +766,24 @@ async fn should_learn_document_outcome_versions_monotonically_from_signed_produc
     let newer_provider = DocumentOutcomeProvider::new(14);
     let (older_request, older_response) = document_outcome_response(13);
     let (newer_request, newer_response) = document_outcome_response(14);
-    let (older, newer) = tokio::join!(
-        sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(older_request, older_response, &older_provider, "wait_for_state_transition_result"),
-        sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(newer_request, newer_response, &newer_provider, "wait_for_state_transition_result"),
-    );
-    older.unwrap();
-    newer.unwrap();
+    // Newer first: a later, older outcome must still verify but never lower the version.
+    sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+        newer_request,
+        newer_response,
+        &newer_provider,
+        "wait_for_state_transition_result",
+    )
+    .await
+    .unwrap();
+    assert_eq!(sdk.protocol_version_number(), 14);
+    sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+        older_request,
+        older_response,
+        &older_provider,
+        "wait_for_state_transition_result",
+    )
+    .await
+    .unwrap();
     assert_eq!(sdk.protocol_version_number(), 14);
 }
 

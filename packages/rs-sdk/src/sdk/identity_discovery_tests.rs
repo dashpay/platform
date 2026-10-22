@@ -213,9 +213,10 @@ async fn should_keep_nonunique_protocol_learning_monotonic_and_network_local() {
             "get_identity_by_non_unique_public_key_hash",
         )
     };
-    let (older, newer) = tokio::join!(verify(12, true), verify(14, false));
-    older.unwrap();
-    newer.unwrap();
+    // Newer first: a later, older answer must still verify but never lower the version.
+    verify(14, false).await.unwrap();
+    assert_eq!(mainnet.protocol_version_number(), 14);
+    verify(12, true).await.unwrap();
     assert_eq!(mainnet.protocol_version_number(), 14);
     assert_eq!(testnet.protocol_version_number(), 12);
 }
