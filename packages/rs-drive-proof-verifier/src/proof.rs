@@ -396,6 +396,29 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
+// Query construction follows the producer, while security checks keep the caller's
+// verifier version. Metadata is untrusted until the signature binds it to the root.
+// A producer newer than this build is read with the newest known construction rules,
+// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
+// data the signed root does not hold, and a changed layout is expected to fail
+// verification for answers that return data. An absence answer can still verify at a
+// location a newer protocol no longer uses, so relocating such an index needs an SDK
+// update. Reserved mock versions also sit above the newest one, so their tables are
+// never looked up.
+fn proof_query_platform_version(
+    metadata: &ResponseMetadata,
+) -> Result<&'static PlatformVersion, Error> {
+    if metadata.protocol_version > LATEST_VERSION {
+        return Ok(PlatformVersion::latest());
+    }
+    PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
+        error: format!(
+            "unsupported proof query protocol version {}",
+            metadata.protocol_version
+        ),
+    })
+}
+
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
     type Request = platform::GetIdentityByNonUniquePublicKeyHashRequest;
     type Response = platform::GetIdentityByNonUniquePublicKeyHashResponse;
@@ -1495,6 +1518,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: Default::default(),
         };
 
+        let query_platform_version = proof_query_platform_version(mtd)?;
+
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
         // Transition families whose proof cannot be bound to execution
@@ -1505,14 +1530,16 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // preserved here so SDK callers can enforce their required
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            supported_grovedb_proof_bytes(proof)?,
-            &contracts_provider_fn,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, outcome) =
+            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                &state_transition,
+                &block_info,
+                supported_grovedb_proof_bytes(proof)?,
+                &contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
