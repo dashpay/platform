@@ -500,7 +500,7 @@ async fn should_validate_query_shapes_before_missing_history_lookups() {
                         .into()
                     };
                     let status = client
-                        .get_document_history(wire::GetDocumentHistoryRequest::from(request))
+                        .get_document_history(request)
                         .await
                         .expect_err("missing history or malformed filter");
                     assert_eq!(
