@@ -2477,11 +2477,7 @@ mod history {
         TokenKeepsHistoryRulesV0Getters, TokenKeepsHistoryRulesV0Setters,
     };
     use dpp::document::DocumentV0Getters;
-    use dpp::group::GroupStateTransitionInfo;
     use dpp::platform_value::Value;
-    use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
-    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
-    use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use drive::query::DriveDocumentQuery;
 
     impl Market {
@@ -2732,25 +2728,6 @@ mod history {
                 "an offer with a minimum fill of {min_fill} and expiry {expires_at:?}"
             );
         }
-    }
-
-    /// `transition` with group action information on its one token transition, which no
-    /// executed placement carries: the node refuses it on a placement.
-    fn with_group_info(transition: &StateTransition) -> StateTransition {
-        let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition.clone() else {
-            panic!("expected a batch of token transitions");
-        };
-        let BatchedTransition::Token(token_transition) = &mut batch.transitions[0] else {
-            panic!("expected a token transition");
-        };
-        token_transition
-            .base_mut()
-            .set_using_group_info(Some(GroupStateTransitionInfo {
-                group_contract_position: 0,
-                action_id: Identifier::from([3; 32]),
-                action_is_proposer: false,
-            }));
-        StateTransition::Batch(BatchTransition::V1(batch))
     }
 
     /// A placement is never a group action. A placement carrying group action information,
