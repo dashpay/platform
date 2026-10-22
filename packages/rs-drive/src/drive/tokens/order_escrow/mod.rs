@@ -945,4 +945,69 @@ mod tests {
         );
         assert_eq!(tokens_layer_level(&estimation), 0, "protocol version 14");
     }
+
+    /// An offer's batch debits the buyer's balance and credits the offer's escrow: built in
+    /// either order, the estimation describes the root at the escrow's depth (3) and the
+    /// prefunded specialized balances layer at the escrow key's (2). At protocol version 14 the
+    /// balance estimation built last lowers the root to the balances' level (1), as it always
+    /// did.
+    #[test]
+    fn should_keep_the_credit_escrow_depths_whichever_of_debit_and_escrow_is_built_first() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let level_at = |estimation: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+                        path: KeyInfoPath| match estimation
+            .as_ref()
+            .expect("expected an estimation")
+            .get(&path)
+            .map(|layer| &layer.estimated_layer_count)
+        {
+            Some(EstimatedLevel(level, _)) => *level,
+            other => panic!("expected an estimated level, got {other:?}"),
+        };
+        let root = || KeyInfoPath::from_known_path([]);
+        let prefunded = || KeyInfoPath::from_known_path(prefunded_specialized_balances_path());
+        let debit = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+                     platform_version: &PlatformVersion| {
+            drive
+                .remove_from_identity_balance_operations(
+                    [7; 32],
+                    70_000,
+                    estimation,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the debit operations");
+        };
+        let escrow = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| {
+            drive
+                .add_to_credit_order_escrow_operations(
+                    [9; 32],
+                    70_000,
+                    estimation,
+                    platform_version,
+                )
+                .expect("expected the escrow operations");
+        };
+
+        let mut estimation = Some(HashMap::new());
+        debit(&mut estimation, platform_version);
+        escrow(&mut estimation);
+        assert_eq!(level_at(&estimation, root()), 3, "the debit first");
+        assert_eq!(level_at(&estimation, prefunded()), 2, "the debit first");
+
+        let mut estimation = Some(HashMap::new());
+        escrow(&mut estimation);
+        debit(&mut estimation, platform_version);
+        assert_eq!(level_at(&estimation, root()), 3, "the escrow first");
+        assert_eq!(level_at(&estimation, prefunded()), 2, "the escrow first");
+
+        let mut estimation = Some(HashMap::new());
+        escrow(&mut estimation);
+        debit(
+            &mut estimation,
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        assert_eq!(level_at(&estimation, root()), 1, "protocol version 14");
+    }
 }
