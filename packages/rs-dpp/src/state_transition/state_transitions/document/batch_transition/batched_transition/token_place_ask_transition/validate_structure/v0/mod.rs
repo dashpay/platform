@@ -14,6 +14,7 @@ impl TokenPlaceAskTransitionStructureValidationV0 for TokenPlaceAskTransition {
         Ok(validate_token_order_terms(
             self.amount(),
             self.price(),
+            self.decimals(),
             self.min_fill(),
             self.expires_at(),
         ))
@@ -65,7 +66,9 @@ mod tests {
     #[test]
     fn should_accept_an_order_within_its_bounds() {
         assert!(errors(order(1_000, 1, 1_000)).is_empty());
-        assert!(errors(order(MAX_TOKEN_ORDER_TERM, MAX_TOKEN_ORDER_TERM, 1)).is_empty());
+        // Each term at its bound, the order worth what an order holds at the test's decimals.
+        assert!(errors(order(MAX_TOKEN_ORDER_TERM, 1, 1)).is_empty());
+        assert!(errors(order(1, MAX_TOKEN_ORDER_TERM, 1)).is_empty());
     }
 
     #[test]

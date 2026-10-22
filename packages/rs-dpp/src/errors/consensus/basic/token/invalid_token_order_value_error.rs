@@ -1,5 +1,5 @@
 use crate::balances::credits::TokenAmount;
-use crate::consensus::state::state_error::StateError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::fee::Credits;
 use crate::ProtocolError;
@@ -9,8 +9,8 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// What a token order is worth in credits, its amount at its price, does not fit in what Platform
-/// can hold.
+/// What a token order is worth in credits, its amount at its price and the decimals it signs,
+/// does not fit in what an order can hold (`i64::MAX` credits).
 #[derive(
     Error,
     Debug,
@@ -24,9 +24,9 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("A token order of {amount} base units at {price} credits per whole token ({decimals} decimals) is worth more credits than Platform can hold")]
+#[error("A token order of {amount} base units at {price} credits per whole token ({decimals} decimals) is worth more credits than an order can hold")]
 #[platform_serialize(unversioned)]
-pub struct TokenOrderValueTooLargeError {
+pub struct InvalidTokenOrderValueError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -37,7 +37,7 @@ pub struct TokenOrderValueTooLargeError {
     decimals: u8,
 }
 
-impl TokenOrderValueTooLargeError {
+impl InvalidTokenOrderValueError {
     pub fn new(amount: TokenAmount, price: Credits, decimals: u8) -> Self {
         Self {
             amount,
@@ -59,8 +59,8 @@ impl TokenOrderValueTooLargeError {
     }
 }
 
-impl From<TokenOrderValueTooLargeError> for ConsensusError {
-    fn from(err: TokenOrderValueTooLargeError) -> Self {
-        Self::StateError(StateError::TokenOrderValueTooLargeError(err))
+impl From<InvalidTokenOrderValueError> for ConsensusError {
+    fn from(err: InvalidTokenOrderValueError) -> Self {
+        Self::BasicError(BasicError::InvalidTokenOrderValueError(err))
     }
 }
