@@ -264,8 +264,8 @@ extension SDK {
     /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
     ///
     /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
-    /// `"0"` to `"3"`, and an empty array or a number outside that range throws, also when there
-    /// are no identity ids. An empty `documentType` is the same as `nil`. No identity ids answer
+    /// `"0"` to `"3"`, and an empty array or a number outside `"0"` to `"6"` throws, also when
+    /// there are no identity ids. An empty `documentType` is the same as `nil`. No identity ids answer
     /// an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],

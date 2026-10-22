@@ -46,8 +46,8 @@ use crate::Error;
 /// A query for no identities asks about nothing: [`Fetch::fetch`] and
 /// [`Fetch::fetch_with_settings`] answer it with an empty map, whatever its purposes, and send
 /// nothing. [`Fetch::fetch_with_metadata`] and [`Fetch::fetch_with_metadata_and_proof`] have no
-/// response to take metadata and a proof from, so they send it and are refused, as every node
-/// refuses a proof of nothing (see [`TransportRequest::names_nothing`]). A query for identities
+/// response to take metadata and a proof from, so they pass it to the client, which refuses it
+/// as every node would (see [`TransportRequest::names_nothing`]). A query for identities
 /// but no purpose is refused the same way by every fetch.
 ///
 /// [`IdentitiesContractKeys`]: dpp::identity::identities_contract_keys::IdentitiesContractKeys
