@@ -1,5 +1,7 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::token::{TokenOrderExpiredError, TokenOrderValueTooLargeError};
+use dpp::consensus::state::token::{
+    TokenOrderDecimalsMismatchError, TokenOrderExpiredError, TokenOrderValueTooLargeError,
+};
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::tokens::token_order::TokenOrder;
@@ -22,8 +24,10 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 
 impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransitionAction {
     /// What a listing needs that reads nothing beyond the contract the action carries and the
-    /// block: a tradeable token, a total that fits in an order (`i64::MAX` credits) at the
-    /// token's decimals, and, when it expires, an expiry after the block.
+    /// block: a tradeable token, the decimals it was signed at being the token's (its price is
+    /// per whole token, so a change of the token's decimals between signing and execution would
+    /// reprice it), a total that fits in an order (`i64::MAX` credits) at them, and, when it
+    /// expires, an expiry after the block.
     fn validate_structure_v0(
         &self,
         block_info: &BlockInfo,
@@ -34,7 +38,18 @@ impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransit
             return Ok(validation_result);
         }
 
-        let decimals = self.base().token_configuration()?.conventions().decimals();
+        let token_decimals = self.base().token_configuration()?.conventions().decimals();
+        let decimals = self.decimals();
+        if decimals != token_decimals {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                TokenOrderDecimalsMismatchError::new(
+                    self.base().token_id(),
+                    decimals,
+                    token_decimals,
+                )
+                .into(),
+            ));
+        }
         if TokenOrder::order_value(self.amount(), self.price(), decimals).is_none() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 TokenOrderValueTooLargeError::new(self.amount(), self.price(), decimals).into(),

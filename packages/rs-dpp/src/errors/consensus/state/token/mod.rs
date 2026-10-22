@@ -83,3 +83,5 @@ mod token_order_self_fill_error;
 pub use token_order_self_fill_error::*;
 mod token_order_value_too_large_error;
 pub use token_order_value_too_large_error::*;
+mod token_order_decimals_mismatch_error;
+pub use token_order_decimals_mismatch_error::*;

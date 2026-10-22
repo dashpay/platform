@@ -8,8 +8,6 @@ use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
@@ -51,6 +49,7 @@ impl TokenPlaceAskTransitionActionV0 {
             base,
             amount,
             price,
+            decimals,
             min_fill,
             expires_at,
         } = value;
@@ -99,10 +98,12 @@ impl TokenPlaceAskTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
-        let decimals = match base_action.token_configuration_or_position_error() {
-            Ok(token_configuration) => token_configuration.conventions().decimals(),
-            Err(error) => return bump(vec![error], fee_result),
-        };
+        if let Err(error) = base_action.token_configuration_or_position_error() {
+            return bump(vec![error], fee_result);
+        }
+        // The listing is priced at the decimals it was signed at: the structure validation refuses
+        // it unless they are the token's.
+        let decimals = *decimals;
 
         let order_id =
             TokenOrderSide::Ask.order_id(base.token_id(), owner_id, base.identity_contract_nonce());
@@ -130,6 +131,7 @@ impl TokenPlaceAskTransitionActionV0 {
                     price: *price,
                     min_fill: *min_fill,
                     expires_at: *expires_at,
+                    decimals,
                     order_document,
                     token_market_contract: drive
                         .token_market_contract_fetch_info(platform_version)?,

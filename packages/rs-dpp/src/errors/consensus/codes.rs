@@ -399,6 +399,7 @@ impl ErrorWithCode for StateError {
             Self::TokenOrderNotOwnedError(_) => 40755,
             Self::TokenOrderSelfFillError(_) => 40756,
             Self::TokenOrderValueTooLargeError(_) => 40757,
+            Self::TokenOrderDecimalsMismatchError(_) => 40758,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

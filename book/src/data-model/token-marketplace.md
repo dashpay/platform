@@ -68,8 +68,11 @@ the token's supply, and the credits offered never exceed the credits on Platform
 an order is a signed 8-byte value, so a partial fill rewrites an order without changing its stored
 size.
 
-An order's price is in credits per whole token, and each order records the token's decimals when
-it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
+An order's price is in credits per whole token, so the token's decimals set what it is worth. Its
+signer signs the decimals the price is at (`decimals`), and the order is refused
+(`TokenOrderDecimalsMismatchError`, 40758) unless they are the token's when it executes: a change of
+the token's decimals between signing and execution, by whoever controls its conventions, cannot
+reprice it. Each order records those decimals (`decimals`). Every fill prices the order at that scale, so a later change to the
 token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
 open offer pays. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
 then `price`), so a book query and a depth sum name the token's decimals and never mix prices of
@@ -99,7 +102,7 @@ Three token transitions of a batch work with listings. Each is refused before pr
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceAsk` | `amount`, `price`, `minFill`, optional `expiresAt` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
+| `TokenPlaceAsk` | `amount`, `price`, `decimals`, `minFill`, optional `expiresAt` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
 | `TokenFillAsk` | `orderId`, `minAmount`, `maxAmount`, `maxTotalPrice` | Moves part or all of the listing from escrow to the buyer, and its cost from the buyer's credits to the seller's |
 | `TokenCancelOrder` | `orderId`, `side` | Returns what an order holds to its owner and deletes the order |
 
@@ -136,6 +139,7 @@ The rounding favours the seller and is never more than one credit per fill.
 | A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
+| A listing's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758) |
 | The order is open, for this token | `TokenOrderNotFoundError` (40751) |
 | A listing's `expiresAt` is after the block, and a fill comes before it | `TokenOrderExpiredError` (40752) |
 | The fill range meets the listing | `TokenOrderFillAmountError` (40753) |
