@@ -40,7 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -1770,7 +1770,11 @@ async fn build_core_changeset(
                     .cloned(),
             );
             coalesce_account_records(&mut cs.account_records);
-            cs.records = cs.account_records.clone();
+            // The wallet-level row folds every slice the manager holds for
+            // the transaction, not only the ones this block re-emitted (see
+            // `with_held_sibling_slices`).
+            cs.records =
+                with_held_sibling_slices(wallet_manager, wallet_id, &cs.account_records).await;
             fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
@@ -2497,6 +2501,56 @@ async fn wallet_slices_and_verdicts_for_txid(
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
     Some(slices_and_verdicts_for_txid(info, txid))
+}
+
+/// `slices` plus every slice the manager still holds, for the same
+/// transactions, under an account `slices` does not carry.
+///
+/// A block re-emits only the slices key-wallet's re-check still matches. A
+/// no-change spend (an asset lock draining its funding account, the burn as
+/// its only output) leaves the funding account nothing to match: the mempool
+/// check already removed the spent UTXO and no output of the account remains.
+/// The block then carries only the keys account's detail-less marker, and
+/// folded alone that marker becomes the wallet-level row, replacing the
+/// funding accounting the host already stored. The funding slice is still in
+/// the manager (at its earlier context), so folding it back in keeps the
+/// row's details and accounting while the fold takes the block's context
+/// from the marker.
+///
+/// The event's own slices stay authoritative for their accounts; only
+/// accounts it lacks are filled in. Contact watch-only slices stay out, as
+/// everywhere else in the projection. An unknown wallet (removed mid-flight,
+/// or a bare test manager) leaves `slices` as they are.
+async fn with_held_sibling_slices(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    slices: &[TransactionRecord],
+) -> Vec<TransactionRecord> {
+    let mut complete = slices.to_vec();
+    if slices.is_empty() {
+        return complete;
+    }
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return complete;
+    };
+    let carried: HashSet<(Txid, AccountType)> = slices
+        .iter()
+        .map(|record| (record.txid, record.account_type))
+        .collect();
+    let txids: BTreeSet<Txid> = slices.iter().map(|record| record.txid).collect();
+    for account in info.core_wallet.accounts.all_accounts() {
+        for txid in &txids {
+            if let Some(record) = account.transactions().get(txid) {
+                if !is_contact_watch_only(record)
+                    && !carried.contains(&(record.txid, record.account_type))
+                {
+                    complete.push(record.clone());
+                }
+            }
+        }
+    }
+    complete
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
