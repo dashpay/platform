@@ -1,23 +1,23 @@
 //! [`FromProof::check_request`] for every view fetched with a [`DocumentQuery`].
 //!
 //! All the views share one request type and one wire encoding, so a query
-//! built for one view can be fetched as another. Every node serves such a
-//! query as what it asks for, and the view's verifier then refuses the
-//! answer for the request alone, which the SDK reports as a failed proof and
-//! holds against the node. `check_request` must refuse exactly those queries
-//! before they are sent, and must accept every query the view can be
-//! verified from.
+//! built for one view can be fetched as another. Some or all nodes serve
+//! such a query as what it asks for, and the view's verifier then refuses
+//! the answer for the request alone, which the SDK reports as a failed proof
+//! and holds against the node. `check_request` must refuse those queries
+//! before they are sent (refusing one that every node refuses only moves the
+//! error), and must accept every query the view can be verified from.
 
 use crate::documents::composite_document_query::CompositeSubQuery;
 use crate::documents::document_query::{DocumentQuery, RankingDirection};
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::Document;
-use dpp::platform_value::Value;
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
+    SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::types::Documents;
 use drive_proof_verifier::{
@@ -145,10 +145,12 @@ fn refusal(view: &str, check: Check, query: &DocumentQuery) -> String {
     }
 }
 
-/// Guards every refusal test below: a view must keep accepting the queries it
-/// is verified from, or the check would break fetches that work today.
+/// Guards every refusal test below: a view must keep accepting the shapes it
+/// is verified from. The fixture cannot hold these queries' data, so this pins
+/// the shapes only; the drive-abci proof round trips check that every query
+/// verified from a real signed answer passes the check too.
 #[test]
-fn should_accept_every_query_its_view_is_verified_from() {
+fn should_accept_the_shape_of_every_query_its_view_is_verified_from() {
     let mut views = plain_views();
     views.push((
         "CompositeDocuments",
@@ -171,29 +173,34 @@ fn should_refuse_sub_queries_for_every_view_but_composite_documents() {
     }
 }
 
-/// Each aggregate is served as the select asks; a view of another aggregate,
-/// or of documents, can never verify the answer.
+/// Each select is served as it asks; a view of another aggregate, or of
+/// documents, can never verify the answer.
 #[test]
 fn should_refuse_a_view_of_a_query_that_selects_something_else() {
-    let documents = query();
-    let count = query().with_select(SelectProjection::count_star());
-    let sum = query().with_select(SelectProjection::sum("grade"));
-    let cases: [(&str, Check, &DocumentQuery); 8] = [
-        ("Document", check::<Document>, &count),
-        ("Documents", check::<Documents>, &sum),
-        ("DocumentCount", check::<DocumentCount>, &documents),
-        ("DocumentSplitCounts", check::<DocumentSplitCounts>, &sum),
-        ("DocumentSum", check::<DocumentSum>, &documents),
-        ("DocumentSplitSums", check::<DocumentSplitSums>, &count),
-        ("DocumentAverage", check::<DocumentAverage>, &documents),
+    let documents = SelectProjection::documents();
+    let count = SelectProjection::count_star();
+    let sum = SelectProjection::sum("grade");
+    let avg = SelectProjection::avg("grade");
+    let views: [(&str, Check, &SelectProjection); 8] = [
+        ("Document", check::<Document>, &documents),
+        ("Documents", check::<Documents>, &documents),
+        ("DocumentCount", check::<DocumentCount>, &count),
+        ("DocumentSplitCounts", check::<DocumentSplitCounts>, &count),
+        ("DocumentSum", check::<DocumentSum>, &sum),
+        ("DocumentSplitSums", check::<DocumentSplitSums>, &sum),
+        ("DocumentAverage", check::<DocumentAverage>, &avg),
         (
             "DocumentSplitAverages",
             check::<DocumentSplitAverages>,
-            &sum,
+            &avg,
         ),
     ];
-    for (view, check, query) in cases {
-        refusal(view, check, query);
+    for (view, check, own) in views {
+        for select in [&documents, &count, &sum, &avg] {
+            if select != own {
+                refusal(view, check, &query().with_select(select.clone()));
+            }
+        }
     }
 }
 
@@ -241,15 +248,30 @@ fn should_refuse_composite_documents_without_sub_queries() {
         check::<CompositeDocuments>,
         &query().with_limit(10),
     );
-    assert!(error.contains("between 1 and"), "{error}");
+    assert!(error.contains("sub-queries"), "{error}");
     assert!(!error.contains("SDK misconfigured"), "{error}");
 }
 
-/// A pending time-range selection is resolved only against the answer's
-/// signed block time, so the check must leave it alone: the fixture has no
-/// time-range index, and resolving the selection here would refuse it.
+/// The composite shape check reports more than configuration errors; each
+/// reaches the caller as the same request error.
 #[test]
-fn should_accept_pending_time_range_selections_before_they_are_resolved() {
+fn should_refuse_a_composite_sub_query_outside_the_composite_shape() {
+    let error = refusal(
+        "CompositeDocuments",
+        check::<CompositeDocuments>,
+        &query()
+            .with_limit(10)
+            .with_sub_query(sub_query().with_limit(0)),
+    );
+    assert!(error.contains("sub-query 0: limit"), "{error}");
+}
+
+/// Window selections stay pending until the answer arrives: a relative
+/// time-range selection resolves only against the answer's signed block time.
+/// Resolving any selection also needs the contract's bucketing index, which
+/// the fixture lacks, so a check that resolved them would refuse these.
+#[test]
+fn should_accept_pending_window_selections_before_they_are_resolved() {
     let cases: [(&str, Check, DocumentQuery); 2] = [
         (
             "DocumentRankedEntries",
@@ -263,7 +285,123 @@ fn should_accept_pending_time_range_selections_before_they_are_resolved() {
         ),
     ];
     for (view, check, query) in cases {
-        let query = query.with_time_range("$createdAt", TimeRangeSelector::Newest);
+        for query in [
+            query
+                .clone()
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
+            query.with_integer_range("price", Value::U64(600)),
+        ] {
+            assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
+        }
+    }
+}
+
+/// A `post` whose `hashtags` is a typed array of strings.
+fn post_contract() -> Arc<DataContract> {
+    let schemas = platform_value!({"post": {
+        "type": "object",
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {"type": "string", "minLength": 1, "maxLength": 61},
+                "position": 0
+            }
+        },
+        "required": ["$createdAt"],
+        "indices": [
+            {"name": "byHashtagTime",
+             "properties": [{"hashtags": "asc"}, {"$createdAt": "asc"}],
+             "countable": "countable"}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+            .expect("the post contract is well-formed")
+            .data_contract_owned(),
+    )
+}
+
+/// Grouped by a typed array, a `containsAny` over several of its elements is
+/// served with one total per element. A split view verifies those totals; a
+/// view that adds them up into one would count a post once per element it
+/// holds, so its verifier refuses the request.
+#[test]
+fn should_refuse_one_total_over_several_elements_of_a_typed_array() {
+    let several_hashtags = |select: SelectProjection| {
+        DocumentQuery::new(post_contract(), "post")
+            .expect("the contract has this document type")
+            .with_select(select)
+            .with_where(WhereClause {
+                field: "hashtags".to_string(),
+                operator: WhereOperator::ContainsAny,
+                value: platform_value!(["dash", "news"]),
+            })
+            .with_group_by("hashtags")
+    };
+    let folded: [(&str, Check, SelectProjection); 3] = [
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("grade"),
+        ),
+    ];
+    for (view, check, select) in folded {
+        let error = refusal(view, check, &several_hashtags(select));
+        assert!(
+            error.contains("only answered grouped by"),
+            "{view}: {error}"
+        );
+    }
+    let split: [(&str, Check, SelectProjection); 3] = [
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            SelectProjection::avg("grade"),
+        ),
+    ];
+    for (view, check, select) in split {
+        let query = several_hashtags(select);
+        assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
+    }
+}
+
+/// The server refuses a projection field on the documents select over the V1
+/// wire, and the V0 encoder drops it, so the documents a V0 node serves for
+/// it verify; only the projected function decides the view.
+#[test]
+fn should_leave_a_documents_projection_field_to_the_encoder_and_the_server() {
+    let query = query().with_select(SelectProjection {
+        function: SelectFunction::Documents,
+        field: "name".to_string(),
+    });
+    for (view, check) in [
+        ("Document", check::<Document> as Check),
+        ("Documents", check::<Documents>),
+    ] {
         assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
     }
 }

@@ -115,8 +115,10 @@ impl FromProof<DocumentQuery> for DocumentHavingEntries {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
 
-    /// Same reasoning as the ranked impl: a request without a `having` clause is an
-    /// ordinary grouped aggregate, which nodes serve and the having verifier then refuses.
+    /// A request without a `having` clause is an ordinary grouped aggregate, which nodes
+    /// serve and the having verifier then refuses. Its pending time-range selections only
+    /// ever add equality pins, which the grammar cannot refuse a request for lacking, so
+    /// checking before they are resolved refuses nothing the verifier accepts.
     fn check_request(
         request: &Self::Request,
         platform_version: &PlatformVersion,

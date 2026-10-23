@@ -1,8 +1,8 @@
 //! A document query that the view it is fetched as cannot be verified from is
-//! refused before it is sent. Sent, it is served by every node, and the
-//! view's verifier then refuses the answer for the request alone: an
-//! `Error::Proof`, which is retried on other nodes and bans each node that
-//! answered.
+//! refused before it is sent. Sent, it is served by the nodes these tests
+//! name, and the view's verifier then refuses the answer for the request
+//! alone: an `Error::Proof`, which is retried on other nodes and bans each
+//! node that answered.
 use super::{Sdk, SdkInstance};
 use crate::platform::documents::composite_document_query::CompositeSubQuery;
 use crate::platform::documents::document_query::RankingDirection;
@@ -12,8 +12,9 @@ use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
+use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::Document;
-use dpp::platform_value::Value;
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
@@ -98,7 +99,7 @@ async fn assert_refused_before_sending<T: Debug>(
 
 /// A node routing with an older query table serves a ranked request outside
 /// the ranked grammar (here a range on the grouped property) as a plain
-/// grouped aggregate; every protocol-13 node does.
+/// grouped aggregate.
 #[tokio::test]
 async fn should_refuse_a_malformed_ranked_query_without_sending_it() {
     let sdk = sdk();
@@ -169,6 +170,51 @@ async fn should_refuse_composite_documents_without_sub_queries_without_sending_i
     let request = serve(&sdk, &query).await;
     let result = CompositeDocuments::fetch(&sdk, query).await;
     assert_refused_before_sending(&sdk, &request, result, "composite without sub-queries").await;
+}
+
+/// A `post` whose `hashtags` is a typed array of strings.
+fn post_contract() -> DataContract {
+    let schemas = platform_value!({"post": {
+        "type": "object",
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {"type": "string", "minLength": 1, "maxLength": 61},
+                "position": 0
+            }
+        },
+        "required": ["$createdAt"],
+        "indices": [
+            {"name": "byHashtag", "properties": [{"hashtags": "asc"}], "countable": "countable"}
+        ],
+        "additionalProperties": false
+    }});
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+        .expect("the post contract is well-formed")
+        .data_contract_owned()
+}
+
+/// Grouped by a typed array, a `containsAny` over several elements is served
+/// with one count per element; one total would count a post once per element
+/// it holds, so `DocumentCount` cannot verify it.
+#[tokio::test]
+async fn should_refuse_one_count_over_several_elements_of_a_typed_array_without_sending_it() {
+    let sdk = sdk();
+    let query = DocumentQuery::new(post_contract(), "post")
+        .expect("the contract has this document type")
+        .with_select(SelectProjection::count_star())
+        .with_where(WhereClause {
+            field: "hashtags".to_string(),
+            operator: WhereOperator::ContainsAny,
+            value: platform_value!(["dash", "news"]),
+        })
+        .with_group_by("hashtags");
+    let request = serve(&sdk, &query).await;
+    let result = DocumentCount::fetch(&sdk, query).await;
+    assert_refused_before_sending(&sdk, &request, result, "one count over several elements").await;
 }
 
 /// Guards the refusals above: a query its view is verified from still goes

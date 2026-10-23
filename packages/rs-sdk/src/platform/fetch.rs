@@ -186,7 +186,7 @@ where
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
-        check_request::<<Self as Fetch>::Query, Self>(&owned_rich, sdk)?;
+        check_before_sending::<<Self as Fetch>::Query, Self>(&owned_rich, sdk)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -291,7 +291,7 @@ where
 /// The refusal is the caller's mistake, not a node's, so it is a non-retryable
 /// [`Error::Config`] rather than the retried [`Error::Proof`] the verifier would
 /// return for the same request once a node had answered it.
-pub(super) fn check_request<R, O: FromProof<R>>(
+pub(super) fn check_before_sending<R, O: FromProof<R>>(
     request: &O::Request,
     sdk: &Sdk,
 ) -> Result<(), Error> {

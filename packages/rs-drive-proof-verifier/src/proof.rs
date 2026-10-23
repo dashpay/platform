@@ -199,16 +199,18 @@ pub trait FromProof<Req> {
     /// Several types can share one request type while each accepting only some of its shapes
     /// (every document view is fetched with the same document query). A shape refused only
     /// after the answer is reported as a failed proof, which callers retry on another node
-    /// and hold against the one that answered, although every node answered it correctly.
+    /// and hold against the one that answered, although that node answered it correctly.
     /// Refusing it here keeps it off the network.
     ///
     /// The default accepts every request. An implementation must not refuse a request that
-    /// [`FromProof::maybe_from_proof_with_metadata()`] can verify.
+    /// [`FromProof::maybe_from_proof_with_metadata()`] can verify at `platform_version` or at
+    /// any later version: an answer is verified at the version it is signed with when that
+    /// is newer.
     ///
     /// # Arguments
     ///
     /// * `request`: The request that is about to be sent.
-    /// * `platform_version`: The platform version that should be used.
+    /// * `platform_version`: The platform version the request is built for.
     ///
     /// # Returns
     ///

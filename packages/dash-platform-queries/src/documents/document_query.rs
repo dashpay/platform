@@ -627,14 +627,14 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 
     /// The verifier below rebuilds a documents query whatever the request selects, so an
     /// aggregate select, which the server answers with an aggregate proof, can never verify.
-    /// The server refuses a projection field on the documents select, so refusing that here
-    /// too only moves the error.
+    /// A projection field on the documents select is left alone: the server refuses it on
+    /// the V1 wire, and the V0 encoder drops it, so the documents served verify.
     fn check_request(
         request: &Self::Request,
         _platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
         request.ensure_no_sub_queries()?;
-        if request.select != SelectProjection::documents() {
+        if request.select.function != SelectFunction::Documents {
             return Err(drive_proof_verifier::Error::RequestError {
                 error: format!(
                     "Document / Documents require the documents projection; got {:?}. Fetch \
