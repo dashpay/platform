@@ -11,7 +11,6 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 mod v0;
-mod v1;
 
 impl Drive {
     /// Verifies a state transition against a provided proof, returning the
@@ -33,6 +32,10 @@ impl Drive {
     /// credit balance of the batch's owner, read from the same state as the
     /// document; it is a snapshot at the proof's block whatever the outcome's
     /// guarantee, and `None` for a proof made at an earlier version.
+    ///
+    /// The proof must have been made at `platform_version`. To verify a proof made at
+    /// another version, use
+    /// [`Self::verify_state_transition_was_executed_with_proof_for_query_version`].
     ///
     /// # Parameters
     ///
@@ -74,14 +77,12 @@ impl Drive {
 
     /// Verifies the producer's execution-proof layout using the caller's verifier rules.
     ///
-    /// `query_platform_version` selects whether the query includes an owner balance.
-    /// All proof validation and decoding still use `platform_version`. The caller
-    /// must authenticate the producer version together with the resulting root.
-    ///
-    /// The generation is chosen by the producer's version, so the generations of this
-    /// method may differ only in the layout the producer proved. A stricter check
-    /// belongs under the caller's `platform_version`, which an older producer cannot
-    /// lower.
+    /// The caller's `platform_version` selects the generation of this method and every
+    /// rule inside it, so an older producer cannot lower them. `query_platform_version`
+    /// selects only the layout the producer proved: whether the proof of an owned,
+    /// fee-paying transition carries the owner's credit balance, which its
+    /// `prove_state_transition` generation decides. The caller must authenticate the
+    /// producer version together with the resulting root.
     ///
     /// # Parameters
     ///
@@ -89,14 +90,15 @@ impl Drive {
     ///   [`Self::verify_state_transition_was_executed_with_proof`].
     /// - `query_platform_version`: the version the producer signed, which selects the
     ///   proof layout.
-    /// - `platform_version`: the caller's version, which selects every other rule. Its
-    ///   generation of this method must be one this build knows.
+    /// - `platform_version`: the caller's version, which selects every other rule.
     ///
     /// # Returns
     ///
     /// The root hash of the proof and the verified outcome, as for
-    /// [`Self::verify_state_transition_was_executed_with_proof`]. An unknown generation
-    /// in either version is reported as [`DriveError::UnknownVersionMismatch`].
+    /// [`Self::verify_state_transition_was_executed_with_proof`]. A generation this build
+    /// does not know, of this method in the caller's version or of
+    /// `prove_state_transition` in the producer's, is reported as
+    /// [`DriveError::UnknownVersionMismatch`] naming that method.
     pub fn verify_state_transition_was_executed_with_proof_for_query_version(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -105,42 +107,50 @@ impl Drive {
         query_platform_version: &PlatformVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        let verifier_version = platform_version
-            .drive
-            .methods
-            .verify
-            .state_transition
-            .verify_state_transition_was_executed_with_proof;
-        if !matches!(verifier_version, 0 | 1) {
-            return Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_state_transition_was_executed_with_proof".to_string(),
-                known_versions: vec![0, 1],
-                received: verifier_version,
-            }));
-        }
-        match query_platform_version
+        match platform_version
             .drive
             .methods
             .verify
             .state_transition
             .verify_state_transition_was_executed_with_proof
         {
-            0 => Drive::verify_state_transition_was_executed_with_proof_v0(
+            // Generation 1 checks what generation 0 checks; it came with the protocol
+            // whose producers prove the owner balance. That layout is read from the
+            // producer's prover generation, which every protocol version pairs with the
+            // verifier generation of the same number, so either generation verifies a
+            // proof made at its own version, an older one or a newer one.
+            0 | 1 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
                 block_info,
                 proof,
                 known_contracts_provider_fn,
-                platform_version,
-            ),
-            1 => Drive::verify_state_transition_was_executed_with_proof_v1(
-                state_transition,
-                block_info,
-                proof,
-                known_contracts_provider_fn,
+                Self::proof_carries_owner_balance(query_platform_version)?,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Whether a producer at `query_platform_version` proves an owned, fee-paying
+    /// transition together with its owner's credit balance: generation 1 of
+    /// `prove_state_transition` does, generation 0 does not.
+    fn proof_carries_owner_balance(
+        query_platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match query_platform_version
+            .drive
+            .methods
+            .prove
+            .prove_state_transition
+        {
+            0 => Ok(false),
+            1 => Ok(true),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "prove_state_transition".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             })),
@@ -188,46 +198,89 @@ mod tests {
         );
     }
 
-    /// The producer's version only picks the layout: a verifier generation this build does
-    /// not know is refused even when the producer's generation is known, and the reverse.
+    fn verify_empty_credit_transfer_proof(
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0::default(),
+        ));
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+        Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            query_platform_version,
+            platform_version,
+        )
+    }
+
+    /// The caller's generation of this verifier selects the checks and the producer's
+    /// prover generation the layout, so an unknown generation of either is refused,
+    /// naming the method whose generation this build does not know.
     #[test]
     fn should_reject_unknown_verifier_or_producer_generation() {
-        let mut unknown = PlatformVersion::latest().clone();
-        unknown
+        let mut unknown_verifier = PlatformVersion::latest().clone();
+        unknown_verifier
             .drive
             .methods
             .verify
             .state_transition
             .verify_state_transition_was_executed_with_proof = 255;
+        let mut unknown_prover = PlatformVersion::latest().clone();
+        unknown_prover.drive.methods.prove.prove_state_transition = 255;
         let known = PlatformVersion::latest();
 
-        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
-            IdentityCreditTransferTransitionV0::default(),
-        ));
-        let block_info = BlockInfo::default();
-        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
-
-        for (query_platform_version, platform_version) in [(known, &unknown), (&unknown, known)] {
-            let result = Drive::verify_state_transition_was_executed_with_proof_for_query_version(
-                &st,
-                &block_info,
-                &[],
-                known_contracts_provider_fn,
-                query_platform_version,
-                platform_version,
-            );
+        for (query_platform_version, platform_version, unknown_method) in [
+            (
+                known,
+                &unknown_verifier,
+                "verify_state_transition_was_executed_with_proof",
+            ),
+            (&unknown_prover, known, "prove_state_transition"),
+        ] {
+            let result =
+                verify_empty_credit_transfer_proof(query_platform_version, platform_version);
 
             assert!(
                 matches!(
-                    result,
+                    &result,
                     Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                        method,
                         received: 255,
                         ..
-                    }))
+                    })) if method == unknown_method
                 ),
-                "expected UnknownVersionMismatch, got {:?}",
+                "expected UnknownVersionMismatch for {unknown_method}, got {:?}",
                 result,
             );
         }
+    }
+
+    /// Which checks run is the verifier's decision: the generation of this verifier
+    /// in the producer's table is never read, so a producer cannot select an older
+    /// or weaker one.
+    #[test]
+    fn should_not_read_the_producers_verifier_generation() {
+        let mut producer = PlatformVersion::latest().clone();
+        producer
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof = 255;
+        let verifier = PlatformVersion::latest();
+
+        assert_eq!(
+            format!(
+                "{:?}",
+                verify_empty_credit_transfer_proof(&producer, verifier)
+            ),
+            format!(
+                "{:?}",
+                verify_empty_credit_transfer_proof(verifier, verifier)
+            ),
+        );
     }
 }
