@@ -30,8 +30,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 
 impl TokenPlaceAskTransitionActionStateValidationV0 for TokenPlaceAskTransitionAction {
     /// A listing needs a token that is not paused and a seller whose account is not frozen and
-    /// who holds the amount. What needs no read (a tradeable token, a total that fits in an
-    /// order, an expiry after the block) is checked with the batch's advanced structure.
+    /// who holds the amount. What needs no read (a tradeable token, the decimals it signs) is
+    /// checked with the batch's advanced structure.
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,

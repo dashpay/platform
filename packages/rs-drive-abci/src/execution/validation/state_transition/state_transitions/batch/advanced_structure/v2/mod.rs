@@ -38,8 +38,8 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     ///
     /// - a `TokenConfigUpdate` that makes a token tradeable needs a transferable token
     ///   (`NonTransferableTokenTradeableError`, 10281);
-    /// - a `TokenPlaceAsk` needs a tradeable token, a total that fits in an order and an expiry
-    ///   after the block, and a `TokenFillAsk` a token that is still tradeable.
+    /// - a `TokenPlaceAsk` needs a tradeable token and the token's decimals, and a
+    ///   `TokenFillAsk` a token that is still tradeable.
     ///
     /// A failing action bumps the signer's nonce, as every advanced structure failure does.
     fn validate_advanced_structure_from_state_v2(

@@ -286,7 +286,6 @@ impl Market {
         amount: u64,
         price: Credits,
         min_fill: u64,
-        expires_at: Option<u64>,
     ) -> (StateTransition, Identifier) {
         let platform_version = PlatformVersion::latest();
         let decimals = self.token_decimals();
@@ -301,7 +300,6 @@ impl Market {
             price,
             decimals,
             min_fill,
-            expires_at,
             &self.seller.key,
             nonce,
             0,
@@ -488,7 +486,6 @@ impl Market {
             price,
             decimals,
             1,
-            None,
             &self.buyer.key,
             nonce,
             0,
@@ -594,7 +591,6 @@ impl Market {
             PRICE,
             8,
             1,
-            None,
             &self.seller.key,
             nonce,
             0,
@@ -801,7 +797,7 @@ impl Market {
 #[tokio::test]
 async fn should_move_listed_tokens_into_escrow_and_record_the_listing() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 100, Some(9_000)).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 100).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     assert_eq!(
@@ -821,7 +817,6 @@ async fn should_move_listed_tokens_into_escrow_and_record_the_listing() {
             amount: 1_000,
             remaining: 1_000,
             min_fill: 100,
-            expires_at: Some(9_000),
             escrow: 0,
             decimals: 8,
         }
@@ -883,7 +878,7 @@ fn with_base(
 #[tokio::test]
 async fn should_not_prove_a_listing_whose_token_id_its_contract_and_position_do_not_derive() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let mut two_tokens = market.contract.clone();
     let token = market
@@ -917,7 +912,7 @@ async fn should_not_prove_a_listing_whose_token_id_its_contract_and_position_do_
 #[tokio::test]
 async fn should_not_prove_a_listing_carrying_group_information() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     assert_matches!(
@@ -938,7 +933,7 @@ async fn should_not_prove_a_listing_carrying_group_information() {
 #[tokio::test]
 async fn should_prove_a_listing_after_it_is_partly_filled() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
     market.assert_executes(&fill, &BlockInfo::default());
@@ -968,7 +963,7 @@ async fn should_prove_a_listing_after_it_is_partly_filled() {
 #[tokio::test]
 async fn should_sell_part_of_a_listing_and_then_the_rest() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 100, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 100).await;
     market.assert_executes(&place, &BlockInfo::default());
     let seller_credits = market.credit_balance(market.seller.id());
     let buyer_credits = market.credit_balance(market.buyer.id());
@@ -1025,7 +1020,7 @@ async fn should_sell_part_of_a_listing_and_then_the_rest() {
 #[tokio::test]
 async fn should_fill_a_listing_twice_in_one_block() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let seller_credits = market.credit_balance(market.seller.id());
 
@@ -1068,7 +1063,7 @@ async fn should_fill_a_listing_twice_in_one_block() {
 #[tokio::test]
 async fn should_charge_each_fill_the_change_in_the_running_total() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(7, 150_000_000, 1, None).await;
+    let (place, order_id) = market.place_ask(7, 150_000_000, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let seller_credits = market.credit_balance(market.seller.id());
 
@@ -1098,7 +1093,7 @@ async fn should_charge_each_fill_the_change_in_the_running_total() {
 #[tokio::test]
 async fn should_fill_a_unit_that_leaves_the_running_total_unchanged() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(3, 50_000_000, 1, None).await;
+    let (place, order_id) = market.place_ask(3, 50_000_000, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let fill = market.fill_ask(order_id, 1, 1, 1).await;
     market.assert_executes(&fill, &BlockInfo::default());
@@ -1144,7 +1139,7 @@ async fn should_fill_a_unit_that_leaves_the_running_total_unchanged() {
 async fn should_refuse_a_listing_amount_above_i64_max() {
     let mut market = tradeable_market();
     let seller_credits = market.credit_balance(market.seller.id());
-    let (place, order_id) = market.place_ask(i64::MAX as u64 + 1, 1, 1, None).await;
+    let (place, order_id) = market.place_ask(i64::MAX as u64 + 1, 1, 1).await;
     assert_matches!(
         market.check_tx(&place).as_slice(),
         [ConsensusError::BasicError(
@@ -1179,7 +1174,7 @@ async fn should_charge_the_fill_that_widens_a_listings_revision() {
         },
         dash_to_credits!(1.0),
     );
-    let (place, order_id) = market.place_ask(200, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(200, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let mut fills_adding_storage = vec![];
@@ -1232,7 +1227,7 @@ async fn should_charge_the_fill_that_widens_a_listings_revision() {
 #[tokio::test]
 async fn should_return_the_tokens_of_a_cancelled_listing() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     let fill = market.fill_ask(order_id, 1, 250, 2_500).await;
     market.assert_executes(&fill, &BlockInfo::default());
@@ -1295,7 +1290,6 @@ async fn should_charge_a_listing_the_hash_of_its_id_where_it_is_derived() {
             price: PRICE,
             decimals: 8,
             min_fill: 1,
-            expires_at: None,
         };
         TokenPlaceAskTransitionActionV0::try_from_borrowed_token_place_ask_transition_with_contract_lookup(
             &market.platform.drive,
@@ -1362,7 +1356,7 @@ async fn should_charge_a_listing_refused_after_its_id_is_derived_the_hash() {
 #[tokio::test]
 async fn should_refuse_listing_a_token_that_is_not_tradeable() {
     let mut market = market_with(|_| {}, dash_to_credits!(1.0));
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
 
     // The rule reads only the contract the action carries, so the mempool refuses it too.
     assert_matches!(
@@ -1485,7 +1479,7 @@ async fn should_refuse_a_frozen_buyers_fill_unless_the_token_allows_transfers_to
             },
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         market.freeze_the_buyer().await;
 
@@ -1517,7 +1511,7 @@ async fn should_refuse_a_frozen_buyers_fill_unless_the_token_allows_transfers_to
 #[tokio::test]
 async fn should_refuse_listing_more_than_the_seller_holds() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(BASE_SUPPLY + 1, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(BASE_SUPPLY + 1, PRICE, 1).await;
     let processing_result = market.process(&place);
 
     assert_matches!(
@@ -1546,7 +1540,7 @@ async fn should_refuse_a_listing_worth_more_than_an_order_holds() {
         dash_to_credits!(1.0),
     );
     let seller_credits = market.credit_balance(market.seller.id());
-    let (place, order_id) = market.place_ask(2, i64::MAX as u64, 1, None).await;
+    let (place, order_id) = market.place_ask(2, i64::MAX as u64, 1).await;
     assert_matches!(
         market.check_tx(&place).as_slice(),
         [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
@@ -1566,47 +1560,9 @@ async fn should_refuse_a_listing_worth_more_than_an_order_holds() {
 }
 
 #[tokio::test]
-async fn should_refuse_a_listing_that_expires_before_the_block() {
-    let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, Some(5_000)).await;
-    let processing_result = market.process_at(&place, &at_time(5_000));
-
-    assert_matches!(
-        processing_result.execution_results().as_slice(),
-        [StateTransitionExecutionResult::PaidConsensusError {
-            error: ConsensusError::StateError(StateError::TokenOrderExpiredError(inner)),
-            ..
-        }] if inner.order_id() == order_id
-    );
-    assert_eq!(market.listing(order_id), None);
-}
-
-#[tokio::test]
-async fn should_refuse_filling_an_expired_listing_but_still_cancel_it() {
-    let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, Some(5_000)).await;
-    market.assert_executes(&place, &at_time(1_000));
-
-    let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
-    let processing_result = market.process_at(&fill, &at_time(5_000));
-    assert_matches!(
-        processing_result.execution_results().as_slice(),
-        [StateTransitionExecutionResult::PaidConsensusError {
-            error: error @ ConsensusError::StateError(StateError::TokenOrderExpiredError(_)),
-            ..
-        }] if error.code() == 40752
-    );
-    assert_eq!(market.token_balance(market.buyer.id()), None);
-
-    let cancel = market.cancel(order_id, false).await;
-    market.assert_executes(&cancel, &at_time(5_000));
-    assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
-}
-
-#[tokio::test]
 async fn should_refuse_filling_ones_own_listing() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let fill = market.seller_fill_ask(order_id).await;
@@ -1624,7 +1580,7 @@ async fn should_refuse_filling_ones_own_listing() {
 #[tokio::test]
 async fn should_refuse_a_fill_above_the_buyers_price_limit() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let fill = market.fill_ask(order_id, 1, 400, 3_999).await;
@@ -1644,7 +1600,7 @@ async fn should_refuse_a_fill_above_the_buyers_price_limit() {
 #[tokio::test]
 async fn should_refuse_a_fill_the_minimum_fill_cannot_meet() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 100, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 100).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let fill = market.fill_ask(order_id, 950, 950, 1_000_000).await;
@@ -1683,7 +1639,7 @@ async fn should_refuse_filling_a_listing_that_does_not_exist() {
 #[tokio::test]
 async fn should_refuse_cancelling_someone_elses_listing() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let cancel = market.cancel(order_id, true).await;
@@ -1701,7 +1657,7 @@ async fn should_refuse_cancelling_someone_elses_listing() {
 #[tokio::test]
 async fn should_refuse_a_fill_of_a_paused_token_but_still_cancel() {
     let mut market = market_with(make_token_tradeable_and_pausable, dash_to_credits!(1.0));
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     market.pause().await;
 
@@ -1728,10 +1684,10 @@ async fn should_not_fill_a_listing_the_buyer_cannot_pay_for() {
     let mut market = market_with(make_token_tradeable, dash_to_credits!(0.0001));
     let buyer_credits = market.credit_balance(market.buyer.id());
     // 10,000,000 credits for the whole listing: the buyer's balance, short of the fee.
-    let (place, at_balance) = market.place_ask(1_000, 1_000_000_000_000, 1, None).await;
+    let (place, at_balance) = market.place_ask(1_000, 1_000_000_000_000, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     // 20,000,000 credits: twice the buyer's balance.
-    let (place, above_balance) = market.place_ask(1_000, 2_000_000_000_000, 1, None).await;
+    let (place, above_balance) = market.place_ask(1_000, 2_000_000_000_000, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     assert_eq!(buyer_credits, 10_000_000);
     let buyer_nonce = market.contract_nonce(market.buyer.id());
@@ -1779,7 +1735,7 @@ async fn should_keep_pricing_a_listing_at_the_decimals_it_was_placed_at() {
         },
         dash_to_credits!(1.0),
     );
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     assert_eq!(
         market.listing(order_id).map(|listing| listing.decimals),
@@ -1809,53 +1765,13 @@ async fn should_keep_pricing_a_listing_at_the_decimals_it_was_placed_at() {
     assert_eq!((listing.remaining, listing.decimals), (800, 8));
 
     // A listing placed after the change records the new decimals.
-    let (place, newer) = market.place_ask(10, PRICE, 1, None).await;
+    let (place, newer) = market.place_ask(10, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
     assert_eq!(
         market.listing(newer).map(|listing| listing.decimals),
         Some(2)
     );
     market.assert_supply_balanced();
-}
-
-/// A listing's expiry is stored as a signed 8-byte value: `i64::MAX` is a valid expiry, and one
-/// more is refused by the structure validation, in check_tx and in a block, before anything is
-/// charged.
-#[tokio::test]
-async fn should_refuse_a_listing_expiry_above_i64_max() {
-    let mut market = tradeable_market();
-    let latest = i64::MAX as u64;
-
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, Some(latest)).await;
-    assert!(market.check_tx(&place).is_empty());
-    market.assert_executes(&place, &BlockInfo::default());
-    assert_eq!(
-        market
-            .listing(order_id)
-            .and_then(|listing| listing.expires_at),
-        Some(latest)
-    );
-
-    let seller_credits = market.credit_balance(market.seller.id());
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, Some(latest + 1)).await;
-    assert_matches!(
-        market.check_tx(&place).as_slice(),
-        [ConsensusError::BasicError(BasicError::InvalidTokenOrderExpiryError(error))]
-            if error.expires_at() == latest + 1
-    );
-    let processing_result = market.process(&place);
-    assert_matches!(
-        processing_result.execution_results().as_slice(),
-        [StateTransitionExecutionResult::UnpaidConsensusError(
-            error @ ConsensusError::BasicError(BasicError::InvalidTokenOrderExpiryError(_))
-        )] if error.code() == 10464
-    );
-    assert_eq!(market.listing(order_id), None);
-    assert_eq!(market.credit_balance(market.seller.id()), seller_credits);
-    assert_eq!(
-        market.token_balance(market.seller.id()),
-        Some(BASE_SUPPLY - 1_000)
-    );
 }
 
 /// A listing naming a token its contract does not define is refused with the token base
@@ -1905,7 +1821,7 @@ async fn should_refuse_a_listing_of_a_token_the_contract_does_not_define() {
 #[tokio::test]
 async fn should_refuse_a_fill_of_a_token_the_contract_does_not_define() {
     let mut market = tradeable_market();
-    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
     market.assert_executes(&place, &BlockInfo::default());
 
     let platform_version = PlatformVersion::latest();

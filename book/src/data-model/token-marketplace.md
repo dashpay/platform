@@ -104,7 +104,7 @@ Three token transitions of a batch work with listings. Each is refused before pr
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceAsk` | `amount`, `price`, `decimals`, `minFill`, optional `expiresAt` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
+| `TokenPlaceAsk` | `amount`, `price`, `decimals`, `minFill` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
 | `TokenFillAsk` | `orderId`, `minAmount`, `maxAmount`, `maxTotalPrice` | Moves part or all of the listing from escrow to the buyer, and its cost from the buyer's credits to the seller's |
 | `TokenCancelOrder` | `orderId`, `side` | Returns what an order holds to its owner and deletes the order |
 
@@ -137,13 +137,12 @@ The rounding favours the seller and is never more than one credit per fill.
 
 | Rule | Refused with |
 |---|---|
-| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, `expiresAt` at most `i64::MAX`, and what the order is worth at the `decimals` it signs at most `i64::MAX` credits | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderExpiryError` (10464), `InvalidTokenOrderValueError` (10465) |
+| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, and what the order is worth at the `decimals` it signs at most `i64::MAX` credits | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465) |
 | A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
 | A listing's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758) |
 | The order is open, for this token | `TokenOrderNotFoundError` (40751) |
-| A listing's `expiresAt` is after the block, and a fill comes before it | `TokenOrderExpiredError` (40752) |
 | The fill range meets the listing | `TokenOrderFillAmountError` (40753) |
 | The fill costs at most `maxTotalPrice` | `TokenOrderPriceLimitError` (40754) |
 | Only the order's owner cancels it | `TokenOrderNotOwnedError` (40755) |
@@ -154,9 +153,9 @@ The rounding favours the seller and is never more than one credit per fill.
 
 The rules on a transition's own fields (the first two rows) are checked before anything is read and
 refused unpaid. The state rules are paid: a refused transition bumps the signer's nonce and charges
-the work that ran. The rules that read nothing beyond the contract and the block (a tradeable token, a listing's
-value and its expiry) run with the batch's advanced structure, so check_tx refuses them too. A cancel has no rule beyond ownership, so an order can always be withdrawn, also when the
-token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
+the work that ran. The rules that read nothing beyond the contract (a tradeable token and the
+decimals a listing signs) run with the batch's advanced structure, so check_tx refuses them too. A
+cancel has no rule beyond ownership, so an order can always be withdrawn, also when the token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
 checked with the batch's fees, which count a fill's cost like a direct purchase.
 
 ### Storage and proofs

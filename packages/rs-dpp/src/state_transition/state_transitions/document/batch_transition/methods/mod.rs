@@ -20,7 +20,6 @@ use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::TimestampMillis;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -1586,7 +1585,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         price: Credits,
         decimals: u8,
         min_fill: TokenAmount,
-        expires_at: Option<TimestampMillis>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -1619,7 +1617,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     price,
                     decimals,
                     min_fill,
-                    expires_at,
                     identity_public_key,
                     identity_contract_nonce,
                     user_fee_increase,

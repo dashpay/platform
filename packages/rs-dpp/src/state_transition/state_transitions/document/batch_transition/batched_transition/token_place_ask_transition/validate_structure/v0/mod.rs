@@ -16,7 +16,6 @@ impl TokenPlaceAskTransitionStructureValidationV0 for TokenPlaceAskTransition {
             self.price(),
             self.decimals(),
             self.min_fill(),
-            self.expires_at(),
         ))
     }
 }

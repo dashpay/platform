@@ -1,5 +1,5 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::token::{TokenOrderDecimalsMismatchError, TokenOrderExpiredError};
+use dpp::consensus::state::token::TokenOrderDecimalsMismatchError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -20,14 +20,14 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 }
 
 impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransitionAction {
-    /// What a listing needs that reads nothing beyond the contract the action carries and the
-    /// block: a tradeable token, the decimals it was signed at being the token's (its price is
-    /// per whole token, so a change of the token's decimals between signing and execution would
-    /// reprice it), and, when it expires, an expiry after the block. What the listing is worth
-    /// at the decimals it signs is checked with the transition's structure.
+    /// What a listing needs that reads nothing beyond the contract the action carries: a
+    /// tradeable token, and the decimals it was signed at being the token's (its price is per
+    /// whole token, so a change of the token's decimals between signing and execution would
+    /// reprice it). What the listing is worth at the decimals it signs is checked with the
+    /// transition's structure.
     fn validate_structure_v0(
         &self,
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let validation_result = validate_token_tradeable(self.base())?;
@@ -46,15 +46,6 @@ impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransit
                 )
                 .into(),
             ));
-        }
-
-        if let Some(expires_at) = self.expires_at() {
-            if expires_at <= block_info.time_ms {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    TokenOrderExpiredError::new(self.order_id(), expires_at, block_info.time_ms)
-                        .into(),
-                ));
-            }
         }
 
         Ok(SimpleConsensusValidationResult::new())

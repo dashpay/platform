@@ -50,7 +50,6 @@ impl TokenPlaceAskTransitionActionV0 {
             price,
             decimals,
             min_fill,
-            expires_at,
         } = value;
 
         let mut drive_operations = vec![];
@@ -117,7 +116,6 @@ impl TokenPlaceAskTransitionActionV0 {
             amount: *amount,
             remaining: *amount,
             min_fill: *min_fill,
-            expires_at: *expires_at,
             escrow: 0,
             decimals,
         }
@@ -131,7 +129,6 @@ impl TokenPlaceAskTransitionActionV0 {
                     amount: *amount,
                     price: *price,
                     min_fill: *min_fill,
-                    expires_at: *expires_at,
                     decimals,
                     order_document,
                     token_market_contract: drive

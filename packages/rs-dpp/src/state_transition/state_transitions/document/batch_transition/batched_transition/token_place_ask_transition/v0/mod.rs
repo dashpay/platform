@@ -2,7 +2,6 @@ pub mod v0_methods;
 
 use crate::balances::credits::TokenAmount;
 use crate::fee::Credits;
-use crate::prelude::TimestampMillis;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
@@ -39,17 +38,14 @@ pub struct TokenPlaceAskTransitionV0 {
     /// open; a fill may not leave less than this open either. Equal to `amount` for a listing
     /// that is sold all at once or not at all.
     pub min_fill: TokenAmount,
-    /// The block time from which the listing can no longer be filled. It can still be
-    /// cancelled.
-    pub expires_at: Option<TimestampMillis>,
 }
 
 impl fmt::Display for TokenPlaceAskTransitionV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Token PlaceAsk, base: {}, amount: {}, price: {} at {} decimals, min fill: {}, expires at: {:?}",
-            self.base, self.amount, self.price, self.decimals, self.min_fill, self.expires_at
+            "Token PlaceAsk, base: {}, amount: {}, price: {} at {} decimals, min fill: {}",
+            self.base, self.amount, self.price, self.decimals, self.min_fill
         )
     }
 }

@@ -2,7 +2,7 @@ use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::document::{Document, DocumentV0, DocumentV0Getters};
 use crate::fee::Credits;
-use crate::prelude::{Revision, TimestampMillis};
+use crate::prelude::Revision;
 use crate::tokens::token_order_side::TokenOrderSide;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -15,7 +15,6 @@ pub mod property_names {
     pub const AMOUNT: &str = "amount";
     pub const REMAINING: &str = "remaining";
     pub const MIN_FILL: &str = "minFill";
-    pub const EXPIRES_AT: &str = "expiresAt";
     pub const ESCROW: &str = "escrow";
     pub const DECIMALS: &str = "decimals";
 }
@@ -50,8 +49,6 @@ pub struct TokenOrder {
     /// The smallest amount a fill takes unless it takes everything open; a fill never leaves
     /// less than this open either.
     pub min_fill: TokenAmount,
-    /// The block time from which the order can no longer be filled.
-    pub expires_at: Option<TimestampMillis>,
     /// For an offer, the credits still held in escrow; 0 for a listing, whose escrow holds
     /// tokens (`remaining`).
     pub escrow: Credits,
@@ -79,11 +76,6 @@ impl TokenOrder {
     /// The amount filled so far.
     pub fn filled(&self) -> TokenAmount {
         self.amount.saturating_sub(self.remaining)
-    }
-
-    /// Whether the order can no longer be filled at the block time `time`.
-    pub fn is_expired_at(&self, time: TimestampMillis) -> bool {
-        self.expires_at.is_some_and(|expires_at| time >= expires_at)
     }
 
     /// The amount a fill asking for between `min_amount` and `max_amount` takes, or `None` when
@@ -168,14 +160,6 @@ impl TokenOrder {
             })?
             .to_identifier()
             .map_err(ProtocolError::ValueError)?;
-        let expires_at = match properties.get(property_names::EXPIRES_AT) {
-            None | Some(Value::Null) => None,
-            Some(value) => Some(
-                value
-                    .to_integer::<u64>()
-                    .map_err(ProtocolError::ValueError)?,
-            ),
-        };
         let escrow = match side {
             TokenOrderSide::Ask => 0,
             TokenOrderSide::Bid => integer(property_names::ESCROW)?,
@@ -194,7 +178,6 @@ impl TokenOrder {
             amount: integer(property_names::AMOUNT)?,
             remaining: integer(property_names::REMAINING)?,
             min_fill: integer(property_names::MIN_FILL)?,
-            expires_at,
             escrow,
             decimals,
         })
@@ -225,9 +208,6 @@ impl TokenOrder {
                 Value::I64(self.decimals as i64),
             ),
         ]);
-        if let Some(expires_at) = self.expires_at {
-            properties.insert(property_names::EXPIRES_AT.to_string(), signed(expires_at)?);
-        }
         if self.side == TokenOrderSide::Bid {
             properties.insert(property_names::ESCROW.to_string(), signed(self.escrow)?);
         }
@@ -245,7 +225,7 @@ impl TokenOrder {
             created_at: Some(block_info.time_ms),
             updated_at: Some(block_info.time_ms),
             transferred_at: None,
-            created_at_block_height: Some(block_info.height),
+            created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
             created_at_core_block_height: None,
@@ -294,7 +274,6 @@ mod tests {
             amount,
             remaining,
             min_fill,
-            expires_at: None,
             escrow: 0,
             decimals: 2,
         }
@@ -383,7 +362,6 @@ mod tests {
     fn should_round_trip_through_its_document() {
         let mut offer = order(TokenOrderSide::Bid, 1000, 400, 10);
         offer.escrow = 1998;
-        offer.expires_at = Some(5_000);
         let block_info = BlockInfo::default();
         let document = offer
             .new_document(&block_info)

@@ -51,7 +51,6 @@ mod tests {
             price,
             decimals: 8,
             min_fill: 1,
-            expires_at: None,
         })
         .validate_structure(PlatformVersion::latest())
         .expect("expected the structure validation to run")

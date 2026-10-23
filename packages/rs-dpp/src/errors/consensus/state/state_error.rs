@@ -5,7 +5,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderDecimalsMismatchError};
+use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderDecimalsMismatchError};
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use crate::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
@@ -754,10 +754,6 @@ pub enum StateError {
     // The token marketplace (protocol version 15).
     #[error(transparent)]
     TokenOrderNotFoundError(TokenOrderNotFoundError),
-
-    // The token marketplace (protocol version 15).
-    #[error(transparent)]
-    TokenOrderExpiredError(TokenOrderExpiredError),
 
     // The token marketplace (protocol version 15).
     #[error(transparent)]
@@ -1724,24 +1720,17 @@ mod tests {
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
-            discriminant_of(StateError::TokenOrderExpiredError(
-                TokenOrderExpiredError::new(Identifier::from([1; 32]), 1, 2)
-            )),
-            178
-        );
-        // The token marketplace (protocol version 15).
-        assert_eq!(
             discriminant_of(StateError::TokenOrderFillAmountError(
                 TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
             )),
-            179
+            178
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderPriceLimitError(
                 TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
             )),
-            180
+            179
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
@@ -1752,21 +1741,21 @@ mod tests {
                     Identifier::from([1; 32])
                 )
             )),
-            181
+            180
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderSelfFillError(
                 TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
             )),
-            182
+            181
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderDecimalsMismatchError(
                 TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
             )),
-            183
+            182
         );
     }
 }
