@@ -35,7 +35,8 @@ pub use rs_dapi_client::AddressBanInfo;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
-    transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
+    transport::{TransportError, TransportRequest},
+    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
@@ -52,6 +53,8 @@ use zeroize::Zeroizing;
 
 #[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;
+#[cfg(all(test, feature = "mocks"))]
+pub(crate) mod put_test_support;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
@@ -941,8 +944,23 @@ impl DapiRequestExecutor for Sdk {
         request: R,
         settings: RequestSettings,
     ) -> ExecutionResult<R::Response, DapiClientError> {
+        self.execute_with_transport_error_observer(request, settings, &|_| {})
+            .await
+    }
+}
+
+impl Sdk {
+    pub(crate) async fn execute_with_transport_error_observer<R: TransportRequest>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+        observer: &(dyn Fn(&TransportError) + Send + Sync),
+    ) -> ExecutionResult<R::Response, DapiClientError> {
         match self.inner {
-            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
+            SdkInstance::Dapi { ref dapi, .. } => {
+                dapi.execute_with_transport_error_observer(request, settings, observer)
+                    .await
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = dapi.lock().await;
