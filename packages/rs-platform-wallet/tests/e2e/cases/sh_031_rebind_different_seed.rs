@@ -1,27 +1,30 @@
-//! SH-031 — ADVERSARIAL: double-bind / rebind with a DIFFERENT seed — no
-//! key-material mix, no leak.
+//! SH-031 — ADVERSARIAL: reject rebinding a different seed and preserve
+//! the existing account's binding, notes, balance, and persisted viewing key.
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-031. Priority: P1. HIGH-if-fails.
 //!
 //! Attack: `bind_shielded(seed_A, &[0])`, shield + sync some notes, then
 //! `bind_shielded(seed_B, &[0])` with a DIFFERENT seed on the same
-//! wallet/coordinator. The rebind path unregisters+reregisters and the
-//! doc claims "replace-not-merge".
+//! wallet/coordinator.
 //!
-//! Correct behavior: after rebind to seed_B, seed_A's notes are NOT
-//! visible/spendable under seed_B's keys (different IVK ⇒ no decryption).
-//! RED if seed-A notes leak into seed-B's balance (privacy/accounting
-//! break) or stale pending reservations make seed-B skip spendable notes.
+//! Correct behavior: return `ShieldedKeyDerivation` before changing any
+//! seed-A state. The guard from #4237 is intentional: durable state is
+//! keyed by wallet/account, so replacing its viewing key would misattribute
+//! existing notes and hide the new key's history.
 //!
 //! Achievable through the public API (`bind_shielded` twice) — no
 //! production-seam change needed.
 
 #![cfg(feature = "shielded")]
 
+use std::collections::BTreeMap;
 use std::time::Duration;
+
+use platform_wallet::wallet::shielded::{OrchardKeySet, ShieldedNote, SubwalletId};
+use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, shielded_prover, teardown_sweep_shielded,
+    adversarial_enabled, bind_shielded, shielded_prover, teardown_sweep_shielded, unspent_notes,
     wait_for_shielded_balance,
 };
 use crate::framework::wait::{
@@ -35,7 +38,7 @@ const SHIELD_AMOUNT: u64 = 50_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-async fn sh_031_rebind_different_seed() {
+async fn sh_031_reject_rebind_different_seed_preserves_state() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -97,40 +100,104 @@ async fn sh_031_rebind_different_seed() {
         .await
         .expect("seed_A note never synced");
 
-    // Rebind the SAME wallet/coordinator with a DIFFERENT seed.
-    let (seed_b, _hex) = crate::framework::wallet_factory::fresh_seed();
-    pw.bind_shielded(&seed_b, &[0], &handle.coordinator)
-        .await
-        .expect("rebind seed_B");
-
-    // Under seed_B's IVK, seed_A's note must NOT be visible. Re-scan and
-    // assert account 0 reports 0 (no cross-seed decryption / leak).
-    handle.sync().await;
-    let under_b = handle
+    let id = SubwalletId::new(pw.wallet_id(), 0);
+    let address_before = pw.shielded_default_address(0).await.expect("seed_A bound");
+    let balances_before = handle
         .balances(&s.test_wallet)
         .await
-        .expect("balances under seed_B")
-        .get(&0)
-        .copied()
-        .unwrap_or(0);
-    assert_eq!(
-        under_b, 0,
-        "SH-031 FINDING: seed_A's note ({SHIELD_AMOUNT}) leaked into seed_B's balance \
-         after rebind — key-material mix / privacy break. observed {under_b}"
-    );
-
-    // Rebind back to seed_A and confirm its note re-discovers cleanly
-    // (the rebind purge did not corrupt or strand it).
-    pw.bind_shielded(&s.test_wallet.seed_bytes(), &[0], &handle.coordinator)
-        .await
-        .expect("rebind back to seed_A");
-    let restored =
-        wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .expect("seed_A balances");
+    assert_eq!(balances_before.get(&0), Some(&SHIELD_AMOUNT));
+    let note_snapshot = |notes: Vec<ShieldedNote>| {
+        notes
+            .into_iter()
+            .map(|note| {
+                (
+                    note.position,
+                    (
+                        note.cmx,
+                        note.nullifier,
+                        note.block_height,
+                        note.is_spent,
+                        note.value,
+                        note.note_data,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let notes_before = note_snapshot(
+        unspent_notes(&s.test_wallet, &handle, 0)
             .await
-            .expect("seed_A note not re-discovered after rebind-back (stale-state corruption)");
+            .expect("seed_A notes"),
+    );
+    assert!(
+        !notes_before.is_empty(),
+        "seed_A must have a note to preserve"
+    );
+    pw.flush_persist().expect("flush seed_A state");
+    let key_before = pw
+        .load_persisted()
+        .expect("load seed_A state")
+        .shielded
+        .viewing_keys
+        .get(&id)
+        .cloned()
+        .expect("persisted seed_A viewing key");
+    let expected_key = OrchardKeySet::from_seed(&s.test_wallet.seed_bytes(), pw.sdk().network, 0)
+        .expect("derive seed_A viewing key")
+        .viewing_keys()
+        .to_fvk_bytes()
+        .to_vec();
+    assert_eq!(key_before, expected_key);
+    assert!(handle
+        .coordinator
+        .registered_subwallets()
+        .await
+        .contains(&id));
+
+    // Refuse a different seed before replacing any part of seed_A's state.
+    let (seed_b, _hex) = crate::framework::wallet_factory::fresh_seed();
+    let error = pw
+        .bind_shielded(&seed_b, &[0], &handle.coordinator)
+        .await
+        .expect_err("rebinding seed_B over seed_A must fail");
+    assert!(
+        matches!(error, PlatformWalletError::ShieldedKeyDerivation(_)),
+        "expected ShieldedKeyDerivation for a conflicting viewing key; got {error:?}"
+    );
+    assert!(pw.is_shielded_bound().await, "seed_A must remain bound");
+    assert_eq!(pw.shielded_default_address(0).await, Some(address_before));
+    assert!(handle
+        .coordinator
+        .registered_subwallets()
+        .await
+        .contains(&id));
     assert_eq!(
-        restored, SHIELD_AMOUNT,
-        "rebind back to seed_A must re-discover its note exactly; observed {restored}"
+        handle
+            .balances(&s.test_wallet)
+            .await
+            .expect("balances after rejection"),
+        balances_before,
+        "rejected rebind must preserve seed_A's balance"
+    );
+    assert_eq!(
+        note_snapshot(
+            unspent_notes(&s.test_wallet, &handle, 0)
+                .await
+                .expect("notes after rejection")
+        ),
+        notes_before,
+        "rejected rebind must preserve seed_A's notes"
+    );
+    pw.flush_persist().expect("flush after rejected rebind");
+    assert_eq!(
+        pw.load_persisted()
+            .expect("load after rejection")
+            .shielded
+            .viewing_keys
+            .get(&id),
+        Some(&key_before),
+        "rejected rebind must preserve seed_A's persisted viewing key"
     );
 
     let bank_addr = s
