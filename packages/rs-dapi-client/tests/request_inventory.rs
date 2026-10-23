@@ -887,7 +887,10 @@ fn should_need_the_declared_protocol_version_for_each_addition() {
     for (addition, verdict) in additions() {
         let expected = match verdict {
             Verdict::Gate(version) => Some(version),
-            Verdict::NoGate(_) => None,
+            Verdict::NoGate(reason) => {
+                assert!(!reason.is_empty(), "{addition}: say why no node is banned");
+                None
+            }
         };
         let mut checked = 0;
         if let Some(request) = addition

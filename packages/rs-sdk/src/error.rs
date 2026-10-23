@@ -523,6 +523,44 @@ mod tests {
         }
     }
 
+    /// Another node cannot serve a request the network has not activated yet, and the
+    /// refusal names no node to ban. A stale answer to such a request is retried elsewhere.
+    #[test]
+    fn should_not_retry_a_request_the_network_cannot_serve_yet() {
+        let refused = Error::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 13,
+            cause: None,
+        };
+        assert!(!refused.can_retry());
+        assert_eq!(
+            refused.to_string(),
+            "get_contract_fee_pots needs Platform protocol version 14; only protocol version 13 \
+             is proven for this SDK"
+        );
+        let unverified = Error::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            cause: None,
+        };
+        assert!(unverified.to_string().ends_with("not verified yet"));
+        let unconfirmed = Error::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            cause: Some(Box::new(Error::Generic("offline".to_string()))),
+        };
+        assert!(!unconfirmed.can_retry());
+        assert!(std::error::Error::source(&unconfirmed).is_some());
+        assert!(Error::StaleNode(StaleNodeError::ProtocolVersion {
+            required: 14,
+            signed: 13,
+        })
+        .can_retry());
+    }
+
     mod from_dapi_client_error {
         use super::*;
         use assert_matches::assert_matches;

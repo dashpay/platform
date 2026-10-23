@@ -188,6 +188,13 @@ where
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
+        let required_protocol_version = wire.needs_protocol_version();
+        sdk.ensure_network_serves(
+            required_protocol_version,
+            wire.method_name(),
+            request_settings,
+        )
+        .await?;
 
         let fut = |settings: RequestSettings| async move {
             let ExecutionResponse {
@@ -210,6 +217,10 @@ where
                     wire.method_name(),
                 )
                 .await
+                .and_then(|parsed| {
+                    sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                    Ok(parsed)
+                })
                 .map_err(|e| ExecutionError {
                     inner: e,
                     address: Some(address.clone()),
