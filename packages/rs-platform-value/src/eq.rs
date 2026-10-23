@@ -1,4 +1,6 @@
 use crate::Value;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 macro_rules! implpartialeq {
     ($($t:ty),+ $(,)?) => {

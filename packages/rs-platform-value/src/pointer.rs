@@ -1,5 +1,5 @@
 use crate::{Value, ValueMapHelper};
-use std::mem;
+use core::mem;
 
 fn parse_index(s: &str) -> Option<usize> {
     if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
