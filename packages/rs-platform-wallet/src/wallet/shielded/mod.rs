@@ -35,6 +35,7 @@ pub mod wallet_drain;
 pub use wallet_drain::{WalletDrainPreview, WalletDrainPreviewStatus};
 pub mod activity;
 pub mod activity_recorder;
+pub mod anchor_cache;
 pub mod balance;
 #[cfg(test)]
 mod balance_tests;
@@ -58,6 +59,7 @@ pub use activity::{
     ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
 };
+pub use anchor_cache::{RecordedAnchorCache, RECORDED_ANCHOR_CACHE_TTL};
 pub use balance::{
     ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
     ShieldedLocalBalanceState,
