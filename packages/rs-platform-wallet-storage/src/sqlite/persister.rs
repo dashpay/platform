@@ -396,7 +396,7 @@ impl SqlitePersister {
             )?;
         }
 
-        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.

@@ -138,6 +138,7 @@ fn rewind_v020(path: &std::path::Path) {
         .unwrap()
         .execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant; \
              DELETE FROM refinery_schema_history WHERE version >= 20;",
         )
         .unwrap();
