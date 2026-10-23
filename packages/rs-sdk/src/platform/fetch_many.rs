@@ -5,6 +5,7 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
+use super::fetch::check_request;
 use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::sdk::ProofResponseMetadata;
@@ -236,6 +237,7 @@ where
         let owned_rich: <Self as FetchMany<K, O>>::Query =
             Self::prepare_query(query.query(&settings)?);
         let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        check_request::<<Self as FetchMany<K, O>>::Query, O>(&owned_rich, sdk)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 

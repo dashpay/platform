@@ -405,6 +405,22 @@ impl FromProof<DocumentQuery> for CompositeDocuments {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
 
+    /// The encoder checks the composite shape only when sub-queries are present, so a
+    /// query without them would be sent as a plain page, served, and refused below.
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        request
+            .check_composite_shape()
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: match e {
+                    Error::Config(message) => message,
+                    e => e.to_string(),
+                },
+            })
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,

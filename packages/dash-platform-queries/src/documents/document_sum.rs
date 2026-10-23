@@ -57,6 +57,14 @@ impl FromProof<DocumentQuery> for DocumentSum {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
 
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        request.ensure_no_sub_queries()?;
+        assert_select_is_sum(request)
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,

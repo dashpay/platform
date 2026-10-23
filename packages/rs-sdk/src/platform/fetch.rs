@@ -186,6 +186,7 @@ where
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
+        check_request::<<Self as Fetch>::Query, Self>(&owned_rich, sdk)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -282,6 +283,22 @@ where
     {
         Self::fetch(sdk, id).await
     }
+}
+
+/// Refuse, before it is sent, a request that `O` cannot be verified from
+/// ([`FromProof::check_request`]).
+///
+/// The refusal is the caller's mistake, not a node's, so it is a non-retryable
+/// [`Error::Config`] rather than the retried [`Error::Proof`] the verifier would
+/// return for the same request once a node had answered it.
+pub(super) fn check_request<R, O: FromProof<R>>(
+    request: &O::Request,
+    sdk: &Sdk,
+) -> Result<(), Error> {
+    O::check_request(request, sdk.version()).map_err(|error| match error {
+        drive_proof_verifier::Error::RequestError { error } => Error::Config(error),
+        error => Error::Config(error.to_string()),
+    })
 }
 
 impl Fetch for Identity {
