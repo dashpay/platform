@@ -369,3 +369,45 @@ pub async fn persist_events(
     .unwrap();
     assert!(!fault.load(Ordering::Relaxed));
 }
+
+/// Sign the owned inputs in a fixture; peer-forgery regressions deliberately omit this.
+pub fn authorize(
+    wallet: &key_wallet::Wallet,
+    info: &key_wallet::wallet::ManagedWalletInfo,
+    address: &dashcore::Address,
+    tx: dashcore::Transaction,
+) -> dashcore::Transaction {
+    authorize_with_mode(wallet, info, address, tx, 1)
+}
+
+pub fn authorize_with_mode(
+    wallet: &key_wallet::Wallet,
+    info: &key_wallet::wallet::ManagedWalletInfo,
+    address: &dashcore::Address,
+    mut tx: dashcore::Transaction,
+    mode: u8,
+) -> dashcore::Transaction {
+    use dashcore::hashes::Hash;
+    use dashcore::script::{Builder, PushBytesBuf};
+    use dashcore::sighash::SighashCache;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let path = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .find_map(|account| account.address_derivation_path(address))
+        .unwrap();
+    let key = wallet.derive_private_key(&path).unwrap();
+    for index in 0..tx.input.len() {
+        let hash = SighashCache::new(&tx)
+            .legacy_signature_hash(index, &address.script_pubkey(), u32::from(mode))
+            .unwrap();
+        let mut sig = key.sign(&hash.to_byte_array()).with_der(|der| der.to_vec());
+        sig.push(mode);
+        tx.input[index].script_sig = Builder::new()
+            .push_slice(PushBytesBuf::try_from(sig).unwrap())
+            .push_slice(PushBytesBuf::try_from(key.public_key().to_compressed().to_vec()).unwrap())
+            .into_script();
+    }
+    tx
+}

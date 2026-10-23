@@ -653,7 +653,7 @@ pub fn apply_replay_sweeps(
 /// a block to the height of the block that spent it — and
 /// `collect_finalized_tombstones` evicts the row once the chainlock
 /// finality boundary reaches that height, key-wallet's
-/// `prune_finalized_observed_spends` condition verbatim. A
+/// `prune_finalized_observed_spends` condition over applied chainlocks. A
 /// MEMPOOL-CONTEXT sweep (IS-locked winner, unmined) writes the same row
 /// UNSTAMPED (`winner_mined_height` NULL), and the collector never takes
 /// an unstamped row. The in-memory model an unstamped row mirrors is not
@@ -1373,22 +1373,21 @@ fn read_sync_heights(
 
 /// Evict never-materialised sweep tombstones once the chainlock finality
 /// boundary reaches their winner's mined height — the storage-side mirror
-/// of key-wallet's `prune_finalized_observed_spends`, same condition
-/// verbatim: an entry whose spend height is at or below
-/// `min(chainlock_height, synced_height)` is safe to forget, because the
-/// spend at that height is chain-locked and every BIP158 filter below the
-/// boundary has been matched with no false negatives, so the funding
-/// transaction of the outpoint it guards — necessarily mined at or below
-/// the spend's own height — has either been delivered (materialising the
-/// row) or provably never will be. No observation-age margin: the stamp IS
-/// the winner's height, carried on the sweep event itself, so nothing here
-/// guesses when the winner mined. Rows with no stamp are never collected:
-/// a mempool-context sweep (IS-locked winner, unmined) deliberately
-/// writes its placeholder unstamped, because such a winner has no mining
-/// deadline and no watermark can prove its inputs' funding "delivered or
-/// never will be" — an unstamped row is a live hold, resolved only by the
-/// funding upsert materialising it, a later block-context sweep stamping
-/// it, or a release deleting it (see `apply_sweep`).
+/// of key-wallet's `prune_finalized_observed_spends`: an entry whose spend
+/// height is at or below `min(chainlock_height, synced_height)` is safe to
+/// forget, because the spend at that height is chain-locked and every BIP158
+/// filter below the boundary has been matched with no false negatives, so
+/// the funding transaction of the outpoint it guards — necessarily mined at
+/// or below the spend's own height — has either been delivered
+/// (materialising the row) or provably never will be. No observation-age
+/// margin: the stamp IS the winner's height, carried on the sweep event
+/// itself, so nothing here guesses when the winner mined. Rows with no stamp
+/// are never collected: a mempool-context sweep (IS-locked winner, unmined)
+/// deliberately writes its placeholder unstamped, because such a winner has
+/// no mining deadline and no watermark can prove its inputs' funding
+/// "delivered or never will be" — an unstamped row is a live hold, resolved
+/// only by the funding upsert materialising it, a later block-context sweep
+/// stamping it, or a release deleting it (see `apply_sweep`).
 ///
 /// One pass, narrowed to `is_sweep_placeholder = 1` (only the tombstone insert
 /// sets the placeholder flag, so the set is exactly the never-materialised
@@ -1399,8 +1398,14 @@ fn read_sync_heights(
 /// `spent = 0` on a placeholder is always followed by that pass in the
 /// same transaction.
 ///
-/// Like upstream, a no-op until a chainlock height has been persisted —
-/// without a finality boundary nothing can be proven final.
+/// `chainlock_height` holds applied chainlocks only. key-wallet also prunes
+/// up to the heights of the chainlocks dash-spv holds back during the
+/// initial sync, which are never persisted, so this boundary's chainlock
+/// half can trail key-wallet's: a tombstone can outlive the matching
+/// in-memory entry, which only holds the coin spent for longer.
+///
+/// A no-op until a chainlock height has been persisted — without a
+/// finality boundary nothing can be proven final.
 fn collect_finalized_tombstones(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -1555,7 +1560,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1564,6 +1569,7 @@ mod tests {
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+    use rusqlite::types::Value::{Blob, Integer, Null};
 
     fn transaction_record(context: TransactionContext) -> TransactionRecord {
         TransactionRecord::new(
@@ -1751,36 +1757,82 @@ mod tests {
             .collect()
     }
 
-    /// V021 rebuilds Core history by rescanning it: whatever an older database
-    /// stored (an undecodable record or an unconfirmed one included), its Core
-    /// transactions, UTXOs and instant locks go, each wallet's filter
-    /// checkpoint rewinds to just below its birth (never forward), and every
-    /// other row stays, the chain facts in `core_sync_state` included.
+    /// V020 rebuilds mined Core history by rescanning it: whatever an older
+    /// database stored mined (an undecodable record included) goes, each
+    /// wallet's filter checkpoint rewinds to just below its birth (never
+    /// forward), and every other row stays, the chain facts in
+    /// `core_sync_state` included. The unmined history a block rescan cannot
+    /// redeliver stays as evidence for the loader to authenticate.
     #[test]
-    fn should_drop_core_history_and_rescan_from_birth_when_migrating_to_v021() {
+    fn should_keep_only_unmined_core_history_and_rescan_from_birth_when_migrating_to_v020() {
         let wallet_id = [0xADu8; 32];
         let mut conn = wallet_db(&wallet_id);
         conn.execute("UPDATE wallets SET birth_height = 100", [])
             .unwrap();
-        let funding = sample_utxo(Txid::from_byte_array([0x61; 32]), 150, true);
+        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
+        let (mined_spent, pending_spent, unspent) = (coin(0x61), coin(0x62), coin(0x65));
         let mined = TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1));
+        let pending = spend(&[pending_spent.outpoint], TransactionContext::Mempool);
         let chain_lock = sample_chain_lock(400);
         let history = CoreChangeSet {
             last_processed_height: Some(500),
             synced_height: Some(500),
             last_applied_chain_lock: Some(chain_lock.clone()),
-            ..round(vec![spend(&[funding.outpoint], mined)], vec![funding])
+            ..round(
+                vec![spend(&[mined_spent.outpoint], mined)],
+                vec![mined_spent, pending_spent.clone(), unspent],
+            )
+        };
+        let lock = dashcore::InstantLock {
+            txid: pending.txid,
+            inputs: vec![pending_spent.outpoint],
+            ..Default::default()
+        };
+        let pending_send = CoreChangeSet {
+            spent_utxos: vec![pending_spent.clone()],
+            instant_locks_for_non_final_records: [(pending.txid, lock)].into(),
+            ..round(vec![pending.clone()], vec![])
         };
         let tx = conn.transaction().unwrap();
         apply(&tx, &wallet_id, &history).unwrap();
+        apply(&tx, &wallet_id, &pending_send).unwrap();
         tx.commit().unwrap();
         let w = &wallet_id[..];
-        for (sql, txid) in [
-            ("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 170, 0, X'ff')", 1u8),
-            ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'ff')", 2),
-            ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", 2),
+        let pending_txid = pending.txid.as_byte_array().to_vec();
+        let funding_txid = pending_spent.outpoint.txid.as_byte_array().to_vec();
+        let hold = |marker: u8| {
+            let outpoint = OutPoint::new(Txid::from_byte_array([marker; 32]), 0);
+            blob::encode_outpoint(&outpoint).unwrap()
+        };
+        let (anonymous_hold, stamped_hold) = (hold(0x63), hold(0x64));
+        for (sql, key) in [
+            (
+                "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+                 VALUES (?1, ?2, 170, 0, X'ff')",
+                vec![1u8; 32],
+            ),
+            (
+                "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')",
+                vec![1u8; 32],
+            ),
+            // The pending spend's funding as a stored mined record.
+            (
+                "UPDATE core_transactions SET record_blob = X'ff', block_hash = X'00', \
+                 block_time = 1, finalized = 1 WHERE wallet_id = ?1 AND txid = ?2",
+                funding_txid.clone(),
+            ),
+            (
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, is_sweep_placeholder, \
+                 spent) VALUES (?1, ?2, 0, X'', 1, 1)",
+                anonymous_hold.clone(),
+            ),
+            (
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, is_sweep_placeholder, \
+                 spent, winner_mined_height) VALUES (?1, ?2, 0, X'', 1, 1, 400)",
+                stamped_hold,
+            ),
         ] {
-            conn.execute(sql, params![w, &[txid; 32][..]]).unwrap();
+            conn.execute(sql, params![w, key]).unwrap();
         }
         conn.execute(
             "INSERT INTO meta_wallet (wallet_id, key, value) VALUES (?1, 'label', X'03')",
@@ -1811,23 +1863,70 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        rewind_v021(&conn);
+        rewind_v020(&conn);
         let kept = non_core_rows(&conn);
 
-        migrations::run(&mut conn).expect("no stored history can block V021");
+        migrations::run(&mut conn).expect("no stored history can block V020");
 
-        for table in [
-            "core_transactions",
-            "core_utxos",
-            "core_instant_locks",
-            "core_transaction_inputs",
-            "core_transaction_record_originals",
-        ] {
-            let rows: i64 = conn
-                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
-                .unwrap();
-            assert_eq!(rows, 0, "{table}");
-        }
+        let rows = |sql: &str| -> Vec<Vec<rusqlite::types::Value>> {
+            let mut stmt = conn.prepare_cached(sql).unwrap();
+            let width = stmt.column_count();
+            stmt.query_map([], |row| (0..width).map(|i| row.get(i)).collect())
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        let pending_spent_outpoint = blob::encode_outpoint(&pending_spent.outpoint).unwrap();
+        assert_eq!(
+            rows(
+                "SELECT txid, height, block_hash, block_time, finalized, record_blob IS NULL \
+                  FROM core_transactions ORDER BY height IS NULL"
+            ),
+            vec![
+                // The funding of a kept coin, reduced to its height for the rescan.
+                vec![
+                    Blob(funding_txid),
+                    Integer(150),
+                    Null,
+                    Null,
+                    Integer(0),
+                    Integer(1)
+                ],
+                vec![
+                    Blob(pending_txid.clone()),
+                    Null,
+                    Null,
+                    Null,
+                    Integer(0),
+                    Integer(0)
+                ],
+            ],
+        );
+        let mut expected_utxos = vec![
+            vec![Blob(anonymous_hold), Integer(1), Null],
+            vec![
+                Blob(pending_spent_outpoint.clone()),
+                Integer(1),
+                Blob(pending_txid.clone()),
+            ],
+        ];
+        expected_utxos.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        let mut utxos = rows("SELECT outpoint, spent, spent_in_txid FROM core_utxos");
+        utxos.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        assert_eq!(
+            utxos, expected_utxos,
+            "only claims no mined spend stands behind"
+        );
+        assert_eq!(
+            rows("SELECT txid FROM core_instant_locks"),
+            vec![vec![Blob(pending_txid.clone())]]
+        );
+        assert_eq!(
+            rows("SELECT txid, outpoint FROM core_transaction_inputs"),
+            vec![vec![Blob(pending_txid), Blob(pending_spent_outpoint)]],
+            "the kept record's claimed input is indexed"
+        );
+        assert!(rows("SELECT * FROM core_transaction_record_originals").is_empty());
         let sync = |id: &[u8; 32]| -> (i64, i64, Option<Vec<u8>>) {
             conn.query_row(
                 "SELECT synced_height, last_processed_height, last_applied_chain_lock \
@@ -1847,7 +1946,9 @@ mod tests {
             "everything outside Core history stays"
         );
         let (cs, utxos) = load(&conn, &wallet_id);
-        assert!(cs.records.is_empty() && utxos.is_empty());
+        let loaded: Vec<_> = cs.records.iter().map(|record| record.txid).collect();
+        assert_eq!(loaded, vec![pending.txid], "only the unmined record loads");
+        assert!(utxos.is_empty(), "no kept row is spendable");
         assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
         assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
     }

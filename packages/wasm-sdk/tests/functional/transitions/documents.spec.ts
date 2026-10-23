@@ -127,15 +127,16 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       // Document operations require at least HIGH security level (key index 2) for signing
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
-      // Create a DPNS preorder document for testing
-      // Using hash of salted domain label
-      const saltedDomainHash = `${Date.now()}`.padStart(64, '0');
+      // Create a DPNS preorder document for testing: from DPNS v3 it holds the hash
+      // of its owner and a name, and the hash of the name alone (any 32 bytes here)
+      const hashBytes = (seed: string) => Uint8Array.from(
+        `${seed}${Date.now()}`.padStart(64, '0').match(/.{2}/g).map((byte) => parseInt(byte, 16)),
+      );
 
       const document = new sdk.Document({
         properties: {
-          saltedDomainHash: Uint8Array.from(
-            saltedDomainHash.match(/.{2}/g).map((byte) => parseInt(byte, 16)),
-          ),
+          ownerNameHash: hashBytes('1'),
+          nameHash: hashBytes('2'),
         },
         documentTypeName: 'preorder',
         revision: 1,

@@ -81,7 +81,12 @@ async fn clean_restart(recordless_winner: bool, finalized: bool, pending: bool) 
         value: 99_000,
         script_pubkey: ScriptBuf::new(),
     };
-    let spending = spend_of(&[spent], vec![burn]);
+    let spending = common::authorize(
+        wallet,
+        &manager.get_wallet_info(&wallet_id).unwrap().core_wallet,
+        &address,
+        spend_of(&[spent], vec![burn]),
+    );
     let manager = Arc::new(RwLock::new(manager));
     if recordless_winner {
         // A wallet-paying mempool spend loses to a mined payment to somebody else.

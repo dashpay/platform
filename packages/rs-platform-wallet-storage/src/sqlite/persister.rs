@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::changeset::SweepBatch;
@@ -1723,7 +1723,7 @@ fn load_one_wallet(
 }
 
 fn load_wallet_snapshot(
-    conn: &Connection,
+    conn: &Transaction<'_>,
     wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<
@@ -1751,9 +1751,16 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
+    let (mut core_state, mut utxo_accounts) =
         schema::core_state::load_state(conn, &wallet_id, network, ctx)
             .map_err(PersistenceError::from)?;
+    if schema::core_spend_authorization::repair(conn, &wallet_id, &core_state)
+        .map_err(PersistenceError::from)?
+    {
+        (core_state, utxo_accounts) =
+            schema::core_state::load_state(conn, &wallet_id, network, ctx)
+                .map_err(PersistenceError::from)?;
+    }
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load
