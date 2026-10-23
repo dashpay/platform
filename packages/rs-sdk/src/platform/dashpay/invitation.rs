@@ -828,8 +828,8 @@ impl Sdk {
     /// stale with `InvalidInstantAssetLockProofSignatureError` — its own message
     /// asks to "try chain asset lock proof instead". An islock proof over a
     /// funding tx with many inputs can also make the claim larger than
-    /// `max_state_transition_size` (dashwallet-ios#1042). When the funding tx
-    /// is already chain-locked (the usual case by claim time), this resubmits a
+    /// `max_state_transition_size`. When the funding tx is already
+    /// chain-locked (the usual case by claim time), this resubmits a
     /// `ChainAssetLockProof` over the SAME credit output — for the size case
     /// only if the claim fits with it. If the tx is not yet
     /// chain-locked no fallback is possible and the claim returns
@@ -1023,8 +1023,8 @@ where
 /// islock — its signing quorum rotated out, or it is no longer "recent";
 /// Platform's own message asks us to "try chain asset lock proof instead" —
 /// or the islock proof made the claim too large to submit, and a ChainLock
-/// proof in its place fits (dashwallet-ios#1042). On that rejection the
-/// ChainLock `chain_fallback` over the SAME credit output is submitted —
+/// proof in its place fits. On that rejection the ChainLock
+/// `chain_fallback` over the SAME credit output is submitted —
 /// or, when the funding tx was not yet chain-locked so no fallback could be
 /// built, [`InvitationError::NotChainLocked`] surfaces a clear retry signal instead of
 /// the raw consensus error. Every other error — from the primary or from the
@@ -2529,9 +2529,9 @@ mod tests {
             );
         }
 
-        /// dashwallet-ios#1042: an InstantSend proof over a funding tx with
-        /// many inputs makes the claim too large to submit; the ChainLock
-        /// fallback over the same outpoint is submitted instead.
+        /// An InstantSend proof over a funding tx with many inputs makes the
+        /// claim too large to submit; the ChainLock fallback over the same
+        /// outpoint is submitted instead.
         #[tokio::test]
         async fn should_resubmit_the_chain_fallback_when_the_islock_proof_is_too_large() {
             let (result, submitted) = run(

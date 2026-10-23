@@ -2401,9 +2401,9 @@ mod chain_lock_wait_tests {
             (ctx, result, calls)
         }
 
-        /// dashwallet-ios#1042: a size refusal of the InstantSend proof is
-        /// resubmitted with the ChainLock proof for the same outpoint, which
-        /// the persister already holds on the row when the resubmit is made.
+        /// A size refusal of the InstantSend proof is resubmitted with the
+        /// ChainLock proof for the same outpoint, which the persister already
+        /// holds on the row when the resubmit is made.
         #[tokio::test(start_paused = true)]
         async fn should_resubmit_a_size_refusal_with_the_persisted_chain_proof() {
             let (ctx, result, calls) = run(vec![Err(oversized()), Ok(7)]).await;
@@ -3571,9 +3571,9 @@ mod chain_lock_wait_tests {
     /// persisted copy stays `InBlock` (per-record promotions are not mirrored
     /// to the store). The IS→CL fallback must still build the chain proof at
     /// once from that copy: a stuck lock whose IS proof cannot be submitted
-    /// (dashwallet-ios#1042) is only consumable this way. With the feature the
-    /// record stays in memory and the same proof comes from it, so the test
-    /// runs in both configurations.
+    /// is only consumable this way. With the feature the record stays in
+    /// memory and the same proof comes from it, so the test runs in both
+    /// configurations.
     mod evicted_record {
         use super::*;
         use crate::wallet::asset_lock::sync::proof::funding_tx_record;

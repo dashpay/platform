@@ -547,18 +547,15 @@ pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
 
 /// Checks the serialized length of a state transition against the protocol's
 /// `max_state_transition_size`: a transition of `size_bytes` is refused when
-/// it is larger, with the error Drive reports for one.
-///
-/// Consensus depends on this: Drive refuses oversized transitions through it
-/// at every shipped protocol version. The limit comes from `SystemLimits`;
-/// the comparison (`size_bytes > max`, so the limit itself passes) and the
-/// error's two numbers are frozen, and a change to either must be a new
-/// versioned method, not an edit here.
+/// it is larger (the limit itself passes), with the error Drive reports for
+/// one. Drive's decoders keep their own copy of this check; the drive-abci
+/// test `should_agree_with_the_client_size_check_at_every_protocol_version`
+/// keeps the two in step.
 ///
 /// DAPI refuses an oversized transition before Drive sees it with an untyped
 /// `InvalidArgument`, so clients that need the typed error (an asset-lock
 /// flow switching from a growing InstantSend proof to a fixed-size ChainLock
-/// proof, dashwallet-ios#1042) check it with this before sending.
+/// proof) check it with this before sending.
 pub fn validate_state_transition_size(
     size_bytes: u64,
     platform_version: &PlatformVersion,
@@ -2496,8 +2493,7 @@ impl StateTransitionStructureValidation for StateTransition {
 mod tests {
     use super::*;
 
-    /// Drive refuses through this helper at every protocol version, so its boundary is pinned
-    /// here for each of them: the limit itself passes, one byte more is refused with both
+    /// At every protocol version the limit itself passes, and one byte more is refused with both
     /// numbers reported as they are.
     #[test]
     fn should_refuse_only_a_transition_larger_than_the_limit() {

@@ -695,7 +695,7 @@ mod tests {
 
     /// A transition over `max_state_transition_size` is refused with the
     /// typed size error before any node is asked, instead of DAPI's untyped
-    /// refusal (dashwallet-ios#1042).
+    /// refusal.
     #[tokio::test]
     async fn should_refuse_an_oversized_transition_before_dispatch() {
         let max_size = PlatformVersion::latest()

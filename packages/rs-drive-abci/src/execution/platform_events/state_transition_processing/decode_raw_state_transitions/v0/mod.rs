@@ -5,10 +5,13 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
+use dpp::consensus::basic::state_transition::{
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
+};
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::errors::StateTransitionError;
-use dpp::state_transition::{validate_state_transition_size, StateTransition};
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use std::time::{Duration, Instant};
@@ -51,14 +54,18 @@ where
         let decoded_state_transitions = raw_state_transitions
             .iter()
             .map(|raw_state_transition| {
-                if let Err(error) = validate_state_transition_size(
-                    raw_state_transition.as_ref().len() as u64,
-                    platform_version,
-                ) {
-                    // The state transition is too big. The helper's comparison and error are
-                    // frozen, so for protocol versions 1 to 13, which select this generation, the
-                    // outcome is the one it shipped with.
-                    let consensus_error: ConsensusError = error.into();
+                if raw_state_transition.as_ref().len() as u64
+                    > platform_version.system_limits.max_state_transition_size
+                {
+                    // The state transition is too big
+                    let consensus_error = ConsensusError::BasicError(
+                        BasicError::StateTransitionMaxSizeExceededError(
+                            StateTransitionMaxSizeExceededError::new(
+                                raw_state_transition.as_ref().len() as u64,
+                                platform_version.system_limits.max_state_transition_size,
+                            ),
+                        ),
+                    );
 
                     DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
                         raw: raw_state_transition.as_ref(),
@@ -147,7 +154,6 @@ where
 mod tests {
     use super::*;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::consensus::basic::BasicError;
     use dpp::version::PlatformVersion;
 
     #[test]

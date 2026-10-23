@@ -33,7 +33,7 @@
 //!    (`InvalidInstantAssetLockProofSignatureError`), or the IS proof made
 //!    the transition larger than `max_state_transition_size`
 //!    (`StateTransitionMaxSizeExceededError`, refused by the SDK before
-//!    broadcast; dashwallet-ios#1042). Detected via
+//!    broadcast). Detected via
 //!    [`needs_chain_lock_proof`]. Upgrade IS→CL via
 //!    `upgrade_to_persisted_chain_lock_proof`, which attaches the proof to
 //!    the tracked row first, and retry. The CL retry is itself wrapped in

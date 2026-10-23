@@ -155,10 +155,10 @@ pub fn as_state_transition_max_size_exceeded(
 /// the IS proof made the transition too large and a ChainLock proof in its
 /// place brings it under the limit.
 ///
-/// The size case is dashwallet-ios#1042. An InstantSend proof embeds the
-/// whole funding transaction and its InstantLock, ~184 B per funding input,
-/// while a ChainLock proof is ~40 B, so a lock funded by many small inputs
-/// can only be consumed once it is chainlocked. A transition that is too
+/// For the size case: an InstantSend proof embeds the whole funding
+/// transaction and its InstantLock, so it grows with every funding input,
+/// while a ChainLock proof names only the outpoint and a height, so a lock
+/// funded by many small inputs can only be consumed once it is chainlocked. A transition that is too
 /// large for another reason (its own content) would still be too large
 /// with a ChainLock proof, so it is not retried: the retry waits for a
 /// ChainLock first, which would only delay the same error.
@@ -636,9 +636,9 @@ mod chain_lock_fallback_tests {
         .into()
     }
 
-    /// dashwallet-ios#1042: a transition 2.7 KB over the limit with an IS
-    /// proof over an 80-input lock fits with a ChainLock proof, so it takes
-    /// the same IS→CL path as a rejected IS signature.
+    /// A transition 2.7 KB over the limit with an IS proof over an
+    /// 80-input lock fits with a ChainLock proof, so it takes the same
+    /// IS→CL path as a rejected IS signature.
     #[test]
     fn should_retry_an_oversized_instant_proof_transition_with_a_chain_lock_proof() {
         assert!(needs_chain_lock_proof(
