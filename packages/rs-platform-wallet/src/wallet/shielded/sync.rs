@@ -1074,3 +1074,6 @@ mod ovk_builder_roundtrip_tests;
 /// full-decryption and the OVK send-history recovery primitives.
 #[cfg(test)]
 mod memo_roundtrip_tests;
+
+#[cfg(test)]
+mod concurrent_sync_tests;
