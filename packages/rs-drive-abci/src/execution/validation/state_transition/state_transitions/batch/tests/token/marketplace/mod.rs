@@ -30,7 +30,9 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use dpp::state_transition::batch_transition::token_place_ask_transition::v0::TokenPlaceAskTransitionV0;
 use dpp::state_transition::proof_result::{
     StateTransitionProofGuarantee, StateTransitionProofOutcome, StateTransitionProofResult,
 };
@@ -41,6 +43,7 @@ use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use drive::drive::Drive;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::TokenPlaceAskTransitionActionV0;
 use drive::error::proof::ProofError;
 use drive::error::Error as DriveError;
 use simple_signer::signer::SimpleSigner;
@@ -1274,6 +1277,111 @@ async fn should_return_the_tokens_of_a_cancelled_listing() {
     );
 }
 
+/// What deriving a listing's id costs: a double SHA-256 over its 75-byte preimage (the token
+/// id, the seller's id, "ask" and the nonce), 2 blocks hashed and the second SHA-256 a third.
+fn listing_id_hash_fee() -> Credits {
+    let hashing = &PlatformVersion::latest().fee_version.hashing;
+    hashing.single_sha256_base + 3 * hashing.sha256_per_block
+}
+
+/// The placement's transformation derives the listing's id and charges the hash: for a token
+/// outside a group it reads nothing else, so the hash is all it charges. A placement naming a
+/// token the contract does not define is refused before the id is derived and charges nothing.
+#[tokio::test]
+async fn should_charge_a_listing_the_hash_of_its_id_where_it_is_derived() {
+    let market = tradeable_market();
+    let platform_version = PlatformVersion::latest();
+    let contract = market
+        .platform
+        .drive
+        .get_contract_with_fetch_info(
+            market.contract.id().to_buffer(),
+            false,
+            None,
+            platform_version,
+        )
+        .expect("expected to fetch the contract")
+        .expect("expected the token's contract");
+    let transform = |position: u16| {
+        let transition = TokenPlaceAskTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 2,
+                token_contract_position: position,
+                data_contract_id: market.contract.id(),
+                token_id: Identifier::from(calculate_token_id(
+                    market.contract.id().as_bytes(),
+                    position,
+                )),
+                using_group_info: None,
+            }),
+            amount: 1_000,
+            price: PRICE,
+            decimals: 8,
+            min_fill: 1,
+            expires_at: None,
+        };
+        TokenPlaceAskTransitionActionV0::try_from_borrowed_token_place_ask_transition_with_contract_lookup(
+            &market.platform.drive,
+            market.seller.id(),
+            &transition,
+            false,
+            None,
+            &BlockInfo::default(),
+            0,
+            |_| Ok(Arc::clone(&contract)),
+            platform_version,
+        )
+        .expect("expected the transformation to run")
+    };
+
+    let (placed, fee) = transform(0);
+    assert!(placed.is_valid(), "{:?}", placed.errors);
+    assert_eq!(fee.processing_fee, listing_id_hash_fee());
+
+    let (refused, fee) = transform(1);
+    assert_matches!(
+        refused.errors.as_slice(),
+        [ConsensusError::BasicError(
+            BasicError::InvalidTokenPositionError(_)
+        )]
+    );
+    assert_eq!(fee.processing_fee, 0, "the id was never derived");
+}
+
+/// A placement refused after its id is derived (a token that is not tradeable, refused by the
+/// batch's advanced structure) pays for the hash on top of what one refused before the
+/// derivation (a token the contract does not define) pays. A first refusal creates the seller's
+/// nonce entry for the contract, so the two compared both update it.
+#[tokio::test]
+async fn should_charge_a_listing_refused_after_its_id_is_derived_the_hash() {
+    let mut market = market_with(|_| {}, dash_to_credits!(1.0));
+    let contract_id = market.contract.id();
+    let mut refuse = async |market: &mut Market, position: u16| {
+        let nonce = market.seller.take_nonce();
+        let place = market.place_ask_naming(contract_id, position, nonce).await;
+        let processing_result = market.process(&place);
+        match processing_result.execution_results().as_slice() {
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error, actual_fees, ..
+            }] => (error.clone(), actual_fees.processing_fee),
+            results => panic!("expected a paid refusal: {results:?}"),
+        }
+    };
+
+    refuse(&mut market, 1).await;
+    let (error, refused_before) = refuse(&mut market, 1).await;
+    assert_matches!(
+        error,
+        ConsensusError::BasicError(BasicError::InvalidTokenPositionError(_))
+    );
+    let (error, refused_after) = refuse(&mut market, 0).await;
+    assert_matches!(
+        error,
+        ConsensusError::StateError(StateError::TokenNotTradeableError(_))
+    );
+    assert_eq!(refused_after, refused_before + listing_id_hash_fee());
+}
+
 #[tokio::test]
 async fn should_refuse_listing_a_token_that_is_not_tradeable() {
     let mut market = market_with(|_| {}, dash_to_credits!(1.0));
@@ -1866,6 +1974,8 @@ async fn should_refuse_a_fill_of_a_token_the_contract_does_not_define() {
 mod offers {
     use super::*;
     use dpp::fee::fee_result::FeeResult;
+    use dpp::state_transition::batch_transition::token_place_bid_transition::v0::TokenPlaceBidTransitionV0;
+    use drive::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::TokenPlaceBidTransitionActionV0;
 
     impl Market {
         /// Executes `transition` and returns the fee its signer was charged.
@@ -2273,6 +2383,120 @@ mod offers {
             "the buyer gets back the credit the rounding left, and the offer's storage"
         );
         assert_eq!(market.token_balance(market.buyer.id()), Some(7));
+    }
+
+    /// Two sales into one offer in one block, each offering up to 5 of the 7 it wants at 1.5
+    /// credits per base unit: the second reads the offer the first left in the block's
+    /// transaction, so the first sells 5 for 7 (7.5 rounded down) and the second the 2 left for
+    /// 3, the change in the running total. That closes the offer, and the 1 credit the rounding
+    /// left in its 11-credit escrow goes back to the buyer with the offer's storage.
+    #[tokio::test]
+    async fn should_sell_into_an_offer_twice_in_one_block() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(7, 150_000_000, 1, None).await;
+        market.executes(&place);
+        assert_eq!(market.credit_escrow(order_id), Some(11));
+        let seller_credits = market.credit_balance(market.seller.id());
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let first = market.fill_bid(order_id, 1, 5, 7, false).await;
+        let second = market.fill_bid(order_id, 1, 5, 3, false).await;
+        let processing_result =
+            market.process_in_one_block(&[&first, &second], &BlockInfo::default());
+        let [StateTransitionExecutionResult::SuccessfulExecution {
+            fee_result: first_fee,
+            ..
+        }, StateTransitionExecutionResult::SuccessfulExecution {
+            fee_result: second_fee,
+            ..
+        }] = processing_result.execution_results().as_slice()
+        else {
+            panic!(
+                "expected both sales to execute: {:?}",
+                processing_result.execution_results()
+            );
+        };
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(7));
+        assert_eq!(
+            market.token_balance(market.seller.id()),
+            Some(BASE_SUPPLY - 7)
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None, "the second sale closed it");
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(first_fee, market.seller.id(), 7)
+                + change_for(second_fee, market.seller.id(), 3),
+            "the seller is paid 7 and then 3, less each sale's fee"
+        );
+        let buyer_refund = [first_fee, second_fee]
+            .iter()
+            .map(|fee| {
+                fee.fee_refunds
+                    .calculate_refunds_amount_for_identity(market.buyer.id())
+                    .unwrap_or_default()
+            })
+            .sum::<Credits>();
+        assert!(
+            buyer_refund > 0,
+            "the closing sale refunds the offer's storage"
+        );
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            1 + buyer_refund as i128,
+            "the buyer gets back the credit the rounding left, and the offer's storage"
+        );
+        market.assert_supply_balanced();
+    }
+
+    /// Placing an offer derives its id as a listing does, over as many bytes ("bid" for
+    /// "ask"), and charges the hash in the transformation; for a token outside a group that is
+    /// all the transformation charges.
+    #[tokio::test]
+    async fn should_charge_an_offer_the_hash_of_its_id_where_it_is_derived() {
+        let market = tradeable_market();
+        let platform_version = PlatformVersion::latest();
+        let contract = market
+            .platform
+            .drive
+            .get_contract_with_fetch_info(
+                market.contract.id().to_buffer(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract")
+            .expect("expected the token's contract");
+        let transition = TokenPlaceBidTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 2,
+                token_contract_position: 0,
+                data_contract_id: market.contract.id(),
+                token_id: market.token_id,
+                using_group_info: None,
+            }),
+            amount: 1_000,
+            price: PRICE,
+            decimals: 8,
+            min_fill: 1,
+            expires_at: None,
+        };
+        let (placed, fee) =
+            TokenPlaceBidTransitionActionV0::try_from_borrowed_token_place_bid_transition_with_contract_lookup(
+                &market.platform.drive,
+                market.buyer.id(),
+                &transition,
+                false,
+                None,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(Arc::clone(&contract)),
+                platform_version,
+            )
+            .expect("expected the transformation to run");
+        assert!(placed.is_valid(), "{:?}", placed.errors);
+        assert_eq!(fee.processing_fee, listing_id_hash_fee());
     }
 
     #[tokio::test]
