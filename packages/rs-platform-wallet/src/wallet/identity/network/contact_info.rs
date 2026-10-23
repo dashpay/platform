@@ -760,7 +760,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })?
             .to_owned_document_type();
 
-        self.sdk_writer
+        let (_document, owner_balance, metadata) = self
+            .sdk_writer
             .put_document(super::sdk_writer::PutDocumentParams {
                 document,
                 document_type,
@@ -768,6 +769,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
             .await?;
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
 
         tracing::info!(
             identity = %identity_id,

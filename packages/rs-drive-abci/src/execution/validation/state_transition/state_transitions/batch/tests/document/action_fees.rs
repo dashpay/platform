@@ -21,6 +21,8 @@ mod action_fee_tests {
     use dpp::balances::credits::MAX_CREDITS;
     use dpp::block::epoch::Epoch;
     use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
@@ -986,8 +988,11 @@ mod action_fee_tests {
         assert!(
             matches!(
                 &result,
-                StateTransitionExecutionResult::InternalError(message)
-                    if message.contains("DocumentsBatch") && message.contains("not active")
+                UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(error)
+                )) if error.state_transition_type().starts_with("DocumentsBatch")
+                    && error.current_protocol_version() == 13
+                    && error.required_protocol_version() == 14
             ),
             "expected the batch to be inactive before protocol version 14, got {result:?}"
         );
