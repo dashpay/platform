@@ -9,6 +9,12 @@
 //! is not the line of defense; a direct gRPC submitter bypasses it.
 //!
 //! RED if the backend wraps, panics, or accepts a boundary value.
+//!
+//! Setup can fail before the probes with `AddressNonceMismatch` (Found-033).
+//! Each shield re-fetches `AddressInfo` via `fetch_many`; a submitted nonce
+//! above the receiving node's expectation reflects a lagging broadcast node,
+//! while the opposite skew can follow a lagging fetch. No client nonce cache
+//! participates in this path.
 
 #![cfg(feature = "shielded")]
 

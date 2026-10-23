@@ -28,13 +28,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dpp::asset_lock::StoredAssetLockInfo;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::OrchardProver;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use platform_wallet::wallet::shielded::operations::build_shield_from_asset_lock_st;
 use platform_wallet::wallet::shielded::operations::test_utils::derive_asset_lock_private_key;
 use platform_wallet::wallet::shielded::{AccountViewingKeys, OrchardKeySet};
-use platform_wallet::AssetLockFundingType;
+use platform_wallet::{AssetLockFundingType, PlatformWalletError};
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{adversarial_enabled, bind_shielded, shielded_prover};
@@ -67,7 +70,7 @@ async fn shield_with_proof(
     one_time_key: &[u8],
     credits: u64,
     prover: &impl OrchardProver,
-) -> Result<StateTransitionProofResult, String> {
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
     let state_transition = build_shield_from_asset_lock_st(
         sdk,
         keys,
@@ -76,12 +79,11 @@ async fn shield_with_proof(
         one_time_key,
         credits,
         prover,
-    )
-    .map_err(|e| format!("build Type-18 transition: {e}"))?;
+    )?;
     state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk.as_ref(), None)
+        .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(sdk.as_ref(), None)
         .await
-        .map_err(|e| format!("broadcast Type-18 transition: {e}"))
+        .map_err(PlatformWalletError::Sdk)
 }
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
@@ -141,35 +143,40 @@ async fn sh_035_replayed_asset_lock_proof() {
     let credits = dpp::balances::credits::CREDITS_PER_DUFF * SHIELD_DUFFS;
 
     // First shield must succeed (consumes the single-use proof).
-    shield_with_proof(&sdk, &keys, proof.clone(), &one_time_key, credits, &prover)
+    let first = shield_with_proof(&sdk, &keys, proof.clone(), &one_time_key, credits, &prover)
         .await
         .expect("first shield-from-asset-lock must succeed");
+    assert!(
+        matches!(
+            first,
+            StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::FullyConsumed
+            ) | StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(
+                StoredAssetLockInfo::FullyConsumed,
+                _
+            )
+        ),
+        "first shield must fully consume the asset lock; result={first:?}"
+    );
 
     // Replay: resubmit the SAME proof. The outpoint is already consumed,
     // so the backend MUST reject.
-    let replay = shield_with_proof(&sdk, &keys, proof, &one_time_key, credits, &prover).await;
-    // `broadcast_and_wait` waits for the consensus result, so
-    // `replay` already reflects the TRUE verdict (not just mempool). Emit the
-    // greppable tag for Marvin: Ok = the same proof committed twice (potential
-    // P0); Err = the single-use check rejected the replay (the GOOD outcome).
-    match &replay {
-        Ok(_) => tracing::warn!(
-            target: "platform_wallet::e2e::cases::sh_035",
-            "ADV-VERDICT probe=SH-035 stage=consensus result=accepted detail=\"asset-lock proof consumed twice\""
-        ),
-        Err(e) => tracing::info!(
-            target: "platform_wallet::e2e::cases::sh_035",
-            "ADV-VERDICT probe=SH-035 stage=consensus result=rejected detail=\"{e}\""
-        ),
-    }
+    let replay = shield_with_proof(&sdk, &keys, proof, &one_time_key, credits, &prover)
+        .await
+        .expect_err("SH-035 FINDING (CRITICAL): the SAME asset-lock proof was consumed TWICE");
     assert!(
-        replay.is_err(),
-        "SH-035 FINDING (CRITICAL): the SAME asset-lock proof was consumed TWICE — \
-         double-shield from one L1 lock = value forgery. result={replay:?}"
+        matches!(
+            replay.consensus_error(),
+            Some(ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
+                    | BasicError::IdentityAssetLockStateTransitionReplayError(_)
+            ))
+        ),
+        "SH-035: replay must fail with an asset-lock consumption/replay consensus error; got {replay:?}"
     );
     tracing::info!(
         target: "platform_wallet::e2e::cases::sh_035",
-        "replayed asset-lock proof correctly rejected (single-use enforced)"
+        "ADV-VERDICT probe=SH-035 stage=consensus result=rejected detail=\"{replay}\""
     );
 
     s.teardown().await.expect("teardown");

@@ -10,6 +10,11 @@
 //!
 //! Expected outcome: PASS — this is the contract `reserve_unspent_notes`
 //! exists to uphold; the canary for a reservation-race regression.
+//!
+//! Setup can fail with `AddressNonceMismatch` (Found-033): every shield
+//! re-fetches `AddressInfo` via `fetch_many`, but DAPI node state skew between
+//! that fetch and broadcast can leave the submitted nonce below or above
+//! the receiving node's expectation. There is no client nonce cache here.
 
 use std::time::Duration;
 
