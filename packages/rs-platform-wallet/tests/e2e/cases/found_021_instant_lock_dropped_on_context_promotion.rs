@@ -2,10 +2,18 @@
 //! `InstantLock` when a transaction is promoted from `InstantSend` to `InBlock`.
 //!
 //! **Spec**: `tests/e2e/TEST_SPEC.md` (§ Found bugs → Found-021).
-//! **Upstream defect site**: `key-wallet/src/managed_account/transaction_record.rs:182-184`
-//! (`TransactionRecord::update_context`: `self.context = context;`).
+//! **Upstream defect site**: `key-wallet/src/managed_account/transaction_record.rs:220-222`
+//! at rust-dashcore `aca0202` (`TransactionRecord::update_context`: `self.context = context;`).
 //! **Tracking issue**: dashpay/rust-dashcore#763.
 //! **Pinned status**: RED-BY-DESIGN — pure unit test; pins upstream bug until fix lands.
+//!
+//! ## Scope
+//!
+//! The pin covers key-wallet's in-memory `TransactionRecord` only. Since
+//! dashpay/platform#5393, platform-wallet's own persistence path keeps the
+//! lock: on `TransactionInstantLocked` it re-emits the locked record and
+//! carries the lock in `CoreChangeSet::instant_locks_for_non_final_records`,
+//! so a persister stores it independently of the record's later context.
 //!
 //! ## Bug shape
 //!
