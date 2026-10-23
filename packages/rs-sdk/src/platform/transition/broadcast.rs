@@ -577,6 +577,9 @@ impl WaitForOutcome for StateTransition {
 }
 
 #[cfg(test)]
+mod address_nonce_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Status;
