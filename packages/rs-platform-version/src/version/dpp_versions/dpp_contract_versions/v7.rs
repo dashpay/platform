@@ -19,7 +19,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     methods: DataContractMethodVersions {
         // changed: the document type's native validator checks the schema in place of the
-        // `jsonschema` crate, reaching the same verdicts
+        // `jsonschema` crate, reaching the same verdicts but for one rule of its own: numbers
+        // in a `uniqueItems` list compare by value however long the list
         validate_document: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },

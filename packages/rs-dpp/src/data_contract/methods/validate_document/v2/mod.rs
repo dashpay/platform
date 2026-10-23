@@ -26,8 +26,9 @@ use std::sync::Arc;
 impl DataContract {
     /// Generation 1, with the document type's schema checked by its native validator
     /// ([`DocumentSchemaValidator`]) in place of the `jsonschema` crate, which reaches the
-    /// same verdicts. A document type whose schema has no validation schema keeps
-    /// generation 1's check entirely.
+    /// same verdicts but for one rule of its own: numbers in a `uniqueItems` list compare by
+    /// value however long the list. A document type whose schema has no validation schema
+    /// keeps generation 1's check entirely.
     #[inline(always)]
     pub(super) fn validate_document_properties_v2(
         &self,
