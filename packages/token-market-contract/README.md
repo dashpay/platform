@@ -25,7 +25,6 @@ Tokens a holder offers for sale at a price.
 | `amount` | integer, required | The base units listed when the order was placed |
 | `remaining` | integer, required | The base units still for sale; the order is deleted when it is filled entirely |
 | `minFill` | integer, required | The smallest fill the seller accepts, unless it takes everything still open; a fill may not leave less than this open either |
-| `expiresAt` | integer | The block time, in milliseconds, from which the order can no longer be filled; it can still be cancelled |
 | `decimals` | integer, required | The token's decimals when the order was placed. Every fill prices the order at this scale, so a later change to the token's decimals does not change what an open order costs or pays |
 
 ## `bid`
