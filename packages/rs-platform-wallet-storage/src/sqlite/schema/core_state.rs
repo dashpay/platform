@@ -1122,6 +1122,7 @@ pub fn load_state(
 }
 
 /// Retain physical row keys so authorization repair can remove drifted bodies.
+/// Appends blob txid → physical row keys to the `record_keys` output map.
 pub(crate) fn load_state_with_record_keys(
     conn: &Connection,
     wallet_id: &WalletId,

@@ -167,8 +167,23 @@ pub(crate) fn repair(
         })
         .copied()
         .collect();
-    // Related evidence may name either the blob txid or the drifted row key.
-    let rejected_evidence: HashSet<Txid> = rejected.union(&physical_keys).copied().collect();
+    let surviving_txids: HashSet<Txid> = state
+        .records
+        .iter()
+        .map(|record| record.txid)
+        .filter(|txid| !rejected.contains(txid))
+        .collect();
+    let protected_keys: HashSet<Txid> = physical_keys
+        .intersection(&surviving_txids)
+        .copied()
+        .collect();
+    // A corrupt physical key can also name a surviving body: its evidence belongs to that survivor.
+    let rejected_evidence: HashSet<Txid> = rejected
+        .union(&physical_keys)
+        .filter(|txid| !surviving_txids.contains(*txid))
+        .copied()
+        .collect();
+    let mut protected_claims = Vec::new();
     // Release before deleting bodies: their cleanup trigger clears claimant IDs.
     // Never reinterpret an anonymous or recordless final claim as a rejected peer claim.
     let mut claims = Vec::new();
@@ -179,13 +194,19 @@ pub(crate) fn repair(
         let raw: Vec<u8> = row.get(1)?;
         blob::check_fixed_width(row.get(2)?, 32, "core_utxos.spent_in_txid")?;
         let claimant: Vec<u8> = row.get(3)?;
-        if rejected_evidence.contains(&Txid::from_slice(&claimant)?) {
+        let claimant = Txid::from_slice(&claimant)?;
+        if protected_keys.contains(&claimant) {
+            protected_claims.push((raw, claimant));
+        } else if rejected_evidence.contains(&claimant) {
             claims.push((raw, row.get::<_, bool>(4)?));
         }
     }
     for (raw, placeholder) in claims {
         let op = blob::decode_outpoint(&raw)?;
         if let Some(survivor) = survivors.get(&op) {
+            if protected_keys.contains(survivor) {
+                protected_claims.push((raw.clone(), *survivor));
+            }
             tx.execute(
                 "UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![
@@ -208,6 +229,12 @@ pub(crate) fn repair(
             "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
             params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
         )?;
+    }
+    // The row-delete trigger clears claims by physical key, even when that key
+    // names a surviving blob. Restore only the claims we just protected.
+    for (raw, claimant) in protected_claims {
+        tx.execute("UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1 AND spent_in_txid IS NULL",
+            params![wallet_id.as_slice(), raw, claimant.as_byte_array().as_slice()])?;
     }
     for txid in &rejected_evidence {
         let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
@@ -260,6 +287,99 @@ mod tests {
             vec![],
             0,
         )
+    }
+
+    #[test]
+    fn should_preserve_survivor_evidence_when_a_rejected_key_is_double_drifted() {
+        let wallet = [0xC7; 32];
+        let mut conn = wallet_db(&wallet);
+        let address = Address::new(
+            Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x35; 20])),
+        );
+        let parent = record(
+            Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn::default()],
+                output: vec![TxOut {
+                    value: 1000,
+                    script_pubkey: address.script_pubkey(),
+                }],
+                special_transaction_payload: None,
+            },
+            TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 100)),
+        );
+        let coin = OutPoint::new(parent.txid, 0);
+        let bad = record(
+            Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: coin,
+                    ..Default::default()
+                }],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            TransactionContext::Mempool,
+        );
+        let parent_key = Txid::from_byte_array([0x36; 32]);
+        let keys = [
+            (parent.txid, vec![parent_key]),
+            (bad.txid, vec![parent.txid]),
+        ]
+        .into();
+        for key in [parent_key, parent.txid] {
+            conn.execute(
+                "INSERT INTO core_transactions (wallet_id, txid, finalized) VALUES (?1, ?2, 0)",
+                params![wallet.as_slice(), key.as_byte_array().as_slice()],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')",
+            params![wallet.as_slice(), parent.txid.as_byte_array().as_slice()],
+        )
+        .unwrap();
+        let other = OutPoint::new(Txid::from_byte_array([0x37; 32]), 0);
+        for (outpoint, claimant) in [(coin, bad.txid), (other, parent.txid)] {
+            conn.execute("INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, spent_in_txid) VALUES (?1, ?2, 1000, ?3, 1, ?4)", params![wallet.as_slice(), blob::encode_outpoint(&outpoint).unwrap(), address.script_pubkey().as_bytes(), claimant.as_byte_array().as_slice()]).unwrap();
+        }
+        let state = CoreChangeSet {
+            records: vec![parent.clone(), bad],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        assert!(repair(&tx, &wallet, &state, &keys).unwrap());
+        let rows: i64 = tx
+            .query_row(
+                "SELECT count(*) FROM core_transactions WHERE txid = ?1",
+                [parent.txid.as_byte_array().as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0, "the rejected physical row must still be removed");
+        let coins: i64 = tx
+            .query_row("SELECT count(*) FROM core_utxos", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(coins, 2, "the survivor's outputs must remain");
+        let locks: i64 = tx
+            .query_row("SELECT count(*) FROM core_instant_locks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(locks, 1, "the survivor's lock must remain");
+        let claimant: Vec<u8> = tx
+            .query_row(
+                "SELECT spent_in_txid FROM core_utxos WHERE outpoint = ?1",
+                [blob::encode_outpoint(&other).unwrap()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            claimant,
+            parent.txid.as_byte_array().as_slice(),
+            "the delete trigger must not erase the survivor's claim"
+        );
     }
 
     /// A peer can relay a pending record whose inputs name vouts its stored
