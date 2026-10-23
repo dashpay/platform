@@ -30,11 +30,11 @@
 //! 1. Under the manager lock it checks that the address is still available —
 //!    not used, not reserved, and paid by no resident transaction record —
 //!    and marks it **reserved**. The pool is stored, and flushed when the
-//!    backend buffers, before anything reaches the network. Both backends
-//!    reload a stored reservation as used — the FFI host stores it as used,
-//!    SQLite stores it reversibly (`reserved_at`) and reads it back as used —
-//!    so a relaunch after a crash mid-send does not hand the address out
-//!    again.
+//!    backend buffers, before anything reaches the network. The FFI host
+//!    stores a reservation as used, so a relaunch after a crash mid-send does
+//!    not hand the address out again. SQLite stores it reversibly
+//!    (`reserved_at`) but does not yet restore a contact's external pool on
+//!    load, used rows included (dashpay/platform#5548).
 //! 2. When the broadcast went out, or may have (an ambiguous outcome), the
 //!    reservation becomes **used** and is stored. When it provably did not —
 //!    the store failed, the network rejected it, or it was refused as stale
@@ -680,7 +680,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
         // A release is flushed like the reservation, so a relaunch does not
         // read back the reservation it replaces. A used address needs no
-        // flush: the stored reservation already reloads as used.
+        // flush: the reservation already stored guards it as the used mark
+        // would — the FFI host reloads either as used.
         let stored = match outcome {
             AddressOutcome::NotSent => self.store_durably(settled),
             AddressOutcome::Sent => self

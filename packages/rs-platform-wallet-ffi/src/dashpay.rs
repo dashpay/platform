@@ -1881,21 +1881,87 @@ mod tests {
         }
     }
 
-    /// A payment handle that is really held, around a signed transaction that
-    /// reserved nothing, so abandoning it has nothing to release. The manager
-    /// is returned to keep the wallet alive for the test.
-    fn live_prepared_payment_handle() -> (
+    type TestCore = platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>;
+
+    /// Try to sign a payment on `core`'s single fixture UTXO, reserving it.
+    fn try_finalize_on_the_only_input(
+        core: &TestCore,
+        signer: &platform_wallet::test_support::WalletSigner,
+        tag: u8,
+    ) -> Result<platform_wallet::SignedCoreTransaction, platform_wallet::PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+        use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+
+        runtime().block_on(core.finalize_transaction(
+            TransactionBuilder::new().add_output(
+                &dashcore::Address::dummy(dashcore::Network::Testnet, usize::from(tag)),
+                1_000_000,
+            ),
+            &[AccountTypePreference::BIP44],
+            0,
+            signer,
+        ))
+    }
+
+    /// Sign a payment on `core`'s single fixture UTXO, reserving it.
+    fn finalize_on_the_only_input(
+        core: &TestCore,
+        signer: &platform_wallet::test_support::WalletSigner,
+        tag: u8,
+    ) -> platform_wallet::SignedCoreTransaction {
+        try_finalize_on_the_only_input(core, signer, tag).expect("the fixture UTXO is free")
+    }
+
+    /// Prove a cleanup branch released the payment's funding reservation:
+    /// the wallet's only UTXO funds a new payment.
+    fn assert_inputs_released(
+        core: &TestCore,
+        signer: &platform_wallet::test_support::WalletSigner,
+        tag: u8,
+    ) {
+        let rebuilt = finalize_on_the_only_input(core, signer, tag);
+        runtime().block_on(core.abandon_transaction(&rebuilt));
+    }
+
+    /// Prove the payment's funding is reserved: a second payment finds no
+    /// spendable input, so a release check after a cleanup branch is not
+    /// passing vacuously.
+    fn assert_inputs_held(
+        core: &TestCore,
+        signer: &platform_wallet::test_support::WalletSigner,
+        tag: u8,
+    ) {
+        let result = try_finalize_on_the_only_input(core, signer, tag);
+        assert!(
+            matches!(
+                result,
+                Err(platform_wallet::PlatformWalletError::CoreInsufficientFunds { .. })
+            ),
+            "the held payment reserves the wallet's only UTXO, got {result:?}"
+        );
+    }
+
+    /// A held prepared payment whose transaction reserves the funded core
+    /// wallet's only UTXO, so a cleanup branch that skips the abandon leaves
+    /// that input unselectable. The abandon goes through the payment's own
+    /// core wallet; `wallet` only carries the handle, and the manager is
+    /// returned to keep it alive for the test.
+    fn live_prepared_payment_handle(
+        tag: u8,
+    ) -> (
         std::sync::Arc<
             platform_wallet::PlatformWalletManager<
                 platform_wallet::test_support::NoopTestPersister,
             >,
         >,
         Handle,
+        TestCore,
+        platform_wallet::test_support::WalletSigner,
     ) {
         use dashcore::hashes::Hash;
-        use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-        use platform_wallet::test_support::test_platform_wallet_manager;
-        use platform_wallet::{PreparedDashPayPayment, SignedCoreTransaction};
+        use key_wallet::account::account_type::StandardAccountType;
+        use platform_wallet::test_support::{funded_spv_core_wallet, test_platform_wallet_manager};
+        use platform_wallet::PreparedDashPayPayment;
 
         let (manager, wallet) = runtime().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
@@ -1905,29 +1971,16 @@ mod tests {
                 .expect("wallet present");
             (manager, wallet)
         });
-        let core = wallet.core().clone();
-        let signed = SignedCoreTransaction::new_for_test(
-            dashcore::Transaction {
-                version: 3,
-                lock_time: 0,
-                input: vec![],
-                output: vec![],
-                special_transaction_payload: None,
-            },
-            0,
-            vec![AccountTypePreference::BIP44
-                .account_type(0)
-                .expect("single account")],
-            0,
-            None,
-            core.test_generation_marker(),
-        );
+        let (core, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let signed = finalize_on_the_only_input(&core, &signer, tag);
+        assert_inputs_held(&core, &signer, tag.wrapping_add(100));
         let address = dashcore::Address::new(
             dashcore::Network::Testnet,
             dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::all_zeros()),
         );
         let payment = PreparedDashPayPayment::new_for_test(
-            core,
+            core.clone(),
             signed,
             address,
             dpp::prelude::Identifier::from([1u8; 32]),
@@ -1936,7 +1989,7 @@ mod tests {
         );
         let handle =
             PREPARED_DASHPAY_PAYMENT_STORAGE.insert(FFIPreparedDashPayPayment { wallet, payment });
-        (manager, handle)
+        (manager, handle, core, signer)
     }
 
     /// What a prepared send hands back for each outcome: the txid whenever
@@ -1996,11 +2049,11 @@ mod tests {
     }
 
     /// A held payment sent with a null `out_txid` is refused before anything
-    /// is sent, and the handle is consumed on the way: a second send and an
-    /// abandon both find nothing.
+    /// is sent, its inputs are released, and the handle is consumed on the
+    /// way: a second send and an abandon both find nothing.
     #[test]
     fn prepared_payment_with_a_null_out_txid_is_abandoned_and_consumed() {
-        let (_manager, payment) = live_prepared_payment_handle();
+        let (_manager, payment, core, signer) = live_prepared_payment_handle(60);
         let mut fee: u64 = 7;
         let r = unsafe {
             platform_wallet_send_prepared_dashpay_payment(
@@ -2012,6 +2065,7 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         assert_eq!(fee, 7, "nothing is written on a refusal");
+        assert_inputs_released(&core, &signer, 61);
 
         let mut txid = [0xAAu8; 32];
         let r = unsafe {
@@ -2026,10 +2080,10 @@ mod tests {
     }
 
     /// A held payment sent through a wallet handle that is not registered is
-    /// abandoned and consumed, with nothing written.
+    /// abandoned — its inputs released — and consumed, with nothing written.
     #[test]
     fn prepared_payment_sent_through_an_unknown_wallet_is_abandoned_and_consumed() {
-        let (_manager, payment) = live_prepared_payment_handle();
+        let (_manager, payment, core, signer) = live_prepared_payment_handle(62);
         let mut txid = [0xAAu8; 32];
         let mut fee: u64 = 7;
         let r = unsafe {
@@ -2037,6 +2091,78 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert_eq!((txid, fee), ([0xAAu8; 32], 7));
+        assert_inputs_released(&core, &signer, 63);
+        assert_eq!(
+            platform_wallet_abandon_prepared_dashpay_payment(payment).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+    }
+
+    /// A held payment sent through a registered wallet it was not prepared on
+    /// is refused as `ErrorInvalidParameter`, abandoned — its inputs
+    /// released — and consumed, with nothing written. The FFI generation
+    /// check and the native same-wallet check both refuse this pairing; the
+    /// test pins the outcome either way, and which wallets
+    /// `is_same_generation` tells apart is covered natively.
+    #[test]
+    fn prepared_payment_sent_through_another_wallet_is_abandoned_and_consumed() {
+        let (_manager, payment, core, signer) = live_prepared_payment_handle(68);
+        // A wallet of its own manager: not the payment's, nor the handle's.
+        let (_unrelated_manager, unrelated) = runtime().block_on(async {
+            let (manager, wallet_id) =
+                platform_wallet::test_support::test_platform_wallet_manager().await;
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet present");
+            (manager, wallet)
+        });
+        let wallet_handle = PLATFORM_WALLET_STORAGE.insert(unrelated);
+        let mut txid = [0xAAu8; 32];
+        let mut fee: u64 = 7;
+        let r = unsafe {
+            platform_wallet_send_prepared_dashpay_payment(
+                wallet_handle,
+                payment,
+                &mut txid,
+                &mut fee,
+            )
+        };
+        PLATFORM_WALLET_STORAGE.remove(wallet_handle);
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!((txid, fee), ([0xAAu8; 32], 7));
+        assert_inputs_released(&core, &signer, 69);
+        assert_eq!(
+            platform_wallet_abandon_prepared_dashpay_payment(payment).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+    }
+
+    /// Abandoning a held payment releases its inputs and consumes the handle:
+    /// a repeated abandon finds nothing, and a free after it is a no-op.
+    #[test]
+    fn prepared_payment_abandon_releases_its_inputs_once() {
+        let (_manager, payment, core, signer) = live_prepared_payment_handle(64);
+        assert_eq!(
+            platform_wallet_abandon_prepared_dashpay_payment(payment).code,
+            PlatformWalletFFIResultCode::Success
+        );
+        assert_inputs_released(&core, &signer, 65);
+        assert_eq!(
+            platform_wallet_abandon_prepared_dashpay_payment(payment).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+        platform_wallet_prepared_dashpay_payment_free(payment);
+    }
+
+    /// Freeing a held payment abandons it, releasing its inputs; a second
+    /// free and an abandon after it find nothing.
+    #[test]
+    fn prepared_payment_free_releases_its_inputs_once() {
+        let (_manager, payment, core, signer) = live_prepared_payment_handle(66);
+        platform_wallet_prepared_dashpay_payment_free(payment);
+        assert_inputs_released(&core, &signer, 67);
+        platform_wallet_prepared_dashpay_payment_free(payment);
         assert_eq!(
             platform_wallet_abandon_prepared_dashpay_payment(payment).code,
             PlatformWalletFFIResultCode::NotFound

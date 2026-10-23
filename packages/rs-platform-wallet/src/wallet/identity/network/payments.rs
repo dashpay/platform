@@ -1847,8 +1847,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // transaction is on the network the address is publicly spent-to,
         // and a relaunch that rehydrated the pool from a stale snapshot would
         // re-hand the SAME address to the next payment — breaking DIP-15
-        // per-payment rotation and linking the payments on-chain. Both
-        // backends reload a stored reservation as used.
+        // per-payment rotation and linking the payments on-chain. The FFI
+        // host reloads a stored reservation as used; SQLite does not yet
+        // rehydrate a contact's pool at all (dashpay/platform#5548).
         if let Err(e) = self.store_durably(reservation_changeset) {
             // A definitive PRE-SEND failure: the broadcaster below was never
             // reached, so the transaction provably is not on the wire. Its
@@ -11538,7 +11539,7 @@ mod tests {
     /// A definitively rejected broadcast must release the payment address's
     /// reservation AND persist the release — unlike a failed build, the
     /// reservation was already persisted before the broadcast attempt, and
-    /// a relaunch reads a stored reservation back as used.
+    /// a relaunch on the FFI host reads a stored reservation back as used.
     #[tokio::test]
     async fn send_payment_rejected_broadcast_returns_the_address_to_the_pool() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
