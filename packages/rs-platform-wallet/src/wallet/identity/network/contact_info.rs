@@ -18,7 +18,7 @@
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -29,6 +29,23 @@ use crate::wallet::identity::crypto::contact_info::{
     decode_private_data, derive_contact_info_keys, encode_private_data_bounded,
     ContactInfoPrivateData,
 };
+
+// contactInfo documents require HIGH or CRITICAL authentication; MASTER is
+// reserved for identity operations and cannot authorize an ordinary document
+// write. Key selection follows the profile writer: full or HASH160 ECDSA keys,
+// skipping keys bound elsewhere, disabled or expired.
+fn contact_info_signing_key(
+    identity: &Identity,
+    dashpay_contract_id: Identifier,
+) -> Option<&IdentityPublicKey> {
+    super::usable_authentication_key(
+        identity,
+        dashpay_contract_id,
+        "contactInfo",
+        &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+    )
+}
 
 /// One decrypted `contactInfo` document — the fields the sweep applies. (The
 /// publish path's update-vs-create needs `doc_id`/`revision`/`derivation_index`
@@ -565,14 +582,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            let signing_key = super::usable_authentication_key(
-                &managed.identity,
-                dashpay_contract.id(),
-                "contactInfo",
-                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-            )
-            .cloned();
+            let signing_key =
+                contact_info_signing_key(&managed.identity, dashpay_contract.id()).cloned();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
             // key defers the publish rather than erroring here.
@@ -790,5 +801,71 @@ mod pending_enqueue_tests {
         super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
         iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
         assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod signing_key_tests {
+    use super::*;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::identity_public_key::Purpose;
+    use dpp::version::PlatformVersion;
+
+    const DASHPAY: [u8; 32] = [0xDA; 32];
+
+    fn auth_key(id: u32, key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            key_type,
+            data: vec![1; key_type.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    fn identity_with(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_keys(keys);
+        identity
+    }
+
+    fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
+        contact_info_signing_key(identity, Identifier::from(DASHPAY))
+    }
+
+    #[test]
+    fn should_select_high_and_critical_ecdsa_contact_info_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
+                let identity = identity_with(vec![auth_key(1, key_type, level)]);
+                assert!(pick(&identity).is_some(), "{key_type:?}/{level:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn should_reject_ineligible_contact_info_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
+                assert!(pick(&identity_with(vec![auth_key(1, key_type, level)])).is_none());
+            }
+        }
+        for key_type in [KeyType::BLS12_381, KeyType::EDDSA_25519_HASH160] {
+            let identity = identity_with(vec![auth_key(1, key_type, SecurityLevel::HIGH)]);
+            assert!(pick(&identity).is_none(), "{key_type:?}");
+        }
+    }
+
+    #[test]
+    fn should_select_high_hash160_from_all_hash160_identity_layout() {
+        let identity = identity_with(vec![
+            auth_key(0, KeyType::ECDSA_HASH160, SecurityLevel::MASTER),
+            auth_key(1, KeyType::ECDSA_HASH160, SecurityLevel::HIGH),
+            auth_key(2, KeyType::ECDSA_HASH160, SecurityLevel::CRITICAL),
+        ]);
+        assert_eq!(pick(&identity), identity.public_keys().get(&1));
     }
 }

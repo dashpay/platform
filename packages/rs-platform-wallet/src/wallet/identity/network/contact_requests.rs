@@ -606,16 +606,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         // 5. Build the signing key reference for document signing.
-        let identity_public_key = sender_identity
-            // Contact-request send writes a document state transition,
-            // which DPP requires to be signed by a HIGH-or-stricter
-            // authentication key. MASTER is rejected on document writes.
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
+        let identity_public_key = contact_request_signing_key(&sender_identity)
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
@@ -1168,6 +1159,18 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
                 .to_string(),
         )
     })
+}
+
+/// The key that signs an outgoing `contactRequest` document: the first enabled
+/// HIGH or CRITICAL AUTHENTICATION key, full or HASH160 ECDSA. DPP requires a
+/// HIGH-or-stricter key on document writes; MASTER is rejected there.
+fn contact_request_signing_key(identity: &Identity) -> Option<&IdentityPublicKey> {
+    identity.get_first_public_key_matching(
+        Purpose::AUTHENTICATION,
+        [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
+        [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160].into(),
+        false,
+    )
 }
 
 /// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
@@ -5904,5 +5907,86 @@ mod pending_enqueue_tests {
         super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
         iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
         assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod signing_key_tests {
+    use super::contact_request_signing_key;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::identity_public_key::Purpose;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, SecurityLevel};
+    use dpp::version::PlatformVersion;
+
+    fn key(
+        id: u32,
+        purpose: Purpose,
+        key_type: KeyType,
+        security_level: SecurityLevel,
+    ) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level,
+            key_type,
+            data: vec![1; key_type.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    fn identity_with(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_keys(keys);
+        identity
+    }
+
+    #[test]
+    fn should_select_high_and_critical_ecdsa_contact_request_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
+                let identity =
+                    identity_with(vec![key(1, Purpose::AUTHENTICATION, key_type, level)]);
+                assert!(
+                    contact_request_signing_key(&identity).is_some(),
+                    "{key_type:?}/{level:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_select_high_hash160_over_master_transfer_and_encryption_keys() {
+        let identity = identity_with(vec![
+            key(
+                0,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::MASTER,
+            ),
+            key(
+                1,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::CRITICAL,
+            ),
+            key(
+                2,
+                Purpose::ENCRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                SecurityLevel::MEDIUM,
+            ),
+            key(
+                3,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::HIGH,
+            ),
+        ]);
+        assert_eq!(
+            contact_request_signing_key(&identity),
+            identity.public_keys().get(&3)
+        );
     }
 }
