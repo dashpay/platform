@@ -6,6 +6,7 @@
 
 use rusqlite::OptionalExtension;
 
+use crate::sqlite::config::LoadPolicy;
 use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
@@ -16,18 +17,23 @@ mod v020;
 // the crate root.
 refinery::embed_migrations!("./migrations");
 
-/// Apply every pending migration to `conn`.
+/// Apply every pending migration to `conn` under [`LoadPolicy::Strict`].
 pub fn run(conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery::Error> {
-    run_with_runner(conn, migrations::runner())
+    run_with_runner(conn, migrations::runner(), LoadPolicy::Strict)
 }
 
 /// Keep refinery's history validation, target selection and SQL/history writes
 /// inside the same writer exclusion as the typed legacy conversion. Its native
 /// rusqlite driver starts its own transactions, so this adapter implements the
 /// supported driver traits over our outer transaction instead.
+///
+/// `policy` reaches the typed steps that decode stored rows: under
+/// [`LoadPolicy::Strict`] a row they cannot read fails the migration, under
+/// [`LoadPolicy::Recovery`] it is logged and skipped.
 fn run_with_runner(
     conn: &mut rusqlite::Connection,
     runner: refinery::Runner,
+    policy: LoadPolicy,
 ) -> Result<refinery::Report, refinery::Error> {
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -47,6 +53,7 @@ fn run_with_runner(
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
         accounting_sql: hook_sql(20),
+        policy,
     };
     // Grouped reports never claim that rolled-back migrations were applied.
     let report = runner.set_grouped(true).run(&mut driver)?;
@@ -62,6 +69,7 @@ struct MigrationTransaction<'conn> {
     registration_sql: String,
     pool_sql: String,
     accounting_sql: String,
+    policy: LoadPolicy,
 }
 
 impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
@@ -79,7 +87,7 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
             } else if query == self.pool_sql {
                 legacy_v008::convert_pools(&self.tx)?;
             } else if query == self.accounting_sql {
-                v020::index_kept_inputs(&self.tx)?;
+                v020::index_kept_inputs(&self.tx, self.policy)?;
             }
             count += 1;
         }
@@ -127,8 +135,9 @@ impl refinery_core::traits::sync::Migrate for MigrationTransaction<'_> {}
 /// migration that needs to re-classify a refinery error.
 pub(crate) fn run_for_open(
     conn: &mut rusqlite::Connection,
+    policy: LoadPolicy,
 ) -> Result<refinery::Report, WalletStorageError> {
-    run(conn).map_err(WalletStorageError::Migration)
+    run_with_runner(conn, migrations::runner(), policy).map_err(WalletStorageError::Migration)
 }
 
 /// Return a fresh atomic migration runner seeded with the embedded list.
@@ -151,7 +160,7 @@ impl MigrationRunner {
 
     /// Apply the selected migration set and typed conversions atomically.
     pub fn run(self, conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery::Error> {
-        run_with_runner(conn, self.0)
+        run_with_runner(conn, self.0, LoadPolicy::Strict)
     }
 }
 

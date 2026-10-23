@@ -1565,6 +1565,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sqlite::config::LoadPolicy;
     use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
@@ -1956,6 +1957,72 @@ mod tests {
         assert!(utxos.is_empty(), "no kept row is spendable");
         assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
         assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
+    }
+
+    /// A store at V019 holding one kept pending record whose body no longer
+    /// decodes.
+    fn v019_store_with_undecodable_kept_record(wallet_id: &[u8; 32]) -> rusqlite::Connection {
+        let mut conn = wallet_db(wallet_id);
+        let funding = sample_utxo(Txid::from_byte_array([0x81; 32]), 150, true);
+        let pending = spend(&[funding.outpoint], TransactionContext::Mempool);
+        let coins = vec![funding];
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            wallet_id,
+            &CoreChangeSet {
+                spent_utxos: coins.clone(),
+                ..round(vec![pending.clone()], coins)
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        rewind_v020(&conn);
+        conn.execute(
+            "UPDATE core_transactions SET record_blob = x'00' WHERE txid = ?1",
+            [pending.txid.as_byte_array().to_vec()],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn schema_version(conn: &rusqlite::Connection) -> i64 {
+        conn.query_row(
+            "SELECT max(version) FROM refinery_schema_history",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    /// Under `Strict`, a kept pending record V020 cannot decode fails the
+    /// upgrade instead of being skipped: a skipped body leaves its inputs
+    /// unindexed with no signal, so a record-codec regression would only
+    /// show up as coins stuck later. The failed upgrade rolls back to V019.
+    #[test]
+    fn should_fail_v020_under_strict_on_a_kept_record_it_cannot_decode() {
+        let mut conn = v019_store_with_undecodable_kept_record(&[0xB8u8; 32]);
+
+        migrations::run_for_open(&mut conn, LoadPolicy::Strict)
+            .expect_err("an undecodable kept record must fail V020 under Strict");
+
+        assert_eq!(
+            schema_version(&conn),
+            19,
+            "the failed upgrade must roll back"
+        );
+    }
+
+    /// Under `Recovery`, V020 skips a kept record it cannot read and the
+    /// upgrade completes; that wallet degrades at load instead.
+    #[test]
+    fn should_skip_an_undecodable_kept_record_in_v020_under_recovery() {
+        let mut conn = v019_store_with_undecodable_kept_record(&[0xB9u8; 32]);
+
+        migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
+            .expect("Recovery must complete V020 past an undecodable kept record");
+
+        assert_eq!(schema_version(&conn), 20);
     }
 
     /// V020 indexes every input of a kept pending record, not only the coin
