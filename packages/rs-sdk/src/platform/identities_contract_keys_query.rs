@@ -110,6 +110,12 @@ impl TransportRequest for IdentitiesContractKeysQuery {
             .and_then(|request| request.names_nothing())
     }
 
+    fn needs_protocol_version(&self) -> Option<u32> {
+        GetIdentitiesContractKeysRequest::try_from(self.clone())
+            .ok()
+            .and_then(|request| request.needs_protocol_version())
+    }
+
     fn execute_transport<'c>(
         self,
         client: &'c mut Self::Client,

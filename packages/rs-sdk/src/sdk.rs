@@ -50,6 +50,9 @@ use zeroize::Zeroizing;
 
 #[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;
+mod protocol_gate;
+#[cfg(all(test, feature = "mocks"))]
+mod protocol_gate_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
@@ -303,6 +306,10 @@ pub struct Sdk {
     /// host can persist the learned version and seed the next SDK with it.
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
+    /// Enforce the protocol version gate on a mock SDK, as on a network one.
+    #[cfg(all(test, feature = "mocks"))]
+    enforce_protocol_gate_on_mock: bool,
+
     /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
@@ -340,6 +347,8 @@ impl Clone for Sdk {
             version_pinned: self.version_pinned,
             verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
+            #[cfg(all(test, feature = "mocks"))]
+            enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -429,27 +438,40 @@ impl Sdk {
         }
     }
 
-    /// Verify response metadata against the current state of the SDK.
+    /// Check that response metadata is fresh: its time within the time tolerance, and
+    /// its height not too far below the highest height seen so far.
     ///
-    /// The metadata must come from a proof whose quorum signature has already
-    /// been verified: this method learns the reported protocol version, and
-    /// records it as evidence of what the network runs, which decides whether
-    /// some requests are sent in a newer version.
+    /// Pass only the metadata of an answer whose proof and quorum signature were
+    /// verified: its height raises the height every later answer is checked against,
+    /// for this SDK and its clones.
+    ///
+    /// Protocol versions are learned only from answers the SDK verified itself, so
+    /// this changes neither [`Self::version`] nor the network version the SDK has
+    /// verified, whatever `metadata.protocol_version` says.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None)?;
-        self.record_verified_protocol_version(metadata.protocol_version);
+        self.check_metadata_freshness(method_name, metadata, None)
+    }
+
+    /// Check the freshness of `metadata` ([`Self::verify_response_metadata`]), with
+    /// optional arrival-time height and clock anchors, and learn its protocol version
+    /// as the stored one. A response verified after fetching its quorum key is not
+    /// made stale by the client's wait or by newer responses accepted while it waited.
+    pub(crate) fn verify_response_metadata_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        self.check_metadata_freshness(method_name, metadata, arrival)?;
+        self.maybe_update_protocol_version(metadata.protocol_version);
         Ok(())
     }
 
-    /// [`Self::verify_response_metadata`], with optional arrival-time height
-    /// and clock anchors. A response verified after fetching its quorum key
-    /// is not made stale by the client's wait or by newer responses accepted
-    /// while it waited.
-    pub(crate) fn verify_response_metadata_as_of(
+    fn check_metadata_freshness(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
@@ -474,16 +496,16 @@ impl Sdk {
             )?;
         };
 
-        self.maybe_update_protocol_version(metadata.protocol_version);
-
         Ok(())
     }
 
     /// Record the protocol version of a fresh response whose proof and signature
     /// were verified. Never lowers it; unknown versions are recorded too.
     fn record_verified_protocol_version(&self, protocol_version: u32) {
+        // Release: a reader that sees this version also sees the stored version this
+        // answer ratcheted before it (see `query_settings`).
         self.verified_protocol_version
-            .fetch_max(protocol_version, Ordering::Relaxed);
+            .fetch_max(protocol_version, Ordering::Release);
     }
 
     /// Accept the metadata of a response whose proof and signature were
@@ -784,11 +806,21 @@ impl Sdk {
     /// Hand the resulting context to [`crate::platform::Query::query`] when
     /// you need to encode a user-facing query into a wire `TransportRequest`
     /// without taking a full `&Sdk` dependency through the encoder layer.
+    ///
+    /// Its protocol version is [`Self::version`], except that an unpinned SDK on a
+    /// network a verified answer showed runs a version this build does not know
+    /// encodes with the newest version it knows, the rules it reads those answers with.
     pub fn query_settings(&self) -> crate::platform::QuerySettings<'_> {
+        // Acquire, before reading the stored version: see `record_verified_protocol_version`.
+        let verified = self.verified_protocol_version.load(Ordering::Acquire);
         crate::platform::QuerySettings {
             request_settings: &self.dapi_client_settings,
-            protocol_version: self.version(),
-            verified_protocol_version: self.verified_protocol_version.load(Ordering::Relaxed),
+            protocol_version: protocol_gate::version_for_requests(
+                self.version(),
+                verified,
+                self.version_pinned,
+            ),
+            verified_protocol_version: verified,
             prove: self.prove(),
         }
     }
@@ -1387,6 +1419,8 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
+                    #[cfg(all(test, feature = "mocks"))]
+                    enforce_protocol_gate_on_mock: false,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
                     )),
@@ -1458,6 +1492,8 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
+                    #[cfg(all(test, feature = "mocks"))]
+                    enforce_protocol_gate_on_mock: false,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
@@ -1980,7 +2016,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), 2);
@@ -2000,7 +2036,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), original_version);
@@ -2020,7 +2056,7 @@ mod test {
         };
 
         clone
-            .verify_response_metadata("test", &metadata)
+            .verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -2042,7 +2078,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), 2);
@@ -2061,7 +2097,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), original_version);
@@ -2086,7 +2122,7 @@ mod test {
                     ..Default::default()
                 };
                 sdk_clone
-                    .verify_response_metadata("test", &metadata)
+                    .verify_response_metadata_as_of("test", &metadata, None)
                     .expect("metadata should be valid");
             }));
         }
@@ -2129,7 +2165,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -2170,7 +2206,7 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), floor);
 
@@ -2182,7 +2218,7 @@ mod test {
             height: 2,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), newer);
     }
@@ -2227,7 +2263,7 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), v_latest.protocol_version);
     }
@@ -2269,7 +2305,7 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.version().protocol_version, v_new.protocol_version);
@@ -2339,7 +2375,7 @@ mod test {
     /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
     /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
     /// Both ratchet sites run the `FromProof` verifier (structural + `verify_tenderdash_proof`)
-    /// BEFORE `verify_response_metadata` → `maybe_update_protocol_version`: the query path via
+    /// BEFORE `accept_verified_metadata` → `maybe_update_protocol_version`: the query path via
     /// `parse_proof_with_metadata_and_proof`, the broadcast wait-path in `broadcast.rs` (see the
     /// guard comments at both call sites). Here we lock in the ratchet's own gates: it must NOT
     /// raise the stored version off untrustworthy inputs (unknown / zero / lower), so even a
