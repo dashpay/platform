@@ -11,9 +11,9 @@
 //! [`JsonSchemaError`] the meta-schema check returned, so the error code stays.
 //!
 //! Two rules are protocol version 15's own. An index property name is at most 255 bytes, the
-//! longest key GroveDB stores, where the meta-schema took 256 characters. And a list that
-//! must be unique, such as an `enum`'s members, compares numbers by value however long it
-//! is, so `0.0` and `-0.0` are one value, as the native document validator compares them.
+//! longest key GroveDB stores, where the meta-schema took 256 characters. And in a list that
+//! must be unique, such as an `enum`'s members, `0.0` and `-0.0` are one value however long
+//! the list, as the native document validator compares them.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
