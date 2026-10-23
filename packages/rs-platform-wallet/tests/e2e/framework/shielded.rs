@@ -47,6 +47,7 @@ use std::time::Duration;
 
 use dpp::shielded::builder::OrchardProver;
 use grovedb_commitment_tree::ProvingKey;
+use platform_wallet::manager::shielded_sync::WalletShieldedOutcome;
 use platform_wallet::wallet::shielded::{
     CachedOrchardProver, FileBackedShieldedStore, InMemoryShieldedStore,
     NetworkShieldedCoordinator, ShieldedStore, SubwalletId,
@@ -54,6 +55,10 @@ use platform_wallet::wallet::shielded::{
 
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
+
+/// Display prefix of `PlatformWalletError::ShieldedTreeInconsistent`. Sync
+/// outcomes carry errors as strings, so the harness matches on this prefix.
+const TREE_INCONSISTENT_PREFIX: &str = "Shielded commitment tree has";
 
 /// Env gate for the adversarial / abuse cases (SH-020..SH-035). The
 /// hooks below broadcast malformed transitions and assert the backend
@@ -109,8 +114,22 @@ pub struct ShieldedHandle {
 impl ShieldedHandle {
     /// Force a sync pass so on-chain notes are scanned into the store.
     /// `force=true` bypasses the coordinator's caught-up cooldown.
+    ///
+    /// Panics when a wallet's sync reports an inconsistent commitment tree:
+    /// that state means another wallet bug corrupted the tree, so the run
+    /// must stop and the tree file must be kept as evidence, never rebuilt.
     pub async fn sync(&self) {
-        let _ = self.coordinator.sync(true).await;
+        let summary = self.coordinator.sync(true).await;
+        for outcome in summary.wallet_results.values() {
+            if let WalletShieldedOutcome::Err(message) = outcome {
+                assert!(
+                    !message.starts_with(TREE_INCONSISTENT_PREFIX),
+                    "shielded commitment tree is inconsistent ({message}); this indicates a \
+                     wallet bug. Keep {} as evidence and investigate; do not rebuild it.",
+                    self.coordinator.db_path().display(),
+                );
+            }
+        }
     }
 
     /// This wallet's per-account unspent shielded balances.
