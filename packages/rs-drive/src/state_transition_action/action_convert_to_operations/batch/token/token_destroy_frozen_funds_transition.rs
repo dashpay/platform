@@ -279,7 +279,6 @@ mod tests {
             amount: remaining,
             remaining,
             min_fill: 1,
-            expires_at: None,
             escrow: 0,
             decimals: 0,
         }

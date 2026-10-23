@@ -3429,7 +3429,6 @@ mod frozen {
                 PRICE,
                 decimals,
                 1,
-                None,
                 &self.buyer.key,
                 nonce,
                 0,
@@ -3715,6 +3714,118 @@ mod frozen {
         );
     }
 
+    /// The destroy reads only the frozen identity's listings of the destroyed token: a listing
+    /// of that token by another holder, and the frozen identity's own listing of another token,
+    /// keep their documents and their escrow, and the other token's supply does not move.
+    #[tokio::test]
+    async fn should_leave_other_owners_listings_and_other_tokens_listings() {
+        let platform_version = PlatformVersion::latest();
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(10_000).await;
+        let frozen_listing = market.buyer_lists(3_000, 1).await;
+
+        // Another holder's listing of the same token.
+        let (place, sellers_listing) = market.place_ask(500, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+
+        // The frozen identity's listing of another token, of a contract it owns.
+        let (other_contract, other_token) = create_token_contract_with_owner_identity(
+            &mut market.platform,
+            market.buyer.id(),
+            Some(make_token_tradeable_and_freezable),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let other_nonce = 1;
+        let other_listing =
+            TokenOrderSide::Ask.order_id(other_token, market.buyer.id(), other_nonce);
+        let place = BatchTransition::new_token_place_ask_transition(
+            other_token,
+            market.buyer.id(),
+            other_contract.id(),
+            0,
+            400,
+            PRICE,
+            market.token_decimals(),
+            1,
+            &market.buyer.key,
+            other_nonce,
+            0,
+            &market.buyer.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the listing of the other token");
+        market.assert_executes(&place, &BlockInfo::default());
+        let other_escrow = |market: &Market| {
+            market
+                .platform
+                .drive
+                .fetch_token_order_escrow(
+                    other_token.to_buffer(),
+                    other_listing.to_buffer(),
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to fetch the escrow")
+        };
+        let other_supply = |market: &Market| {
+            market
+                .platform
+                .drive
+                .fetch_token_total_supply(other_token.to_buffer(), None, platform_version)
+                .expect("expected to fetch the supply")
+        };
+        let other_supply_before = other_supply(&market);
+        assert_eq!(other_escrow(&market), Some(400));
+
+        market.freeze_buyer().await;
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(
+            market.listing(frozen_listing),
+            None,
+            "the frozen listing is destroyed"
+        );
+        assert_eq!(market.escrow(frozen_listing), None);
+        assert_eq!(market.supply(), BASE_SUPPLY - 10_000);
+
+        assert!(
+            market.listing(sellers_listing).is_some(),
+            "another holder's listing of the token stays"
+        );
+        assert_eq!(market.escrow(sellers_listing), Some(500));
+
+        let token_market_contract = market
+            .platform
+            .drive
+            .token_market_contract_fetch_info(platform_version)
+            .expect("expected the token market contract");
+        let (document, _) = market
+            .platform
+            .drive
+            .fetch_token_order_document(
+                &token_market_contract.contract,
+                TokenOrderSide::Ask,
+                other_listing,
+                &BlockInfo::default().epoch,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the listing of the other token");
+        assert!(
+            document.is_some(),
+            "the frozen identity's listing of another token stays"
+        );
+        assert_eq!(other_escrow(&market), Some(400));
+        assert_eq!(other_supply(&market), other_supply_before);
+        market.assert_supply_balanced();
+    }
+
     #[tokio::test]
     async fn should_destroy_the_oldest_listings_up_to_the_limit_per_transition() {
         let limit = PlatformVersion::latest()
@@ -3752,7 +3863,7 @@ mod frozen {
     async fn should_leave_a_frozen_identitys_offers() {
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
         market.give_buyer(100).await;
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         market.freeze_buyer().await;
 
