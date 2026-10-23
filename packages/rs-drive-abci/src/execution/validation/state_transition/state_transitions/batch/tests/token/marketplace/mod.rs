@@ -11,10 +11,12 @@ use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
 };
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
 use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use dpp::data_contract::DataContract;
@@ -1083,10 +1085,19 @@ async fn should_refuse_a_listing_amount_above_i64_max() {
 /// varint: the partial fill that takes a listing from revision 127 to 128 grows the `ask` by a
 /// byte, which that fill's buyer pays for. The fills before it, and the ones after, add no
 /// storage. The listing stays its seller's: when it closes, its storage is refunded to the
-/// seller alone.
+/// seller alone. The token keeps no transfer history, so a fill records nothing else and only
+/// the `ask` can add storage.
 #[tokio::test]
 async fn should_charge_the_fill_that_widens_a_listings_revision() {
-    let mut market = tradeable_market();
+    let mut market = market_with(
+        |token_configuration: &mut TokenConfiguration| {
+            make_token_tradeable(token_configuration);
+            token_configuration
+                .keeps_history_mut()
+                .set_keeps_transfer_history(false);
+        },
+        dash_to_credits!(1.0),
+    );
     let (place, order_id) = market.place_ask(200, PRICE, 1, None).await;
     market.assert_executes(&place, &BlockInfo::default());
 
