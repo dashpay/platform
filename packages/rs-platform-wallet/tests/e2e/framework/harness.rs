@@ -353,7 +353,7 @@ impl E2eContext {
         // the whole suite.
         match dpp::system_data_contracts::load_system_data_contract(
             dpp::system_data_contracts::SystemDataContract::Withdrawals,
-            dpp::version::PlatformVersion::latest(),
+            sdk.version(),
         ) {
             Ok(withdrawals) => context_provider.add_known_contract(withdrawals),
             Err(err) => tracing::warn!(

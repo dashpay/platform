@@ -240,7 +240,7 @@ impl TestWallet {
                 InputSelection::Auto,
                 outputs.into_iter().collect(),
                 default_fee_strategy(),
-                Some(PlatformVersion::latest()),
+                None,
                 &self.signer,
             )
             .await
@@ -263,7 +263,7 @@ impl TestWallet {
                 InputSelection::Auto,
                 outputs.into_iter().collect(),
                 bank_fee_strategy(),
-                Some(PlatformVersion::latest()),
+                None,
                 &self.signer,
             )
             .await
@@ -288,7 +288,7 @@ impl TestWallet {
                 InputSelection::Explicit(inputs),
                 outputs.into_iter().collect(),
                 default_fee_strategy(),
-                Some(PlatformVersion::latest()),
+                None,
                 &self.signer,
             )
             .await
@@ -332,7 +332,7 @@ impl TestWallet {
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = self.wallet.sdk().version();
         let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
 
         // Sibling build for byte capture. Fetches on-chain nonces and
@@ -383,7 +383,7 @@ impl TestWallet {
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = self.wallet.sdk().version();
         let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
 
         let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
@@ -397,7 +397,7 @@ impl TestWallet {
             default_fee_strategy(),
             &self.signer,
             Default::default(),
-            PlatformVersion::latest(),
+            platform_version,
         )
         .await
         .map_err(|err| FrameworkError::Wallet(format!("st build: {err}")))?;

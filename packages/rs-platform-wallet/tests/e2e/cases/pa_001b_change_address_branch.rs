@@ -98,7 +98,7 @@ async fn pa_001b_change_address_branch_subcase_a() {
             user_outputs.into_iter().collect(),
             None, // implicit-change branch
             default_fee_strategy_for_test(addr_2),
-            Some(dpp::version::PlatformVersion::latest()),
+            None,
             s.test_wallet.address_signer(),
         )
         .await
@@ -196,7 +196,7 @@ async fn pa_001b_change_address_branch_subcase_b() {
             user_outputs.into_iter().collect(),
             Some(change_addr),
             default_fee_strategy_for_test(change_addr),
-            Some(dpp::version::PlatformVersion::latest()),
+            None,
             s.test_wallet.address_signer(),
         )
         .await

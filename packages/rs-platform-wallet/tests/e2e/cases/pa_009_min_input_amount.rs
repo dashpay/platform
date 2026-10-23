@@ -141,7 +141,10 @@ async fn pa_009_min_input_amount_subcase_c() {
     // proof-verified AddressInfo::fetch gate.
     init_test_logging();
 
-    let version = PlatformVersion::latest();
+    let s = setup().await.expect("e2e setup failed");
+    // The gate the teardown applies: the network-agreed version's, not the
+    // binary's latest.
+    let version = s.ctx.sdk().version();
     let cleanup_gate = cleanup_dust_gate(version);
     let version_field = version.dpp.state_transitions.address_funds.min_input_amount;
 
@@ -154,7 +157,6 @@ async fn pa_009_min_input_amount_subcase_c() {
          ({cleanup_gate}); a protocol-version bump moved the gate below our target"
     );
 
-    let s = setup().await.expect("e2e setup failed");
     let ctx = s.ctx;
     let test_wallet_id = s.test_wallet.id();
 

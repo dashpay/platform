@@ -525,7 +525,7 @@ async fn publish_token_contract_with_groups(
     let format: DataContractInSerializationFormat = serde_json::from_str(&serialized)
         .map_err(|err| FrameworkError::Sdk(format!("token-contract deserialize: {err}")))?;
 
-    let platform_version = PlatformVersion::latest();
+    let platform_version = ctx.sdk().version();
     let mut errors = vec![];
     let data_contract =
         DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version)

@@ -532,7 +532,7 @@ impl BankWallet {
                         InputSelection::Auto,
                         outputs.into_iter().collect(),
                         bank_fee_strategy(),
-                        Some(PlatformVersion::latest()),
+                        None,
                         &self.signer,
                     )
                     .await;

@@ -59,14 +59,15 @@ async fn sh_032_exact_change_boundary() {
     // The unshield builder pads to the 2-action floor and prices the fee
     // with `compute_shielded_unshield_fee(2)` — the base shielded minimum
     // PLUS the flat `AddBalanceToAddress` output-write cost — so the exact
-    // note must cover `UNSHIELD_AMOUNT + compute_shielded_unshield_fee(2)`.
-    let version = PlatformVersion::latest();
+    // note must cover `UNSHIELD_AMOUNT + compute_shielded_unshield_fee(2)`,
+    // priced at the network-agreed protocol version.
+    let s = setup().await.expect("e2e setup failed");
+    let version = s.ctx.sdk().version();
     let exact_fee =
         compute_shielded_unshield_fee(2, version).expect("compute_shielded_unshield_fee");
     let exact_note = UNSHIELD_AMOUNT + exact_fee;
 
     // ---- Exact-change arm ----
-    let s = setup().await.expect("e2e setup failed");
     let prover = shielded_prover();
     let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
         .await

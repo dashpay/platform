@@ -100,7 +100,7 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
 
     // Read the active version's gate from the same source `cleanup.rs`
     // uses, so a protocol-version bump shifts both ends in lockstep.
-    let dust_gate = cleanup_dust_gate(PlatformVersion::latest());
+    let dust_gate = cleanup_dust_gate(s.ctx.sdk().version());
     assert!(
         TARGET_RESIDUAL < dust_gate,
         "PA-004b: TARGET_RESIDUAL ({TARGET_RESIDUAL}) must be < cleanup_dust_gate \

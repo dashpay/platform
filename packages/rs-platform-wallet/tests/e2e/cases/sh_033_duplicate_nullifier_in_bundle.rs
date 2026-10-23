@@ -111,7 +111,7 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
     // The SAME note twice — duplicate nullifier within one bundle.
     let dup = vec![notes[0].clone(), notes[0].clone()];
 
-    let exact_fee = compute_minimum_shielded_fee(2, PlatformVersion::latest())
+    let exact_fee = compute_minimum_shielded_fee(2, s.ctx.sdk().version())
         .expect("compute_minimum_shielded_fee");
     let dst = s.test_wallet.next_unused_address().await.expect("dst");
 

@@ -322,7 +322,7 @@ async fn sweep_one(
         .map_err(wallet_err)?;
     let signer = derive_sweep_pool_signer(&wallet, &seed_bytes, network).await?;
 
-    let platform_version = PlatformVersion::latest();
+    let platform_version = wallet.sdk().version();
     let dust_gate = min_input_amount(platform_version);
     let total = wallet.platform().total_credits().await;
     let mut report = SweepReport::default();
@@ -407,7 +407,7 @@ pub async fn teardown_one(
         bank.network(),
     )
     .await?;
-    let platform_version = PlatformVersion::latest();
+    let platform_version = test_wallet.platform_wallet().sdk().version();
     let dust_gate = min_input_amount(platform_version);
     // QA-004: hoist the address snapshot BEFORE the gate decision so both
     // the sum used for the gate check and the candidates passed into
@@ -578,7 +578,7 @@ async fn sweep_platform_addresses_with_candidates<S>(
 where
     S: Signer<PlatformAddress> + Send + Sync,
 {
-    let platform_version = PlatformVersion::latest();
+    let platform_version = wallet.sdk().version();
     let SweepPlan {
         inputs,
         skipped_dust,
