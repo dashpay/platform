@@ -1517,7 +1517,9 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get contested resource identity votes
+    /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
+    /// `resource_vote_choice` and `vote_count`, the number of times the identity has
+    /// voted on that vote poll.
     public func getContestedResourceIdentityVotes(
         identityId: String,
         limit: UInt32?,

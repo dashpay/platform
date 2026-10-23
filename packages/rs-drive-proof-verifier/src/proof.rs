@@ -2228,7 +2228,15 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
-            .map(|(id, vote)| (id, Some(vote)))
+            .map(|(id, (resource_vote, vote_count))| {
+                (
+                    id,
+                    Some(ResourceVoteWithCount {
+                        resource_vote,
+                        vote_count,
+                    }),
+                )
+            })
             .collect();
 
         Ok((response.into_option(), mtd.clone(), proof.clone()))
@@ -2375,7 +2383,11 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             });
         }
 
-        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+        Ok((
+            vote.map(|vote| Vote::ResourceVote(vote.resource_vote)),
+            mtd,
+            proof,
+        ))
     }
 }
 
@@ -6367,6 +6379,36 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_resource_votes_response_without_a_proof() {
+        // Votes and their counts are read from the proof only, so a response carrying none
+        // is refused before the context provider is asked for anything.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![7u8; 32],
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
     }
 
     // ---------------------------------------------------------------------
