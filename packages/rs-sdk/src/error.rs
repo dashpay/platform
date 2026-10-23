@@ -190,8 +190,10 @@ impl Error {
     /// or a quorum source not answering, so the network may serve the request already.
     ///
     /// False for any other error, for a refusal the network's verified version explains,
-    /// and for one caused by this SDK's own setup: no context provider, or one that cannot
-    /// give quorum keys at all. Retrying cannot change those.
+    /// and for one caused by this SDK's own setup: no context provider, or one configured so
+    /// that it cannot give quorum keys at all ([`ContextProviderError::Config`]). Retrying
+    /// cannot change those. A provider's other failures, such as a quorum service not
+    /// answering, may pass.
     pub fn is_transient_protocol_version_refusal(&self) -> bool {
         match self {
             Self::ProtocolVersionNotActive {
@@ -208,10 +210,9 @@ impl Error {
             Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
             Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
             Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
-            | Self::ContextProviderError(error) => matches!(
-                error,
-                ContextProviderError::Generic(_) | ContextProviderError::Config(_)
-            ),
+            | Self::ContextProviderError(error) => {
+                matches!(error, ContextProviderError::Config(_))
+            }
             _ => false,
         }
     }
@@ -637,6 +638,10 @@ mod tests {
             quorum_key(ContextProviderError::InvalidQuorum(
                 "unknown yet".to_string(),
             )),
+            // What the trusted HTTP provider reports when refetching the quorum lists fails.
+            quorum_key(ContextProviderError::Generic(
+                "Failed to find quorum: HTTP 503".to_string(),
+            )),
             Error::StaleNode(StaleNodeError::Time {
                 expected_timestamp_ms: 1,
                 received_timestamp_ms: 2,
@@ -652,7 +657,7 @@ mod tests {
         }
         let permanent = [
             Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
-            quorum_key(ContextProviderError::Generic(
+            quorum_key(ContextProviderError::Config(
                 "Non-trusted mode is not supported".to_string(),
             )),
             Error::NoAvailableAddressesToRetry(Box::new(quorum_key(ContextProviderError::Config(

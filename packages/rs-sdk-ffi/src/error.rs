@@ -503,8 +503,23 @@ mod tests {
                 false,
                 DashSDKErrorCode::NetworkError,
             ),
-            // The context provider cannot give quorum keys: the version can never be
-            // verified, so retrying does not help.
+            // The context provider is configured so that it can never give quorum keys:
+            // the version can never be verified, so retrying does not help.
+            (
+                Some(dash_sdk::Error::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error: dash_sdk::error::ContextProviderError::Config(
+                            "no quorum source; connection refused".to_string(),
+                        ),
+                    },
+                )),
+                false,
+                DashSDKErrorCode::ProtocolError,
+            ),
+            // The host's callback failed this time: the key may come later.
             (
                 Some(dash_sdk::Error::Proof(
                     dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
@@ -517,7 +532,7 @@ mod tests {
                     },
                 )),
                 false,
-                DashSDKErrorCode::ProtocolError,
+                DashSDKErrorCode::NetworkError,
             ),
         ] {
             let has_cause = cause.is_some();

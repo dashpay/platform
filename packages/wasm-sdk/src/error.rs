@@ -438,6 +438,7 @@ mod tests {
     use dash_sdk::dpp::platform_value::Identifier;
     use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::ContextProvider;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
 
@@ -628,30 +629,41 @@ mod tests {
             unconfirmed.message()
         );
 
-        // An SDK whose context provider cannot give quorum keys, like a non-trusted wasm
-        // SDK, can never verify the network's version: retrying does not help.
-        let unverifiable = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
-            method: "get_contract_fee_pots",
-            required: 14,
-            network: 0,
-            pinned: false,
-            cause: Some(Box::new(SdkError::Proof(
-                dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
-                    quorum_type: 106,
-                    quorum_hash: [2; 32],
-                    core_chain_locked_height: 1,
-                    error: dash_sdk::error::ContextProviderError::Generic(
-                        "Non-trusted mode is not supported in WASM".to_string(),
-                    ),
-                },
-            ))),
-        });
+        let refused_for_quorum_key = |error| {
+            WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 0,
+                pinned: false,
+                cause: Some(Box::new(SdkError::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error,
+                    },
+                ))),
+            })
+        };
+
+        // A non-trusted wasm SDK can never verify the network's version: its context
+        // provider gives no quorum keys. Retrying does not help.
+        let non_trusted = crate::context_provider::WasmContext {}
+            .get_quorum_public_key(106, [2; 32], 1)
+            .expect_err("a non-trusted context gives no quorum keys");
+        let unverifiable = refused_for_quorum_key(non_trusted);
         assert_eq!(
             unverifiable.kind(),
             WasmSdkErrorKind::ProtocolVersionNotActive
         );
         assert!(!unverifiable.is_retriable());
         assert!(unverifiable.message().contains("Non-trusted mode"));
+
+        // A trusted context whose quorum service did not answer may get the key later.
+        let unreachable = refused_for_quorum_key(dash_sdk::error::ContextProviderError::Generic(
+            "Failed to find quorum: HTTP 503".to_string(),
+        ));
+        assert!(unreachable.is_retriable());
     }
 
     #[test]
