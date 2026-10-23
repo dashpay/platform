@@ -13546,6 +13546,91 @@ mod tests {
         );
     }
 
+    /// A reservation that a buffering backend accepts but cannot flush is
+    /// not on disk, so nothing is sent and the inputs come back. The error
+    /// is the flush's, kind kept: a transient flush is retried with another
+    /// flush, which the store-side reissue attestation says nothing about.
+    #[tokio::test]
+    async fn prepared_payment_whose_reservation_cannot_be_flushed_sends_nothing() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xDD, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let first_output = payment_script(prepared.transaction(), 100_000);
+        *persister.buffered.lock().unwrap() = true;
+        *persister.fail_flushes.lock().unwrap() = true;
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("an unflushed reservation must not be broadcast");
+        *persister.fail_flushes.lock().unwrap() = false;
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Transient)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            probe.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
+        assert_eq!(
+            payment_script(retry.transaction(), 100_000),
+            first_output,
+            "the failed send gave its address back"
+        );
+        iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
     /// Broadcaster that, while it holds the transaction, checks whether a
     /// teardown of the funding generation could start, then accepts it.
     struct TeardownProbeBroadcaster {

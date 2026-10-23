@@ -699,7 +699,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Store `changeset` and, on a backend that buffers, flush it, so it is
-    /// on disk when this returns.
+    /// on disk when this returns. A failed flush is `PersisterFlush` with the
+    /// backend's own kind: the round may still be buffered and commit at a
+    /// later flush, so it is not proof that nothing was stored.
     pub(super) fn store_durably(
         &self,
         changeset: PlatformWalletChangeSet,
@@ -710,7 +712,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if !self.persister.store_commits_inline() {
             self.persister
                 .flush()
-                .map_err(|e| self.persister.classify_store_failure(e))?;
+                .map_err(PlatformWalletError::from_flush_failure)?;
         }
         Ok(())
     }
