@@ -270,7 +270,7 @@ pub(crate) fn remove_swept(
 /// because a generated-SQL change breaks that migration's Refinery
 /// checksum on every database that already applied it
 /// (`abort_divergent` default). `V001__initial.rs` carries the original
-/// five labels; `V022__asset_lock_conflict_evidence.rs` rebuilt the
+/// five labels; `V021__asset_lock_conflict_evidence.rs` rebuilt the
 /// table with the current seven.
 ///
 /// Two unit tests below keep the three copies honest:
@@ -852,7 +852,7 @@ mod tests {
     }
 
     /// Pins the live label set to the domain frozen in the LATEST
-    /// asset-lock migration (`V022__asset_lock_conflict_evidence.rs`).
+    /// asset-lock migration (`V021__asset_lock_conflict_evidence.rs`).
     /// Shipped migrations interpolate nothing — their generated SQL is
     /// checksummed by Refinery, so widening the domain means APPENDING
     /// a new table-rebuild migration (V018+) with the new frozen list
@@ -864,7 +864,7 @@ mod tests {
     /// CHECK, then update this pin to the new migration's list.
     #[test]
     fn asset_lock_status_labels_frozen_in_latest_migration() {
-        let frozen_in_v022 = [
+        let frozen_in_v021 = [
             "built",
             "broadcast",
             "is_locked",
@@ -873,6 +873,6 @@ mod tests {
             "recovered_from_chain",
             "conflicted",
         ];
-        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v022);
+        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v021);
     }
 }

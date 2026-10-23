@@ -1,7 +1,7 @@
 //! Retain operation bindings through conflict and order recovery snapshots.
 //! Lifecycle blobs are copied unchanged; revision is an explicit sidecar.
 pub fn migration() -> String {
-    "CREATE TABLE asset_locks_v22 (
+    "CREATE TABLE asset_locks_v21 (
         wallet_id BLOB NOT NULL,
         outpoint BLOB NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('built', 'broadcast', 'is_locked', 'chain_locked', 'consumed', 'recovered_from_chain', 'conflicted')),
@@ -14,10 +14,10 @@ pub fn migration() -> String {
         PRIMARY KEY (wallet_id, outpoint),
         FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
     );
-    INSERT INTO asset_locks_v22 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id)
+    INSERT INTO asset_locks_v21 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id)
         SELECT wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id FROM asset_locks;
     DROP TABLE asset_locks;
-    ALTER TABLE asset_locks_v22 RENAME TO asset_locks;
+    ALTER TABLE asset_locks_v21 RENAME TO asset_locks;
     CREATE UNIQUE INDEX asset_locks_wallet_operation_id ON asset_locks(wallet_id, operation_id) WHERE operation_id IS NOT NULL;
     CREATE TRIGGER asset_locks_operation_id_immutable BEFORE UPDATE OF operation_id ON asset_locks
         WHEN OLD.operation_id IS NOT NULL AND NEW.operation_id IS NOT OLD.operation_id
