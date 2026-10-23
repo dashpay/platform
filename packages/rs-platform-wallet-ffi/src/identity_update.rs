@@ -348,7 +348,11 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
 /// update must carry. When the cached identity would give the transition
 /// another revision (it moved since the caller read it), the call fails
 /// before anything is signed or broadcast, so a caller that recorded
-/// `revision` knows the only revision this update can land at.
+/// `revision` knows the only revision this update can land at. Read the
+/// revision to record from [`platform_wallet_identity_next_update_revision`].
+/// When Drive refuses the update for its revision and reports one below the
+/// cached identity's, the call fails with `ErrorIdentityRevisionRefused`
+/// (63) and the next call to that reader gives the revision Drive takes.
 ///
 /// # Safety
 /// Same pointer, length and lifetime rules as
@@ -375,6 +379,36 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
         Some(revision),
         signer_handle,
     )
+}
+
+/// The revision the next update of `identity_id` carries, into
+/// `out_revision`: one above the cached identity's, or, after
+/// Drive refused the last update for its revision below the cache's
+/// (`ErrorIdentityRevisionRefused` for a pinned update), one above the
+/// revision Drive reported while the cache is still where it was then. Record it before
+/// submitting and pass it to
+/// [`platform_wallet_update_identity_with_signer_at_revision`].
+///
+/// # Safety
+/// `identity_id` must point to 32 readable bytes and `out_revision` to a
+/// writable `u64`, both for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_next_update_revision(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    out_revision: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_revision);
+    *out_revision = 0;
+    let id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move { identity_wallet.next_update_revision(&id).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    *out_revision = unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -570,6 +604,44 @@ mod tests {
             let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
             (manager, handle)
         })
+    }
+
+    /// The reader gives one above the cached revision for an identity the
+    /// wallet holds, and refuses a null out-pointer and an unknown identity.
+    #[test]
+    fn should_read_the_next_update_revision_through_the_export() {
+        let identity_id = Identifier::from([0x22; 32]);
+        let id_bytes = identity_id.to_buffer();
+        let (_manager, handle) = wallet_handle_at_revision(identity_id, 5);
+
+        let mut revision = u64::MAX;
+        let result = unsafe {
+            platform_wallet_identity_next_update_revision(handle, id_bytes.as_ptr(), &mut revision)
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "{}",
+            message_of(&result)
+        );
+        assert_eq!(revision, 6);
+
+        let result = unsafe {
+            platform_wallet_identity_next_update_revision(
+                handle,
+                id_bytes.as_ptr(),
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+
+        let unknown = Identifier::from([0x23; 32]).to_buffer();
+        let mut revision = u64::MAX;
+        let result = unsafe {
+            platform_wallet_identity_next_update_revision(handle, unknown.as_ptr(), &mut revision)
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(revision, 0);
     }
 
     /// The `_at_revision` export hands its revision to the wallet's guard: a

@@ -3737,8 +3737,14 @@ extension ManagedPlatformWallet {
     /// whose message carries the expected and actual revisions),
     /// so a caller that recorded `revision` beforehand knows the only
     /// revision this update can land at: Drive takes an identity update
-    /// only at one above the identity's revision. `nil` takes whatever the
-    /// cache gives.
+    /// only at one above the identity's revision. Read the revision to
+    /// record from `nextIdentityUpdateRevision(identityId:)`. When Drive
+    /// refuses the update for its revision and reports one below the
+    /// cached identity's, the call throws
+    /// `PlatformWalletError.identityRevisionRefused` and the reader then
+    /// gives the revision Drive takes. `nil` takes whatever the cache
+    /// gives, and on such a refusal is sent once more at the revision Drive
+    /// takes.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
@@ -3788,6 +3794,26 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
+        }.value
+    }
+
+    /// The revision the next `updateIdentity` of `identityId` carries: one
+    /// above the cached identity's, or, after
+    /// `PlatformWalletError.identityRevisionRefused`, one above the revision
+    /// Drive reported while the cache is still where it was then. Record it
+    /// before submitting and pass it as `updateIdentity(…, revision:)`.
+    public func nextIdentityUpdateRevision(identityId: Identifier) async throws -> UInt64 {
+        let handle = self.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var revision: UInt64 = 0
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                platform_wallet_identity_next_update_revision(handle, idBp.baseAddress!, &revision)
+            }
+            try result.check()
+            return revision
         }.value
     }
 

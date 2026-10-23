@@ -30,6 +30,16 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldPreserveIdentityRevisionRefusedAsItsOwnError() {
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 63, "refused 7, Drive holds 5")
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityRevisionRefused)
+        assertEquals(native.message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(

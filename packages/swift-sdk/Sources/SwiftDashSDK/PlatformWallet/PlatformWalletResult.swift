@@ -267,6 +267,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An identity update asked for a revision the cached identity would not
     /// give it; refused before signing, nothing was broadcast.
     case errorIdentityRevisionMismatch = 62
+    /// Drive refused an identity update asked for a revision, for its
+    /// revision, and reported one below the cached identity's. Nothing
+    /// changed but a processing fee and the nonce;
+    /// `nextIdentityUpdateRevision` gives the one Drive takes.
+    case errorIdentityRevisionRefused = 63
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -400,6 +405,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockTooManyInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_REVISION_MISMATCH:
             self = .errorIdentityRevisionMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_REVISION_REFUSED:
+            self = .errorIdentityRevisionRefused
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -566,6 +573,14 @@ public enum PlatformWalletError: LocalizedError {
     /// the expected and actual revisions are in the message. Refresh the
     /// identity and decide again rather than retrying the same call.
     case identityRevisionMismatch(String)
+    /// `updateIdentity(…, revision:)` was refused by Drive for its revision,
+    /// and Drive reported one below the cached identity's (a cache ahead of
+    /// the chain). Drive charged a processing fee and took the nonce; nothing
+    /// else changed, and the cache was left as it is; the revisions are in
+    /// the message. Read the revision Drive takes from
+    /// `nextIdentityUpdateRevision(identityId:)`, record it, and update
+    /// again asking for it.
+    case identityRevisionRefused(String)
     case contactNotFound(String)
     case utf8Conversion(String)
     case serialization(String)
@@ -810,6 +825,7 @@ public enum PlatformWalletError: LocalizedError {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
              .invalidIdentifier(let m), .invalidNetwork(let m), .walletOperation(let m),
              .identityNotFound(let m), .identityBalanceUnavailable(let m), .identityRevisionMismatch(let m),
+             .identityRevisionRefused(let m),
              .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
@@ -923,6 +939,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorIdentityNotFound:  self = .identityNotFound(detail)
         case .errorIdentityBalanceUnavailable: self = .identityBalanceUnavailable(detail)
         case .errorIdentityRevisionMismatch: self = .identityRevisionMismatch(detail)
+        case .errorIdentityRevisionRefused: self = .identityRevisionRefused(detail)
         case .errorContactNotFound:   self = .contactNotFound(detail)
         case .errorInvalidNetwork:    self = .invalidNetwork(detail)
         case .errorInvalidIdentifier: self = .invalidIdentifier(detail)

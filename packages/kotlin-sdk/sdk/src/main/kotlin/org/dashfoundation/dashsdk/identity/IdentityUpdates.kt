@@ -217,8 +217,12 @@ class IdentityUpdates internal constructor(
      * before anything is signed or broadcast, so a caller that recorded
      * [revision] beforehand knows the only revision this update can land at
      * (Drive takes an identity update only at one above the identity's
-     * revision). `null` takes whatever the cache gives. Port of the
-     * `revision:` argument of Swift `ManagedPlatformWallet.updateIdentity`.
+     * revision). When Drive refuses the update for its revision and reports
+     * one below the cached identity's, it throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityRevisionRefused].
+     * `null` takes whatever the cache gives, and on such a refusal is sent
+     * once more at the revision Drive takes. Port of the `revision:` argument
+     * of Swift `ManagedPlatformWallet.updateIdentity`.
      */
     suspend fun update(
         walletHandle: Long,

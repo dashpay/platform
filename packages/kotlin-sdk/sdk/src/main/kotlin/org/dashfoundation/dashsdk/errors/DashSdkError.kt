@@ -250,6 +250,19 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityRevisionRefused` (native code 63). Drive refused an
+         * identity update asked for a revision, for its revision, and
+         * reported one below the cached identity's (a cache ahead of the
+         * chain). Drive charged a processing fee and took the nonce; nothing
+         * else changed, and the cache
+         * was left as it is; the revisions are in [message]. Not retryable
+         * as is: the next update may ask for the revision Drive reported plus
+         * one. Port of Swift `PlatformWalletError.identityRevisionRefused`.
+         */
+        class IdentityRevisionRefused(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -778,6 +791,7 @@ sealed class DashSdkError(
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             62 -> PlatformWallet.IdentityRevisionMismatch(message, cause) // ErrorIdentityRevisionMismatch
+            63 -> PlatformWallet.IdentityRevisionRefused(message, cause) // ErrorIdentityRevisionRefused
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

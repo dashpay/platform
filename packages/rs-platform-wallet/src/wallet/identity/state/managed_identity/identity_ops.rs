@@ -88,6 +88,7 @@ impl ManagedIdentity {
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
+            revision_refused_at: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -109,6 +110,7 @@ impl ManagedIdentity {
             identity_index: None,
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
+            revision_refused_at: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -419,6 +421,7 @@ impl ManagedIdentity {
         let taken = fetched.revision() >= self.identity.revision();
         let mut keys = if taken {
             self.identity = fetched.clone();
+            self.revision_refused_at = None;
             self.identity.set_balance(balance);
             fetched.public_keys().clone()
         } else {
