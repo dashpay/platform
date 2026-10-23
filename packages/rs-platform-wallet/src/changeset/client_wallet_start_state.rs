@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
+use crate::changeset::recorded_history::RecordedHistory;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::{OutPoint, Transaction};
 use key_wallet::wallet::ManagedWalletInfo;
@@ -60,7 +61,19 @@ pub struct ClientWalletStartState {
     /// input came back as spendable and the balance re-counted it,
     /// permanently. Replaying the record at load restores exactly the
     /// state the live process held.
+    ///
+    /// A send that is also in [`recorded_history`](Self::recorded_history)
+    /// is accounted by the history replay alone; this list then only
+    /// drives the load-time re-dispatch.
     pub unconfirmed_outgoing_txs: Vec<Transaction>,
+    /// The wallet's stored transaction history, replayed at load through the
+    /// wallet checker so confirmed and unconfirmed spends are guarded again —
+    /// see [`RecordedHistory`]. Empty when the persister supplies none.
+    ///
+    /// Like `unconfirmed_outgoing_txs`, applied at the async boundary in
+    /// [`load_from_persistor`](crate::manager::load), not while the snapshot
+    /// is built.
+    pub recorded_history: RecordedHistory,
     /// Durable record of the DashPay coreHeight backfill, as the host last
     /// stored it — which receival contacts the historical rescan already
     /// covers, from which height each. Empty (the default) when the host

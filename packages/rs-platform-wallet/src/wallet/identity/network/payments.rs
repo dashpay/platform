@@ -3555,6 +3555,7 @@ mod tests {
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: self.backfill.clone(),
+                    recorded_history: Default::default(),
                 },
             );
             Ok(ClientStartState {
