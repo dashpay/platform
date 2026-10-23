@@ -82,6 +82,7 @@ pub mod sdk;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 pub mod signer;
+pub mod signer_derivation;
 pub mod spv;
 pub mod tokens;
 pub mod tx_accounting;
@@ -90,6 +91,7 @@ pub mod wait_hub;
 pub mod wallet_factory;
 pub mod workdir;
 
+use self::signer_derivation::{from_seed_for_platform_address_account, SignerDerivationError};
 use key_wallet::gap_limit::DIP17_GAP_LIMIT;
 use key_wallet::Network;
 use simple_signer::signer::SimpleSigner;
@@ -109,14 +111,14 @@ pub(super) fn make_platform_signer(
     seed_bytes: &[u8; 64],
     network: Network,
 ) -> FrameworkResult<SimpleSigner> {
-    SimpleSigner::from_seed_for_platform_address_account(
+    from_seed_for_platform_address_account(
         seed_bytes,
         network,
         DEFAULT_ACCOUNT_INDEX,
         DEFAULT_KEY_CLASS,
         DIP17_GAP_LIMIT,
     )
-    .map_err(|err| FrameworkError::Wallet(format!("simple-signer: {err}")))
+    .map_err(FrameworkError::from)
 }
 
 /// Common imports for test authors.
@@ -150,6 +152,10 @@ static_assertions::assert_impl_all!(SetupGuard: Send, Sync);
 /// Errors surfaced by the e2e framework.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameworkError {
+    /// Seed or derivation failure while building an e2e signer.
+    #[error(transparent)]
+    SignerDerivation(#[from] SignerDerivationError),
+
     /// Placeholder returned by paths that surface an underlying
     /// error through tracing; the static string names the call site.
     #[error("e2e framework not yet implemented: {0}")]

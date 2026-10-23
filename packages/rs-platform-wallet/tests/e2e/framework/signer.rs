@@ -19,6 +19,7 @@ use dpp::ProtocolError;
 use key_wallet::Network;
 use simple_signer::signer::SimpleSigner;
 
+use super::signer_derivation::from_seed_for_identity;
 use super::{FrameworkError, FrameworkResult};
 
 /// Default gap window pre-derived at construction
@@ -27,7 +28,7 @@ pub const DEFAULT_GAP_LIMIT: u32 = 20;
 
 /// Seed-backed [`Signer<IdentityPublicKey>`] for one DIP-9 identity slot.
 ///
-/// Composes [`SimpleSigner::from_seed_for_identity`], which populates
+/// Composes [`from_seed_for_identity`], which populates
 /// `inner.address_private_keys` with `(ripemd160_sha256(pubkey), secret)`
 /// pairs for `key_index ∈ 0..gap_limit`. The trait impl looks up by
 /// hashing the [`IdentityPublicKey::data`] field — matching the same
@@ -57,11 +58,7 @@ impl SeedBackedIdentitySigner {
         identity_index: u32,
         gap_limit: u32,
     ) -> FrameworkResult<Self> {
-        let inner =
-            SimpleSigner::from_seed_for_identity(seed_bytes, network, identity_index, gap_limit)
-                .map_err(|err| {
-                    FrameworkError::Wallet(format!("SeedBackedIdentitySigner: {err}"))
-                })?;
+        let inner = from_seed_for_identity(seed_bytes, network, identity_index, gap_limit)?;
         Ok(Self {
             inner,
             identity_index,
@@ -89,10 +86,10 @@ impl SeedBackedIdentitySigner {
     /// compressed `secp256k1::PublicKey` produced alongside `secret`
     /// — the cache is keyed on `ripemd160_sha256(pubkey)`, mirroring
     /// the construction-time pre-population in
-    /// [`SimpleSigner::from_seed_for_identity`].
+    /// [`from_seed_for_identity`].
     pub fn inject_identity_key(&mut self, public_key: &[u8; 33], secret: [u8; 32]) {
         let pkh = ripemd160_sha256(public_key.as_slice());
-        self.inner.address_private_keys.insert(pkh, secret);
+        self.inner.add_address_key(pkh, secret);
     }
 }
 
@@ -139,7 +136,7 @@ impl Signer<IdentityPublicKey> for SeedBackedIdentitySigner {
 /// Compute the `address_private_keys` lookup key for an
 /// [`IdentityPublicKey`].
 ///
-/// `SimpleSigner::from_seed_for_identity` keys its cache by
+/// `from_seed_for_identity` keys its cache by
 /// `ripemd160_sha256(compressed_pubkey)` — so for `ECDSA_SECP256K1` we
 /// hash `key.data()` (the raw pubkey), but for `ECDSA_HASH160`
 /// `key.data()` is **already** the 20-byte hash and re-hashing would
