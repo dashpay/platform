@@ -98,6 +98,7 @@ macro_rules! proof_only {
                 let settings = QuerySettings {
                     request_settings: &settings,
                     protocol_version: PlatformVersion::latest(),
+                    verified_protocol_version: 0,
                     prove: false,
                 };
                 let input = $input;
@@ -112,6 +113,7 @@ macro_rules! proof_only {
                 let settings = QuerySettings {
                     request_settings: &settings,
                     protocol_version: PlatformVersion::latest(),
+                    verified_protocol_version: 0,
                     prove: true,
                 };
                 let input = $input;
@@ -764,12 +766,48 @@ proof_only!(
     }
 );
 
+/// Once the network has proven a protocol that serves V1, the proved lookup is V1 and
+/// keeps its proof flag and cursor; an unproved one is still refused locally.
+#[test]
+fn should_preserve_proved_non_unique_key_request_as_v1() {
+    let request_settings = RequestSettings::default();
+    for prove in [true, false] {
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: PlatformVersion::latest().protocol_version,
+            prove,
+        };
+        let query = NonUniquePublicKeyHashQuery {
+            key_hash: [3; 20],
+            after: Some([2; 32]),
+        };
+        let result = <_ as Query<IdentityRequest>>::query(&query, &settings);
+        if !prove {
+            assert_config(result.unwrap_err(), UNPROVED_MESSAGE);
+            continue;
+        }
+        let IdentityRequest::GetIdentityByNonUniquePublicKeyHash(request) = result.unwrap() else {
+            panic!("expected identity request variant")
+        };
+        let Some(proto::get_identity_by_non_unique_public_key_hash_request::Version::V1(v1)) =
+            request.version
+        else {
+            panic!("expected V1 request")
+        };
+        assert!(v1.prove);
+        assert_eq!(v1.public_key_hash, vec![3; 20]);
+        assert_eq!(v1.start_after, Some(vec![2; 32]));
+    }
+}
+
 #[test]
 fn should_reject_proved_quorum_info_before_transport() {
     let request_settings = RequestSettings::default();
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: true,
     };
     assert_config(
@@ -788,6 +826,7 @@ fn should_preserve_unproved_quorum_info() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     let raw = <NoParamQuery as Query<proto::GetCurrentQuorumsInfoRequest>>::query(
@@ -807,6 +846,7 @@ fn should_reject_unsupported_modes_for_older_protocol_versions() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::get(1).unwrap(),
+        verified_protocol_version: 0,
         prove: false,
     };
     assert_config(
@@ -827,6 +867,7 @@ fn should_reject_unproved_epoch_conveniences() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     assert_config(
@@ -858,6 +899,7 @@ fn should_preserve_raw_wire_requests_under_both_settings() {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove,
         };
         let raw = proto::GetIdentityRequest {
@@ -901,6 +943,7 @@ fn should_preserve_forced_proofs_for_rich_document_queries() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     let retained: dash_sdk::platform::DocumentQuery = query.query(&settings).unwrap();
@@ -921,6 +964,7 @@ fn should_preserve_proved_requests_for_older_protocol_versions() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::get(1).unwrap(),
+        verified_protocol_version: 0,
         prove: true,
     };
     let identity = <Identifier as Query<IdentityRequest>>::query(&id(), &settings).unwrap();
