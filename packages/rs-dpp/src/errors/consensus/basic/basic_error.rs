@@ -38,12 +38,13 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, NonTransferableTokenPaymentMustBurnError,
-    NonTransferableTokenShieldedPoolError, PreProgrammedDistributionAmountOverLimitError,
-    RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NonTransferableTokenShieldedPoolError, NonTransferableTokenTradeableError,
+    PreProgrammedDistributionAmountOverLimitError, RedundantDocumentPaidForByTokenWithContractId,
+    SystemPropertyIndexAlreadyPresentError, TokenShieldedPoolIncompatibleRulesError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -864,6 +865,10 @@ pub enum BasicError {
     // instead of burning it (protocol version 14).
     #[error(transparent)]
     NonTransferableTokenPaymentMustBurnError(NonTransferableTokenPaymentMustBurnError),
+
+    // A non-transferable token cannot be tradeable (protocol version 15).
+    #[error(transparent)]
+    NonTransferableTokenTradeableError(NonTransferableTokenTradeableError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1065,12 +1070,20 @@ mod tests {
             204
         );
         // A document type paying its own non-transferable token to the contract owner
-        // (protocol version 14): the tail of the enum.
+        // (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::NonTransferableTokenPaymentMustBurnError(
                 NonTransferableTokenPaymentMustBurnError::new(0, "create".to_string())
             )),
             205
+        );
+        // A non-transferable token that is tradeable (protocol version 15): the tail of the
+        // enum.
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenTradeableError(
+                NonTransferableTokenTradeableError::new(0)
+            )),
+            206
         );
     }
 

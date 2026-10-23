@@ -62,7 +62,63 @@ impl Drive {
         known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        match platform_version
+        Self::verify_state_transition_was_executed_with_proof_for_query_version(
+            state_transition,
+            block_info,
+            proof,
+            known_contracts_provider_fn,
+            platform_version,
+            platform_version,
+        )
+    }
+
+    /// Verifies the producer's execution-proof layout using the caller's verifier rules.
+    ///
+    /// `query_platform_version` selects whether the query includes an owner balance.
+    /// All proof validation and decoding still use `platform_version`. The caller
+    /// must authenticate the producer version together with the resulting root.
+    ///
+    /// The generation is chosen by the producer's version, so the generations of this
+    /// method may differ only in the layout the producer proved. A stricter check
+    /// belongs under the caller's `platform_version`, which an older producer cannot
+    /// lower.
+    ///
+    /// # Parameters
+    ///
+    /// - `state_transition`, `block_info`, `proof`, `known_contracts_provider_fn`: as for
+    ///   [`Self::verify_state_transition_was_executed_with_proof`].
+    /// - `query_platform_version`: the version the producer signed, which selects the
+    ///   proof layout.
+    /// - `platform_version`: the caller's version, which selects every other rule. Its
+    ///   generation of this method must be one this build knows.
+    ///
+    /// # Returns
+    ///
+    /// The root hash of the proof and the verified outcome, as for
+    /// [`Self::verify_state_transition_was_executed_with_proof`]. An unknown generation
+    /// in either version is reported as [`DriveError::UnknownVersionMismatch`].
+    pub fn verify_state_transition_was_executed_with_proof_for_query_version(
+        state_transition: &StateTransition,
+        block_info: &BlockInfo,
+        proof: &[u8],
+        known_contracts_provider_fn: &ContractLookupFn,
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        let verifier_version = platform_version
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof;
+        if !matches!(verifier_version, 0 | 1) {
+            return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_state_transition_was_executed_with_proof".to_string(),
+                known_versions: vec![0, 1],
+                received: verifier_version,
+            }));
+        }
+        match query_platform_version
             .drive
             .methods
             .verify
@@ -130,5 +186,48 @@ mod tests {
             "expected UnknownVersionMismatch, got {:?}",
             result,
         );
+    }
+
+    /// The producer's version only picks the layout: a verifier generation this build does
+    /// not know is refused even when the producer's generation is known, and the reverse.
+    #[test]
+    fn should_reject_unknown_verifier_or_producer_generation() {
+        let mut unknown = PlatformVersion::latest().clone();
+        unknown
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof = 255;
+        let known = PlatformVersion::latest();
+
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0::default(),
+        ));
+        let block_info = BlockInfo::default();
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        for (query_platform_version, platform_version) in [(known, &unknown), (&unknown, known)] {
+            let result = Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                &st,
+                &block_info,
+                &[],
+                known_contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                        received: 255,
+                        ..
+                    }))
+                ),
+                "expected UnknownVersionMismatch, got {:?}",
+                result,
+            );
+        }
     }
 }
