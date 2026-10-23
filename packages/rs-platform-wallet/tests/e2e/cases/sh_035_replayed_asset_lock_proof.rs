@@ -14,8 +14,9 @@
 //! success, so it is structurally incapable of resubmitting one proof
 //! twice. This probe targets DRIVE's independent single-use outpoint
 //! check, which requires submitting a duplicate proof directly — so it
-//! deliberately uses the low-level `shielded_shield_from_asset_lock`
-//! raw-proof seam. The POSITIVE production-path coverage lives in SH-018
+//! builds each Type-18 transition through the `test-utils` seam
+//! `operations::build_shield_from_asset_lock_st` and broadcasts it straight
+//! through the SDK. The POSITIVE production-path coverage lives in SH-018
 //! (`shielded_fund_from_asset_lock` end-to-end).
 //!
 //! Core-L1 gated — a RED on the proof-build documents the gate, not a
@@ -23,9 +24,16 @@
 
 #![cfg(feature = "shielded")]
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dpp::prelude::AssetLockProof;
+use dpp::shielded::builder::OrchardProver;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use platform_wallet::wallet::shielded::operations::build_shield_from_asset_lock_st;
 use platform_wallet::wallet::shielded::operations::test_utils::derive_asset_lock_private_key;
+use platform_wallet::wallet::shielded::{AccountViewingKeys, OrchardKeySet};
 use platform_wallet::AssetLockFundingType;
 
 use crate::framework::prelude::*;
@@ -47,6 +55,34 @@ const SHIELD_DUFFS: u64 = 1_400_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 #[allow(dead_code)]
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Build a Type-18 transition consuming `proof` and broadcast it through the
+/// SDK, waiting for Platform's consensus verdict. Bypasses the wallet's
+/// asset-lock tracking on purpose: a replay must reach Drive's own
+/// single-use outpoint check.
+async fn shield_with_proof(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &AccountViewingKeys,
+    proof: AssetLockProof,
+    one_time_key: &[u8],
+    credits: u64,
+    prover: &impl OrchardProver,
+) -> Result<StateTransitionProofResult, String> {
+    let state_transition = build_shield_from_asset_lock_st(
+        sdk,
+        keys,
+        SHIELDED_ACCOUNT,
+        proof,
+        one_time_key,
+        credits,
+        prover,
+    )
+    .map_err(|e| format!("build Type-18 transition: {e}"))?;
+    state_transition
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk.as_ref(), None)
+        .await
+        .map_err(|e| format!("broadcast Type-18 transition: {e}"))
+}
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_035_replayed_asset_lock_proof() {
@@ -78,6 +114,11 @@ async fn sh_035_replayed_asset_lock_proof() {
         .await
         .expect("bind_shielded");
 
+    let keys = OrchardKeySet::from_seed(&seed_bytes, network, SHIELDED_ACCOUNT)
+        .expect("derive Orchard keyset")
+        .viewing_keys();
+    let sdk = s.test_wallet.platform_wallet().sdk_arc();
+
     let core_signer = SeedBackedCoreSigner::new(seed_bytes, network);
     let (proof, path, _outpoint) = s
         .test_wallet
@@ -100,26 +141,14 @@ async fn sh_035_replayed_asset_lock_proof() {
     let credits = dpp::balances::credits::CREDITS_PER_DUFF * SHIELD_DUFFS;
 
     // First shield must succeed (consumes the single-use proof).
-    s.test_wallet
-        .platform_wallet()
-        .shielded_shield_from_asset_lock(
-            SHIELDED_ACCOUNT,
-            proof.clone(),
-            &one_time_key,
-            credits,
-            prover,
-        )
+    shield_with_proof(&sdk, &keys, proof.clone(), &one_time_key, credits, &prover)
         .await
         .expect("first shield-from-asset-lock must succeed");
 
     // Replay: resubmit the SAME proof. The outpoint is already consumed,
     // so the backend MUST reject.
-    let replay = s
-        .test_wallet
-        .platform_wallet()
-        .shielded_shield_from_asset_lock(SHIELDED_ACCOUNT, proof, &one_time_key, credits, prover)
-        .await;
-    // The production wrapper broadcasts AND waits for the consensus result, so
+    let replay = shield_with_proof(&sdk, &keys, proof, &one_time_key, credits, &prover).await;
+    // `broadcast_and_wait` waits for the consensus result, so
     // `replay` already reflects the TRUE verdict (not just mempool). Emit the
     // greppable tag for Marvin: Ok = the same proof committed twice (potential
     // P0); Err = the single-use check rejected the replay (the GOOD outcome).

@@ -56,13 +56,12 @@ use dpp::identity::identity_nonce::{
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
-    build_identity_top_up_from_shielded_pool_transition, build_shield_from_asset_lock_transition,
-    build_shield_from_identity_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -71,6 +70,9 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
+// Only the `test-utils` Type-18 build seam needs these.
+#[cfg(feature = "test-utils")]
+use dpp::{prelude::AssetLockProof, shielded::builder::build_shield_from_asset_lock_transition};
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
@@ -1557,52 +1559,12 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 // (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
 
-/// Shield credits from a Core L1 asset lock into the shielded pool
-/// (Type 18). Simple build-then-broadcast wrapper; uses
-/// `broadcast_and_wait` for proven inclusion — the asset-lock proof is
-/// single-use so a relay-only ACK is insufficient.
-///
-/// The orchestrated path with IS→CL fallback and asset-lock tracking
-/// lives in `fund_from_asset_lock.rs`. This function is kept as the
-/// direct seam for test cases that construct their own asset-lock proofs
-/// (e.g. SH-018, SH-035).
-#[allow(clippy::too_many_arguments)]
-pub async fn shield_from_asset_lock<P: OrchardProver>(
-    sdk: &Arc<dash_sdk::Sdk>,
-    keys: &AccountViewingKeys,
-    account: u32,
-    asset_lock_proof: AssetLockProof,
-    private_key: &[u8],
-    amount: u64,
-    prover: &P,
-) -> Result<(), PlatformWalletError> {
-    let state_transition = build_shield_from_asset_lock_st(
-        sdk,
-        keys,
-        account,
-        asset_lock_proof,
-        private_key,
-        amount,
-        prover,
-    )?;
-
-    trace!("Shield from asset lock: state transition built, broadcasting...");
-    state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-
-    info!(
-        account,
-        credits = amount,
-        "Shield from asset lock broadcast succeeded"
-    );
-    Ok(())
-}
-
 /// Build a Type-18 shield-from-asset-lock state transition WITHOUT
 /// broadcasting. The capture seam for adversarial test cases (e.g.
-/// SH-035 replay) that need to control broadcast.
+/// SH-035 replay) that need to control broadcast. Test-only: it neither
+/// tracks the asset lock nor checks Platform's consumption verdict — the
+/// production path is `shielded_fund_from_asset_lock`.
+#[cfg(feature = "test-utils")]
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1836,6 +1798,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 /// `exact_fee` is the caller's fee estimate (e.g. from
 /// `compute_minimum_shielded_fee`). A mismatch between builder fee and
 /// `exact_fee` is logged at trace but not an error.
+#[cfg(feature = "test-utils")]
 #[allow(clippy::too_many_arguments)]
 pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -4929,11 +4892,11 @@ pub mod test_utils {
     /// `(seed, path)`, where `path` is the `DerivationPath` the asset-lock
     /// builder returned alongside the proof.
     ///
-    /// `shield_from_asset_lock` takes the key as `&[u8]`; the builder
-    /// returns only the proof + path, so this mirrors the production
-    /// seed → master xpriv → `derive_priv` derivation (see
-    /// `core/broadcast.rs`) to materialize the key test-side for SH-018 /
-    /// SH-035. Test-only — never materialize spend keys in production.
+    /// `build_shield_from_asset_lock_st` takes the key as `&[u8]`; the
+    /// builder returns only the proof + path, so this mirrors the
+    /// production seed → master xpriv → `derive_priv` derivation (see
+    /// `core/broadcast.rs`) to materialize the key test-side for SH-035.
+    /// Test-only — never materialize spend keys in production.
     pub fn derive_asset_lock_private_key(
         seed: &[u8],
         network: dashcore::Network,
