@@ -609,18 +609,18 @@ async fn should_ask_the_network_before_trusting_a_seed_or_pin_of_14() {
 }
 
 /// The probe runs under the caller's request settings, as the request it stands for
-/// would have.
+/// would have: a caller that bans no node for an answer it cannot verify bans none for the
+/// probe's.
 #[tokio::test]
 async fn should_ask_under_the_caller_settings() {
-    let mut sdk = mock_sdk(V13, false, 0);
-    answer(
-        &sdk,
-        &probe_request(),
-        Err(Status::unavailable("restarting")),
-    )
-    .await;
+    let mut sdk = sdk_with_provider(V13, false, 0, true, NoQuorumKeys);
+    answer_probe(&sdk, "pv14").await;
     expect_fee_pots(&mut sdk).await;
-    let result = ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()).await;
+    let settings = RequestSettings {
+        ban_failed_address: Some(false),
+        ..once()
+    };
+    let result = ContractFeePots::fetch_with_settings(&sdk, fee_pots(), settings).await;
     assert!(
         matches!(
             result,
@@ -630,6 +630,10 @@ async fn should_ask_under_the_caller_settings() {
     );
     assert_eq!(probes(&sdk).await, 1, "no retries, as the caller asked");
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+    assert!(
+        !sdk.address_list().is_banned(&node()),
+        "the caller asked not to ban failed nodes"
+    );
 }
 
 /// The value the transport layer declares is the version that added these requests.
