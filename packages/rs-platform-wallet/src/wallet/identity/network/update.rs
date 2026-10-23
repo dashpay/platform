@@ -94,9 +94,10 @@ impl IdentityWallet {
     /// update for its revision and a proved fetch shows that lower revision
     /// with every key and disable the cache holds, the cache takes the
     /// fetched identity (see `take_rejected_revision`), so the next update
-    /// carries the right one. When the call fails after the
-    /// broadcast (the proof wait timed out, say), the update may have
-    /// landed without this step: refresh before the next update.
+    /// carries the right one. An update that disables a key the cache holds
+    /// disabled is refused before anything is signed. When the call fails
+    /// after the broadcast (the proof wait timed out, say), the update may
+    /// have landed without this step: refresh before the next update.
     pub async fn update_identity_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -179,6 +180,7 @@ impl IdentityWallet {
         // Increment revision for the update transition.
         let transition_revision = update_revision(identity_id, identity.revision(), revision)?;
         identity.set_revision(transition_revision);
+        refuse_disabled_again(identity_id, &identity, &disable_public_keys)?;
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
@@ -387,17 +389,24 @@ impl IdentityWallet {
     /// The refusal comes from one node without a proof, so it only prompts a
     /// proved fetch of the identity. The cache takes the fetched identity
     /// whole, keys included, and stores it as a refresh does, when the fetch
-    /// shows the refusal's revision, below the cache's, and holds every key
-    /// the cache holds, with the same data and disabled state. An update
-    /// Drive takes adds a key or disables one (it refuses an empty one), so a
-    /// cache that holds such an update the fetch lacks fails that check; one
-    /// that is only ahead by its revision number holds the fetched keys. An
-    /// update that only disables a key already disabled re-stamps its
-    /// `disabled_at` and passes it: a node that proves the identity from
-    /// before it can take the cache back one revision with the older
-    /// timestamps, no key or disable lost, until the next fetch at the
-    /// chain's revision. The timestamps are not compared, because a disable
-    /// applied locally carries a wall-clock placeholder.
+    /// shows the refusal's revision, below the cache's, its proof is from a
+    /// block above the cache's verified-height watermark
+    /// (`last_updated_balance_block_time`, at or above the height of every
+    /// fetch the cache took), and it holds every key the cache holds, with
+    /// the same data and disabled state. A revision the cache learned from a fetch therefore
+    /// cannot be undone by a proof from before that fetch. A revision it
+    /// learned from an update it landed (`apply_landed_update`, which moves no
+    /// watermark) cannot either: this wallet sends no update that only
+    /// disables a key already disabled (`refuse_disabled_again`), so each one
+    /// adds a key or disables an enabled one, which a proof from before it
+    /// lacks. A cache only ahead by its revision number holds the fetched
+    /// keys, and the refused update's own block puts a fresh proof above the
+    /// watermark; a proof at the watermark's height is refused as well, which
+    /// costs at most one more refusal. Left open, until the next fetch at the
+    /// chain's revision: a revision an older build confirmed by a local apply
+    /// of a re-disable; a landed revision stored while its key rows were not
+    /// (a failed store); and a cache restored without a watermark (iOS rows
+    /// stored before the balance sidecar).
     /// Anything else leaves the cache as it is: the refusal alone, a fetch
     /// that fails, shows another revision or lacks a cached key or disable,
     /// a cache at the refusal's revision or below (raising it would take no
@@ -463,13 +472,17 @@ impl IdentityWallet {
         else {
             return;
         };
+        let (_, watermark) = managed.balance_snapshot_for_persistence();
         if managed.identity.revision() != built_from
+            || watermark.is_some_and(|watermark| block_time.height <= watermark.height)
             || !holds_every_key(&fetched, &managed.identity)
         {
             tracing::debug!(
                 identity = %identity_id,
                 revision = current,
-                "cache moved or holds a key the proof lacks; Drive's refusal not taken"
+                proved_at = block_time.height,
+                "cache moved, the proof is not above the cache's, or it lacks a key the cache \
+                 holds; Drive's refusal not taken"
             );
             return;
         }
@@ -547,6 +560,30 @@ impl IdentityWallet {
             .await?;
 
         Ok(result)
+    }
+}
+
+/// Refuse an update that disables a key the identity holds disabled.
+///
+/// Drive takes one, but it changes no key: it only re-stamps `disabled_at`
+/// and moves the revision. Every update this wallet lands then adds a key or
+/// disables an enabled one, which `take_rejected_revision` relies on to tell
+/// a proof from before a landed update.
+fn refuse_disabled_again(
+    identity_id: &Identifier,
+    identity: &Identity,
+    disable_public_keys: &[u32],
+) -> Result<(), PlatformWalletError> {
+    match disable_public_keys.iter().find(|id| {
+        identity
+            .public_keys()
+            .get(id)
+            .is_some_and(|key| key.is_disabled())
+    }) {
+        Some(key_id) => Err(PlatformWalletError::InvalidIdentityData(format!(
+            "identity {identity_id}: key {key_id} is already disabled; nothing was signed"
+        ))),
+        None => Ok(()),
     }
 }
 
@@ -1150,6 +1187,88 @@ mod update_identity_at_revision_tests {
             );
             assert!(store.take().is_empty(), "cached at {cached}: {error:?}");
         }
+    }
+
+    /// The proof backs the refusal in every other way, but is from a block
+    /// below the cache's verified-height watermark, where the cache may have
+    /// learned its revision, or at it, which the floor refuses as well. The
+    /// mock proves every answer at height 0.
+    #[tokio::test]
+    async fn should_keep_the_cache_when_the_proof_is_not_above_its_watermark() {
+        let identity_id = Identifier::default();
+        for watermark in [0, 100] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(6, store.clone()).await;
+            let wallet = wallet.identity();
+            let answer = proved_at(wallet, 5).await;
+            answer_fetch(wallet, answer).await;
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .last_updated_balance_block_time = Some(BlockTime::new(watermark, 0, 0));
+            }
+            let before = cached_identity(wallet, &identity_id).await;
+            store.take();
+            wallet
+                .take_rejected_revision(
+                    &identity_id,
+                    7,
+                    &revision_refusal(identity_id, 5, 0),
+                    no_retries(),
+                )
+                .await;
+            assert_eq!(
+                cached_identity(wallet, &identity_id).await,
+                before,
+                "watermark at {watermark}"
+            );
+            assert!(store.take().is_empty(), "watermark at {watermark}");
+        }
+    }
+
+    /// Drive takes an update that disables a key already disabled, but it
+    /// changes no key; the wallet refuses it before signing or reaching
+    /// Platform, and the cache is unchanged.
+    #[tokio::test]
+    async fn should_refuse_to_disable_a_key_already_disabled_before_signing() {
+        let identity_id = Identifier::default();
+        let wallet = wallet_at_revision(4).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let mut key = managed.identity.public_keys()[&1].clone();
+            key.set_disabled_at(7);
+            managed.identity.add_public_key(key);
+        }
+        let before = cached_identity(wallet, &identity_id).await;
+        let signer = RecordingSigner::default();
+        let error = wallet
+            .update_identity_with_external_signer_at_revision(
+                &identity_id,
+                vec![key_3()],
+                vec![1],
+                Some(5),
+                &signer,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, PlatformWalletError::InvalidIdentityData(m) if m.contains("key 1 is already disabled")),
+            "{error:?}"
+        );
+        assert_eq!(signer.0.load(Ordering::SeqCst), 0);
+        assert_eq!(cached_identity(wallet, &identity_id).await, before);
     }
 }
 
