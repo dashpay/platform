@@ -12,7 +12,7 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
-///   keeps generation 1's check.
+///   has its documents refused.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose documents the `jsonschema` crate checks.

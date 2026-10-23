@@ -15,6 +15,7 @@ use crate::data_contract::document_type::schema::validation_schema::{
     DocumentSchemaValidator, SchemaViolation,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
@@ -28,7 +29,8 @@ impl DataContract {
     /// ([`DocumentSchemaValidator`]) in place of the `jsonschema` crate, which reaches the
     /// same verdicts but for one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0`
     /// are one value however long the list. A document type whose schema has no validation
-    /// schema keeps generation 1's check entirely.
+    /// schema has its documents refused (`InvalidContractStructure`) before any other check:
+    /// the `jsonschema` crate checks no document at this generation.
     #[inline(always)]
     pub(super) fn validate_document_properties_v2(
         &self,
@@ -42,8 +44,18 @@ impl DataContract {
                 InvalidDocumentTypeError::new(name.to_owned(), self.id()).into(),
             ));
         };
-        let Some(validator) = self.native_validator(name, document_type, platform_version) else {
-            return self.validate_document_properties_v1(name, value, system, platform_version);
+        let validator = match self.native_validator(name, document_type, platform_version)? {
+            Ok(validator) => validator,
+            Err(refusal) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document type {name} has no validation schema, which its \
+                             documents are checked against: {refusal}"
+                        )),
+                    )),
+                ))
+            }
         };
 
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
@@ -149,25 +161,26 @@ impl DataContract {
     }
 
     /// The native validator of the document type `name`, built on first use and kept on
-    /// the document type: `None` when its schema has no validation schema.
+    /// the document type, or the refusal of its schema, kept the same way: the
+    /// [`DataContractError`] building the validation schema or its patterns returns. Any
+    /// other error is returned as it is, and not kept.
     fn native_validator(
         &self,
         name: &str,
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
-    ) -> Option<Arc<DocumentSchemaValidator>> {
-        document_type
-            .json_schema_validator_ref()
-            .native()
-            .get_or_init(|| {
-                // Building fails where the validation schema does not represent the schema
-                // the `jsonschema` crate compiles, and wherever generation 1 fails too
-                self.document_type_validation_schema(name, platform_version)
-                    .ok()
-                    .and_then(|schema| DocumentSchemaValidator::new(schema).ok())
-                    .map(Arc::new)
-            })
-            .clone()
+    ) -> Result<Result<Arc<DocumentSchemaValidator>, DataContractError>, ProtocolError> {
+        let built = document_type.json_schema_validator_ref().native();
+        if let Some(built) = built.get() {
+            return Ok(built.clone());
+        }
+        let validator = match self.document_type_validation_schema(name, platform_version) {
+            Ok(schema) => DocumentSchemaValidator::new(schema).map(Arc::new),
+            Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
+            Err(error) => return Err(error),
+        };
+        // Building is deterministic: a build that finished first holds the same result
+        Ok(built.get_or_init(|| validator).clone())
     }
 }
 

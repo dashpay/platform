@@ -143,9 +143,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the `jsonschema` crate, reaching the same verdicts and error codes but for
 ///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
 ///    value however long the list. A document type whose schema the validation
-///    schema does not represent keeps
-///    `validate_document` 1's check. Protocol v14 and earlier keep
-///    `validate_document` 1.
+///    schema does not represent has its documents refused
+///    (`InvalidContractStructure`): no document is checked through the
+///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,

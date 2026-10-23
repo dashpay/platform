@@ -1,5 +1,7 @@
 #[cfg(feature = "validation-schema")]
 use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
+#[cfg(feature = "validation-schema")]
+use crate::data_contract::errors::DataContractError;
 use crate::validation::JsonSchemaValidator;
 use std::fmt;
 use std::ops::Deref;
@@ -12,11 +14,12 @@ use std::sync::{Arc, OnceLock};
 /// re-build on the next validation
 ///
 /// Beside the `jsonschema` validator it holds the native one, built on demand the same
-/// way: `None` once built when the document type's schema has no validation schema, whose
-/// documents the `jsonschema` validator then checks.
+/// way, or the refusal of a document type's schema that has no validation schema, whose
+/// documents protocol version 15 refuses.
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
-    #[cfg(feature = "validation-schema")] OnceLock<Option<Arc<DocumentSchemaValidator>>>,
+    #[cfg(feature = "validation-schema")]
+    OnceLock<Result<Arc<DocumentSchemaValidator>, DataContractError>>,
 );
 
 impl Default for StatelessJsonSchemaLazyValidator {
@@ -34,16 +37,18 @@ impl StatelessJsonSchemaLazyValidator {
         )
     }
 
-    /// The native validator, once built.
+    /// The native validator, or the refusal of the schema, once built.
     #[cfg(feature = "validation-schema")]
-    pub(crate) fn native(&self) -> &OnceLock<Option<Arc<DocumentSchemaValidator>>> {
+    pub(crate) fn native(
+        &self,
+    ) -> &OnceLock<Result<Arc<DocumentSchemaValidator>, DataContractError>> {
         &self.1
     }
 }
 
 /// Prints the `jsonschema` validator alone, as before the native one was added: the native
 /// validator is a cache of what the document type's schema builds, which `PartialEq` and
-/// `Clone` leave out too, so a document type prints the same whichever cache is filled.
+/// `Clone` leave out too, so a document type prints the same whether or not it is built.
 impl fmt::Debug for StatelessJsonSchemaLazyValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("StatelessJsonSchemaLazyValidator")
