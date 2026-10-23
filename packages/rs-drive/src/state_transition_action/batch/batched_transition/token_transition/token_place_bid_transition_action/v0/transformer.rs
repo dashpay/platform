@@ -20,7 +20,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::v0::TokenPlaceBidTransitionActionV0;
-use crate::state_transition_action::batch::batched_transition::token_transition::{bump_with_errors, TokenTransitionAction};
+use crate::state_transition_action::batch::batched_transition::token_transition::{bump_with_errors, derive_order_id, TokenTransitionAction};
 use crate::state_transition_action::batch::BatchedTransitionAction;
 
 impl TokenPlaceBidTransitionActionV0 {
@@ -73,7 +73,7 @@ impl TokenPlaceBidTransitionActionV0 {
                 platform_version,
             )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -124,8 +124,16 @@ impl TokenPlaceBidTransitionActionV0 {
             ),
         ))?;
 
-        let order_id =
-            TokenOrderSide::Bid.order_id(base.token_id(), owner_id, base.identity_contract_nonce());
+        let (order_id, order_id_fee) = derive_order_id(
+            drive,
+            TokenOrderSide::Bid,
+            base.token_id(),
+            owner_id,
+            base.identity_contract_nonce(),
+            block_info,
+            platform_version,
+        )?;
+        fee_result.checked_add_assign(order_id_fee)?;
         let order_document = TokenOrder {
             id: order_id,
             side: TokenOrderSide::Bid,
