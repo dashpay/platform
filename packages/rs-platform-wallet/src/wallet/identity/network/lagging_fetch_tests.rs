@@ -288,6 +288,45 @@ async fn should_keep_a_landed_update_when_a_lagging_fetch_answers_older() {
     }
 }
 
+/// The identity is at revision 2 (key 1 disabled), and an update at 3
+/// disables key 1 again, which only moves its `disabled_at`. Two loads or
+/// refreshes in a row answered by a node still at revision 2 keep the cache
+/// at the update: an older answer never rewrites a disable the cache holds,
+/// so the second one finds nothing the first one changed.
+#[tokio::test]
+async fn should_keep_a_second_disable_when_two_lagging_fetches_answer_older() {
+    for fetch in [Fetch::Load, Fetch::Refresh] {
+        let wallet = wallet_on(sdk_answering(fetch, identity_at_revision_2()).await).await;
+        let wallet = wallet.identity();
+        {
+            // The cache as a fetch at revision 2 left it.
+            let mut wm = wallet.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&Identifier::default())
+                .unwrap()
+                .identity = identity_at_revision_2();
+        }
+        let transition_revision = update_snapshot(wallet).await;
+        assert_eq!(transition_revision, 3);
+        land_update(wallet, transition_revision, vec![], vec![1]).await;
+        let after_update = cached(wallet).await;
+        assert_eq!(after_update.revision(), 3, "{fetch:?}");
+
+        for answer in 1..=2 {
+            run_fetch(wallet, fetch).await;
+            let held = cached(wallet).await;
+            assert_eq!(held.revision(), 3, "{fetch:?}: answer {answer}");
+            assert_eq!(
+                held.public_keys()[&1].disabled_at(),
+                after_update.public_keys()[&1].disabled_at(),
+                "{fetch:?}: answer {answer} keeps the second disable"
+            );
+        }
+    }
+}
+
 /// A key-limits update raises key 3's budget 1_000 -> 5_000 and expiry
 /// T1 -> T2 (no revision is claimed); a load or refresh answered by a node
 /// one block behind, with the old limits at the same revision, keeps the

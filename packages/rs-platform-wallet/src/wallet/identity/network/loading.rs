@@ -319,14 +319,15 @@ impl IdentityWallet {
     ///
     /// The identity must already exist in the [`IdentityManager`]. Its
     /// on-chain state (keys, revision) is replaced with the latest version
-    /// from Platform and the status is set to `Active`; a disable the cache
-    /// holds stays, and so does a key limit the cache holds higher. The
+    /// from Platform and the status is set to `Active`, key states included
+    /// (Core re-enables a masternode identity's keys at revision 0); a key
+    /// limit the cache holds higher stays. The
     /// balance, at any revision, is taken only when the fetch's proof is at a
     /// block above the cache's balance watermark. A fetch at a lower revision
     /// than the cache's was answered before an update the cache already
     /// holds (a node behind the block it landed in): the cache keeps its
-    /// revision, key set and every disable, and takes only a disable or a
-    /// raised limit the fetch shows
+    /// revision, key set and every disable, and takes only a disable the
+    /// fetch shows on a key it holds enabled, or a raised limit
     /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
     /// fold adds or changes is stored with the scalar snapshot, without a
     /// derivation breadcrumb (the persisters keep the one they hold); a

@@ -402,14 +402,15 @@ impl ManagedIdentity {
     /// higher of the two (see `with_raised_limits`) at any revision.
     ///
     /// A fetch at the cache's revision or above is otherwise taken whole,
-    /// except that a key the cache holds disabled stays disabled (a disable
-    /// is permanent on Platform). Revisions only grow on Platform, so a fetch
+    /// key states included: a masternode identity's keys are disabled and
+    /// re-enabled by Core at revision 0, so such a fetch may re-enable a key
+    /// the cache holds disabled. Revisions only grow on Platform, so a fetch
     /// at a lower revision was answered before an update the cache already
     /// holds (one applied locally after it landed, or a newer refresh, from a
     /// node that lags behind): the cache keeps its revision and key set; it
-    /// takes only a disable the fetch shows (the fetch's timestamp is
-    /// Platform's own) and a raised limit. Returns whether it was taken
-    /// whole.
+    /// takes only a disable the fetch shows on a key the cache holds enabled
+    /// (an identity update's disable is permanent) and a raised limit.
+    /// Returns whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity, block_time: BlockTime) -> bool {
@@ -499,11 +500,12 @@ impl ManagedIdentity {
 
     /// The key decisions to store for `decisions` built from `fetched`, each
     /// key folded as [`Self::take_fetched_identity`] folds it, so storing its
-    /// breadcrumb (a key's derivation never changes) never takes back a
-    /// disable or a raised limit the cache holds. For a fetch at the cache's
-    /// revision or above that is the fetched key, disabled when the cache's
-    /// copy is. For an older fetch it is the cache's copy, disabled when the
-    /// fetch shows a disable; either way each limit is the higher of the two.
+    /// breadcrumb (a key's derivation never changes) stores what the fold
+    /// holds: never a raised limit taken back, nor a disable an older fetch
+    /// lacks. For a fetch at the cache's
+    /// revision or above that is the fetched key. For an older fetch it is
+    /// the cache's copy, disabled when only the fetch's copy is; either way
+    /// each limit is the higher of the two.
     /// A key the cache lacks is left out of an older fetch's decisions, since
     /// an older answer cannot show whether a later update disabled it, and a
     /// fetch at least as new will bring it.
@@ -698,8 +700,9 @@ impl ManagedIdentity {
     /// `key_ids` not present on the identity are skipped (logged) and
     /// no changeset is emitted when nothing matched. `disabled_at` is
     /// the timestamp stamped on every matching key — callers pass the
-    /// local broadcast time; the next Platform refresh reconciles it to
-    /// the authoritative on-chain block time.
+    /// local broadcast time; the next fetch at the update's revision or
+    /// above reconciles it to the authoritative on-chain block time (an
+    /// older one keeps it).
     ///
     /// Does **not** touch the identity revision — the caller bumps it
     /// alongside the update transition.
@@ -783,10 +786,9 @@ impl ManagedIdentity {
 
 /// How a fetched key lands in the cache, the one rule the identity fold and
 /// its key decisions share. From a fetch taken whole (`taken`) it is the
-/// fetched key, disabled when the cache's copy is (a disable is permanent
-/// on Platform; Platform's timestamp first). From an older fetch it is the
-/// cache's copy with the fetch's disable, or nothing for a key the cache
-/// lacks. Either way each limit is the higher of the two copies'.
+/// fetched key. From an older fetch it is the cache's copy, disabled when
+/// only the fetch's copy is, or nothing for a key the cache lacks. Either
+/// way each limit is the higher of the two copies'.
 fn fold_fetched_key(
     cached: Option<&IdentityPublicKey>,
     fetched: &IdentityPublicKey,
@@ -796,15 +798,10 @@ fn fold_fetched_key(
         return cached
             .map(|cached| with_raised_limits(with_disable_from(cached, fetched), fetched));
     }
-    let mut key = fetched.clone();
+    let key = fetched.clone();
     let Some(cached) = cached else {
         return Some(key);
     };
-    if key.disabled_at().is_none() {
-        if let Some(disabled_at) = cached.disabled_at() {
-            key.set_disabled_at(disabled_at);
-        }
-    }
     Some(with_raised_limits(key, cached))
 }
 
@@ -830,12 +827,13 @@ fn with_raised_limits(key: IdentityPublicKey, other: &IdentityPublicKey) -> Iden
     key.with_limits(total_budget, expires_at)
 }
 
-/// The cache's copy of a key, disabled when an older fetch's copy is: a
-/// disable is permanent on Platform. The fetch's timestamp is Platform's
-/// own, so it wins over the cache's, which may be a local placeholder.
+/// The cache's copy of a key, disabled when an older fetch's copy is: an
+/// identity update's disable is permanent on Platform. A disable the cache
+/// already holds is kept as it is: it is at least as new as the fetch's (a
+/// later update may have disabled the key again at a later block).
 fn with_disable_from(cached: &IdentityPublicKey, fetched: &IdentityPublicKey) -> IdentityPublicKey {
     let mut key = cached.clone();
-    if let Some(disabled_at) = fetched.disabled_at().or(cached.disabled_at()) {
+    if let Some(disabled_at) = cached.disabled_at().or(fetched.disabled_at()) {
         key.set_disabled_at(disabled_at);
     }
     key
@@ -914,10 +912,10 @@ mod tests {
 
     /// A fetch at a lower revision than the cache's was answered before an
     /// update the cache holds: the cache keeps its revision and key set, and
-    /// takes only a disable the fetch shows (Platform's timestamp first) and
-    /// a raised limit. A fetch at the same revision or higher replaces the
-    /// cache but never takes back a disable or a raise. Either way the
-    /// balance follows the proof's block, not the revision.
+    /// takes only a disable the fetch shows on a key it holds enabled and a
+    /// raised limit. A fetch at the same revision or higher replaces the
+    /// cache, key states included, but never takes back a raise. Either way
+    /// the balance follows the proof's block, not the revision.
     #[test]
     fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
@@ -963,21 +961,24 @@ mod tests {
         assert_eq!(managed.identity, at(6, 20, vec![limited(3, 100, Some(9))]));
         assert_eq!(managed.last_updated_balance_block_time, Some(block(10)));
 
-        // A disable is permanent: one the older fetch shows sticks even
-        // when the cache's copy is live. A higher budget it shows is a raise
-        // the cache missed (a limits update claims no revision).
+        // An identity update's disable is permanent: one the older fetch
+        // shows sticks even when the cache's copy is live. A higher budget
+        // it shows is a raise the cache missed (a limits update claims no
+        // revision).
         let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
         live.last_updated_balance_block_time = Some(block(9));
         let disabling = at(5, 20, vec![limited(3, 500, Some(4))]);
         assert!(!live.take_fetched_identity(&disabling, block(9)));
         assert_eq!(live.identity, at(6, 10, vec![limited(3, 500, Some(4))]));
-        // Both disabled: the fetch's timestamp is Platform's, the cache's
-        // may be a local placeholder.
+        // Both disabled: the cache's timestamp is at least as new (a later
+        // update may have disabled the key again), so an older answer, or a
+        // second one like it, never rewrites it.
         let mut stamped = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, Some(99))]), 0);
-        assert!(
-            !stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))]), block(9))
-        );
-        assert_eq!(stamped.identity.public_keys()[&3].disabled_at(), Some(4));
+        for _ in 0..2 {
+            assert!(!stamped
+                .take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))]), block(9)));
+            assert_eq!(stamped.identity, at(6, 10, vec![limited(3, 100, Some(99))]));
+        }
 
         // An answer at the cache's revision or above is taken whole...
         let same = at(6, 30, vec![limited(3, 600, Some(7)), limited(4, 1, None)]);
@@ -988,13 +989,14 @@ mod tests {
         assert!(managed.take_fetched_identity(&newer, block(12)));
         assert_eq!(managed.identity, newer);
 
-        // ...except for a balance its proof does not order after the cache's,
-        // a disable the cache holds and the answer lacks, and a budget the
-        // cache holds higher: a delayed answer cannot take a raise back.
+        // ...key states included (Core re-enables a masternode identity's
+        // key at revision 0), except for a balance its proof does not order
+        // after the cache's and a budget the cache holds higher: a delayed
+        // answer cannot take a raise back.
         let delayed = at(7, 35, vec![limited(3, 550, None)]);
         for height in [11, 12] {
             assert!(managed.take_fetched_identity(&delayed, block(height)));
-            assert_eq!(managed.identity, at(7, 40, vec![limited(3, 600, Some(7))]));
+            assert_eq!(managed.identity, at(7, 40, vec![limited(3, 600, None)]));
             assert_eq!(managed.last_updated_balance_block_time, Some(block(12)));
         }
     }

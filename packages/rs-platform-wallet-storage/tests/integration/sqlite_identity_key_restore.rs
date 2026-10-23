@@ -17,6 +17,9 @@ use std::sync::{Arc, Mutex};
 
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -533,6 +536,68 @@ async fn should_store_a_key_a_refresh_finds_so_it_survives_a_restart() {
         .identity
         .revision();
     assert_eq!(revision, 2);
+    end_process(manager, &disk).await;
+}
+
+/// A refresh at the cache's revision is taken whole, key states included:
+/// Core disables and re-enables a masternode identity's keys at revision 0
+/// (`ReEnableIdentityKeys` in the masternode identity updates), so a cached
+/// disable must not stick. The identity here has that shape: revision 0, key
+/// 2 disabled when restored, active again in the refresh. The re-enabled row
+/// is stored with its breadcrumb kept and survives a restart.
+#[tokio::test]
+async fn should_store_a_key_core_re_enabled_so_it_survives_a_restart() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("wallet.db");
+    let mut active = registered_identity();
+    active.set_revision(0);
+    let id = active.id();
+    let mut disabled = active.clone();
+    let mut key_2 = disabled.public_keys()[&2].clone();
+    key_2.set_disabled_at(1_700_000_000_000);
+    disabled.add_public_key(key_2);
+
+    let disk = Disk::open(&path, DiskFull::Never);
+    let (manager, w) = first_launch(
+        platform(MNEMONIC_A, Some(disabled), Some(active.clone())).await,
+        disk.clone(),
+        MNEMONIC_A,
+    )
+    .await;
+    let iw = manager.get_wallet(&w).await.unwrap();
+    iw.identity()
+        .discover_from_master(scan_from_zero(), &master(MNEMONIC_A))
+        .await
+        .expect("restore");
+    assert!(disk.key_rows(&w, &id)[&2].public_key.is_disabled());
+    iw.identity().refresh_identity(&id).await.expect("refresh");
+    let rows = disk.key_rows(&w, &id);
+    assert!(
+        !rows[&2].public_key.is_disabled(),
+        "the re-enable is stored"
+    );
+    assert_eq!(breadcrumbed(&rows), vec![0, 1, 2], "breadcrumbs stay");
+    drop(iw);
+    end_process(manager, &disk).await;
+
+    let disk = Disk::open(&path, DiskFull::Never);
+    let manager = relaunch(platform(MNEMONIC_A, None, None).await, disk.clone()).await;
+    let wm = manager.wallet_manager_arc();
+    let held = wm
+        .read()
+        .await
+        .get_wallet_info(&w)
+        .unwrap()
+        .identity_manager
+        .identity(&id)
+        .unwrap()
+        .identity
+        .clone();
+    assert!(
+        !held.public_keys()[&2].is_disabled(),
+        "key 2 is active after restart"
+    );
+    drop(wm);
     end_process(manager, &disk).await;
 }
 

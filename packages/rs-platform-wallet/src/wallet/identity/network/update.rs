@@ -351,8 +351,8 @@ impl IdentityWallet {
             // keys and fire the persister so the Swift
             // `PersistentPublicKey.disabledAt` rows flip without
             // a network re-fetch. The local wall-clock timestamp
-            // is a placeholder — the next Platform refresh
-            // reconciles it to the authoritative on-chain block
+            // is a placeholder — the next fetch at this revision or
+            // above reconciles it to the authoritative on-chain block
             // time. `disable_keys` rebuilds the derivation breadcrumb
             // from the managed identity's own wallet slot, so the
             // disabled key keeps its private-key linkage.
