@@ -216,7 +216,10 @@ fn should_verify_signed_older_document_outcome_with_current_verifier_security() 
         .expect("same-version signed fixture verifies");
         let outcome = verify(request, response, &provider).unwrap().unwrap();
         assert!(outcome.is_execution_proved());
-        assert_eq!(outcome.owner_balance().is_some(), version >= 14);
+        assert_eq!(
+            outcome.owner_balance().is_some(),
+            version >= FIRST_OWNER_BALANCE_VERSION
+        );
     }
 }
 /// Once a newer protocol activates, clients built before it keep verifying outcomes with

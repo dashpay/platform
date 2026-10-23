@@ -274,11 +274,17 @@ mod tests {
             .verify_state_transition_was_executed_with_proof = 255;
         let verifier = PlatformVersion::latest();
 
-        assert_eq!(
-            format!(
-                "{:?}",
-                verify_empty_credit_transfer_proof(&producer, verifier)
+        let result = verify_empty_credit_transfer_proof(&producer, verifier);
+        assert!(
+            !matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
             ),
+            "the producer's verifier generation must not be read, got {:?}",
+            result,
+        );
+        assert_eq!(
+            format!("{:?}", result),
             format!(
                 "{:?}",
                 verify_empty_credit_transfer_proof(verifier, verifier)
