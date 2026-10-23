@@ -31,6 +31,8 @@ use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager};
 use simple_signer::signer::SimpleSigner;
 
+use super::signer_derivation::from_seed_for_platform_addresses;
+
 use super::signer::SeedBackedIdentitySigner;
 
 use super::bank::{core_send, BankWallet, CORE_TX_FEE_RESERVE};
@@ -254,14 +256,14 @@ async fn derive_sweep_pool_signer(
         Some(hi) => hi.saturating_add(DIP17_GAP_LIMIT),
         None => return make_platform_signer(seed_bytes, network),
     };
-    SimpleSigner::from_seed_for_platform_addresses(
+    from_seed_for_platform_addresses(
         seed_bytes,
         network,
         DEFAULT_ACCOUNT_INDEX_PUB,
         DEFAULT_KEY_CLASS_PUB,
         0..=ceiling,
     )
-    .map_err(|err| FrameworkError::Wallet(format!("sweep pool signer: {err}")))
+    .map_err(FrameworkError::from)
 }
 
 async fn sweep_one(
@@ -1253,7 +1255,7 @@ mod tests {
         // The pkh the production DIP-17 derivation assigns to the
         // drifted index, taken from the same constructor the sweep now
         // uses (single-index signer → its only key is that pkh).
-        let single = SimpleSigner::from_seed_for_platform_addresses(
+        let single = from_seed_for_platform_addresses(
             &seed,
             net,
             DEFAULT_ACCOUNT_INDEX_PUB,
@@ -1282,7 +1284,7 @@ mod tests {
 
         // The pool signer the sweep now builds (idx 0..=drifted) DOES
         // key it — the S-1 fix recovers drifted-index funds.
-        let pool_signer = SimpleSigner::from_seed_for_platform_addresses(
+        let pool_signer = from_seed_for_platform_addresses(
             &seed,
             net,
             DEFAULT_ACCOUNT_INDEX_PUB,

@@ -7366,9 +7366,7 @@ dependencies = [
  "dpp",
  "grovedb-bincode",
  "hex",
- "key-wallet",
  "rand 0.8.6",
- "thiserror 2.0.18",
  "tracing",
  "zeroize",
 ]

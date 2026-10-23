@@ -41,6 +41,8 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use simple_signer::signer::SimpleSigner;
 
+use super::signer_derivation::from_seed_for_platform_addresses;
+
 use super::config::{Config, EXPECTED_TOKEN_SUITE_FLOOR};
 use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB};
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
@@ -368,14 +370,14 @@ impl BankWallet {
             Some(hi) => hi.saturating_add(DIP17_GAP_LIMIT),
             None => return make_platform_signer(seed_bytes, network),
         };
-        SimpleSigner::from_seed_for_platform_addresses(
+        from_seed_for_platform_addresses(
             seed_bytes,
             network,
             DEFAULT_ACCOUNT_INDEX_PUB,
             DEFAULT_KEY_CLASS_PUB,
             0..=ceiling,
         )
-        .map_err(|err| FrameworkError::Wallet(format!("bank pool signer: {err}")))
+        .map_err(FrameworkError::from)
     }
 
     /// Assert the bank has enough credits to run the test suite.
