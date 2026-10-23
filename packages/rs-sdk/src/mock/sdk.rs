@@ -45,6 +45,9 @@ pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     dapi: Arc<Mutex<MockDapiClient>>,
     sdk: ArcSwapOption<Sdk>,
+    /// The block time the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_time_ms]); 0 unless set.
+    response_time_ms: u64,
 }
 
 impl MockDashPlatformSdk {
@@ -76,7 +79,15 @@ impl MockDashPlatformSdk {
             from_proof_expectations: Default::default(),
             dapi,
             sdk: ArcSwapOption::new(None),
+            response_time_ms: 0,
         }
+    }
+
+    /// Sets the block time, in milliseconds, the metadata of every response answered from an
+    /// expectation reports, for code under test that reads the time a response was proved at.
+    pub fn set_response_time_ms(&mut self, time_ms: u64) -> &mut Self {
+        self.response_time_ms = time_ms;
+        self
     }
 
     pub(crate) fn set_sdk(&mut self, sdk: Sdk) {
@@ -582,6 +593,7 @@ impl MockDashPlatformSdk {
                 Option::<O>::mock_deserialize(self, d),
                 ResponseMetadata {
                     protocol_version: dpp::version::LATEST_VERSION,
+                    time_ms: self.response_time_ms,
                     ..Default::default()
                 },
                 Proof::default(),

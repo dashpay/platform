@@ -724,7 +724,7 @@ fn should_fence_stale_operation_snapshots_and_preserve_same_outpoint_recovery() 
 fn should_migrate_conflict_sidecar_without_changing_existing_lifecycle_blobs() {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     migrations::runner()
-        .set_target(refinery::Target::Version(21))
+        .set_target(refinery::Target::Version(20))
         .run(&mut conn)
         .unwrap();
     let wallet_id = wid(0xC1);

@@ -12,6 +12,7 @@ pub mod blob;
 pub mod contacts;
 pub(crate) mod core_history;
 pub mod core_pool;
+pub(crate) mod core_spend_authorization;
 pub mod core_state;
 pub mod dashpay;
 pub mod dpns_name_states;

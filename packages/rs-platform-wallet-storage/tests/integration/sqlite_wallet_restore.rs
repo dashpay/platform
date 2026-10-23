@@ -268,8 +268,20 @@ async fn should_restore_pending_sends_in_dependency_order_without_resending_inco
         OutPoint::new(Txid::from_byte_array([1; 32]), 0),
         vec![output(100_000)],
     );
-    let parent = transaction(OutPoint::new(funding.txid(), 0), vec![output(90_000)]);
-    let child = transaction(OutPoint::new(parent.txid(), 0), vec![output(80_000)]);
+    // The loader drops pending spends of wallet coins that carry no valid
+    // owner signature, so the wallet's own sends are signed as it would sign them.
+    let parent = common::authorize(
+        &wallet,
+        &info,
+        &address,
+        transaction(OutPoint::new(funding.txid(), 0), vec![output(90_000)]),
+    );
+    let child = common::authorize(
+        &wallet,
+        &info,
+        &address,
+        transaction(OutPoint::new(parent.txid(), 0), vec![output(80_000)]),
+    );
     let incoming = transaction(
         OutPoint::new(Txid::from_byte_array([2; 32]), 0),
         vec![output(5_000)],
