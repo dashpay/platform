@@ -951,6 +951,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::StaleReservation => {
                 PlatformWalletFFIResultCode::ErrorStaleReservationToken
             }
+            // Refused before the network, payment abandoned: the same code
+            // the lifecycle refusals elsewhere use.
+            PlatformWalletError::WalletRemovedBeforeSend(_) => {
+                PlatformWalletFFIResultCode::NotFound
+            }
             // A coin selection that picked an input still held by an in-flight
             // broadcast dispatch. Typed on the Rust side (it carries the
             // conflicting `OutPoint`; see the variant docs for the retry

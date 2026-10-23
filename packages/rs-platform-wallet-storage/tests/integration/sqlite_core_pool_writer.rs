@@ -351,6 +351,86 @@ fn used_address_cannot_regain_reservation_from_stale_snapshot() {
     assert_eq!(state, (1, None));
 }
 
+/// A reservation is a claim the backend can take back: storing the address
+/// available again clears it, while storing it used makes it final. This is
+/// what a two-step contact payment relies on to release the address of a
+/// send that never reached the network, which a `used` flag (monotonic, MAX)
+/// could not express.
+#[test]
+fn reservation_can_be_released_or_promoted_to_used() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB3);
+    ensure_wallet_meta(&persister, &w);
+    let account_type = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let mut infos = external_infos(0xB3);
+    infos.truncate(2);
+    let store = |infos: Vec<AddressInfo>| {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type,
+                        AddressPoolType::External,
+                        infos,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    // Both reserved, as a send stores them before its broadcast.
+    for info in &mut infos {
+        info.state = AddressState::Reserved { at: 1_752_528_625 };
+    }
+    store(infos.clone());
+    // Index 0: rejected — released. Index 1: sent — used.
+    infos[0].state = AddressState::Available;
+    infos[1].state = AddressState::Used;
+    let (released, sent) = (infos[0].address.clone(), infos[1].address.clone());
+    store(infos);
+
+    // What a reload restores as used — the loader `load()` rehydrates the
+    // pool from: the sent address, never the released one.
+    {
+        let conn = persister.lock_conn_for_test();
+        let reloaded: Vec<_> = core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+            .unwrap()
+            .into_iter()
+            .map(|(address, _)| address)
+            .collect();
+        assert_eq!(
+            reloaded,
+            vec![sent],
+            "released {released} must reload available"
+        );
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn
+        .prepare(
+            "SELECT used, reserved_at FROM core_address_pool \
+             WHERE wallet_id = ?1 ORDER BY address_index",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map(rusqlite::params![w.as_slice()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![(0, None), (1, None)],
+        "the released address is available on disk, the sent one used"
+    );
+}
+
 /// UTXOs resolve to their pool-declared account during reads.
 #[test]
 fn account_index_is_resolved_from_pool() {

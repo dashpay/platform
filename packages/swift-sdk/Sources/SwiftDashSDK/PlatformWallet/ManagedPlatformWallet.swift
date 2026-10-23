@@ -2998,6 +2998,31 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Runs `call` with the two 32-byte identity pointers and the memo as a C
+    /// string (nil without one), keeping `coreSigner` alive across it.
+    ///
+    /// `withExtendedLifetime` (not a bare `_ = coreSigner`) keeps the resolver
+    /// alive across the synchronous FFI call — the optimizer can otherwise drop
+    /// it mid-call and the vtable callback would use-after-free.
+    private static func withContactPaymentArguments(
+        from fromBytes: [UInt8],
+        to toBytes: [UInt8],
+        memo: String?,
+        coreSigner: MnemonicResolver,
+        _ call: (UnsafePointer<UInt8>, UnsafePointer<UInt8>, UnsafePointer<CChar>?) -> PlatformWalletFFIResult
+    ) -> PlatformWalletFFIResult {
+        withExtendedLifetime(coreSigner) {
+            fromBytes.withUnsafeBufferPointer { fromBp in
+                toBytes.withUnsafeBufferPointer { toBp in
+                    if let memo {
+                        return memo.withCString { call(fromBp.baseAddress!, toBp.baseAddress!, $0) }
+                    }
+                    return call(fromBp.baseAddress!, toBp.baseAddress!, nil)
+                }
+            }
+        }
+    }
+
     /// Reserve a fresh Core payout address for a DashPay contact without
     /// requiring transparent funds. Call only after confirming a withdrawal:
     /// each successful call permanently consumes an address shared with Core
@@ -3075,36 +3100,128 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
-            // `withExtendedLifetime` (not a bare `_ = coreSigner`) keeps the
-            // resolver alive across the synchronous FFI call — the optimizer
-            // can otherwise drop it mid-call and the vtable callback would
-            // use-after-free.
-            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
-                fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
-                    toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
-                        let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
-                            platform_wallet_send_dashpay_payment(
-                                handle,
-                                fromBp.baseAddress!,
-                                toBp.baseAddress!,
-                                amountDuffs,
-                                memoPtr,
-                                coreSigner.handle,
-                                &txidTuple,
-                                &feeDuffs
-                            )
-                        }
-                        if let memoCopy {
-                            return memoCopy.withCString { call($0) }
-                        } else {
-                            return call(nil)
-                        }
-                    }
-                }
+            let result = Self.withContactPaymentArguments(
+                from: fromBytes, to: toBytes, memo: memoCopy, coreSigner: coreSigner
+            ) { fromPtr, toPtr, memoPtr in
+                platform_wallet_send_dashpay_payment(
+                    handle,
+                    fromPtr,
+                    toPtr,
+                    amountDuffs,
+                    memoPtr,
+                    coreSigner.handle,
+                    &txidTuple,
+                    &feeDuffs
+                )
             }
             try result.check()
             let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
             return (txid: txid, feeDuffs: feeDuffs)
+        }.value
+    }
+
+    /// Sign a Dash payment to an established DashPay contact without
+    /// broadcasting it, so the exact network fee and total can be shown
+    /// before the user confirms.
+    ///
+    /// Pass the result to exactly one of `sendPreparedDashPayPayment(_:)` or
+    /// `abandonPreparedDashPayPayment(_:)`. Until then its inputs stay
+    /// reserved. A payment held while the wallet processes many blocks is
+    /// refused at send with `.errorStaleReservationToken` (nothing sent,
+    /// everything released): prepare it again.
+    public func prepareDashPayPayment(
+        fromIdentityId: Identifier,
+        toContactIdentityId: Identifier,
+        amountDuffs: UInt64,
+        memo: String? = nil
+    ) async throws -> PreparedDashPayPayment {
+        let handle = self.handle
+        let fromBytes: [UInt8] = fromIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let toBytes: [UInt8] = toContactIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let memoCopy = memo
+        // Same signer lifetime contract as `sendDashPayPayment`.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { [self] () -> PreparedDashPayPayment in
+            try withExtendedLifetime(self) {
+                var paymentHandle: Handle = 0
+                var feeDuffs: UInt64 = 0
+                var totalDuffs: UInt64 = 0
+                var txidTuple: FFIByteTuple32 = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                let result = Self.withContactPaymentArguments(
+                    from: fromBytes, to: toBytes, memo: memoCopy, coreSigner: coreSigner
+                ) { fromPtr, toPtr, memoPtr in
+                    platform_wallet_prepare_dashpay_payment(
+                        handle,
+                        fromPtr,
+                        toPtr,
+                        amountDuffs,
+                        memoPtr,
+                        coreSigner.handle,
+                        &paymentHandle,
+                        &feeDuffs,
+                        &totalDuffs,
+                        &txidTuple
+                    )
+                }
+                try result.check()
+                return PreparedDashPayPayment(
+                    handle: paymentHandle,
+                    amountDuffs: amountDuffs,
+                    feeDuffs: feeDuffs,
+                    totalDuffs: totalDuffs,
+                    txid: hashData(txidTuple)
+                )
+            }
+        }.value
+    }
+
+    /// Broadcast a prepared contact payment and record it. Consumes
+    /// `payment` whatever the outcome. Returns the 32-byte txid and the
+    /// fee, which is the one the prepared payment showed.
+    ///
+    /// Throws, nothing sent, when another payment to the same contact took
+    /// this payment's address while it waited: prepare it again. Throws
+    /// `.transactionBroadcastUnconfirmed` when the transaction may have
+    /// reached the network: `payment.txid` names it, to watch for instead of
+    /// paying again.
+    @discardableResult
+    public func sendPreparedDashPayPayment(
+        _ payment: PreparedDashPayPayment
+    ) async throws -> (txid: Data, feeDuffs: UInt64) {
+        let handle = self.handle
+        let paymentHandle = try payment.take()
+        return try await Task.detached(priority: .userInitiated) { [self] () -> (txid: Data, feeDuffs: UInt64) in
+            try withExtendedLifetime(self) {
+                var feeDuffs: UInt64 = 0
+                var txidTuple: FFIByteTuple32 = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                try platform_wallet_send_prepared_dashpay_payment(
+                    handle,
+                    paymentHandle,
+                    &txidTuple,
+                    &feeDuffs
+                ).check()
+                let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+                return (txid: txid, feeDuffs: feeDuffs)
+            }
+        }.value
+    }
+
+    /// Drop a prepared contact payment without sending it: its inputs are
+    /// released.
+    public func abandonPreparedDashPayPayment(_ payment: PreparedDashPayPayment) async throws {
+        let paymentHandle = try payment.take()
+        try await Task.detached(priority: .userInitiated) {
+            try platform_wallet_abandon_prepared_dashpay_payment(paymentHandle).check()
         }.value
     }
 }
