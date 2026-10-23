@@ -84,9 +84,13 @@ const sdk = EvoSDK.testnetTrusted({
   },
   logs: 'info',         // 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   proofs: true,          // request proofs with every query
-  version: 8,           // pin a specific protocol version
+  version: 14,          // pin a specific protocol version
 });
 ```
+
+A pinned version is the newest the SDK speaks, whatever the network runs: an SDK pinned
+below 14 refuses every query protocol 14 added (see
+[Features from Protocol Version 14](../sdk/protocol-version-gate.md)).
 
 ### Logging
 
