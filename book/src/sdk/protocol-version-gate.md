@@ -86,9 +86,9 @@ until the network activates protocol 14; the same call succeeds once it has. Whe
 for the network's version failed for a reason that can pass (nodes or a quorum source not
 answering), the network may serve the request already: JS reports the error as retriable
 (`isRetriable`), and FFI as a network error, so the app can try again later instead of
-hiding the feature. A failure the SDK's own setup causes, such as a context provider that
-cannot give quorum keys, is not retriable: Rust apps can tell the two apart with
-`Error::is_transient_protocol_version_refusal`.
+hiding the feature. A failure the SDK's own setup causes, no context provider or one
+configured so that it cannot give quorum keys (a non-trusted EvoSDK), is not retriable:
+Rust apps can tell the two apart with `Error::is_transient_protocol_version_refusal`.
 
 ## At the activation
 
