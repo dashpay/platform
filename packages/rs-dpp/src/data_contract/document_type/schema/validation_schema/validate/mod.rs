@@ -12,6 +12,17 @@
 //! fork reads it (the `time` crate for dates, `url` for URIs, the standard library for IP
 //! addresses). `maxBytes` and `encryptedFor` are not checked here: document validation
 //! checks them in steps of their own, on the properties the document type parser builds.
+//!
+//! The violations are listed in the order of a fixed walk, not in the order the schema
+//! writes its keywords, where the JSON Schema validator lists them. A node's `$ref` is
+//! followed first, then `type`, `enum` and `const`, then the keywords of the value's kind:
+//! an object's declared properties in declared order, `additionalProperties`, `required`,
+//! `minProperties`, `maxProperties` and `dependentRequired` by name; an array's `items`,
+//! `contains`, `minItems`, `maxItems` and `uniqueItems`; a string's `minLength`,
+//! `maxLength` and `pattern`; a number's bounds and `multipleOf`; then `format` and
+//! `byteArray`. A value breaking one keyword gets the violation the JSON Schema validator
+//! reports, and every violation is a `JsonSchemaError`, so the verdict and the error code
+//! are the same; a value breaking several can have another violation listed first.
 
 use super::{
     structure_error, validator_regex, ArrayConstraints, JsonType, JsonTypes, NumberConstraints,
@@ -257,19 +268,22 @@ impl<'v> Walk<'v> {
                 self.fail("type", "", || {
                     let names = match types {
                         JsonTypes::One(json_type) => json!(json_type_name(*json_type)),
-                        // In alphabetical order, as the JSON Schema validator lists them
                         // A list of one type reads as that type
-                        JsonTypes::AnyOf(json_types) => {
-                            let mut names: Vec<&str> = json_types
-                                .iter()
-                                .map(|json_type| json_type_name(*json_type))
-                                .collect();
-                            names.sort_unstable();
-                            match names.as_slice() {
-                                [name] => json!(name),
-                                names => json!(names),
+                        JsonTypes::AnyOf(json_types) => match json_types.as_slice() {
+                            [json_type] => json!(json_type_name(*json_type)),
+                            // Each type once, in alphabetical order, as the JSON Schema
+                            // validator lists them: `["string", "string"]` reads as
+                            // `["string"]`
+                            json_types => {
+                                let mut names: Vec<&str> = json_types
+                                    .iter()
+                                    .map(|json_type| json_type_name(*json_type))
+                                    .collect();
+                                names.sort_unstable();
+                                names.dedup();
+                                json!(names)
                             }
-                        }
+                        },
                     };
                     let message = format!("{instance} is not of type {names}");
                     (json!({ "type": names }), message)
@@ -360,27 +374,25 @@ impl<'v> Walk<'v> {
                 return Ok(());
             }
         }
+        // Fewer declared keys than keys: the value holds a key it does not declare, which
+        // the violation lists only when it is reported
         if object.additional_properties == Some(false) && declared_keys < map.len() {
-            let unexpected: Vec<&String> = map
-                .keys()
-                .filter(|key| {
-                    !object
-                        .properties
-                        .iter()
-                        .flatten()
-                        .any(|(name, _)| name == *key)
-                })
-                .collect();
-            if !unexpected.is_empty() {
-                self.fail("additionalProperties", "", || {
-                    (
-                        json!({ "additionalProperties": unexpected }),
-                        format!(
-                        "additional properties are not allowed ({unexpected:?} were unexpected)"
-                    ),
-                    )
-                });
-            }
+            self.fail("additionalProperties", "", || {
+                let unexpected: Vec<&String> = map
+                    .keys()
+                    .filter(|key| {
+                        !object
+                            .properties
+                            .iter()
+                            .flatten()
+                            .any(|(name, _)| name == *key)
+                    })
+                    .collect();
+                let message = format!(
+                    "additional properties are not allowed ({unexpected:?} were unexpected)"
+                );
+                (json!({ "additionalProperties": unexpected }), message)
+            });
         }
         for name in object.required.iter().flatten() {
             if !map.contains_key(name) {
