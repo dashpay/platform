@@ -16,6 +16,12 @@ use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::{ed25519_dalek, ProtocolError};
+#[cfg(feature = "derive")]
+use key_wallet::bip32::{Error as Bip32Error, KeyDerivationType};
+#[cfg(feature = "derive")]
+use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+#[cfg(feature = "derive")]
+use key_wallet::{AccountType, ChildNumber, DerivationPath};
 use rand::RngCore;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -63,25 +69,27 @@ impl Debug for SimpleSigner {
 pub enum SimpleSignerError {
     /// The seed produced an invalid root extended private key.
     #[error("invalid seed for root xpriv: {0}")]
-    InvalidSeed(String),
+    InvalidSeed(#[source] key_wallet::Error),
     /// The DIP-17 / DIP-9 derivation path failed to construct.
     #[error("derivation path: {0}")]
-    DerivationPath(String),
+    DerivationPath(#[source] key_wallet::Error),
     /// `derive_priv` failed at the given leaf index.
-    #[error("derive_priv at index {index}: {message}")]
+    #[error("derive_priv at index {index}: {source}")]
     DerivePriv {
         /// Leaf index that failed.
         index: u32,
-        /// Underlying key-wallet error message.
-        message: String,
+        /// Underlying key-wallet BIP-32 error.
+        #[source]
+        source: Bip32Error,
     },
     /// A leaf [`ChildNumber`] could not be constructed from the requested index.
-    #[error("invalid leaf index {index}: {message}")]
+    #[error("invalid leaf index {index}: {source}")]
     InvalidIndex {
         /// Offending leaf index.
         index: u32,
-        /// Underlying key-wallet error message.
-        message: String,
+        /// Underlying key-wallet BIP-32 error.
+        #[source]
+        source: Bip32Error,
     },
 }
 
@@ -181,33 +189,23 @@ impl SimpleSigner {
         key_class: u32,
         indices: I,
     ) -> Result<Self, SimpleSignerError> {
-        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
-        use key_wallet::{AccountType, ChildNumber};
-
-        let root_priv = RootExtendedPrivKey::new_master(seed)
-            .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
+        let root_priv =
+            RootExtendedPrivKey::new_master(seed).map_err(SimpleSignerError::InvalidSeed)?;
         let root_xpriv = root_priv.to_extended_priv_key(network);
 
         let account_path = AccountType::PlatformPayment { account, key_class }
             .derivation_path(network)
-            .map_err(|err| SimpleSignerError::DerivationPath(err.to_string()))?;
+            .map_err(SimpleSignerError::DerivationPath)?;
 
         let mut signer = Self::default();
         for index in indices {
-            let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
-                SimpleSignerError::InvalidIndex {
-                    index,
-                    message: err.to_string(),
-                }
-            })?;
+            let leaf = ChildNumber::from_normal_idx(index)
+                .map_err(|source| SimpleSignerError::InvalidIndex { index, source })?;
             // `extend` returns a fresh path; account_path is reused.
             let leaf_path = account_path.extend([leaf]);
-            let xpriv = root_xpriv.derive_priv(&leaf_path).map_err(|err| {
-                SimpleSignerError::DerivePriv {
-                    index,
-                    message: err.to_string(),
-                }
-            })?;
+            let xpriv = root_xpriv
+                .derive_priv(&leaf_path)
+                .map_err(|source| SimpleSignerError::DerivePriv { index, source })?;
             let pkh = ripemd160_sha256(&xpriv.private_key.public_key().to_compressed());
             signer
                 .address_private_keys
@@ -229,12 +227,8 @@ impl SimpleSigner {
         identity_index: u32,
         gap_limit: u32,
     ) -> Result<Self, SimpleSignerError> {
-        use key_wallet::bip32::KeyDerivationType;
-        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
-        use key_wallet::DerivationPath;
-
-        let root_priv = RootExtendedPrivKey::new_master(seed)
-            .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
+        let root_priv =
+            RootExtendedPrivKey::new_master(seed).map_err(SimpleSignerError::InvalidSeed)?;
         let root_xpriv = root_priv.to_extended_priv_key(network);
 
         let mut signer = Self::default();
@@ -245,10 +239,10 @@ impl SimpleSigner {
                 identity_index,
                 key_index,
             );
-            let xpriv = root_xpriv.derive_priv(&leaf_path).map_err(|err| {
+            let xpriv = root_xpriv.derive_priv(&leaf_path).map_err(|source| {
                 SimpleSignerError::DerivePriv {
                     index: key_index,
-                    message: err.to_string(),
+                    source,
                 }
             })?;
             let pkh = ripemd160_sha256(&xpriv.private_key.public_key().to_compressed());
@@ -400,5 +394,81 @@ impl Signer<PlatformAddress> for SimpleSigner {
                 .is_some(),
             PlatformAddress::P2sh(_) => false,
         }
+    }
+}
+
+#[cfg(all(test, feature = "derive"))]
+mod derive_tests {
+    use super::*;
+    use key_wallet::{ExtendedPrivKey, Network};
+    use std::str::FromStr;
+
+    const SEED: [u8; 64] = [0x42; 64];
+
+    /// `(pubkey hash, secret)` of `path` derived straight from the seed,
+    /// independent of the constructors' `AccountType` / DIP-9 path builders.
+    fn expected_entry(path: &str) -> ([u8; 20], [u8; 32]) {
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &SEED).expect("master key");
+        let path = DerivationPath::from_str(path).expect("valid path literal");
+        let xpriv = master.derive_priv(&path).expect("derive");
+        let hash = ripemd160_sha256(&xpriv.private_key.public_key().to_compressed());
+        (hash, *xpriv.private_key.to_bytes())
+    }
+
+    #[test]
+    fn should_derive_dip17_platform_payment_keys_for_requested_indices() {
+        let signer =
+            SimpleSigner::from_seed_for_platform_addresses(&SEED, Network::Testnet, 2, 0, [0, 5])
+                .expect("derive");
+
+        let expected: BTreeMap<_, _> = ["m/9'/1'/17'/2'/0'/0", "m/9'/1'/17'/2'/0'/5"]
+            .into_iter()
+            .map(expected_entry)
+            .collect();
+        assert_eq!(signer.address_private_keys, expected);
+        assert!(signer.private_keys.is_empty());
+    }
+
+    #[test]
+    fn should_derive_the_contiguous_gap_window_for_an_account() {
+        let window =
+            SimpleSigner::from_seed_for_platform_address_account(&SEED, Network::Testnet, 0, 0, 3)
+                .expect("derive window");
+        let explicit =
+            SimpleSigner::from_seed_for_platform_addresses(&SEED, Network::Testnet, 0, 0, 0..3)
+                .expect("derive explicit");
+
+        assert_eq!(window.address_private_keys.len(), 3);
+        assert_eq!(window.address_private_keys, explicit.address_private_keys);
+    }
+
+    #[test]
+    fn should_reject_a_hardened_range_index_with_a_typed_error() {
+        let index = 1u32 << 31;
+        let result =
+            SimpleSigner::from_seed_for_platform_addresses(&SEED, Network::Testnet, 0, 0, [index]);
+
+        assert!(
+            matches!(
+                result,
+                Err(SimpleSignerError::InvalidIndex {
+                    index: reported,
+                    source: Bip32Error::InvalidChildNumber(child),
+                }) if reported == index && child == index
+            ),
+            "expected InvalidIndex for {index}, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn should_derive_dip9_identity_authentication_keys() {
+        let signer =
+            SimpleSigner::from_seed_for_identity(&SEED, Network::Testnet, 4, 2).expect("derive");
+
+        let expected: BTreeMap<_, _> = ["m/9'/1'/5'/0'/0'/4'/0'", "m/9'/1'/5'/0'/0'/4'/1'"]
+            .into_iter()
+            .map(expected_entry)
+            .collect();
+        assert_eq!(signer.address_private_keys, expected);
     }
 }
