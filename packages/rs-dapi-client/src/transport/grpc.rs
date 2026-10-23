@@ -300,8 +300,8 @@ macro_rules! impl_transport_request_grpc {
     };
 }
 
-/// The first protocol version no 4.x release can sign: every node that answers at it runs
-/// 5.0 or newer, and serves the methods and request fields 5.0 added.
+/// The first protocol version no 4.x stable release can sign: every node that answers at it
+/// runs 5.0 or newer, and serves the methods and request fields 5.0 added.
 const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 
 /// A 4.x node drops a composite query's `sub_queries` and a chained query's `chained`, and

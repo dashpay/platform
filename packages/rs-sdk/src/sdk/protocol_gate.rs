@@ -54,12 +54,16 @@ pub(super) fn decide(required: u32, state: &GateState<'_>) -> Gate {
     // below `required` stays below it whatever the answer. Without a context provider the
     // answer cannot be verified, and an answer the SDK cannot verify bans the node that
     // sent it.
-    let pinned_below = state.pinned && state.settings.protocol_version.protocol_version < required;
-    if pinned_below || !state.has_context_provider {
+    if pinned_below(required, state) || !state.has_context_provider {
         Gate::Refuse
     } else {
         Gate::Probe
     }
+}
+
+/// Whether the SDK is pinned to a version below `required`.
+fn pinned_below(required: u32, state: &GateState<'_>) -> bool {
+    state.pinned && state.settings.protocol_version.protocol_version < required
 }
 
 /// The version an SDK encodes requests at: its stored one, except that an unpinned SDK
@@ -129,7 +133,7 @@ impl Sdk {
             return Ok(());
         };
         let state = self.gate_state();
-        let pinned = state.pinned && state.settings.protocol_version.protocol_version < required;
+        let pinned = pinned_below(required, &state);
         let cause = match decide(required, &state) {
             Gate::Send => return Ok(()),
             Gate::Refuse => None,
