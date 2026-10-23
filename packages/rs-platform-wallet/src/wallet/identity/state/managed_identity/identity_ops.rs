@@ -411,17 +411,11 @@ impl ManagedIdentity {
     /// Platform's own) and a raised limit. Returns whether it was taken
     /// whole.
     ///
-    /// A fetch at a lower revision whose keys are the cache's is taken whole
-    /// too (see `misses_no_update`): it lacks no update the cache holds, so
-    /// the cache's revision is the wrong one. A base build's post-broadcast
-    /// bump (`cached + 1`) left it one past the chain when a fetch had
-    /// already taken the update.
-    ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity, block_time: BlockTime) -> bool {
         let balance = self.identity.balance();
         let cached = self.identity.public_keys().clone();
-        let taken = takes_fetched_whole(&self.identity, fetched);
+        let taken = fetched.revision() >= self.identity.revision();
         let mut keys = if taken {
             self.identity = fetched.clone();
             self.identity.set_balance(balance);
@@ -512,9 +506,7 @@ impl ManagedIdentity {
     /// fetch shows a disable; either way each limit is the higher of the two.
     /// A key the cache lacks is left out of an older fetch's decisions, since
     /// an older answer cannot show whether a later update disabled it, and a
-    /// fetch at least as new will bring it. A lower-revision fetch with the
-    /// cache's keys, which the fold takes whole, gets the same decisions
-    /// either way.
+    /// fetch at least as new will bring it.
     fn key_decisions_for_fetch(
         &self,
         fetched: &Identity,
@@ -787,46 +779,6 @@ impl ManagedIdentity {
             tracing::error!("Failed to persist changeset: {}", e);
         }
     }
-}
-
-/// Whether `fetched` is folded into `cached` as an answer at least as new
-/// (see [`ManagedIdentity::take_fetched_identity`]): at the cache's revision
-/// or above, or below it while missing no update the cache holds.
-fn takes_fetched_whole(cached: &Identity, fetched: &Identity) -> bool {
-    fetched.revision() >= cached.revision()
-        || misses_no_update(cached.public_keys(), fetched.public_keys())
-}
-
-/// Whether a fetch with `fetched` keys, at a lower revision than a cache
-/// with `cached` keys, lacks no update the cache holds: the two key sets are
-/// the same, key for key and field for field, `disabled_at` included, the
-/// limits aside.
-///
-/// Only an identity update moves an identity's revision, and Drive takes
-/// one only when it adds or disables at least one key. An added key has a
-/// new id (keys are never removed); a disable sets `disabled_at` to the
-/// block's time, later than any earlier disable of that key. A limits
-/// update claims no revision, and a masternode identity's keys change with
-/// Core, at revision 0 (it has no MASTER key to sign an update with). So
-/// two key sets at different revisions always differ, and a lower revision
-/// with the cache's keys means the cache's revision is wrong.
-///
-/// A disable the cache stamped with the local clock (a landed update's
-/// placeholder) differs from Platform's time, so such a cache is not taken
-/// back on the first fetch: that fetch replaces the stamp with Platform's
-/// time (see `with_disable_from`), and the next one takes its revision.
-fn misses_no_update(
-    cached: &BTreeMap<KeyID, IdentityPublicKey>,
-    fetched: &BTreeMap<KeyID, IdentityPublicKey>,
-) -> bool {
-    let without_limits = |key: &IdentityPublicKey| key.clone().with_limits(None, None);
-    cached.len() == fetched.len()
-        && cached
-            .iter()
-            .zip(fetched)
-            .all(|((cached_id, cached), (fetched_id, fetched))| {
-                cached_id == fetched_id && without_limits(cached) == without_limits(fetched)
-            })
 }
 
 /// How a fetched key lands in the cache, the one rule the identity fold and
@@ -1113,75 +1065,6 @@ mod tests {
                 .len(),
             2
         );
-    }
-
-    /// A cache one past the chain (a base build's post-broadcast bump after a
-    /// fetch had taken the update) holds the chain's keys at a higher
-    /// revision. A fetch at the chain's revision with exactly those keys is
-    /// taken whole, so the next update carries the revision Drive takes; each
-    /// limit stays the higher of the two. A fetch that lacks a key the cache
-    /// holds, shows a live key the cache holds disabled, or shows an earlier
-    /// disable time (a later update disabled the key again) is an answer from
-    /// before an update the cache holds and is folded as older.
-    #[test]
-    fn should_take_a_lower_revision_back_only_when_it_misses_no_update() {
-        fn at(revision: u64, keys: Vec<IdentityPublicKey>) -> Identity {
-            Identity::V0(IdentityV0 {
-                id: Identifier::from([1u8; 32]),
-                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
-                balance: 0,
-                revision,
-            })
-        }
-        let disabled = |id, disabled_at| {
-            let mut key = key(id);
-            key.set_disabled_at(disabled_at);
-            key
-        };
-        let block = BlockTime::new(1, 1, 1);
-        let chain = vec![key(0), disabled(1, 7), key(3)];
-
-        // Inflated: the chain's keys at revision 3; the cache also holds a
-        // limit raise the fetch's node has not seen.
-        let mut raised = chain.clone();
-        raised[2] = key(3).with_limits(Some(500), None);
-        let mut inflated = ManagedIdentity::new(at(3, raised.clone()), 0);
-        assert!(inflated.take_fetched_identity(&at(2, chain.clone()), block));
-        assert_eq!(inflated.identity, at(2, raised));
-        // Two past the chain is the same state and heals the same way.
-        let mut far = ManagedIdentity::new(at(4, chain.clone()), 0);
-        assert!(far.take_fetched_identity(&at(2, chain.clone()), block));
-        assert_eq!(far.identity.revision(), 2);
-
-        // Delayed answers (the chain's keys at 2), from before an update at 3
-        // the cache holds.
-        let delayed = [
-            // The update added key 4.
-            vec![key(0), disabled(1, 7), key(3), key(4)],
-            // The update disabled key 0.
-            vec![disabled(0, 9), disabled(1, 7), key(3)],
-            // The update disabled key 1 again, at its own block's time.
-            vec![key(0), disabled(1, 9), key(3)],
-        ];
-        for cache in delayed {
-            let mut managed = ManagedIdentity::new(at(3, cache.clone()), 0);
-            assert!(!managed.take_fetched_identity(&at(2, chain.clone()), block));
-            assert_eq!(managed.identity.revision(), 3, "{cache:?}");
-            assert_eq!(managed.identity.public_keys().len(), cache.len());
-        }
-        // A key only the fetch has: folded as older, the key left out.
-        let mut lacking = ManagedIdentity::new(at(3, vec![key(0), disabled(1, 7)]), 0);
-        assert!(!lacking.take_fetched_identity(&at(2, chain.clone()), block));
-        assert_eq!(lacking.identity, at(3, vec![key(0), disabled(1, 7)]));
-
-        // The bump stamped key 1's disable with the local clock: the first
-        // fetch replaces the stamp with Platform's time, the next one takes
-        // the revision.
-        let mut stamped = ManagedIdentity::new(at(3, vec![key(0), disabled(1, 99), key(3)]), 0);
-        assert!(!stamped.take_fetched_identity(&at(2, chain.clone()), block));
-        assert_eq!(stamped.identity, at(3, chain.clone()));
-        assert!(stamped.take_fetched_identity(&at(2, chain.clone()), block));
-        assert_eq!(stamped.identity, at(2, chain.clone()));
     }
 
     /// A key decision keeps the higher of each limit at any revision, so a

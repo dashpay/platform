@@ -88,10 +88,8 @@ impl IdentityWallet {
     /// has it and keeps it. A refresh that fetched the identity before the
     /// update landed and finishes after this step does not take the cache
     /// back: a fetched identity at a lower revision than the cache's keeps
-    /// the cache's revision, key set and every disable, unless its keys
-    /// equal the cache's exactly, which shows the cached revision itself is
-    /// the one that is wrong (see `ManagedIdentity::take_fetched_identity`).
-    /// When the call fails
+    /// the cache's revision, key set and every disable (see
+    /// `ManagedIdentity::take_fetched_identity`). When the call fails
     /// after the broadcast (the proof wait timed out, say), the update may
     /// have landed without this step: refresh before the next update.
     pub async fn update_identity_with_external_signer<S>(
