@@ -79,9 +79,13 @@ use dpp::prelude::{
     ConsensusValidationResult, DataContract, IdentityNonce, UserFeeIncrease,
 };
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use crate::state_transition_action::batch::BatchedTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
@@ -356,4 +360,34 @@ pub(crate) fn bump_with_errors(
         ),
         fee_result,
     )
+}
+
+/// The id of the order of \`side\` that \`maker_id\` places for \`token_id\` with the identity
+/// contract nonce \`nonce\`, and the fee of deriving it: a double SHA-256 over the id's preimage,
+/// charged where the placement's transformation computes it, as a document create's id is.
+pub(crate) fn derive_order_id(
+    drive: &Drive,
+    side: TokenOrderSide,
+    token_id: Identifier,
+    maker_id: Identifier,
+    nonce: IdentityNonce,
+    block_info: &BlockInfo,
+    platform_version: &PlatformVersion,
+) -> Result<(Identifier, FeeResult), Error> {
+    let preimage_size = u16::try_from(side.order_id_preimage_size()).map_err(|_| {
+        Error::Drive(DriveError::CorruptedCodeExecution(
+            "an order id's preimage is a few dozen bytes",
+        ))
+    })?;
+    let hash_fee = Drive::calculate_fee(
+        None,
+        Some(vec![LowLevelDriveOperation::FunctionOperation(
+            FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size),
+        )]),
+        &block_info.epoch,
+        drive.config.epochs_per_era,
+        platform_version,
+        None,
+    )?;
+    Ok((side.order_id(token_id, maker_id, nonce), hash_fee))
 }

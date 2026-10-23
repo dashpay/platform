@@ -66,8 +66,9 @@ offer), each with three indexes:
 Each side sums what it holds in escrow, so the sums cannot overflow: the tokens listed never exceed
 the token's supply, and the credits offered never exceed the credits on Platform. Every integer of
 an order is a signed 8-byte value, so a partial fill rewrites them without changing their size. The
-document's `$revision` is a variable-length integer: the one fill that takes an order from revision
-127 to 128 adds a byte, and no other fill adds storage.
+document's `$revision` is a variable-length integer, 7 bits to a byte: a fill that takes an order's
+revision past one of those widths (from 127 to 128, then from 16,383 to 16,384, and so on) adds a
+byte, and no other fill adds storage.
 
 An order's price is in credits per whole token, so the token's decimals set what it is worth. Its
 signer signs the decimals the price is at (`decimals`), and the order is refused
@@ -162,10 +163,10 @@ checked with the batch's fees, which count a fill's cost like a direct purchase.
 
 The seller pays the storage of the `ask` and gets it back when the listing closes, by a fill that
 takes everything left or by a cancel. A partial fill rewrites the `ask` without changing its size,
-so the buyer pays no storage for it beyond their own token balance, with one exception: the fill
-that takes the listing to revision 128 widens its `$revision` by a byte, and that fill's buyer pays
-for it. The `ask` stays the seller's, so that byte is refunded to the seller when the listing
-closes. Selling a listing charges the seller nothing.
+so the buyer pays no storage for it beyond their own token balance, except when a fill widens the
+listing's `$revision` by a byte (first at revision 128, then at 16,384 and at every further 7
+bits): that fill's buyer pays for the byte. The `ask` stays the seller's, so those bytes are
+refunded to the seller when the listing closes. Selling a listing charges the seller nothing.
 
 The proof a node returns for each transition:
 

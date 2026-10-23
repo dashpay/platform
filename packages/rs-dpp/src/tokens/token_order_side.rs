@@ -84,4 +84,10 @@ impl TokenOrderSide {
             nonce.to_be_bytes().as_slice(),
         )
     }
+
+    /// The number of bytes `order_id` hashes (twice, with SHA-256): the token id and the maker's
+    /// id (32 bytes each), the document type name and the nonce.
+    pub fn order_id_preimage_size(&self) -> usize {
+        2 * 32 + self.document_type_name().len() + size_of::<IdentityNonce>()
+    }
 }
