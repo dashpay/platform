@@ -2,7 +2,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::token::{
-    TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderNotFoundError,
+    TokenOrderFillAmountError, TokenOrderNotFoundError,
     TokenOrderPriceLimitError, TokenOrderSelfFillError,
 };
 use dpp::consensus::ConsensusError;
@@ -28,7 +28,7 @@ impl TokenFillBidTransitionActionV0 {
     /// out the amount the fill takes and the credits the seller receives out of its escrow,
     /// the change in the offer's running total rounded down, at the decimals the offer records.
     /// A token its contract does not define, an offer that is not open for this token, the
-    /// seller's own offer, an expired offer, a fill range the offer cannot meet and a payment
+    /// seller's own offer, a fill range the offer cannot meet and a payment
     /// below the seller's minimum each bump the nonce with their error instead.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_bid_transition_with_contract_lookup(
@@ -129,17 +129,6 @@ impl TokenFillBidTransitionActionV0 {
                 vec![TokenOrderSelfFillError::new(*order_id, owner_id).into()],
                 fee_result,
             );
-        }
-        if let Some(expires_at) = order.expires_at {
-            if order.is_expired_at(block_info.time_ms) {
-                return bump(
-                    vec![
-                        TokenOrderExpiredError::new(*order_id, expires_at, block_info.time_ms)
-                            .into(),
-                    ],
-                    fee_result,
-                );
-            }
         }
         let Some(fill_amount) = order.fill_amount(*min_amount, *max_amount) else {
             return bump(

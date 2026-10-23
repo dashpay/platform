@@ -16,7 +16,6 @@ impl TokenPlaceBidTransitionStructureValidationV0 for TokenPlaceBidTransition {
             self.price(),
             self.decimals(),
             self.min_fill(),
-            self.expires_at(),
         ))
     }
 }
@@ -36,7 +35,6 @@ mod tests {
             price,
             decimals: 8,
             min_fill,
-            expires_at: None,
         })
     }
 
@@ -45,22 +43,6 @@ mod tests {
             .validate_structure_v0()
             .expect("expected the structure validation to run")
             .errors
-    }
-
-    #[test]
-    fn should_refuse_an_expiry_above_i64_max() {
-        let with_expiry = |expires_at: u64| {
-            let TokenPlaceBidTransition::V0(mut v0) = order(1_000, 1, 1);
-            v0.expires_at = Some(expires_at);
-            TokenPlaceBidTransition::V0(v0)
-        };
-        assert!(errors(with_expiry(MAX_TOKEN_ORDER_TERM)).is_empty());
-        assert!(matches!(
-            errors(with_expiry(MAX_TOKEN_ORDER_TERM + 1)).as_slice(),
-            [ConsensusError::BasicError(
-                BasicError::InvalidTokenOrderExpiryError(_)
-            )]
-        ));
     }
 
     #[test]

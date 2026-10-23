@@ -881,7 +881,6 @@ describe('TokenTransitions', () => {
       price: BigInt(100),
       decimals: 8,
       minFill: BigInt(1),
-      expiresAt: BigInt(5000),
     });
 
     it('should set the integer terms', () => {
@@ -890,21 +889,15 @@ describe('TokenTransitions', () => {
       transition.amount = BigInt(2000);
       transition.price = BigInt(200);
       transition.minFill = BigInt(10);
-      transition.expiresAt = BigInt(6000);
 
       expect(transition.amount).to.equal(BigInt(2000));
       expect(transition.price).to.equal(BigInt(200));
       expect(transition.minFill).to.equal(BigInt(10));
-      expect(transition.expiresAt).to.equal(BigInt(6000));
       expect(transition.decimals).to.equal(8);
 
       transition.decimals = 2;
 
       expect(transition.decimals).to.equal(2);
-
-      transition.expiresAt = undefined;
-
-      expect(transition.expiresAt).to.be.undefined();
     });
 
     it('should refuse decimals outside a byte and keep the previous ones', () => {
@@ -925,7 +918,7 @@ describe('TokenTransitions', () => {
       })).to.throw();
     });
 
-    ['amount', 'price', 'minFill', 'expiresAt'].forEach((term) => {
+    ['amount', 'price', 'minFill'].forEach((term) => {
       it(`should refuse an out-of-range ${term} and keep the previous one`, () => {
         const transition = offer();
         const previous = transition[term];

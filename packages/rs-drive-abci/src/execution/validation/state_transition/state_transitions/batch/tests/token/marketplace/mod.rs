@@ -1890,7 +1890,6 @@ mod offers {
             amount: u64,
             price: Credits,
             min_fill: u64,
-            expires_at: Option<u64>,
         ) -> (StateTransition, Identifier) {
             let platform_version = PlatformVersion::latest();
             let decimals = self.token_decimals();
@@ -1905,7 +1904,6 @@ mod offers {
                 price,
                 decimals,
                 min_fill,
-                expires_at,
                 &self.buyer.key,
                 nonce,
                 0,
@@ -2000,7 +1998,6 @@ mod offers {
                 PRICE,
                 8,
                 1,
-                None,
                 &self.buyer.key,
                 nonce,
                 0,
@@ -2092,7 +2089,7 @@ mod offers {
     async fn should_hold_what_an_offer_is_worth_in_escrow_and_record_the_offer() {
         let mut market = tradeable_market();
         let buyer_credits = market.credit_balance(market.buyer.id());
-        let (place, order_id) = market.place_bid(1_000, PRICE, 100, Some(9_000)).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 100).await;
         let fee = market.executes(&place);
 
         // 1,000 base units at 10 credits each.
@@ -2114,7 +2111,6 @@ mod offers {
                 amount: 1_000,
                 remaining: 1_000,
                 min_fill: 100,
-                expires_at: Some(9_000),
                 escrow: 10_000,
                 decimals: 8,
             }
@@ -2141,7 +2137,7 @@ mod offers {
     #[tokio::test]
     async fn should_prove_an_offer_after_it_is_partly_filled() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         let sale = market.fill_bid(order_id, 1, 400, 4_000, false).await;
         market.executes(&sale);
@@ -2172,7 +2168,7 @@ mod offers {
     #[tokio::test]
     async fn should_sell_into_part_of_an_offer_and_then_the_rest() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 100, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 100).await;
         market.executes(&place);
         let seller_credits = market.credit_balance(market.seller.id());
         let buyer_credits = market.credit_balance(market.buyer.id());
@@ -2234,7 +2230,7 @@ mod offers {
     #[tokio::test]
     async fn should_pay_each_sale_the_change_in_the_running_total_and_return_the_rest() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(7, 150_000_000, 1, None).await;
+        let (place, order_id) = market.place_bid(7, 150_000_000, 1).await;
         market.executes(&place);
         assert_eq!(market.credit_escrow(order_id), Some(11));
         let buyer_credits = market.credit_balance(market.buyer.id());
@@ -2279,7 +2275,7 @@ mod offers {
     #[tokio::test]
     async fn should_sell_into_an_offer_twice_in_one_block() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(7, 150_000_000, 1, None).await;
+        let (place, order_id) = market.place_bid(7, 150_000_000, 1).await;
         market.executes(&place);
         assert_eq!(market.credit_escrow(order_id), Some(11));
         let seller_credits = market.credit_balance(market.seller.id());
@@ -2366,7 +2362,6 @@ mod offers {
             price: PRICE,
             decimals: 8,
             min_fill: 1,
-            expires_at: None,
         };
         let (placed, fee) =
             TokenPlaceBidTransitionActionV0::try_from_borrowed_token_place_bid_transition_with_contract_lookup(
@@ -2388,7 +2383,7 @@ mod offers {
     #[tokio::test]
     async fn should_return_the_escrow_of_a_cancelled_offer() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         let sale = market.fill_bid(order_id, 1, 250, 2_500, false).await;
         market.executes(&sale);
@@ -2415,7 +2410,7 @@ mod offers {
     #[tokio::test]
     async fn should_refuse_an_offer_for_a_token_that_is_not_tradeable() {
         let mut market = market_with(|_| {}, dash_to_credits!(1.0));
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         assert_matches!(
             market.check_tx(&place).as_slice(),
             [ConsensusError::StateError(
@@ -2444,7 +2439,7 @@ mod offers {
         // Two whole tokens at i64::MAX credits each: refused by the transition's structure,
         // before anything is charged.
         let buyer_credits = market.credit_balance(market.buyer.id());
-        let (place, order_id) = market.place_bid(2, i64::MAX as u64, 1, None).await;
+        let (place, order_id) = market.place_bid(2, i64::MAX as u64, 1).await;
         assert_matches!(
             market.check_tx(&place).as_slice(),
             [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
@@ -2473,7 +2468,7 @@ mod offers {
         // 1,000 base units at 10,000 credits each: an escrow of 10,000,000 credits, the buyer's
         // balance, short of the fee; then twice that, short of the escrow itself.
         for price in [1_000_000_000_000, 2_000_000_000_000] {
-            let (place, order_id) = market.place_bid(1_000, price, 1, None).await;
+            let (place, order_id) = market.place_bid(1_000, price, 1).await;
             let processing_result = market.process(&place);
             assert_matches!(
                 processing_result.execution_results().as_slice(),
@@ -2512,7 +2507,7 @@ mod offers {
             },
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         assert_eq!(market.credit_escrow(order_id), Some(10_000));
 
@@ -2554,43 +2549,10 @@ mod offers {
 
         // An offer placed after the change records the new decimals and holds what it is worth
         // at them: 10 base units at 1,000,000,000 credits per 100.
-        let (place, newer) = market.place_bid(10, PRICE, 1, None).await;
+        let (place, newer) = market.place_bid(10, PRICE, 1).await;
         market.executes(&place);
         let newer = market.offer(newer).expect("expected the offer");
         assert_eq!((newer.decimals, newer.escrow), (2, 100_000_000));
-    }
-
-    /// An offer's expiry is stored as a signed 8-byte value: `i64::MAX` is valid, and one more
-    /// is refused by the structure validation, in check_tx and in a block, before anything is
-    /// charged.
-    #[tokio::test]
-    async fn should_refuse_an_offer_expiry_above_i64_max() {
-        let mut market = tradeable_market();
-        let latest = i64::MAX as u64;
-
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, Some(latest)).await;
-        assert!(market.check_tx(&place).is_empty());
-        market.executes(&place);
-        assert_eq!(
-            market.offer(order_id).and_then(|offer| offer.expires_at),
-            Some(latest)
-        );
-
-        let buyer_credits = market.credit_balance(market.buyer.id());
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, Some(latest + 1)).await;
-        assert_matches!(
-            market.check_tx(&place).as_slice(),
-            [ConsensusError::BasicError(BasicError::InvalidTokenOrderExpiryError(error))]
-                if error.expires_at() == latest + 1
-        );
-        assert_matches!(
-            market.process(&place).execution_results().as_slice(),
-            [StateTransitionExecutionResult::UnpaidConsensusError(
-                error @ ConsensusError::BasicError(BasicError::InvalidTokenOrderExpiryError(_))
-            )] if error.code() == 10464
-        );
-        assert_eq!(market.offer(order_id), None);
-        assert_eq!(market.credit_balance(market.buyer.id()), buyer_credits);
     }
 
     /// An offer, and a sale into one, naming a token its contract does not define is refused
@@ -2632,7 +2594,7 @@ mod offers {
             }]
         );
 
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         let platform_version = PlatformVersion::latest();
         let nonce = market.seller.take_nonce();
@@ -2683,7 +2645,7 @@ mod offers {
             make_token_tradeable_with_owner_conventions_and_freezes,
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_bid(1_000, 1_000_000_000, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, 1_000_000_000, 1).await;
 
         market.set_decimals(4).await;
 
@@ -2710,7 +2672,7 @@ mod offers {
     #[tokio::test]
     async fn should_not_prove_an_offer_whose_token_id_its_contract_and_position_do_not_derive() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         let mut two_tokens = market.contract.clone();
         let token = market
@@ -2743,7 +2705,7 @@ mod offers {
     #[tokio::test]
     async fn should_not_prove_an_offer_carrying_group_information() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
 
         assert_matches!(
@@ -2772,7 +2734,7 @@ mod offers {
                 },
                 dash_to_credits!(1.0),
             );
-            let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+            let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
             market.executes(&place);
             market.freeze_account(market.buyer.id()).await;
             let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
@@ -2807,7 +2769,7 @@ mod offers {
                 },
                 dash_to_credits!(1.0),
             );
-            let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+            let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
             market.executes(&place);
             market.freeze_account(market.seller.id()).await;
             let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
@@ -2833,7 +2795,7 @@ mod offers {
             make_token_tradeable_with_owner_conventions_and_freezes,
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         market.freeze_account(market.buyer.id()).await;
         let buyer_credits = market.credit_balance(market.buyer.id());
@@ -2851,7 +2813,7 @@ mod offers {
     #[tokio::test]
     async fn should_refuse_selling_into_ones_own_offer() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
 
         let sale = market.fill_bid(order_id, 1, 1_000, 1, true).await;
@@ -2868,7 +2830,7 @@ mod offers {
     #[tokio::test]
     async fn should_refuse_a_sale_paid_below_the_sellers_minimum() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
 
         let sale = market.fill_bid(order_id, 1, 400, 4_001, false).await;
@@ -2885,7 +2847,7 @@ mod offers {
     #[tokio::test]
     async fn should_refuse_selling_more_than_the_seller_holds() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(BASE_SUPPLY + 1, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(BASE_SUPPLY + 1, PRICE, 1).await;
         market.executes(&place);
 
         let sale = market
@@ -2904,32 +2866,9 @@ mod offers {
     }
 
     #[tokio::test]
-    async fn should_refuse_selling_into_an_expired_offer_but_still_cancel_it() {
-        let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, Some(5_000)).await;
-        market.assert_executes(&place, &at_time(1_000));
-
-        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
-        assert_matches!(
-            market
-                .process_at(&sale, &at_time(5_000))
-                .execution_results()
-                .as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::StateError(StateError::TokenOrderExpiredError(_)),
-                ..
-            }]
-        );
-
-        let cancel = market.cancel_bid(order_id, false).await;
-        market.assert_executes(&cancel, &at_time(5_000));
-        assert_eq!(market.credit_escrow(order_id), None);
-    }
-
-    #[tokio::test]
     async fn should_refuse_cancelling_someone_elses_offer() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
 
         let cancel = market.cancel_bid(order_id, true).await;
@@ -2946,7 +2885,7 @@ mod offers {
     #[tokio::test]
     async fn should_refuse_a_sale_of_a_paused_token_but_still_cancel() {
         let mut market = market_with(make_token_tradeable_and_pausable, dash_to_credits!(1.0));
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.executes(&place);
         market.pause().await;
 

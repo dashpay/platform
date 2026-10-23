@@ -640,7 +640,6 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         price: Credits,
         decimals: u8,
         min_fill: TokenAmount,
-        expires_at: Option<TimestampMillis>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
