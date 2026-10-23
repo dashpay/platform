@@ -4065,6 +4065,45 @@ mod tests {
                  genesis-v15 node and an in-place-upgraded one"
             );
         }
+
+        // The walks above compare decoded keys and elements, which carry no Merk hash: two
+        // subtrees holding the same entries in a differently balanced tree would pass them.
+        // A tree element's value hash in its parent Merk commits to the root hash of the Merk
+        // below it, and so to everything that subtree holds and how it is arranged; a raw proof
+        // of the root element yields it. GroveDB proves only committed state, so the upgrade is
+        // committed first.
+        platform_b
+            .drive
+            .grove
+            .commit_transaction(txn_b)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let subtree_hash = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            root: u8| {
+            let grove_version = &platform_version_15.drive.grove_version;
+            let query = drive::grovedb::PathQuery::new_single_key(vec![], vec![root]);
+            let proof = platform
+                .drive
+                .grove
+                .get_proved_path_query(&query, None, None, grove_version)
+                .unwrap()
+                .expect("expected to prove the root element");
+            let (_, proved) =
+                drive::grovedb::GroveDb::verify_query_raw(&proof, &query, grove_version)
+                    .expect("expected the proof of the root element to verify");
+            assert_eq!(proved.len(), 1, "expected the root element alone");
+            proved[0].proof
+        };
+        for root in roots {
+            assert_eq!(
+                subtree_hash(&platform_a, root),
+                subtree_hash(&platform_b, root),
+                "CONSENSUS FORK: root {root} authenticates to a different hash on a fresh \
+                 genesis-v15 node and an in-place-upgraded one"
+            );
+        }
     }
 
     #[test]

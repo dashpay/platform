@@ -6,7 +6,6 @@ use dpp::balances::credits::TokenAmount;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::TimestampMillis;
 use std::sync::Arc;
 
 /// Token place ask transition action v0
@@ -22,8 +21,6 @@ pub struct TokenPlaceAskTransitionActionV0 {
     pub price: Credits,
     /// The smallest fill the seller accepts unless it takes everything open
     pub min_fill: TokenAmount,
-    /// The block time from which the listing can no longer be filled
-    pub expires_at: Option<TimestampMillis>,
     /// The token's decimals the listing was signed at, which its price is at and its order
     /// records; the structure validation refuses them unless they are the token's
     pub decimals: u8,
@@ -52,9 +49,6 @@ pub trait TokenPlaceAskTransitionActionAccessorsV0 {
 
     /// The smallest fill the seller accepts
     fn min_fill(&self) -> TokenAmount;
-
-    /// The block time from which the listing can no longer be filled
-    fn expires_at(&self) -> Option<TimestampMillis>;
 
     /// The token's decimals the listing was signed at
     fn decimals(&self) -> u8;
@@ -104,10 +98,6 @@ impl TokenPlaceAskTransitionActionAccessorsV0 for TokenPlaceAskTransitionActionV
 
     fn min_fill(&self) -> TokenAmount {
         self.min_fill
-    }
-
-    fn expires_at(&self) -> Option<TimestampMillis> {
-        self.expires_at
     }
 
     fn decimals(&self) -> u8 {

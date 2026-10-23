@@ -1,6 +1,5 @@
 use crate::balances::credits::TokenAmount;
 use crate::fee::Credits;
-use crate::prelude::TimestampMillis;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
@@ -72,18 +71,6 @@ impl TokenPlaceAskTransitionV0Methods for TokenPlaceAskTransition {
     fn set_min_fill(&mut self, min_fill: TokenAmount) {
         match self {
             TokenPlaceAskTransition::V0(v0) => v0.set_min_fill(min_fill),
-        }
-    }
-
-    fn expires_at(&self) -> Option<TimestampMillis> {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.expires_at(),
-        }
-    }
-
-    fn set_expires_at(&mut self, expires_at: Option<TimestampMillis>) {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.set_expires_at(expires_at),
         }
     }
 }

@@ -28,7 +28,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 impl TokenPlaceBidTransitionActionStateValidationV0 for TokenPlaceBidTransitionAction {
     /// An offer needs a token that is not paused, and a buyer whose account is not frozen unless
     /// the token allows transfers to frozen balances: a fill moves the tokens to the buyer. What
-    /// needs no read (a tradeable token, an expiry after the block) is checked with the batch's
+    /// needs no read (a tradeable token) is checked with the batch's
     /// advanced structure, and the buyer's credits with the batch's fees, which count the
     /// escrow as a purchase.
     fn validate_state_v0(

@@ -611,9 +611,6 @@ fn summarize_token_transition(
                 t.decimals()
             ))?);
             lines.push(budget.write(format_args!("minimum fill: {}", t.min_fill()))?);
-            if let Some(expires_at) = t.expires_at() {
-                lines.push(budget.write(format_args!("expires at: {expires_at} ms"))?);
-            }
             (Some(t.amount()), None, None, None)
         }
         // A fill spends at most `max_total_price` credits for at most `max_amount` tokens.
@@ -636,9 +633,6 @@ fn summarize_token_transition(
                 t.decimals()
             ))?);
             lines.push(budget.write(format_args!("minimum fill: {}", t.min_fill()))?);
-            if let Some(expires_at) = t.expires_at() {
-                lines.push(budget.write(format_args!("expires at: {expires_at} ms"))?);
-            }
             let escrow = TokenOrder::order_value(t.amount(), t.price(), t.decimals());
             if escrow.is_none() {
                 lines.push(budget.write(format_args!(
@@ -1071,7 +1065,6 @@ mod tests {
                     price: 1_000_000_000,
                     decimals,
                     min_fill: 1,
-                    expires_at: None,
                 },
             )))
         };
@@ -1108,7 +1101,6 @@ mod tests {
                     price: 1_000_000_000,
                     decimals,
                     min_fill: 1,
-                    expires_at: None,
                 },
             )))
         };
@@ -1122,7 +1114,6 @@ mod tests {
                     price: 1_000_000_000,
                     decimals: 8,
                     min_fill: 1,
-                    expires_at: None,
                 },
             ))),
         ]));

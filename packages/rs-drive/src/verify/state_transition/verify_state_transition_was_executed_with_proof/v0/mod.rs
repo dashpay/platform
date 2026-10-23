@@ -1421,7 +1421,6 @@ impl Drive {
                                             || order.remaining == 0
                                             || order.remaining > order.amount
                                             || order.min_fill != token_place_ask_transition.min_fill()
-                                            || order.expires_at != token_place_ask_transition.expires_at()
                                         {
                                             return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                                                 "proof of the listing {} does not hold the terms of state transition (token place ask)",
@@ -1500,8 +1499,6 @@ impl Drive {
                                             || Some(order.escrow) != order.escrow_after_fills()
                                             || order.min_fill
                                                 != token_place_bid_transition.min_fill()
-                                            || order.expires_at
-                                                != token_place_bid_transition.expires_at()
                                         {
                                             return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                                                 "proof of the offer {} does not hold the terms of state transition (token place bid)",

@@ -3,7 +3,6 @@ use dpp::balances::credits::TokenAmount;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::TimestampMillis;
 use std::sync::Arc;
 
 /// transformer module for the token place bid transition action
@@ -56,12 +55,6 @@ impl TokenPlaceBidTransitionActionAccessorsV0 for TokenPlaceBidTransitionAction 
     fn min_fill(&self) -> TokenAmount {
         match self {
             TokenPlaceBidTransitionAction::V0(v0) => v0.min_fill,
-        }
-    }
-
-    fn expires_at(&self) -> Option<TimestampMillis> {
-        match self {
-            TokenPlaceBidTransitionAction::V0(v0) => v0.expires_at,
         }
     }
 
