@@ -879,8 +879,10 @@ fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
 
 /// Whether no two elements of `items` are equal: up to
 /// [`UNIQUE_ITEMS_PAIRWISE_LIMIT`] elements as [`equal_json`] compares, more by their
-/// JSON value, where numbers of one reading compare by value (`0.0` equals `-0.0`), `1`
-/// and `1.0` differ, and objects with the same entries are equal whatever their order.
+/// JSON value, where numbers of one reading compare by value, `1` and `1.0` differ, and
+/// objects with the same entries are equal whatever their order. `0.0` and `-0.0` are one
+/// value at every length: a rule of protocol version 15, where numbers in a unique list
+/// compare by value however long the list.
 pub(crate) fn is_unique(items: &[JsonValue]) -> bool {
     if items.len() <= UNIQUE_ITEMS_PAIRWISE_LIMIT {
         return items.iter().enumerate().all(|(index, item)| {
