@@ -170,66 +170,25 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Network switch: activate the per-network manager
-                // first (the store lazy-creates one configured with
-                // a fresh SDK if this is the first time we see this
-                // network), then rebind the wallet-scoped services
-                // against it. Order matters — `rebindWalletScopedServices`
-                // reads `walletManager.firstWallet`, which has to
-                // resolve to the new network's manager before it
-                // runs.
-                .onChange(of: platformState.currentNetwork) { _, newNetwork in
-                    activateManager(for: newNetwork)
-                    rebindWalletScopedServices()
-                }
-                // Devnet→devnet rebuild from OptionsView: when the user
-                // edits the quorum URL / devnet name the SDK is rebuilt
-                // and `WalletManagerStore.activate` swaps the cached
-                // `PlatformWalletManager`, but neither of the two
-                // observers above fires (network stays `.devnet`;
-                // wallet ID set stays identical after persistor reload).
-                // PlatformBalanceSyncService and ShieldedService would
-                // keep retaining the old manager. Listen for the explicit
-                // tick OptionsView publishes after the activate completes.
+                // SDK rebuilds from OptionsView: a network switch, the
+                // Docker toggle or a devnet edit. OptionsView builds the
+                // SDK, moves the wallet manager onto it, publishes the SDK
+                // and its network, then bumps this tick, so the services
+                // rebind against the new manager. A same-network rebuild
+                // changes neither the network nor the wallet ID set, so
+                // only this tick covers it.
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
-        }
-    }
-
-    /// Lazy-create + cache a `PlatformWalletManager` for `network`,
-    /// configured against `platformState.sdk`. No-ops on the
-    /// already-active network. Called from bootstrap and from
-    /// `currentNetwork.onChange`.
-    @MainActor
-    private func activateManager(for network: Network) {
-        guard let sdk = platformState.sdk else {
-            SDKLogger.event(
-                "manager_activation_skipped",
-                category: .lifecycle,
-                severity: .warning,
-                fields: [
-                    "network": .publicText(network.displayName),
-                    "reason": .publicText("sdk_unavailable"),
-                ]
-            )
-            return
-        }
-        do {
-            try walletManagerStore.activate(network: network, sdk: sdk)
-            SDKLogger.event(
-                "manager_activated",
-                category: .lifecycle,
-                fields: ["network": .publicText(network.displayName)]
-            )
-        } catch {
-            SDKLogger.event(
-                "manager_activation_failed",
-                category: .lifecycle,
-                severity: .error,
-                fields: ["network": .publicText(network.displayName)],
-                error: error
-            )
+                // Refresh adaptive-provider policy and the active-source
+                // indicator as SPV readiness changes.
+                .onChange(of: walletManager.spvProgress) { _, _ in
+                    platformState.applyQuorumMode()
+                }
+                // Apply the Quorum Source picker to the fixed adaptive provider.
+                .onChange(of: platformState.quorumMode) { _, _ in
+                    platformState.applyQuorumMode()
+                }
         }
     }
 
@@ -457,6 +416,7 @@ struct SwiftExampleAppApp: App {
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
+                platformState.applyQuorumMode()
                 let restoredCount = walletManager.wallets.count
                 if restoredCount > 0 {
                     SDKLogger.log(

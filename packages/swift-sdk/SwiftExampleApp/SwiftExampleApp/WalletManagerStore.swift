@@ -59,13 +59,11 @@ final class WalletManagerStore: ObservableObject {
     /// re-checks it (alongside manager identity) after its off-main
     /// peer resolution; a mismatch means the start is stale and must
     /// not revive a stopped or replaced manager. Identity alone is not
-    /// enough because of the stop→activate gap: OptionsView's picker
-    /// stops the old manager synchronously but the store only swaps
-    /// `activeManager` later (from the app-level `onChange`), and the
-    /// devnet rebuild widens that gap with an `await` on the SDK
-    /// rebuild. This token is invalidated at the *earliest* synchronous
-    /// point of each such path, closing the window. See the guard in
-    /// `CoreSpvLauncher.start`.
+    /// enough because of the stop→activate gap: OptionsView stops the
+    /// old manager, then awaits the SDK rebuild, and the store swaps
+    /// `activeManager` only after that. This token is invalidated at
+    /// the *earliest* synchronous point of each such path, closing the
+    /// window. See the guard in `CoreSpvLauncher.start`.
     ///
     /// Not `@Published` — nothing renders off it; it's read
     /// synchronously by start call sites and their revalidation
@@ -152,7 +150,7 @@ final class WalletManagerStore: ObservableObject {
     /// of each network; lookup is O(1).
     private var managers: [Network: PlatformWalletManager] = [:]
 
-    /// SDK handle pointer the cached manager was configured against.
+    /// SDK the cached manager was configured against.
     /// Used in `activate()` to detect a stale cache when `AppState`
     /// rebuilds the SDK (network switch / `platformDAPIAddresses` or
     /// `platformQuorumURL` change in Options). On mismatch we tear
@@ -160,7 +158,11 @@ final class WalletManagerStore: ObservableObject {
     /// otherwise the cached manager keeps using its own Sdk clone
     /// with stale DAPI / quorum endpoints, and proof verification
     /// fails forever ("no available addresses to use").
-    private var managerSdkHandles: [Network: OpaquePointer] = [:]
+    ///
+    /// Held strongly and compared by identity: comparing raw handles
+    /// would let a new SDK allocated at a freed SDK's address pass as
+    /// the cached one.
+    private var managerSdks: [Network: SDK] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
@@ -197,11 +199,10 @@ final class WalletManagerStore: ObservableObject {
         // If `AppState` has rebuilt the SDK since (network switch or
         // UserDefaults endpoint override change), the cached manager
         // is still pointing at the old endpoints and would keep
-        // failing proof verification. Drop it so the rebuild below
-        // picks up the fresh SDK.
+        // failing proof verification. The manager built below against
+        // the fresh SDK replaces it once `configure` succeeds.
         if let existing = managers[network] {
-            let cachedHandle = managerSdkHandles[network]
-            if cachedHandle == sdk.handle {
+            if managerSdks[network] === sdk {
                 if makeActive && existing !== activeManager {
                     // Swapping to a different warm manager supersedes any
                     // in-flight SPV start against the outgoing one.
@@ -221,14 +222,10 @@ final class WalletManagerStore: ObservableObject {
                     "reason": .publicText("sdk_changed"),
                 ]
             )
-            // No `activeManager = nil` — the field isn't optional. The
-            // rebuild below will overwrite it via `if makeActive {
-            // activeManager = manager }`. Until that line runs, the
-            // old `activeManager` reference still points at the
-            // now-stale cached manager, but it'll be replaced before
-            // any caller observes it (this method is synchronous).
-            managers[network] = nil
-            managerSdkHandles[network] = nil
+            // The stale entry stays cached, and active if it was, until
+            // the manager built below replaces it. If `configure` throws,
+            // the store still tracks the manager that stays active on the
+            // SDK the app keeps.
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
@@ -250,7 +247,7 @@ final class WalletManagerStore: ObservableObject {
             )
         }
         managers[network] = manager
-        managerSdkHandles[network] = sdk.handle
+        managerSdks[network] = sdk
         if makeActive {
             // A freshly (re)built active manager supersedes any in-flight
             // SPV start against the previous one (defensive backstop; the
@@ -294,7 +291,7 @@ final class WalletManagerStore: ObservableObject {
         if let existing = managers[network] {
             return existing
         }
-        let sdk = try SDK(network: network)
+        let sdk = try SDK(network: network, contextProvider: .adaptive)
         try activate(network: network, sdk: sdk, makeActive: false)
         guard let manager = managers[network] else {
             throw PlatformWalletError.invalidParameter(

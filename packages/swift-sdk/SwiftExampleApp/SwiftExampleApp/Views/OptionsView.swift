@@ -36,11 +36,18 @@ struct OptionsView: View {
     @State private var devnetQuorumURLSnapshot: String? = nil
     @State private var devnetNameSnapshot: String? = nil
 
-    /// Devnet edits whose rebuild has not run yet: Options closed while a
-    /// network switch was running, or the rebuild's stop failed. The next
-    /// close rebuilds for them; a completed network switch clears them, since
-    /// every devnet SDK build reads the edited settings.
+    /// Devnet edits whose rebuild has not completed: Options closed while a
+    /// network switch was running, or the rebuild's stop, SDK build or
+    /// wallet-manager move failed. The next close rebuilds for them; a
+    /// completed network switch clears them, since every devnet SDK build
+    /// reads the edited settings.
     @State private var devnetRebuildPending = false
+
+    /// A switch to Devnet failed, usually for a missing or unreachable Quorum
+    /// URL, and the app stayed on its network. The devnet fields then show on
+    /// that network so they can be fixed before picking Devnet again. Cleared
+    /// by any completed switch and when the fields leave the screen.
+    @State private var devnetSettingsNeeded = false
 
     /// Driven by the 0.5s-debounced `.task(id: faucetPassword)`.
     /// Runs a single cheap `getblockcount` JSON-RPC against the
@@ -147,52 +154,55 @@ struct OptionsView: View {
                                 // can't revive it.
                                 walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
+                                let network = appState.currentNetwork
+                                // Leaving Local turns Docker off before the new
+                                // network's SDK is built, so the build reads the
+                                // cleared flag; a failed switch turns it back on.
+                                let disablesDocker = newNetwork != .regtest && appState.useDockerSetup
                                 Task {
+                                    defer { isSwitchingNetwork = false }
                                     // Devnet's SPV peers come from
                                     // `{platformQuorumURL}/masternodes`
                                     // — no UserDefaults state to seed
                                     // here. See `CoreSpvLauncher.peerOverride`
                                     // for the devnet branch.
 
-                                    // Stop the old network's SPV and reset its
-                                    // per-network services before publishing the
-                                    // new network. The stop can take tens of
-                                    // seconds with the main actor free; published
-                                    // first, the network change would let the
-                                    // `currentNetwork` observer configure the new
-                                    // manager and bind these services meanwhile,
-                                    // and the resets would then wipe that binding.
+                                    // The old network's SPV stops first. An
+                                    // incomplete stop can leave the old run loop
+                                    // parked; the app then stays on this network,
+                                    // so picking again retries the stop. The new
+                                    // network is published only with its SDK, once
+                                    // the manager has moved onto that SDK; if the
+                                    // build or the move fails, the app stays on
+                                    // this network with its SDK and manager.
                                     // TODO(platform-wallet): Once
                                     // PlatformWalletManager supports network
                                     // switching cleanly, call into it here.
-                                    // An incomplete stop can leave the old run
-                                    // loop parked; stay on this network so
-                                    // picking again retries the stop.
-                                    guard await stopSpvForReconfiguration(
-                                        failurePrefix: "Failed to stop SPV, staying on \(appState.currentNetwork.displayName)"
-                                    ) else {
-                                        isSwitchingNetwork = false
-                                        return
-                                    }
-                                    platformBalanceSyncService.reset()
-                                    shieldedService.reset()
-
-                                    // Update platform state (which will trigger SDK switch)
-                                    appState.currentNetwork = newNetwork
-                                    devnetRebuildPending = false
-
-                                    // Auto-disable Docker when leaving Local, after
-                                    // the network is published and in the same
-                                    // main-actor turn: `useDockerSetup` then skips
-                                    // its own SDK rebuild (the network's rebuild
-                                    // picks the flag up), and the Docker toggle's
-                                    // `onChange` cannot start a second switch.
-                                    if newNetwork != .regtest && appState.useDockerSetup {
-                                        appState.useDockerSetup = false
-                                    }
-
-                                    await MainActor.run {
-                                        isSwitchingNetwork = false
+                                    let outcome = await rebuildSdk(
+                                        on: network,
+                                        switchingTo: newNetwork,
+                                        failurePrefix: "Failed to stop SPV, staying on \(network.displayName)",
+                                        prepare: {
+                                            if disablesDocker { appState.useDockerSetup = false }
+                                        },
+                                        rollBack: {
+                                            if disablesDocker { appState.useDockerSetup = true }
+                                        },
+                                        beforePublish: {
+                                            platformBalanceSyncService.reset()
+                                            shieldedService.reset()
+                                            devnetRebuildPending = false
+                                            devnetSettingsNeeded = false
+                                            if newNetwork == .devnet {
+                                                // The new SDK was built from the
+                                                // devnet fields as they are now.
+                                                devnetQuorumURLSnapshot = devnetQuorumURL
+                                                devnetNameSnapshot = devnetName
+                                            }
+                                        }
+                                    )
+                                    if newNetwork == .devnet && outcome == .failed {
+                                        devnetSettingsNeeded = true
                                     }
                                 }
                             }
@@ -221,30 +231,37 @@ struct OptionsView: View {
                         coordinator: walletManager.registrationCoordinator
                     )
 
-                    if appState.currentNetwork == .regtest {
-                        Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
-                            // A network switch away from regtest keeps this
-                            // section on screen while its stop runs; the
-                            // toggle stays off-limits until the switch ends.
-                            .disabled(isSwitchingNetwork)
-                            .onChange(of: appState.useDockerSetup) { _, _ in
-                                // A switch in progress owns `isSwitchingNetwork`
-                                // and rebuilds the SDK itself; taking and
-                                // releasing the flag here would re-enable the
-                                // picker while that switch still runs.
-                                guard !isSwitchingNetwork else { return }
-                                // Toggling Docker rebuilds the SDK and flips
-                                // the peer override; cancel any in-flight
-                                // start so it can't proceed with stale peer
-                                // config against the rebuilt SDK.
+                    if appState.currentNetwork == .regtest && !devnetSettingsNeeded {
+                        Toggle("Use Docker Setup", isOn: Binding(
+                            get: { appState.useDockerSetup },
+                            set: { useDocker in
+                                guard useDocker != appState.useDockerSetup,
+                                      !isSwitchingNetwork else { return }
+                                // Docker changes the SDK's endpoints and the
+                                // SPV peers. The setting is written only after
+                                // SPV has stopped, so a running client never
+                                // disagrees with it; a failed stop leaves it
+                                // unchanged. Cancel any in-flight start first:
+                                // it captured the old peer config.
                                 walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
+                                let network = appState.currentNetwork
                                 Task {
-                                    await appState.switchNetwork(to: appState.currentNetwork)
-                                    await MainActor.run { isSwitchingNetwork = false }
+                                    defer { isSwitchingNetwork = false }
+                                    _ = await rebuildSdk(
+                                        on: network,
+                                        failurePrefix: "Failed to stop SPV, so the Docker setting was not changed",
+                                        prepare: { appState.useDockerSetup = useDocker },
+                                        rollBack: { appState.useDockerSetup = !useDocker }
+                                    )
                                 }
                             }
-                            .help("Connect to local dashmate Docker network.")
+                        ))
+                            // A network switch away from regtest keeps this
+                            // section on screen until it publishes the new
+                            // network; the toggle stays off-limits until then.
+                            .disabled(isSwitchingNetwork)
+                            .help("Connect to local dashmate Docker network. Stops SPV; restart it from the Wallet tab.")
 
                         if appState.useDockerSetup {
                             TextField("Faucet RPC Password", text: $faucetPassword)
@@ -284,7 +301,7 @@ struct OptionsView: View {
                                 }
                             }
                         }
-                    } else if appState.currentNetwork == .devnet {
+                    } else if appState.currentNetwork == .devnet || devnetSettingsNeeded {
                         // Devnet UX: a single user input — the quorum
                         // list service URL. SPV peers and DAPI nodes
                         // are both derived from `{quorumURL}/masternodes`
@@ -295,6 +312,11 @@ struct OptionsView: View {
                         // node churn — the list re-fetches on every
                         // network switch / launch.
                         VStack(alignment: .leading, spacing: 6) {
+                            if appState.currentNetwork != .devnet {
+                                Text("Switching to Devnet failed. Fix these settings, then pick Devnet again.")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
                             Text("Quorum URL")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -344,6 +366,7 @@ struct OptionsView: View {
                             let nameChanged = devnetNameSnapshot != devnetName
                             devnetQuorumURLSnapshot = nil
                             devnetNameSnapshot = nil
+                            devnetSettingsNeeded = false
                             guard quorumChanged || nameChanged || devnetRebuildPending else { return }
                             guard appState.currentNetwork == .devnet else { return }
                             // A network switch in progress replaces the SDK if
@@ -361,40 +384,12 @@ struct OptionsView: View {
                             isSwitchingNetwork = true
                             Task {
                                 defer { isSwitchingNetwork = false }
-                                guard await stopSpvForReconfiguration(
+                                let outcome = await rebuildSdk(
+                                    on: .devnet,
                                     failurePrefix: "Failed to stop SPV, so the devnet settings were not applied"
-                                ) else {
+                                )
+                                if outcome == .stopFailed || outcome == .failed {
                                     devnetRebuildPending = true
-                                    return
-                                }
-                                // Re-checked after the stop's suspension.
-                                guard appState.currentNetwork == .devnet else { return }
-                                await appState.switchNetwork(to: .devnet)
-                                // `switchNetwork` rebuilds `appState.sdk` but
-                                // doesn't refresh per-network managers (the
-                                // app-level `.onChange(of: currentNetwork)`
-                                // observer doesn't fire when the value stays
-                                // `.devnet`). Re-`activate` here so the
-                                // store's stale-handle check fires and the
-                                // cached `PlatformWalletManager` rebuilds
-                                // against the new SDK clone — otherwise
-                                // wallet-manager-routed work keeps talking
-                                // to the old DAPI / quorum endpoints.
-                                await MainActor.run {
-                                    if let sdk = appState.sdk {
-                                        try? walletManagerStore.activate(
-                                            network: .devnet, sdk: sdk
-                                        )
-                                    }
-                                    // Drive `rebindWalletScopedServices`
-                                    // via the App scene's observer.
-                                    // Neither `currentNetwork` nor the
-                                    // wallet ID set changes here, so
-                                    // PlatformBalanceSyncService and
-                                    // ShieldedService would otherwise
-                                    // keep referencing the now-stale
-                                    // manager.
-                                    appState.walletScopedServicesRebindTick &+= 1
                                 }
                             }
                         }
@@ -432,6 +427,33 @@ struct OptionsView: View {
                                 .autocorrectionDisabled()
                         }
                     }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Quorum Source")
+                        Picker("Quorum Source", selection: $appState.quorumMode) {
+                            ForEach(AppState.QuorumMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: trusted until the SPV masternode list syncs, then SPV. SPV: force SPV now (proofs fail closed until synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
+
+                    HStack {
+                        Text("Proof Quorum Source")
+                        Spacer()
+                        switch appState.quorumSource {
+                        case .spv:
+                            Label("SPV (trustless)", systemImage: "checkmark.shield.fill")
+                                .foregroundColor(.green)
+                                .font(.caption.weight(.semibold))
+                        case .trusted:
+                            Label("Trusted (HTTP)", systemImage: "network")
+                                .foregroundColor(.orange)
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                    .help("Which quorum public-key source the SDK currently uses to verify Platform proofs. Switches to SPV automatically once the masternode list has synced (start SPV sync from the Core tab).")
 
                     HStack {
                         Text("Network Status")
@@ -582,7 +604,7 @@ struct OptionsView: View {
                         }
 
                         HStack {
-                            Text("Quorums in Memory")
+                            Text("Trusted Quorums Cached")
                             Spacer()
                             Text("\(status.quorumCount)")
                                 .foregroundColor(status.quorumCount > 0 ? .green : .red)
@@ -655,6 +677,57 @@ struct OptionsView: View {
                 Text(logExportError ?? "")
             }
         }
+    }
+
+    /// Rebuild the SDK for `newNetwork` (by default `network`, the network the
+    /// flow started on), move the wallet manager onto it, then publish the
+    /// SDK and its network. See `rebuildSdkAndMoveWalletManager` for the order
+    /// and the rollback: `prepare` writes the settings the build reads,
+    /// `rollBack` restores them if the build or the move fails, and
+    /// `beforePublish` runs just before a successful publish. Callers own
+    /// `invalidatePendingSpvStarts()` and `isSwitchingNetwork`.
+    @MainActor
+    private func rebuildSdk(
+        on network: Network,
+        switchingTo newNetwork: Network? = nil,
+        failurePrefix: String,
+        prepare: @MainActor () -> Void = {},
+        rollBack: @MainActor () -> Void = {},
+        beforePublish: @MainActor () -> Void = {}
+    ) async -> SdkRebuildOutcome {
+        await rebuildSdkAndMoveWalletManager(
+            from: network,
+            to: newNetwork ?? network,
+            stopSpv: { await stopSpvForReconfiguration(failurePrefix: failurePrefix) },
+            currentNetwork: { appState.currentNetwork },
+            prepare: prepare,
+            buildSdk: { await appState.buildSdk(for: $0) },
+            activateManager: { (target: Network, sdk: SDK) -> Bool in
+                do {
+                    try walletManagerStore.activate(network: target, sdk: sdk)
+                    return true
+                } catch {
+                    SDKLogger.event(
+                        "manager_activation_failed",
+                        category: .lifecycle,
+                        severity: .error,
+                        fields: ["network": .publicText(target.displayName)],
+                        error: error
+                    )
+                    appState.showError(
+                        message: "The wallet manager could not move to the new \(target.displayName) SDK, so the app stays on its current SDK. SPV stays stopped until you restart it from the Wallet tab. \(error.localizedDescription)"
+                    )
+                    return false
+                }
+            },
+            rollBack: rollBack,
+            publish: { (target: Network, sdk: SDK) in
+                beforePublish()
+                appState.publish(sdk, for: target)
+            },
+            // The App scene's tick observer runs `rebindWalletScopedServices`.
+            rebindWalletScopedServices: { appState.walletScopedServicesRebindTick &+= 1 }
+        )
     }
 
     /// Stop SPV before a flow replaces or reconfigures it. Returns false,

@@ -4,7 +4,6 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{DataContract, Identifier};
 use dash_sdk::platform::{DocumentQuery, Fetch};
-use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -12,7 +11,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::{DataContractHandle, DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
-/// Fetch a document by ID using contract ID (gets contract from trusted provider)
+/// Fetch a document by ID using contract ID (gets contract from the local contract cache)
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
     sdk_handle: *mut SDKHandle,
@@ -53,23 +52,23 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
+        // Get contract from the SDK's local contract cache
+        let data_contract = if let Some(ref provider) = wrapper.local_contracts {
             let platform_version = wrapper.sdk.version();
             provider
-                .get_data_contract(&contract_id, platform_version)
+                .data_contract(&contract_id, platform_version)
                 .map_err(|e| {
                     FFIError::InternalError(format!("Failed to get contract from context: {}", e))
                 })?
                 .ok_or_else(|| {
                     FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
+                        "Contract {} not found in the local contract cache",
                         contract_id_str
                     ))
                 })?
         } else {
             return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
+                "No local contract cache configured".to_string(),
             ));
         };
 

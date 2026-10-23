@@ -6,7 +6,6 @@ use dash_sdk::dpp::document::{Document, DocumentV0Setters};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
-use drive_proof_verifier::ContextProvider;
 use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -38,7 +37,7 @@ pub unsafe extern "C" fn dash_sdk_document_free(handle: *mut DocumentHandle) {
 /// `dash_sdk_document_create` sanitizes them: base58 or hex strings become
 /// identifiers, hex or base64 strings become byte arrays and integers narrow
 /// to their declared width, typed array elements included. The data contract
-/// comes from the trusted context provider, the same lookup
+/// comes from the SDK's local contract cache, the same lookup
 /// `dash_sdk_document_replace_on_platform` makes. On any error the document
 /// is left unchanged.
 ///
@@ -145,7 +144,7 @@ pub unsafe extern "C" fn dash_sdk_document_set_properties(
 }
 
 /// Sanitizes `properties` against the `document_type_name` type of the
-/// contract the trusted context provider holds under `data_contract_id`.
+/// contract the SDK's local contract cache holds under `data_contract_id`.
 fn sanitize_properties_for_document_type(
     wrapper: &SDKWrapper,
     data_contract_id: &str,
@@ -155,18 +154,19 @@ fn sanitize_properties_for_document_type(
     let contract_id = Identifier::from_string(data_contract_id, Encoding::Base58)
         .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-    let provider = wrapper.trusted_provider.as_ref().ok_or_else(|| {
-        FFIError::InternalError("No trusted context provider configured".to_string())
-    })?;
+    let provider = wrapper
+        .local_contracts
+        .as_ref()
+        .ok_or_else(|| FFIError::InternalError("No local contract cache configured".to_string()))?;
 
     let data_contract = provider
-        .get_data_contract(&contract_id, wrapper.sdk.version())
+        .data_contract(&contract_id, wrapper.sdk.version())
         .map_err(|e| {
             FFIError::InternalError(format!("Failed to get contract from context: {}", e))
         })?
         .ok_or_else(|| {
             FFIError::InternalError(format!(
-                "Contract {} not found in trusted context",
+                "Contract {} not found in the local contract cache",
                 data_contract_id
             ))
         })?;
@@ -185,15 +185,13 @@ mod tests {
     use super::*;
     use crate::dash_sdk_error_free;
     use crate::test_utils::test_utils::destroy_mock_sdk_handle;
-    use dash_sdk::dpp::dashcore::Network;
     use dash_sdk::dpp::data_contract::DataContractFactory;
     use dash_sdk::dpp::document::{DocumentV0, DocumentV0Getters};
     use dash_sdk::dpp::platform_value::platform_value;
     use dash_sdk::dpp::prelude::DataContract;
     use dash_sdk::dpp::version::PlatformVersion;
-    use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+    use rs_sdk_trusted_context_provider::LocalContextResolver;
     use std::ffi::CString;
-    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     /// A contract with one `note` type: an identifier, a byte array and a
@@ -245,19 +243,12 @@ mod tests {
             .clone()
     }
 
-    /// A mock SDK handle whose trusted context provider serves `contracts`.
-    /// The provider's quorum URL is an address literal, so nothing resolves
-    /// or connects.
+    /// A mock SDK handle whose local contract cache serves `contracts`.
     fn sdk_handle_with_known_contracts(contracts: Vec<DataContract>) -> *mut SDKHandle {
-        let provider = TrustedHttpContextProvider::new_with_url(
-            Network::Regtest,
-            "http://127.0.0.1:22444".to_string(),
-            NonZeroUsize::new(1).expect("non-zero cache size"),
-        )
-        .expect("offline trusted context provider")
-        .with_known_contracts(contracts);
+        let local_contracts = LocalContextResolver::new();
+        local_contracts.add_known_contracts(contracts);
         let mut wrapper = SDKWrapper::new_mock();
-        wrapper.trusted_provider = Some(Arc::new(provider));
+        wrapper.local_contracts = Some(Arc::new(local_contracts));
         Box::into_raw(Box::new(wrapper)) as *mut SDKHandle
     }
 
