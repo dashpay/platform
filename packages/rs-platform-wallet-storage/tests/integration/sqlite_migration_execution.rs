@@ -125,7 +125,7 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    // V021 drops mined Core history; the next SPV start rescans it from birth.
+    // V020 drops mined Core history; the next SPV start rescans it from birth.
     for table in ["core_utxos", "core_transactions"] {
         let sql = format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1");
         assert_eq!(count(conn, &sql, &full), 0, "{table}");
@@ -244,7 +244,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
         assert_eq!(schema_version(&conn), 13);
     }
 
-    // Checked at V018: V021 then drops mined Core history for a rescan.
+    // Checked at V018: V020 then drops mined Core history for a rescan.
     let mut conn = Connection::open(&path).unwrap();
     mig::runner()
         .set_target(refinery::Target::Version(18))
@@ -462,10 +462,10 @@ fn forward_version_rejected_at_new_max() {
 /// A database that applied a later version before an earlier one was merged
 /// in is refused, typed and untouched, rather than skipping the earlier one.
 ///
-/// This branch's V021 can land on a database before the 5.0 line's V019 and
-/// V020 are merged forward. Refinery's `abort_missing` (left at its default)
-/// then sees an embedded version below the applied maximum that was never
-/// applied. Dropping V018's history row reproduces that state with the
+/// A feature branch's migration can land on a database before a lower version
+/// from another branch is merged forward. Refinery's `abort_missing` (left at
+/// its default) then sees an embedded version below the applied maximum that
+/// was never applied. Dropping V018's history row reproduces that state with the
 /// migrations this binary embeds.
 #[test]
 fn should_refuse_a_database_that_skipped_an_earlier_migration() {

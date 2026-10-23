@@ -1560,7 +1560,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1757,14 +1757,14 @@ mod tests {
             .collect()
     }
 
-    /// V021 rebuilds mined Core history by rescanning it: whatever an older
+    /// V020 rebuilds mined Core history by rescanning it: whatever an older
     /// database stored mined (an undecodable record included) goes, each
     /// wallet's filter checkpoint rewinds to just below its birth (never
     /// forward), and every other row stays, the chain facts in
     /// `core_sync_state` included. The unmined history a block rescan cannot
     /// redeliver stays as evidence for the loader to authenticate.
     #[test]
-    fn should_keep_only_unmined_core_history_and_rescan_from_birth_when_migrating_to_v021() {
+    fn should_keep_only_unmined_core_history_and_rescan_from_birth_when_migrating_to_v020() {
         let wallet_id = [0xADu8; 32];
         let mut conn = wallet_db(&wallet_id);
         conn.execute("UPDATE wallets SET birth_height = 100", [])
@@ -1863,10 +1863,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        rewind_v021(&conn);
+        rewind_v020(&conn);
         let kept = non_core_rows(&conn);
 
-        migrations::run(&mut conn).expect("no stored history can block V021");
+        migrations::run(&mut conn).expect("no stored history can block V020");
 
         let rows = |sql: &str| -> Vec<Vec<rusqlite::types::Value>> {
             let mut stmt = conn.prepare_cached(sql).unwrap();

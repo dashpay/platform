@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "424f6662a333b62e2b245b89ea5a8c7b63857afe1c948d526707842874232229";
+    "fdcaec1d3a0a960adbe02405601166c32487f10b5a253f175041ae99af7c5326";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "1f1d59ace503e79c4217b05ab4a6812b89aa3a6be7f7b712b630968607117110";
+    "f6a5e1d311e94223fd510f40c3a75fd3f69afdda31be0c968dcd7009573b4165";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
@@ -41,10 +41,7 @@ const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
 /// Versions another release line publishes and this one does not ship yet.
 /// They stay free here until that line is merged forward, and then carry
 /// exactly these names; anything else is a version clash with shipped data.
-const RESERVED_FOR_OTHER_LINES: &[(i32, &str)] = &[
-    (19, "asset_lock_operation_id"),
-    (20, "shielded_funding_attempts"),
-];
+const RESERVED_FOR_OTHER_LINES: &[(i32, &str)] = &[(19, "asset_lock_operation_id")];
 
 /// Historical table names: V008 renames wallet metadata, and its typed
 /// conversion retains the pool tables through V010 before retiring them.
