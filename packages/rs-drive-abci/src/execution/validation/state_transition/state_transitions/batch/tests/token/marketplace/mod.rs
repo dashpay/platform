@@ -1934,7 +1934,7 @@ mod offers {
             self.executes(&freeze);
         }
 
-        fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
+        pub(super) fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
             self.platform
                 .drive
                 .fetch_credit_order_escrow(
@@ -3585,6 +3585,11 @@ mod frozen {
             market.offer(order_id).map(|offer| offer.escrow),
             Some(10_000),
             "the offer still holds its escrow"
+        );
+        assert_eq!(
+            market.credit_escrow(order_id),
+            Some(10_000),
+            "the offer's escrowed credits survive the token destroy"
         );
     }
 }
