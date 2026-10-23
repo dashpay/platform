@@ -1015,6 +1015,10 @@ fn format_admits(format: &str, value: &str) -> bool {
                 && IpAddr::from_str(value).is_ok_and(|address| address.is_ipv4())
         }
         "ipv6" => IpAddr::from_str(value).is_ok_and(|address| address.is_ipv6()),
+        // Under the `regex` crate's default size limit, as generation 1 compiles a document's
+        // `format: regex` value: document validation checks a contract read from state, whose
+        // validator `compile_and_validate` builds with the default engine. The 5 MiB limit of
+        // `JsonSchemaValidator::compile` applies only where registration compiles the schema.
         "regex" => validator_regex(value).is_some(),
         "time" => TIME.is_match(value),
         "uri" => Url::from_str(value).is_ok(),
