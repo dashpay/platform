@@ -525,8 +525,9 @@ mod replacement_tests {
             // increases byte-billed contract-tree reads.
             // The app-connect and moderation charters contracts each add one sibling to the
             // genesis contracts tree, increasing the bytes billed when reading that tree
-            // (protocol 14 only).
-            1546140,
+            // (protocol 14 only). The token market contract (protocol 15) adds another, which
+            // reshapes the tree so the contract read is billed fewer bytes (-47_280).
+            1498860,
         )
         .await;
     }

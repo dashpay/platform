@@ -39,6 +39,7 @@ members = [
     "packages/keyword-search-contract",
     "packages/app-connect-contract",
     "packages/moderation-charters-contract",
+    "packages/token-market-contract",
     "packages/rs-sdk-ffi",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",

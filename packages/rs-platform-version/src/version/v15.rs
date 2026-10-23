@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
@@ -136,9 +136,31 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
 ///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
 ///    earlier keep the batch `advanced_structure` 1.
+///
+/// 6. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+///    genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
+///    through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
+///    per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
+///    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
+///    `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
+///    token conservation check; the credit check already counts every prefunded specialized
+///    balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
+///    escrow key sits two levels into the prefunded specialized balances layer, below the keys
+///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
+///    deeper description of that layer another write of the batch registered; and
+///    `apply_drive_operations` 2 merges each operation's estimated layer descriptions into the
+///    batch's keeping the deeper one, so an estimate does not depend on the operations' order.
+///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
+///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
+///    placed, which prices its fills and keys its `book` and `depth` index entries
+///    (`tokenId`, `decimals`, `price`) so prices of different scales never mix: registered at
+///    genesis from this version and
+///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
+///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
+///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
@@ -163,7 +185,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 6)
     fee_version: FEE_VERSION3,
     system_limits: SYSTEM_LIMITS_V4,
     consensus: ConsensusVersions {

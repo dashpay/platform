@@ -203,3 +203,21 @@ impl From<moderation_charters_contract::Error> for Error {
         }
     }
 }
+
+#[cfg(feature = "token-market")]
+impl From<token_market_contract::Error> for Error {
+    fn from(e: token_market_contract::Error) -> Self {
+        match e {
+            token_market_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            token_market_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}

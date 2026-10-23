@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "2b58577a1cdb38e9da1f3fe0b16556f15cd11f851364bf8e404dfb4f14b4410a"
+        "31a2711610cce7bfe3c867f742060b45e87d9ec7040406cb435a7fbc6dbfabb9"
     );
     assert_eq!(
         pool.platform
@@ -1869,9 +1869,11 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         );
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_870_440)
+                // The estimate is apply_drive_operations 2's (protocol version 15), which merges
+                // each operation's layer descriptions keeping the costlier.
+                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2158,39 +2160,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "7e3cf25f4080c94ef028ede8d3bdc982d0055feaef0d9e75dcae11287146d425",
-                "4ba6e38cdbdda59c48644b8e0df3182a805bd87a7b3584906df8a84008c7df36",
+                "4f426a32592b74ce2b330c6b74cc078cc96356ccf7c860055d7f66fa7c17c15a",
             ),
             "valid-payment" => (
                 "da69c2e10a0fe88df56655907ae5c3acd6700f13823358159f6240b1fb33c6d1",
-                "1eb8b109ddb6a2d8896b113387132673e42f18f9abe560a607607593517ee3a3",
+                "befd11331ae6dcdda2f227235f693af5be04baebdb1d92fa9c198e171d81de93",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "9f22a694033eb8c899df1fbad5c34bc97710ebad14aa2aff2dc495024bb6685b",
+                "9406ec31654e1be46319e776553ff0e1bc5d3777baa5734beac9c44999be2cbe",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "4a7e0f9b38b87219f276b6e54a4c0ace51245c23201057a0846be726f6854089",
+                "2adb48919121dc0633c71b38ebd950cb2e21e92f4bb78d39a9853dd0c106631d",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "63be3fcbb363b244ab581de6cbaf38e50fd042bf8c276745ef62c2b5031abd53",
+                "30d235d51bf25d5989a42cb7a5e1c041b879290a102194b483dd09a34839a3d9",
             ),
             "open-mint-group" => (
                 "7f694d1f3507aaca0c5b5b1254eef3f8cd595379c23c32dea1d0a9c21d302088",
-                "637c59bb64c308336fb7de597fb34bb3137a39f9b45996b2ebbf238e7d7372ec",
+                "2b7c116b03552673520ea15835c36762bde578bd247cd930968aeb601c7e4b27",
             ),
             "closing-mint-group" => (
                 "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "0c0789e5dc329c11b67d202552957cd81cc4ca78feee6c019d1e6e519bcd7439",
+                "bcb9aa7d6c0114dbf8ca2ad0bc3c69e8207ff12ad984e8b83368a934f7ec59b1",
             ),
             "open-burn-group" => (
                 "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
-                "9485f54bfbbe8c73408d48186132b9f1fc8e5fc37685712bda30bc6478d29cdc",
+                "88c5b2024157cf6e1e4091c5d8c9735a55335afc0f9db246d6baefdc1bced268",
             ),
             "closing-burn-group" => (
                 "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "24fe37d9d5e2a81c90c7415007d6351f87aa253c051dcc75c473a4b69b33d71e",
+                "c0ef13aea8123a8d013bee70c6b08a125b4ede6ae53cf46abc3dfba895005c66",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

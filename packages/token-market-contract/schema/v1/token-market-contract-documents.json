@@ -1,0 +1,223 @@
+{
+  "ask": {
+    "type": "object",
+    "description": "Tokens a holder offers for sale at a price. Written only by the token marketplace transitions: the listed tokens are held in escrow under the order's id until it is filled or cancelled.",
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "book",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
+          },
+          {
+            "price": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "depth",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
+          },
+          {
+            "price": "asc"
+          }
+        ],
+        "summable": "remaining",
+        "rangeSummable": true
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "description": "The token the order is for",
+        "position": 0
+      },
+      "price": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The credits the seller asks per whole token (10 to the power of the order's decimals base units)",
+        "position": 1
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The token amount, in base units, listed when the order was placed",
+        "position": 2
+      },
+      "remaining": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The token amount, in base units, still open. The order is deleted when it is filled entirely",
+        "position": 3
+      },
+      "minFill": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The smallest amount, in base units, a fill may take, unless it takes everything still open. A fill may not leave less than this open either",
+        "position": 4
+      },
+      "decimals": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255,
+        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "position": 5
+      }
+    },
+    "required": [
+      "tokenId",
+      "price",
+      "amount",
+      "remaining",
+      "minFill",
+      "decimals",
+      "$createdAt",
+      "$updatedAt"
+    ],
+    "additionalProperties": false
+  },
+  "bid": {
+    "type": "object",
+    "description": "An offer to buy a token at a price. Written only by the token marketplace transitions: the offered credits are held in escrow under the order's id until it is filled or cancelled.",
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "book",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
+          },
+          {
+            "price": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "depth",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "decimals": "asc"
+          },
+          {
+            "price": "asc"
+          }
+        ],
+        "summable": "escrow",
+        "rangeSummable": true
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "description": "The token the order is for",
+        "position": 0
+      },
+      "price": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The credits the buyer pays per whole token (10 to the power of the order's decimals base units)",
+        "position": 1
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The token amount, in base units, wanted when the order was placed",
+        "position": 2
+      },
+      "remaining": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The token amount, in base units, still open. The order is deleted when it is filled entirely",
+        "position": 3
+      },
+      "minFill": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The smallest amount, in base units, a fill may take, unless it takes everything still open. A fill may not leave less than this open either",
+        "position": 4
+      },
+      "escrow": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The credits still held in escrow for the order. They cover what the open amount costs at the order's price; what is left once it is filled goes back to the buyer",
+        "position": 5
+      },
+      "decimals": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255,
+        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "position": 6
+      }
+    },
+    "required": [
+      "tokenId",
+      "price",
+      "amount",
+      "remaining",
+      "minFill",
+      "decimals",
+      "escrow",
+      "$createdAt",
+      "$updatedAt"
+    ],
+    "additionalProperties": false
+  }
+}

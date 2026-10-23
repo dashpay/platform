@@ -2104,6 +2104,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "token-history-contract",
+ "token-market-contract",
  "wallet-utils-contract",
  "withdrawals-contract",
 ]
@@ -7864,6 +7865,17 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "token-history-contract"
 version = "5.0.0-rc.8"
 dependencies = [
+ "platform-value",
+ "platform-version",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "token-market-contract"
+version = "5.0.0-rc.7"
+dependencies = [
+ "base58",
  "platform-value",
  "platform-version",
  "serde_json",

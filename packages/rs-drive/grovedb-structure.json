@@ -782,6 +782,69 @@
             ]
           },
           {
+            "id": "tokens.order_escrow",
+            "key": {
+              "type": "fixed",
+              "hex": "60",
+              "label": "TokenOrderEscrow",
+              "constant": "TOKEN_ORDER_ESCROW_KEY"
+            },
+            "kinds": [
+              "BigSumTree"
+            ],
+            "since": 15,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+            "book": "data-model/token-marketplace.md",
+            "description": "The tokens open listings hold in escrow. The sum joins the identity balances and the shielded pools in the token conservation check.",
+            "children": [
+              {
+                "id": "tokens.order_escrow.token",
+                "key": {
+                  "type": "dynamic",
+                  "name": "token_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The token id"
+                },
+                "kinds": [
+                  "SumTree"
+                ],
+                "since": 15,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+                "description": "The escrowed listings of one token; created with its first listing.",
+                "children": [
+                  {
+                    "id": "tokens.order_escrow.token.order",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "order_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The listing's order id"
+                    },
+                    "kinds": [
+                      "SumItem"
+                    ],
+                    "value": "token amount",
+                    "since": 15,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+                    "description": "What one open listing still holds.",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
             "id": "tokens.balances",
             "key": {
               "type": "fixed",
@@ -1970,6 +2033,47 @@
         "source": "packages/rs-drive/src/drive/mod.rs",
         "description": "Credits put aside in advance to fund specific state transitions, such as masternode votes on a contested resource.",
         "children": [
+          {
+            "id": "prefunded_balances.for_token_orders",
+            "key": {
+              "type": "fixed",
+              "hex": "20",
+              "label": "ForTokenOrders",
+              "constant": "PREFUNDED_BALANCES_FOR_TOKEN_ORDERS"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 15,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+            "book": "data-model/token-marketplace.md",
+            "description": "The credits the token marketplace holds in escrow for open offers.",
+            "children": [
+              {
+                "id": "prefunded_balances.for_token_orders.offer",
+                "key": {
+                  "type": "dynamic",
+                  "name": "order_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The offer's order id"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 15,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
+                "description": "What one open offer still holds.",
+                "children": []
+              }
+            ]
+          },
           {
             "id": "prefunded_balances.owner_fee_pots",
             "key": {
@@ -6046,7 +6150,10 @@
       "tree": {
         "hex": "80",
         "left": {
-          "hex": "40"
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          }
         },
         "right": {
           "hex": "c0"
@@ -6150,7 +6257,10 @@
             "hex": "20"
           },
           "right": {
-            "hex": "5c"
+            "hex": "5c",
+            "right": {
+              "hex": "60"
+            }
           }
         },
         "right": {
