@@ -140,8 +140,11 @@ impl Envelope {
     /// The protocol versions under test whose bounds accept this request version.
     fn served_versions(self) -> Vec<&'static PlatformVersion> {
         match self {
-            Envelope::V0 => versions().to_vec(),
-            Envelope::V1 => vec![PlatformVersion::latest()],
+            Envelope::V0 => versions(),
+            Envelope::V1 => versions()
+                .into_iter()
+                .filter(|version| version.protocol_version >= 14)
+                .collect(),
         }
     }
 }
@@ -251,12 +254,11 @@ impl Fixture {
     }
 }
 
-fn versions() -> [&'static PlatformVersion; 3] {
-    [
-        PlatformVersion::get(12).expect("PV12"),
-        PlatformVersion::get(13).expect("PV13"),
-        PlatformVersion::latest(),
-    ]
+/// Every protocol version from 12 through this build's latest.
+fn versions() -> Vec<&'static PlatformVersion> {
+    (12..=PlatformVersion::latest().protocol_version)
+        .map(|version| PlatformVersion::get(version).expect("known protocol version"))
+        .collect()
 }
 
 /// One lookup and the identity a correct answer to it holds.

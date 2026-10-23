@@ -304,16 +304,16 @@ fn assert_proof_refused(result: Result<Option<Identity>, Box<Error>>, context: &
         "{context}: {error}"
     );
 }
-/// The versions this test signs answers with: every version that serves V0, the first
-/// that serves V1, and one newer than this build.
+/// The versions this test signs answers with: every version that serves V0, every
+/// version that serves V1 and protocol 13 before them, and one newer than this build.
 fn signed_versions(lookup: Lookup) -> Vec<u32> {
-    let latest = PlatformVersion::latest().protocol_version;
-    match lookup {
-        V0 => vec![12, 13, latest, latest + 1],
+    let first = match lookup {
+        V0 => 12,
         // No honest node answers V1 below 14, but such an answer is still a sound proof
         // of the signed state, so it verifies.
-        V1 => vec![13, latest, latest + 1],
-    }
+        V1 => 13,
+    };
+    (first..=PlatformVersion::latest().protocol_version + 1).collect()
 }
 /// The newest table this build knows for a signed version.
 fn producer_for(signed: u32) -> u32 {
