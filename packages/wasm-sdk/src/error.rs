@@ -53,6 +53,10 @@ pub enum WasmSdkErrorKind {
     /// property: none meets the schema's `keyRequirements`, or the private key given is not
     /// one of the identity's keys.
     EncryptionKeyNotFound,
+    /// The query uses a feature that not every node of the network serves yet, so the SDK
+    /// did not send it. It works once the network has activated the protocol version that
+    /// added the feature; retrying sooner does not help.
+    ProtocolVersionNotActive,
 }
 
 /// Structured error surfaced to JS consumers
@@ -279,6 +283,20 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             EncryptedFor(e) => e.into(),
+            error @ ProtocolVersionNotActive { .. } => {
+                // The SDK's message names what is missing; a failed query for the network's
+                // version is its source, and JS sees only the message.
+                let message = match std::error::Error::source(&error) {
+                    Some(cause) => format!("{error}: {cause}"),
+                    None => error.to_string(),
+                };
+                Self::new(
+                    WasmSdkErrorKind::ProtocolVersionNotActive,
+                    message,
+                    None,
+                    false,
+                )
+            }
         }
     }
 }
@@ -376,6 +394,7 @@ impl WasmSdkError {
             K::NotImplemented => "NotImplemented",
             K::DecryptionFailed => "DecryptionFailed",
             K::EncryptionKeyNotFound => "EncryptionKeyNotFound",
+            K::ProtocolVersionNotActive => "ProtocolVersionNotActive",
         }
         .to_string()
     }
@@ -562,6 +581,44 @@ mod tests {
         let error = WasmSdkError::from(ProtocolError::Generic("not consensus".to_string()));
 
         assert_eq!(error.code(), -1);
+    }
+
+    /// A query the network cannot serve yet is refused before it is sent: JS can tell it
+    /// from other failures by its kind, and retrying it sooner does not help.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_the_network_cannot_serve_yet_by_its_kind() {
+        let refused = SdkError::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 13,
+            cause: None,
+        };
+        let message = refused.to_string();
+        let error = WasmSdkError::from(refused);
+        assert_eq!(error.kind(), WasmSdkErrorKind::ProtocolVersionNotActive);
+        assert_eq!(error.name(), "ProtocolVersionNotActive");
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), message);
+
+        let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
+        });
+        assert_eq!(
+            unconfirmed.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(!unconfirmed.is_retriable());
+        assert!(
+            unconfirmed
+                .message()
+                .ends_with("SDK error: all nodes refused"),
+            "the reason the version is unknown reaches JS: {}",
+            unconfirmed.message()
+        );
     }
 
     #[test]

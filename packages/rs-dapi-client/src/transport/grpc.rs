@@ -246,12 +246,17 @@ impl CanRetry for dapi_grpc::tonic::Status {
 macro_rules! impl_transport_request_grpc {
     // `names_nothing: |request| ...;` gives the request's `TransportRequest::names_nothing`.
     (names_nothing: $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
-        impl_transport_request_grpc!(@impl $names_nothing; $request, $response, $client, $settings, $($method)+);
+        impl_transport_request_grpc!(@impl $names_nothing; |_| None; $request, $response, $client, $settings, $($method)+);
+    };
+    // `needs_protocol_version: |request| ...;` gives the request's
+    // `TransportRequest::needs_protocol_version`.
+    (needs_protocol_version: $needs_protocol_version:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl |_| None; $needs_protocol_version; $request, $response, $client, $settings, $($method)+);
     };
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
-        impl_transport_request_grpc!(@impl |_| None; $request, $response, $client, $settings, $($method)+);
+        impl_transport_request_grpc!(@impl |_| None; |_| None; $request, $response, $client, $settings, $($method)+);
     };
-    (@impl $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+    (@impl $names_nothing:expr; $needs_protocol_version:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
             type Client = $client;
 
@@ -266,6 +271,11 @@ macro_rules! impl_transport_request_grpc {
             fn names_nothing(&self) -> Option<&'static str> {
                 let names_nothing: fn(&$request) -> Option<&'static str> = $names_nothing;
                 names_nothing(self)
+            }
+
+            fn needs_protocol_version(&self) -> Option<u32> {
+                let needs_protocol_version: fn(&$request) -> Option<u32> = $needs_protocol_version;
+                needs_protocol_version(self)
             }
 
             fn execute_transport<'c>(

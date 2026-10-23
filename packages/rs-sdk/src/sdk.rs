@@ -50,6 +50,9 @@ use zeroize::Zeroizing;
 
 #[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;
+mod protocol_gate;
+#[cfg(all(test, feature = "mocks"))]
+mod protocol_gate_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;

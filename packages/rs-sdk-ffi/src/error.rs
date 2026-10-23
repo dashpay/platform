@@ -243,6 +243,16 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
+                    // The SDK refused a request the network cannot serve yet, without
+                    // sending it: not a network failure, and retrying sooner does not help.
+                    // A failed query for the network's version is its source; keep it in
+                    // the message the host reads.
+                    let message = match std::error::Error::source(sdk_err) {
+                        Some(cause) => format!("{error_str}: {cause}"),
+                        None => error_str,
+                    };
+                    (DashSDKErrorCode::ProtocolError, message)
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
@@ -465,6 +475,42 @@ mod tests {
             };
             assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
             assert_eq!(message, expected_message);
+        }
+    }
+
+    /// A request the network cannot serve yet is refused before it is sent. Its message
+    /// may name DAPI or a timeout from the failed query for the network's version, which
+    /// the substring chain would turn into a retryable network error.
+    #[test]
+    fn protocol_version_not_active_maps_to_protocol_error() {
+        for cause in [
+            None,
+            Some(dash_sdk::Error::Generic(
+                "dapi: request timeout, connection refused".to_string(),
+            )),
+        ] {
+            let has_cause = cause.is_some();
+            let err = dash_sdk::Error::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 13,
+                cause: cause.map(Box::new),
+            };
+            let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+            let message = unsafe {
+                let message = CStr::from_ptr(dash_sdk_error.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(dash_sdk_error.message);
+                message
+            };
+            assert_eq!(dash_sdk_error.code, DashSDKErrorCode::ProtocolError);
+            assert!(message.starts_with("get_contract_fee_pots needs Platform protocol version 14"));
+            assert_eq!(
+                message.contains("connection refused"),
+                has_cause,
+                "{message}"
+            );
         }
     }
 

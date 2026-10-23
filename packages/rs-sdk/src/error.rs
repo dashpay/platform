@@ -136,6 +136,41 @@ pub enum Error {
     /// A property declared `encryptedFor` could not be encrypted or decrypted
     #[error(transparent)]
     EncryptedFor(#[from] EncryptedForError),
+
+    /// The request uses a feature that not every node of the network serves yet, so the
+    /// SDK refused it without sending it: nodes of an older release would answer
+    /// UNIMPLEMENTED or a different question, and get banned for it.
+    ///
+    /// Retrying another node cannot help. The same request succeeds once a verified answer
+    /// shows the network runs `required`, and this SDK's own version is at least
+    /// `required`. See [`TransportRequest::needs_protocol_version`](rs_dapi_client::transport::TransportRequest::needs_protocol_version).
+    #[error(
+        "{method} needs Platform protocol version {required}; {}",
+        describe_proven_protocol_version(*.network, .cause.is_some())
+    )]
+    ProtocolVersionNotActive {
+        /// gRPC method of the refused request, e.g. `get_contract_fee_pots`.
+        method: &'static str,
+        /// Protocol version from which every node serves the request.
+        required: u32,
+        /// Protocol version the SDK could rely on: the lower of its own version and the
+        /// newest version a verified answer was signed with; 0 before any verified answer.
+        network: u32,
+        /// Why the network's version could not be confirmed, when a query for it failed.
+        #[source]
+        cause: Option<Box<Error>>,
+    },
+}
+
+/// The end of [`Error::ProtocolVersionNotActive`]'s message.
+fn describe_proven_protocol_version(network: u32, confirmation_failed: bool) -> String {
+    if confirmation_failed {
+        "the network's protocol version could not be confirmed".to_string()
+    } else if network == 0 {
+        "the network's protocol version is not verified yet".to_string()
+    } else {
+        format!("only protocol version {network} is proven for this SDK")
+    }
 }
 
 impl Error {
@@ -448,6 +483,15 @@ pub enum StaleNodeError {
         hinted_epoch: EpochIndex,
         /// Newer epoch index that the server's own proof showed as already started
         proven_epoch: EpochIndex,
+    },
+    /// Server answered a request that needs a newer protocol version with a response
+    /// signed at an older one: it is behind the network's protocol upgrade.
+    #[error("received an answer signed at protocol version {signed} to a request that needs {required}; try another server")]
+    ProtocolVersion {
+        /// Protocol version from which every node serves the request
+        required: u32,
+        /// Protocol version in the response metadata
+        signed: u32,
     },
 }
 

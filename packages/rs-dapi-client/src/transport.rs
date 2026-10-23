@@ -71,6 +71,17 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
         None
     }
 
+    /// The lowest protocol version at which every node of a network serves this request as
+    /// asked. Below it some nodes run a release that does not know the request's method or
+    /// one of its fields: they answer UNIMPLEMENTED, or drop the field and answer a different
+    /// question, and either gets them banned. `None` when nodes of every version serve it.
+    ///
+    /// The SDK's fetch paths refuse such a request until the network has proven that
+    /// version; a caller that executes the request directly owns the check.
+    fn needs_protocol_version(&self) -> Option<u32> {
+        None
+    }
+
     /// Perform transport request asynchronously.
     fn execute_transport<'c>(
         self,
