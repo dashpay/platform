@@ -543,6 +543,7 @@ jobs:
             --package drive \
             --package drive-abci \
             --package dash-sdk \
+            --package drive-proof-verifier \
             --all-features \
             --locked \
             -- shield
