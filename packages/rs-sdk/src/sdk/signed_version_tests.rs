@@ -1,4 +1,5 @@
 use super::{verifier_version, Sdk, SdkBuilder};
+use crate::error::StaleNodeError;
 use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::trunk_branch_sync::{
     run_full_tree_scan, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
@@ -841,11 +842,11 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
 
 /// An SDK that verifies document outcomes at protocol 14 (the fixture contract's version)
 /// and starts at protocol `version`, pinned or seeded.
-fn document_sdk(version: u32, pinned: bool) -> Sdk {
+fn document_sdk(version: u32, pinned: bool, time_tolerance_ms: Option<u64>) -> Sdk {
     let builder = SdkBuilder::new_mock()
         .with_network(Network::Testnet)
         .with_context_provider(DocumentOutcomeProvider::new(14))
-        .with_time_tolerance(None)
+        .with_time_tolerance(time_tolerance_ms)
         .with_height_tolerance(Some(1))
         .with_trusted_initial_height(10);
     let version = PlatformVersion::get(version).unwrap();
@@ -871,10 +872,10 @@ async fn verify_document_outcome_signed_at(sdk: &Sdk, version: u32) {
     .expect("signed document outcome verifies");
 }
 
-/// Ask `sdk` to verify a document query answer signed at protocol 13. The verifier refuses
-/// it before reading its proof, so the proof bytes are arbitrary. Its height is above every
-/// height the SDK has seen, so learning from it would show.
-async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath) -> Error {
+/// Ask `sdk` to verify a document query answer signed at protocol 13 at `time_ms`. The
+/// verifier refuses it before reading its proof, so the proof bytes are arbitrary. Its
+/// height is above every height the SDK has seen, so learning from it would show.
+async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath, time_ms: u64) -> Error {
     let provider = DocumentOutcomeProvider::new(14);
     let query = DocumentQuery::new(provider.contract.clone(), "preorder").unwrap();
     let response = GetDocumentsResponse {
@@ -885,6 +886,7 @@ async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath) -> Error {
             })),
             metadata: Some(ResponseMetadata {
                 height: 20,
+                time_ms,
                 protocol_version: 13,
                 ..Default::default()
             }),
@@ -912,6 +914,10 @@ async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath) -> Error {
     .expect_err("a document answer signed below the verifier's version is not verified")
 }
 
+fn now_ms() -> u64 {
+    chrono::Utc::now().timestamp_millis() as u64
+}
+
 /// The stored version, the highest verified version and the height mark.
 fn learned_state(sdk: &Sdk) -> (u32, u32, u64) {
     (
@@ -927,11 +933,11 @@ fn learned_state(sdk: &Sdk) -> (u32, u32, u64) {
 #[tokio::test]
 async fn should_retry_document_answers_signed_below_a_version_the_network_has_shown() {
     for path in [ProofPath::Network, ProofPath::Mock] {
-        let sdk = document_sdk(13, false);
+        let sdk = document_sdk(13, false, None);
         verify_document_outcome_signed_at(&sdk, 14).await;
         let learned = learned_state(&sdk);
         assert_eq!(learned, (14, 14, 10));
-        let error = verify_older_document_answer(&sdk, path).await;
+        let error = verify_older_document_answer(&sdk, path, now_ms()).await;
         assert!(
             matches!(
                 error,
@@ -956,17 +962,50 @@ async fn should_fail_fast_on_document_answers_signed_below_a_version_the_network
         for pinned in [false, true] {
             // Fresh, or having verified only answers signed below the SDK's version.
             for network in [None, Some(13)] {
-                let sdk = document_sdk(14, pinned);
+                let sdk = document_sdk(14, pinned, None);
                 if let Some(network) = network {
                     verify_document_outcome_signed_at(&sdk, network).await;
                 }
                 let learned = learned_state(&sdk);
                 assert_eq!(learned, (14, network.unwrap_or(0), 10));
-                let error = verify_older_document_answer(&sdk, path).await;
+                let error = verify_older_document_answer(&sdk, path, now_ms()).await;
                 assert!(matches!(error, Error::Config(_)), "{error:?}");
                 assert!(!error.can_retry());
                 assert_eq!(learned_state(&sdk), learned);
             }
+        }
+    }
+}
+
+/// An answer outside the time tolerance comes from a stale node, whatever the SDK's version:
+/// it is retried on another node, which bans this one, even before any verified answer has
+/// shown the network running the SDK's version. Answers from nodes keeping up with the
+/// network are fresh, so an SDK set ahead of its network still fails at once.
+#[tokio::test]
+async fn should_retry_stale_document_answers_signed_below_a_version_the_network_has_not_shown() {
+    const TOLERANCE_MS: u64 = 60_000;
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        for stale in [false, true] {
+            let sdk = document_sdk(14, false, Some(TOLERANCE_MS));
+            let learned = learned_state(&sdk);
+            assert_eq!(learned, (14, 0, 10));
+            let time_ms = if stale {
+                now_ms() - 10 * TOLERANCE_MS
+            } else {
+                now_ms()
+            };
+            let error = verify_older_document_answer(&sdk, path, time_ms).await;
+            if stale {
+                assert!(
+                    matches!(error, Error::StaleNode(StaleNodeError::Time { .. })),
+                    "{error:?}"
+                );
+                assert!(error.can_retry());
+            } else {
+                assert!(matches!(error, Error::Config(_)), "{error:?}");
+                assert!(!error.can_retry());
+            }
+            assert_eq!(learned_state(&sdk), learned);
         }
     }
 }

@@ -45,10 +45,8 @@ impl Sdk {
         // Both verifications use the same protocol version. The request and
         // response are copied on every call so a second verification can
         // follow a fetch; the copy is small next to proof verification itself.
-        let version = verifier_version(
-            self.version(),
-            response.response_metadata()?.protocol_version,
-        );
+        let metadata = response.response_metadata()?.clone();
+        let version = verifier_version(self.version(), metadata.protocol_version);
         let arrival = MetadataArrival {
             height: self.metadata_last_seen_height.load(Ordering::Acquire),
             time_ms: chrono::Utc::now().timestamp_millis() as u64,
@@ -73,7 +71,12 @@ impl Sdk {
             ..
         } = missing
         else {
-            return Err(self.classify_verifier_error(missing));
+            return Err(self.classify_verifier_error(
+                missing,
+                method_name,
+                Some(&metadata),
+                arrival.time_ms,
+            ));
         };
         let Some(fetch) =
             provider.fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
@@ -113,7 +116,12 @@ impl Sdk {
                     self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                     Ok(verified)
                 }
-                Err(error) => Err(self.classify_verifier_error(error)),
+                Err(error) => Err(self.classify_verifier_error(
+                    error,
+                    method_name,
+                    Some(&metadata),
+                    arrival.time_ms,
+                )),
             },
             Ok(None) => {
                 tracing::warn!(

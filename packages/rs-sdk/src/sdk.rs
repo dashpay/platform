@@ -529,14 +529,31 @@ impl Sdk {
     ///   [`Error::Proof`], the request moves to another node and this one is banned;
     /// * nothing has shown it yet: the SDK may be pinned, seeded or persisted ahead of its
     ///   network, where every node would be refused and banned alike, so the query fails
-    ///   at once with [`Error::Config`] and no node is banned.
-    fn classify_verifier_error(&self, error: drive_proof_verifier::Error) -> Error {
+    ///   at once with [`Error::Config`] and no node is banned. An answer outside the time
+    ///   tolerance still fails as stale ([`StaleNodeError::Time`]), so a node that stopped
+    ///   following the network is retried and banned: answers from nodes keeping up with
+    ///   the network are fresh.
+    ///
+    /// `metadata` is the response's, not yet verified, and `now_ms` the time it arrived.
+    fn classify_verifier_error(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        now_ms: u64,
+    ) -> Error {
         if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
             error
         {
             if signed < verifier
                 && self.verified_protocol_version.load(Ordering::Relaxed) < verifier
             {
+                let (_, time_tolerance) = self.freshness_criteria(method_name);
+                if let (Some(metadata), Some(tolerance)) = (metadata, time_tolerance) {
+                    if let Err(stale) = verify_metadata_time(metadata, now_ms, tolerance) {
+                        return stale;
+                    }
+                }
                 return Error::Config(format!(
                     "this answer names protocol version {signed}, below the SDK's \
                      protocol version {verifier}, and no verified answer has yet shown the \
@@ -685,11 +702,19 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
+                let metadata = response.response_metadata().ok().cloned();
                 let (verified, from_expectation) = mock
                     .lock()
                     .await
                     .parse_proof_with_metadata(request, response, self.version())
-                    .map_err(|error| self.classify_verifier_error(error))?;
+                    .map_err(|error| {
+                        self.classify_verifier_error(
+                            error,
+                            method_name,
+                            metadata.as_ref(),
+                            chrono::Utc::now().timestamp_millis() as u64,
+                        )
+                    })?;
                 if from_expectation {
                     // An expectation's metadata is made up, not verified: it moves
                     // the stored version as a real answer would, but is no evidence
