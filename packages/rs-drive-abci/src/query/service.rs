@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
@@ -74,6 +75,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError as DriveInternalError;
 use drive::error::Error as DriveError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -1160,6 +1162,12 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::ResourceExhausted(message) => {
             Status::resource_exhausted(bounded_message(message))
         }
+        // A feature the current protocol version does not have yet. Whether it is active
+        // depends only on the protocol version, which every node at this height shares, not on
+        // this node's build, so the refusal is no fault of this node and must not get it banned.
+        error @ QueryError::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        })) => Status::invalid_argument(bounded_message(error.to_string())),
         // A request this node cannot decode, or a request version it does not serve, may be
         // one a newer node serves, so these stay retryable on another node.
         _ => {
@@ -1193,6 +1201,14 @@ fn error_into_status(error: Error) -> Status {
         // error, clients would retry it on every other node and stop using each one.
         Error::Drive(DriveError::Query(error)) => {
             Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        // A feature the current protocol version does not have yet, refused alike by every node
+        // at this height whatever its build.
+        error @ (Error::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        }))
+        | Error::Execution(ExecutionError::VersionNotActive { .. })) => {
+            Status::invalid_argument(bounded_message(format!("query: {}", error)))
         }
         error => Status::internal(bounded_message(format!("query: {}", error))),
     }
@@ -1277,13 +1293,11 @@ mod tests {
 #[cfg(test)]
 mod query_error_status_tests {
     use super::*;
-    use crate::error::execution::ExecutionError;
     use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_documents_request;
     use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
     use dpp::dashcore::Network;
     use dpp::system_data_contracts::dpns_contract;
-    use drive::error::drive::DriveError as DriveInternalError;
     use drive::error::query::QuerySyntaxError;
     use rs_dapi_client::CanRetry;
 
