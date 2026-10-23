@@ -16,7 +16,7 @@ use crate::platform::contract_moderation::{
 };
 use crate::platform::data_contracts_by_range::DataContractsByRange;
 use crate::platform::data_contracts_latest_versions::{
-    DataContractLatestVersion, DataContractsLatestVersions,
+    DataContractLatestVersion, DataContractsLatestVersions, DataContractsLatestVersionsQuery,
 };
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::types::epoch::current_epoch_probe_query;
@@ -28,11 +28,16 @@ use crate::platform::{
 use crate::SdkBuilder;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contract_group_info_response::GetContractGroupInfoResponseV0;
+use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
+    get_data_contracts_latest_versions_response_v0::Result as LatestVersionsResult,
+    DataContractLatestVersionEntry, DataContractsLatestVersions as LatestVersionsEntries,
+    GetDataContractsLatestVersionsResponseV0,
+};
 use dapi_grpc::platform::v0::get_documents_request::WhereClause;
 use dapi_grpc::platform::v0::{
     get_contract_group_info_request, get_contract_group_info_response,
     get_data_contracts_by_range_request, get_data_contracts_latest_versions_request,
-    get_documents_request, get_epochs_info_request,
+    get_data_contracts_latest_versions_response, get_documents_request, get_epochs_info_request,
     get_identity_by_non_unique_public_key_hash_request, get_most_recent_shielded_anchor_request,
     get_shielded_anchors_request, get_shielded_encrypted_notes_request,
     get_shielded_notes_count_request, get_shielded_nullifiers_request,
@@ -52,9 +57,11 @@ use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::Document;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
@@ -1102,6 +1109,64 @@ async fn should_not_send_unproved_methods_protocol_14_added_before_it_is_verifie
         );
         assert_eq!(sent, 1, "{method}");
     }
+}
+
+/// A fresh SDK's first unproved gated call learns protocol 14 from its probe, then reads
+/// the answer with protocol 14 rules: a contract that only those rules parse comes back,
+/// and the honest node that sent it is not banned.
+#[tokio::test]
+async fn should_read_an_unproved_answer_with_the_version_the_probe_learned() {
+    let protocol_14 = PlatformVersion::get(V14).unwrap();
+    let contract =
+        load_system_data_contract(SystemDataContract::ModerationCharters, protocol_14).unwrap();
+    let sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    let query = DataContractsLatestVersionsQuery::with_contracts(vec![contract.id()]);
+    let request: GetDataContractsLatestVersionsRequest =
+        query.query(&sdk.query_settings().without_proofs()).unwrap();
+    let response = GetDataContractsLatestVersionsResponse {
+        version: Some(get_data_contracts_latest_versions_response::Version::V0(
+            GetDataContractsLatestVersionsResponseV0 {
+                result: Some(LatestVersionsResult::DataContractsLatestVersions(
+                    LatestVersionsEntries {
+                        entries: vec![DataContractLatestVersionEntry {
+                            identifier: contract.id().to_vec(),
+                            version: Some(contract.version()),
+                            data_contract: Some(
+                                contract
+                                    .serialize_to_bytes_with_platform_version(protocol_14)
+                                    .unwrap(),
+                            ),
+                        }],
+                    },
+                )),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: V14,
+                    height: 10,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    answer(&sdk, &request, Ok(response)).await;
+
+    let versions = DataContractsLatestVersions::fetch_unproved(&sdk, query)
+        .await
+        .expect("the answer is read with protocol 14 rules")
+        .expect("versions");
+    let latest = versions
+        .0
+        .get(&contract.id())
+        .cloned()
+        .flatten()
+        .expect("the contract's entry");
+    assert_eq!(
+        latest.data_contract.map(|returned| returned.id()),
+        Some(contract.id())
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sent(&sdk, &request).await, 1);
+    assert!(!sdk.address_list().is_banned(&node()));
 }
 
 /// A 4.x node answers every method protocol 14 added with UNIMPLEMENTED, which bans it for
