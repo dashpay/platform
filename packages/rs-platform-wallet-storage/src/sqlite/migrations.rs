@@ -11,6 +11,7 @@ use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
+mod record_v019;
 mod v020;
 
 // Generates a `migrations` module with `runner()`; path is relative to
@@ -81,6 +82,9 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
     ) -> Result<usize, Self::Error> {
         let mut count = 0;
         for query in queries {
+            if query == self.accounting_sql {
+                v020::rewind_sync_heights(&self.tx)?;
+            }
             self.tx.execute_batch(query)?;
             if query == self.registration_sql {
                 legacy_v008::backfill_registrations(&self.tx)?;
