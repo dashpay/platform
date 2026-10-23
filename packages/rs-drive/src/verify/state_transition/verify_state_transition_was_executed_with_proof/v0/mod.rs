@@ -87,32 +87,15 @@ use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
-    #[inline(always)]
-    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
-        state_transition: &StateTransition,
-        block_info: &BlockInfo,
-        proof: &[u8],
-        known_contracts_provider_fn: &ContractLookupFn,
-        platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        Self::verify_state_transition_was_executed_with_proof_internal(
-            state_transition,
-            block_info,
-            proof,
-            known_contracts_provider_fn,
-            false,
-            platform_version,
-        )
-    }
-
-    /// The verification shared by every version of
+    /// The verification of generations 0 and 1 of
     /// `verify_state_transition_was_executed_with_proof`. With
-    /// `carries_owner_balance` (from version 1) the proof of an owned, fee-paying
-    /// transition also carries the owner's credit balance: a document batch's
-    /// proof is verified strictly as one merged query, an identity update's
-    /// through the identity keys verifier's own composition, and the others as
-    /// subsets of the merged proof; the outcome carries the balance.
-    pub(in crate::verify::state_transition::verify_state_transition_was_executed_with_proof) fn verify_state_transition_was_executed_with_proof_internal(
+    /// `carries_owner_balance` (a producer at `prove_state_transition` generation
+    /// 1) the proof of an owned, fee-paying transition also carries the owner's
+    /// credit balance: a document batch's proof is verified strictly as one merged
+    /// query, an identity update's through the identity keys verifier's own
+    /// composition, and the others as subsets of the merged proof; the outcome
+    /// carries the balance.
+    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],

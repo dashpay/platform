@@ -3,13 +3,19 @@
 //!
 //! The quorum key is derived from the fixed secret `[1; 32]`. Recorded vectors made with it are
 //! synthetic fixtures, never network trust anchors.
+//!
+//! The suites using it test drive-proof-verifier but live here, because generating proofs needs
+//! drive's server feature, which the client crate must not enable even as a dev-dependency:
+//! with resolver 2, `cargo test -p drive-proof-verifier` would compile the library itself
+//! against it.
+//! Their vectors stay in `rs-drive-proof-verifier/tests/vectors`, next to the crate they verify.
 
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
+use drive_proof_verifier::{ContextProvider, ContextProviderError};
 use std::sync::Arc;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
