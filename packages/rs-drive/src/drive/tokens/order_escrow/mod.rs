@@ -1072,7 +1072,7 @@ mod tests {
                 created_at: Some(1_000 + i as u64),
                 updated_at: Some(1_000 + i as u64),
                 transferred_at: None,
-                created_at_block_height: Some(1),
+                created_at_block_height: None,
                 updated_at_block_height: None,
                 transferred_at_block_height: None,
                 created_at_core_block_height: None,
