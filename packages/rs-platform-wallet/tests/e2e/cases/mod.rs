@@ -9,7 +9,7 @@
 // Asset-lock manager cases (Wave AL — see TEST_SPEC.md ### Asset Lock (AL))
 pub mod al_001_concurrent_asset_lock_builds;
 #[cfg(feature = "shielded")]
-pub mod al_002_wallet_drain_persistence_gate;
+pub mod al_002_wallet_drain_core_to_shielded;
 pub mod cr_001_spv_mn_list_sync_readiness;
 pub mod cr_003_asset_lock_funded_registration;
 pub mod cr_004_legacy_bip32_utxo_update_after_spend;

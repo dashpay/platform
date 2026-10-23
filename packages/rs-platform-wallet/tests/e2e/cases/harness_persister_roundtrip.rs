@@ -1,11 +1,17 @@
-//! Offline check of the harness persister's accounting observation points.
+//! Offline checks of the harness persister.
 //!
 //! `framework::harness_persister::HarnessPersister` backs the live and
-//! after-reload asset-lock accounting checks in CR-003 / ID-002b / AL-001.
-//! Those only run against a live network, so this case pins the plumbing
-//! offline: a wallet registered through a manager on the persister, then
-//! one wallet-level Core record stored for it, must be readable both as the
-//! live record and from a reopened SQLite snapshot, unchanged.
+//! after-reload asset-lock accounting checks in CR-003 / CR-005 / ID-002b /
+//! AL-001 and the wallet drain in AL-002. Those only run against a live
+//! network, so these cases pin the plumbing offline:
+//!
+//! - a wallet registered through a manager on the persister, then one
+//!   wallet-level Core record stored for it, must be readable both as the
+//!   live record and from a reopened SQLite snapshot, unchanged;
+//! - the persister attests exactly what its SQLite store attests, nothing
+//!   masked and nothing added;
+//! - a real `bind_shielded` succeeds through it and its wallet and viewing
+//!   key come back from `load`.
 
 use std::sync::Arc;
 
@@ -152,10 +158,56 @@ async fn harness_persister_round_trips_a_wallet_record() {
     assert!(shutdown.all_clean(), "manager teardown: {shutdown:?}");
 }
 
-/// The harness persister attests `SHIELDED_FVK_RESTART` (atomic changesets
-/// plus shielded viewing keys) and honours it: a real `bind_shielded`
-/// succeeds through it, and the viewing key it persisted comes back from
-/// `load` — the path a seedless rebind reads.
+/// The harness persister reports the capabilities of its SQLite store
+/// unchanged: no mask, no additions. That includes `WALLET_DRAIN` and the
+/// inline commit the wallet drain requires (AL-002).
+#[test]
+fn harness_persister_attests_exactly_what_the_store_attests() {
+    use platform_wallet::changeset::PersistenceCapabilities;
+    use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+
+    use crate::framework::harness_persister::private_temp_dir;
+
+    let persister = HarnessPersister::open();
+    let dir = private_temp_dir("platform-wallet-e2e-caps-").expect("private dir");
+    let reference = SqlitePersister::open(
+        SqlitePersisterConfig::new(dir.path().join("reference.db")).with_auto_backup_dir(None),
+    )
+    .expect("open reference store");
+
+    assert_eq!(
+        persister.persistence_capabilities(),
+        reference.persistence_capabilities(),
+        "the harness must attest exactly what SqlitePersister attests"
+    );
+    assert!(
+        persister
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::WALLET_DRAIN),
+        "SqlitePersister attests WALLET_DRAIN; the harness must pass it through"
+    );
+    assert_eq!(
+        persister.store_commits_inline(),
+        reference.store_commits_inline()
+    );
+    assert!(
+        persister.store_commits_inline(),
+        "the wallet drain requires an inline-committing backend"
+    );
+    assert_eq!(
+        persister.store_transient_is_reissuable(),
+        reference.store_transient_is_reissuable()
+    );
+    assert_eq!(
+        persister.stores_dashpay_backfill(),
+        reference.stores_dashpay_backfill()
+    );
+    assert_eq!(persister.persists_durably(), reference.persists_durably());
+}
+
+/// A real `bind_shielded` succeeds through the harness persister, and the
+/// viewing key it persisted comes back from `load` — the path a seedless
+/// rebind reads — together with the wallet itself (`WALLET_RESTORE`).
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
 async fn harness_persister_honours_shielded_fvk_restart() {
     use platform_wallet::changeset::PersistenceCapabilities;
@@ -213,8 +265,8 @@ async fn harness_persister_honours_shielded_fvk_restart() {
         "the viewing key bind_shielded persisted must come back from load"
     );
     assert!(
-        loaded.wallets.is_empty(),
-        "wallets stay session-scoped: WALLET_RESTORE is not attested"
+        loaded.wallets.contains_key(&wallet.wallet_id()),
+        "the store attests WALLET_RESTORE, so the registered wallet must come back from load"
     );
 
     let shutdown = manager.shutdown().await;

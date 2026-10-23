@@ -364,9 +364,10 @@ impl E2eContext {
             ),
         }
 
-        // Persister: non-durable to the wallet (testnet re-sync is fast),
-        // but captures wallet-level Core records and tees changesets into
-        // a SQLite store for the accounting checks (see `harness_persister`).
+        // Persister: a per-process SQLite store the wallet sees unmasked
+        // (durable Core, identity and asset-lock paths), which also captures
+        // wallet-level Core records for the accounting checks (see
+        // `harness_persister`).
         // App handlers: the shared [`WaitEventHub`] so test helpers
         // await on real events instead of fixed polling, plus the
         // [`MnListErrorObserver`] so `wait_for_mn_list_synced` can
