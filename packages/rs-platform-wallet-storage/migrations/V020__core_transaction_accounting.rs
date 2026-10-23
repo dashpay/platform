@@ -7,6 +7,8 @@
 //! them in place, V020 drops each wallet's mined Core history and rewinds its
 //! filter checkpoint to just below its birth height, so the next SPV start
 //! rescans it from birth and records it again through the current accounting.
+//! The typed pre-step validates birth heights and binds checked rewind values
+//! before this SQL can discard history.
 //!
 //! A block rescan cannot redeliver what was never mined, so V020 keeps the
 //! unmined history as evidence: unconfirmed transactions with their instant
@@ -88,11 +90,6 @@ pub fn migration() -> String {
     );
     UPDATE core_transactions
         SET block_hash = NULL, block_time = NULL, finalized = 0, record_blob = NULL
-        WHERE height IS NOT NULL;
-    UPDATE core_sync_state SET synced_height = (
-        SELECT MIN(COALESCE(core_sync_state.synced_height, MAX(w.birth_height - 1, 0)),
-                   MAX(w.birth_height - 1, 0))
-        FROM wallets w WHERE w.wallet_id = core_sync_state.wallet_id
-    );"
+        WHERE height IS NOT NULL;"
     .to_owned()
 }
