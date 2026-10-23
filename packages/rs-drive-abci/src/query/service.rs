@@ -1277,6 +1277,7 @@ mod tests {
 #[cfg(test)]
 mod query_error_status_tests {
     use super::*;
+    use crate::error::execution::ExecutionError;
     use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_documents_request;
     use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
@@ -1284,6 +1285,7 @@ mod query_error_status_tests {
     use dpp::system_data_contracts::dpns_contract;
     use drive::error::drive::DriveError as DriveInternalError;
     use drive::error::query::QuerySyntaxError;
+    use rs_dapi_client::CanRetry;
 
     #[test]
     fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {
@@ -1321,6 +1323,75 @@ mod query_error_status_tests {
             "could not decode data contracts query".to_string(),
         ));
         assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    /// Every node at a height runs the same protocol version, so a feature that version does not
+    /// have yet is refused by all of them alike, whichever route reports it.
+    #[test]
+    fn should_answer_a_feature_not_active_yet_with_invalid_argument() {
+        let not_active = || DriveInternalError::VersionNotActive {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_validation.code(), Code::InvalidArgument);
+        assert!(from_validation
+            .message()
+            .contains("prove_identity_keys_remaining_budgets not active"));
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_drive.code(), Code::InvalidArgument);
+
+        let from_platform = error_into_status(Error::Execution(ExecutionError::VersionNotActive {
+            method: "validate_identity_public_keys_limits".to_string(),
+            known_versions: vec![0],
+        }));
+        assert_eq!(from_platform.code(), Code::InvalidArgument);
+
+        for status in [from_validation, from_drive, from_platform] {
+            assert!(!status.can_retry(), "{status}");
+        }
+    }
+
+    /// A version the code does not know is a fault in this build, and a request version this
+    /// node does not serve may be served by a newer node: both stay retryable on another node.
+    #[test]
+    fn should_keep_unknown_versions_and_unsupported_request_versions_retryable() {
+        let unknown = || DriveInternalError::UnknownVersionMismatch {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+            received: 1,
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_validation.code(), Code::Unknown);
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_drive.code(), Code::Internal);
+
+        let from_platform =
+            error_into_status(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "validate_identity_public_keys_limits".to_string(),
+                known_versions: vec![0],
+                received: 1,
+            }));
+        assert_eq!(from_platform.code(), Code::Internal);
+
+        let unsupported = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "identity_keys_remaining_budgets".to_string(),
+            0,
+            0,
+            14,
+            1,
+        ));
+        assert_eq!(unsupported.code(), Code::Unknown);
+
+        for status in [from_validation, from_drive, from_platform, unsupported] {
+            assert!(status.can_retry(), "{status}");
+        }
     }
 
     #[test]
