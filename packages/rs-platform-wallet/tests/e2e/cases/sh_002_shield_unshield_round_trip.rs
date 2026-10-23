@@ -115,16 +115,10 @@ async fn sh_002_shield_unshield_round_trip() {
     .expect("addr_dst unshield never observed");
 
     // The shielded account retains the change note (minus the shielded
-    // fee). Re-scan and read the residual; assert it dropped by at least
-    // the unshield amount and is strictly below the pre-unshield balance.
-    handle.sync().await;
-    let residual = handle
-        .balances(&s.test_wallet)
+    // fee). Poll until sync discovers it, then check the fee bound.
+    let residual = wait_for_shielded_balance(&s.test_wallet, &handle, 0, 1, STEP_TIMEOUT)
         .await
-        .expect("post-unshield shielded_balances")
-        .get(&0)
-        .copied()
-        .unwrap_or(0);
+        .expect("post-unshield change note never observed");
     let max_change = SHIELD_AMOUNT - UNSHIELD_AMOUNT;
     assert!(
         residual < max_change,

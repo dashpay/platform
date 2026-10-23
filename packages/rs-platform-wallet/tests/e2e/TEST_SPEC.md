@@ -2142,18 +2142,17 @@ while those bugs persist; SH-007 is designed to PASS and stay green.
 
 #### SH-002 — Round-trip: shield then unshield back to a transparent address (Type 15 → 17)
 - **Priority**: P0
-- **Status**: not implemented (Wave H).
+- **Status**: implemented; change-note polling fix verified offline only.
 - **Wallet feature exercised**: `shielded_shield_from_account` then `shielded_unshield_to` (`platform_wallet.rs:604`) → `operations.rs:323` (`unshield`), exercising `extract_spends_and_anchor` (`operations.rs:612`) and the FileBacked `witness()` path (`file_store.rs:154`).
 - **Preconditions**: SH-001 prerequisites; the spend leg REQUIRES the FileBacked store (in-memory `witness()` errors — Found-027).
 - **Scenario**:
-  1. Shield `50_000_000` into account 0 (as SH-001); `coordinator.sync(true)` so the note is appended to the tree and marked.
+  1. Shield `1_120_000_000` into account 0; `coordinator.sync(true)` so the note is appended to the tree and marked.
   2. Derive a fresh transparent `addr_dst`; `shielded_unshield_to(account=0, addr_dst_bech32m, amount=20_000_000, prover)`.
-  3. `coordinator.sync(true)`; `wait_for_address_balance_chain_confirmed_n(addr_dst, 20_000_000, …)`.
+  3. `wait_for_address_balance_chain_confirmed_n(addr_dst, 20_000_000, …)`; poll shielded sync for a positive change balance with a 60-second timeout.
 - **Assertions**:
   - Unshield returns `Ok(())`.
   - `addr_dst` confirmed balance `== 20_000_000` (exact; verified via proof-verified chain read).
-  - `shielded_balances[0] == 50_000_000 - 20_000_000 - shielded_fee` (change note retained at the wallet's own default Orchard address; `0 < shielded_fee`).
-  - The spent input note is marked spent (`get_unspent_notes` no longer returns it) — verified indirectly: a second unshield of the same amount must NOT re-select the now-spent note (succeeds from change, or fails `ShieldedInsufficientBalance` if change is short).
+  - After polling, `0 < shielded_balances[0] < 1_120_000_000 - 20_000_000` (change retained with a positive shielded fee).
 - **Expected current outcome**: PASS **when run against the FileBacked store**. If a harness author wires the in-memory store, the unshield fails at `extract_spends_and_anchor` with `ShieldedMerkleWitnessUnavailable` — that is Found-027, pinned explicitly by SH-005.
 - **Harness extensions required**: Wave H + FileBacked store wiring.
 - **Estimated complexity**: L
@@ -2643,11 +2642,11 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 
 #### SH-042 — Core asset lock → another wallet's shielded address (Type 18)
 - **Priority**: P1.
-- **Status**: implemented; not yet run live; Core-L1 gate as in SH-018.
+- **Status**: implemented; testnet exposed a consumed-lock inspection defect; fix verified offline only. Core-L1 gate as in SH-018.
 - **Wallet feature exercised**: `PlatformWallet::shielded_fund_from_asset_lock(FromWalletBalance)` with `vec![(foreign_orchard_address, None)]`.
 - **Preconditions**: `setup_with_core_funded_test_wallet(1_750_000)` plus a distinct guarded receiver; persisted shielded bindings for both.
 - **Scenario**: quote the pool fee with the existing read-only drain preview (as in AL-002); lock `1_500_000` duffs and send the remainder to the foreign recipient; sync the receiver and await sender Core change.
-- **Assertions**: receiver gains exactly `lock_duffs * CREDITS_PER_DUFF - pool_fee` within SH-018's post-fee bound; sender shielded balance remains zero; exactly one persisted lock has the requested amount and `Consumed` status; framework transaction-accounting checks hold live and after reload; Core balance loses exactly `lock_duffs + core_fee` with fee within SH-018's funding headroom; Core debit converted to credits equals receiver credits plus both fees.
+- **Assertions**: receiver gains exactly `lock_duffs * CREDITS_PER_DUFF - pool_fee` within SH-018's post-fee bound; sender shielded balance remains zero; exactly one lock in the full tracked history (`list_tracked_locks`, including consumed locks) has the requested amount and `Consumed` status; framework transaction-accounting checks hold live and after reload; Core balance loses exactly `lock_duffs + core_fee` with fee within SH-018's funding headroom; Core debit converted to credits equals receiver credits plus both fees.
 - **API support**: foreign recipients are supported directly. The API requires one recipient with `None` credits and derives the amount from lock value minus fee; no ownership requirement or account-registration workaround is needed.
 - **Cleanup**: receiver unshield sweep plus guarded sender Core/address and receiver teardown.
 - **Harness extensions**: none. File: `cases/sh_042_asset_lock_to_recipient.rs`.

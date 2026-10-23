@@ -114,25 +114,14 @@ async fn sh_042_should_fund_foreign_shielded_recipient_from_asset_lock() {
         "foreign recipient note must not belong to sender"
     );
 
-    let reloaded = sender
-        .ctx
-        .persister
-        .reloaded_start_state()
-        .expect("reload durable wallet state");
-    let locks: Vec<_> = reloaded
-        .wallets
-        .get(&sender.test_wallet.id())
-        .expect("persisted sender")
-        .unused_asset_locks
-        .values()
-        .flat_map(|locks| locks.values())
-        .collect();
+    // Startup state excludes consumed locks; the tracked history retains them.
+    let locks = wallet.asset_locks().list_tracked_locks().await;
     assert_eq!(
         locks.len(),
         1,
         "exactly one asset lock must have funded the recipient"
     );
-    let lock = locks[0];
+    let lock = &locks[0];
     assert_eq!(lock.amount, ASSET_LOCK_DUFFS);
     assert_eq!(lock.status, AssetLockStatus::Consumed);
     assert_tracked_lock_accounting(&sender.ctx.persister, sender.test_wallet.id(), lock).await;

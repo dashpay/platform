@@ -21,12 +21,9 @@
 //! (wallet_id, account_index)` scoping: each case mints a fresh seed, so
 //! its notes / spent-marks / watermarks never bleed into another case's.
 //!
-//! The first case pays one full ~1M-note Orchard scan into the shared
-//! tree; [`bind_shielded`] then seeds each freshly-bound account's
-//! watermark to the shared `tree_size`, so cases 2..N start their fetch
-//! at the tip-aligned chunk and pull only the handful of notes since —
-//! turning a per-case full re-scan into a per-case tip-delta scan
-//! (~25-30x on the Orchard-scan portion of the suite).
+//! Fresh accounts start scanning at watermark 0. The shared tree saves
+//! repeated appends, but its local size does not establish scan coverage
+//! for an account and must not seed that account's watermark.
 //!
 //! [`new_file_backed_coordinator`] still mints a private per-call tree
 //! for cases that need a controlled, isolated tree (including SH-004's
@@ -136,17 +133,10 @@ impl ShieldedHandle {
 /// [`new_file_backed_coordinator`] for a controlled private tree) share
 /// ONE [`NetworkShieldedCoordinator`] over ONE persisted SQLite tree
 /// (see [`shared_coordinator`]). The first case pays the full ~1M-note
-/// Orchard scan into that tree; this function then seeds each
-/// freshly-bound account's watermark to the shared `tree_size`, so
-/// cases 2..N start their fetch at the tip-aligned chunk and pull only
-/// the notes since (including the one this case is about to shield,
-/// which lands at a position `>= tree_size` and so is past the seed).
-///
-/// Without the watermark seed a fresh-seed wallet binds at watermark 0,
-/// collapsing the sync's `MIN`-watermark fetch start back to position 0
-/// — a shared tree alone would save only the local append, not the
-/// dominant network re-fetch. Seeding is what converts the shared tree
-/// into a fetch speedup.
+/// Orchard scan into that tree. Fresh accounts still scan from 0: local
+/// tree size can exceed scanned chain positions, so using it as a
+/// watermark could skip the account's own notes. Only sync advances
+/// scan coverage; the shared tree avoids repeated appends, not re-fetches.
 ///
 /// Per-case isolation holds because notes / spent-marks / watermarks are
 /// `SubwalletId`-scoped and each case uses a distinct (fresh-seed)
@@ -154,8 +144,7 @@ impl ShieldedHandle {
 /// registered subwallet. A case asserting an on-chain note is absent
 /// before its own sync must use [`new_file_backed_coordinator`].
 ///
-/// Errors: [`FrameworkError::Wallet`] for coordinator, `bind_shielded`,
-/// or watermark-seed failures.
+/// Errors: [`FrameworkError::Wallet`] for coordinator or binding failures.
 pub async fn bind_shielded(
     wallet: &TestWallet,
     accounts: &[u32],
@@ -168,28 +157,6 @@ pub async fn bind_shielded(
         .bind_shielded(&seed, accounts, &coordinator)
         .await
         .map_err(|e| FrameworkError::Wallet(format!("bind_shielded: {e}")))?;
-
-    // Seed this wallet's per-account watermark to the shared tree's
-    // current leaf count so the next sync fetches only the tip delta.
-    // `bind_shielded` registers the wallet on the coordinator and (for a
-    // fresh seed) leaves every account at watermark 0; overwrite that
-    // with `tree_size` under one write guard. A note at exactly
-    // `tree_size` still passes the sync's strict `position < watermark`
-    // save gate, so nothing this case owns is skipped.
-    {
-        let mut store = coordinator.store().write().await;
-        let tree_size = store
-            .tree_size()
-            .map_err(|e| FrameworkError::Wallet(format!("bind_shielded: tree_size: {e}")))?;
-        for &account in accounts {
-            let id = SubwalletId::new(wallet.id(), account);
-            store
-                .set_last_synced_note_index(id, tree_size)
-                .map_err(|e| {
-                    FrameworkError::Wallet(format!("bind_shielded: seed watermark: {e}"))
-                })?;
-        }
-    }
 
     Ok(ShieldedHandle {
         coordinator,
