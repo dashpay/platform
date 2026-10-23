@@ -15,19 +15,14 @@ struct StackSizeArgs {
     /// Stack size in bytes for the driving thread and the async runtime's
     /// worker threads.
     stack_size: Expr,
-    /// Accepted legacy flag. Async bodies always run on a multi-threaded
-    /// runtime, so it no longer affects the runtime; it is still rejected on
-    /// non-`async` functions.
-    multi_thread: bool,
     /// Worker-thread count for the async runtime; `None` uses
-    /// [`DEFAULT_MULTI_THREAD_WORKERS`]. Valid with or without `multi_thread`.
+    /// [`DEFAULT_MULTI_THREAD_WORKERS`].
     worker_threads: Option<Expr>,
 }
 
 impl Parse for StackSizeArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let stack_size: Expr = input.parse()?;
-        let mut multi_thread = false;
         let mut worker_threads = None;
 
         while input.peek(Token![,]) {
@@ -37,7 +32,6 @@ impl Parse for StackSizeArgs {
             }
             let key: Ident = input.parse()?;
             match key.to_string().as_str() {
-                "multi_thread" => multi_thread = true,
                 "worker_threads" => {
                     input.parse::<Token![=]>()?;
                     worker_threads = Some(input.parse()?);
@@ -47,7 +41,7 @@ impl Parse for StackSizeArgs {
                         key.span(),
                         format!(
                             "unknown stack_size argument `{other}`; \
-                             expected `multi_thread` or `worker_threads = N`"
+                             expected `worker_threads = N`"
                         ),
                     ));
                 }
@@ -56,7 +50,6 @@ impl Parse for StackSizeArgs {
 
         Ok(Self {
             stack_size,
-            multi_thread,
             worker_threads,
         })
     }
@@ -77,10 +70,7 @@ impl Parse for StackSizeArgs {
 /// - `#[stack_size(EXPR, worker_threads = N)]` — same, but the async runtime
 ///   uses `N` worker threads instead of two.
 ///
-/// `multi_thread` is an accepted but optional legacy token: async bodies are
-/// always multi-threaded now, so it has no effect on the runtime and may be
-/// combined with `worker_threads` or omitted entirely. Both `worker_threads`
-/// and `multi_thread` configure the async runtime, so using either on a sync
+/// `worker_threads` configures the async runtime, so using it on a sync
 /// `#[stack_size]` function is a compile error.
 ///
 /// Worker threads inherit `EXPR` as their stack size, so tasks spawned onto the
@@ -107,7 +97,6 @@ impl Parse for StackSizeArgs {
 pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
     let StackSizeArgs {
         stack_size: stack_size_expr,
-        multi_thread,
         worker_threads,
     } = parse_macro_input!(attr as StackSizeArgs);
     let function = parse_macro_input!(item as ItemFn);
@@ -127,12 +116,12 @@ pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
         sig.asyncness = None;
     }
 
-    // `worker_threads`/`multi_thread` configure the async runtime; a sync body
-    // builds no runtime, so passing them there is a mistake worth flagging.
-    if !is_async && (multi_thread || worker_threads.is_some()) {
+    // `worker_threads` configures the async runtime; a sync body builds no
+    // runtime, so passing it there is a mistake worth flagging.
+    if !is_async && worker_threads.is_some() {
         return syn::Error::new_spanned(
             &fn_ident,
-            "`worker_threads`/`multi_thread` only apply to async `#[stack_size]` functions",
+            "`worker_threads` only applies to async `#[stack_size]` functions",
         )
         .to_compile_error()
         .into();

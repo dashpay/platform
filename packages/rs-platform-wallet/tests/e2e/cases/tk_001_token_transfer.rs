@@ -46,7 +46,7 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 // The macro strips `async` and drives the body on a multi-threaded tokio
 // runtime whose workers also get the 16MB stack, so this test's concurrent
 // work has the same recursion budget on every thread.
-#[stack_size(16 * 1024 * 1024, multi_thread, worker_threads = 12)]
+#[stack_size(16 * 1024 * 1024, worker_threads = 12)]
 #[test]
 async fn tk_001_token_transfer_between_identities() {
     let _ = tracing_subscriber::fmt()
