@@ -204,9 +204,44 @@ impl PlatformWalletPersistence for HarnessPersister {
             .as_ref()
             .map(|core| core.records.clone())
             .unwrap_or_default();
+        let account_slices: Vec<String> = changeset
+            .core
+            .as_ref()
+            .map(|core| {
+                core.account_records
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "{}:{:?}:in={}:out={}:net={}",
+                            r.txid,
+                            r.account_type,
+                            r.input_details.len(),
+                            r.output_details.len(),
+                            r.net_amount
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         // Commit first: a changeset the store rejected never happened.
         if let Ok(store) = &self.sqlite {
             store.store(wallet_id, changeset)?;
+        }
+        for record in &records {
+            tracing::debug!(
+                target: "platform_wallet::e2e::harness_persister",
+                wallet_id = %hex::encode(wallet_id),
+                txid = %record.txid,
+                account = ?record.account_type,
+                context = ?record.context,
+                inputs = record.input_details.len(),
+                outputs = record.output_details.len(),
+                direction = ?record.direction,
+                net = record.net_amount,
+                fee = ?record.fee,
+                ?account_slices,
+                "stored wallet-level record"
+            );
         }
         let mut captured = self
             .records
