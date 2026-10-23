@@ -155,11 +155,13 @@ fn marketplace_proof_guarantee(
         return None;
     };
     match batch.first_transition()? {
-        BatchedTransitionRef::Token(TokenTransition::PlaceAsk(_)) => {
-            Some(StateTransitionProofGuarantee::ExecutionProved)
-        }
         BatchedTransitionRef::Token(
-            TokenTransition::FillAsk(_) | TokenTransition::CancelOrder(_),
+            TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_),
+        ) => Some(StateTransitionProofGuarantee::ExecutionProved),
+        BatchedTransitionRef::Token(
+            TokenTransition::FillAsk(_)
+            | TokenTransition::FillBid(_)
+            | TokenTransition::CancelOrder(_),
         ) => Some(StateTransitionProofGuarantee::AffectedState),
         _ => None,
     }

@@ -20,9 +20,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::v0::TokenPlaceBidTransitionActionV0;
-use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::{bump_with_errors, TokenTransitionAction};
 use crate::state_transition_action::batch::BatchedTransitionAction;
-use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl TokenPlaceBidTransitionActionV0 {
     /// Converts a borrowed `TokenPlaceBidTransitionV0` into an action. The offer's order id
@@ -84,17 +83,11 @@ impl TokenPlaceBidTransitionActionV0 {
         )?;
 
         let bump = |errors: Vec<ConsensusError>, fee_result: FeeResult| {
-            let bump_action =
-                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    base,
-                    owner_id,
-                    user_fee_increase,
-                );
-            Ok((
-                ConsensusValidationResult::new_with_data_and_errors(
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
-                    errors,
-                ),
+            Ok(bump_with_errors(
+                base,
+                owner_id,
+                user_fee_increase,
+                errors,
                 fee_result,
             ))
         };
