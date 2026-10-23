@@ -141,9 +141,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `validate_document` 2, which checks a document against its type's typed
 ///    validation schema (`document_type::schema::validation_schema`) instead of
 ///    the `jsonschema` crate, reaching the same verdicts and error codes but for
-///    one rule of its own: numbers in a `uniqueItems` list compare by value
-///    however long the list, so `0.0` and `-0.0` are one value. A document type
-///    whose schema the validation schema does not represent keeps
+///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
+///    value however long the list. A document type whose schema the validation
+///    schema does not represent keeps
 ///    `validate_document` 1's check. Protocol v14 and earlier keep
 ///    `validate_document` 1.
 ///
