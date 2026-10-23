@@ -1719,8 +1719,11 @@ extension SDK {
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
         let startEpochString = startEpoch.map { String($0) }
         let json = try await performBlockingQuery { handle in
-            try Self.consumeStringResult(
-                dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending))
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
         }
         guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
             throw SDKError.serializationError("Expected epochs array")
