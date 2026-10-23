@@ -267,9 +267,13 @@ at protocol 14 therefore verifies an outcome produced at protocol 13, whose
 the balance: a proof without it is refused, never retried as the older layout.
 An outcome signed by a protocol newer than any this SDK build knows is checked
 with the newest layout and rules the build knows, so results stay verifiable
-after that protocol activates. The signature binds the protocol version to the
-state root, and the SDK learns the producer's version only after the signature
-and freshness checks pass.
+after that protocol activates while it keeps that layout. A protocol that
+changes the layout needs an SDK update. Its outcomes that return data fail
+verification, but an outcome proved by absence, such as a document delete,
+could still verify at a location the newer protocol no longer uses. The
+signature binds the protocol version to the state root, and the SDK learns the
+producer's version only after the signature and freshness checks pass, never a
+version this build does not know.
 
 ### Timeout Handling
 

@@ -626,12 +626,19 @@ struct DocumentOutcomeProvider {
 
 impl DocumentOutcomeProvider {
     fn new(version: u32) -> Self {
+        Self::for_vectors(
+            &format!("pv{version}"),
+            PlatformVersion::get(version).unwrap(),
+        )
+    }
+    /// The contract of the `prefix` vectors, read with `platform_version`.
+    fn for_vectors(prefix: &str, platform_version: &PlatformVersion) -> Self {
         Self {
             contract: Arc::new(
                 DataContract::versioned_deserialize_trusted(
-                    &document_outcome_vector(&format!("pv{version}-contract.bin")),
+                    &document_outcome_vector(&format!("{prefix}-contract.bin")),
                     true,
-                    PlatformVersion::get(version).unwrap(),
+                    platform_version,
                 )
                 .expect("locally generated contract fixture"),
             ),
@@ -700,21 +707,26 @@ fn document_outcome_vectors(
     )
 }
 
+/// Each signed producer's outcome verifies in its own layout, from an SDK at or below the
+/// producer, pinned or not. A pin keeps the stored version even when a newer producer
+/// raised the rules for one answer (`should_verify_with_the_signed_newer_version_when_pinned`
+/// shows which table that answer used); an unpinned SDK learns the newer producer.
 #[tokio::test]
 async fn should_verify_signed_document_outcome_layouts_without_lowering_security_or_pins() {
+    let latest = PlatformVersion::latest().protocol_version;
     for pinned in [false, true] {
-        for producer in [13, 14] {
+        for (stored, producer) in [(latest, 13), (latest, 14), (13, 14)] {
             let provider = DocumentOutcomeProvider::new(producer);
             let builder = SdkBuilder::new_mock()
                 .with_network(Network::Testnet)
                 .with_time_tolerance(None)
                 .with_height_tolerance(Some(1))
                 .with_trusted_initial_height(10);
-            let latest = PlatformVersion::latest();
+            let stored_version = PlatformVersion::get(stored).unwrap();
             let sdk = if pinned {
-                builder.with_version(latest)
+                builder.with_version(stored_version)
             } else {
-                builder.with_initial_version(latest)
+                builder.with_initial_version(stored_version)
             }
             .build()
             .unwrap();
@@ -723,7 +735,12 @@ async fn should_verify_signed_document_outcome_layouts_without_lowering_security
             let outcome = outcome.unwrap();
             assert!(outcome.is_execution_proved());
             assert_eq!(outcome.owner_balance().is_some(), producer >= 14);
-            assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
+            let expected = if pinned { stored } else { stored.max(producer) };
+            assert_eq!(
+                sdk.protocol_version_number(),
+                expected,
+                "stored {stored}, producer {producer}, pinned {pinned}"
+            );
         }
     }
 }
@@ -811,7 +828,7 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
         .with_trusted_initial_height(10)
         .build()
         .unwrap();
-    let provider = DocumentOutcomeProvider::new(14);
+    let provider = DocumentOutcomeProvider::for_vectors("newer", latest);
     let (request, response) = document_outcome_vectors("newer");
     let (outcome, metadata, _) = sdk
         .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(

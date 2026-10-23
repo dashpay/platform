@@ -308,14 +308,23 @@ fn should_preserve_document_outcome_verifier_security_floor() {
         .verify
         .state_transition
         .verify_state_transition_was_executed_with_proof = 255;
-    assert!(StateTransitionProofOutcome::maybe_from_proof(
+    let error = StateTransitionProofOutcome::maybe_from_proof(
         request.clone(),
         response.clone(),
         Network::Testnet,
         &verifier,
-        &provider
+        &provider,
     )
-    .is_err());
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            drive_proof_verifier::Error::DriveError { error }
+                if error.contains("verify_state_transition_was_executed_with_proof")
+                    && error.contains("received: 255")
+        ),
+        "{error}"
+    );
     for version in [
         0,
         PlatformVersion::latest().protocol_version + 1,
@@ -326,8 +335,10 @@ fn should_preserve_document_outcome_verifier_security_floor() {
             panic!("v0")
         };
         v0.metadata.as_mut().unwrap().protocol_version = version;
-        // Version 0 names no table. A newer version is read with the newest rules, which
-        // need the owner balance this protocol 13 proof lacks; the signature covers 13.
+        // Version 0 names no table. A newer version, including the start of the range
+        // reserved for mock versions, is read with the newest rules, which need the
+        // owner balance this protocol 13 proof lacks, so the proof check refuses it
+        // before the signature, which covers 13, is checked.
         let error = verify(request.clone(), response, &provider).unwrap_err();
         if version == 0 {
             assert!(
@@ -336,6 +347,11 @@ fn should_preserve_document_outcome_verifier_security_floor() {
                     drive_proof_verifier::Error::ResponseDecodeError { .. }
                 ),
                 "{error}"
+            );
+        } else {
+            assert!(
+                matches!(*error, drive_proof_verifier::Error::GroveDBError { .. }),
+                "version {version}: {error}"
             );
         }
     }
@@ -387,13 +403,27 @@ fn should_export_document_outcome_sdk_fixtures() {
         )
         .unwrap();
     }
-    // A version newer than any build over the protocol 14 layout; it uses the pv14 contract.
-    let (request, response, provider) = fixture_signed_as(14, 14, NEWER_PROTOCOL_VERSION);
+    // A version newer than any build over the latest layout, so that re-running this after
+    // a protocol changes the layout rewrites a vector the newest rules still read.
+    let latest = PlatformVersion::latest();
+    let (request, response, provider) = fixture_signed_as(
+        latest.protocol_version,
+        latest.protocol_version,
+        NEWER_PROTOCOL_VERSION,
+    );
     verify(request.clone(), response.clone(), &provider).unwrap();
     std::fs::write(directory.join("newer-request.bin"), request.encode_to_vec()).unwrap();
     std::fs::write(
         directory.join("newer-response.bin"),
         response.encode_to_vec(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("newer-contract.bin"),
+        provider
+            .0
+            .serialize_to_bytes_with_platform_version(latest)
+            .unwrap(),
     )
     .unwrap();
 }

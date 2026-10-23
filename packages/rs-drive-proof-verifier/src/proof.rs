@@ -401,10 +401,13 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// Query construction follows the producer, while security checks keep the caller's
-// verifier version. Metadata is untrusted until the signature binds it to the root.
-// A producer newer than this build is read with the newest known construction rules,
-// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
+// The producer's signed version selects only the parts of the proof layout the producer
+// decides, while security checks keep the caller's verifier version. For the non-unique
+// identity lookup that is how its queries are built. For a state transition outcome it
+// is only whether the proof carries the owner balance: every key and query is rebuilt
+// with the caller's rules. Metadata is untrusted until the signature binds it to the
+// root. A producer newer than this build is read with the newest known tables, the
+// same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
 // data the signed root does not hold, and a changed layout is expected to fail
 // verification for answers that return data. An absence answer can still verify at a
 // location a newer protocol no longer uses, so relocating such an index needs an SDK

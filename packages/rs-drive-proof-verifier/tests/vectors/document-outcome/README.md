@@ -11,9 +11,12 @@ cargo test -p drive-proof-verifier --test document_outcome should_export_documen
 `pvN-{request,response}.bin` is the broadcast request and the proved answer of a
 protocol N producer, and `pvN-contract.bin` is the contract the SDK tests load.
 Protocol 13 proves the document alone; protocol 14 also proves the owner's credit
-balance. `newer-{request,response}.bin` is the protocol 14 answer signed as protocol
-version 1000, far above any real version, so it is read with the newest known rules
-whatever the latest version is; it uses `pv14-contract.bin`.
+balance. The three requests are the same transition. `newer-{request,response}.bin`
+is the latest protocol's answer signed as protocol version 1000, far above any real
+version, so it is read with the newest known rules whatever the latest version is;
+`newer-contract.bin` is its contract. It keeps verifying as long as the newest rules
+expect the layout it was made with: after a protocol changes the outcome layout, run
+the command above again to rewrite it in the new layout. The `pvN` files stay the same.
 
 The fixed test signing key is `[1; 32]`; `quorum-key.bin` is its public key. These
 are synthetic fixtures, never network trust anchors. The SDK tests in
