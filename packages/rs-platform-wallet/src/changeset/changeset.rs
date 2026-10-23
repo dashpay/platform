@@ -1097,6 +1097,7 @@ impl Merge for IdentityKeysChangeSet {
             if entry.derivation_indices.is_none() {
                 if let Some(earlier) = self.upserts.get(&id) {
                     let same_key = earlier.public_key_hash == entry.public_key_hash
+                        && earlier.public_key.key_type() == entry.public_key.key_type()
                         && earlier.public_key.data() == entry.public_key.data();
                     let same_scope =
                         entry.wallet_id.is_none() || entry.wallet_id == earlier.wallet_id;

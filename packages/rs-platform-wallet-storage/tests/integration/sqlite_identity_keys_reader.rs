@@ -337,6 +337,46 @@ fn should_keep_a_stored_wallet_id_with_the_breadcrumb_when_an_upsert_carries_nei
     assert_eq!(row.public_key, upsert.public_key);
 }
 
+/// A stored breadcrumb is lent only to the same public key from a row that
+/// passes the reader's checks: an upsert of another key at the same id, or
+/// over a row whose blob contradicts its typed hash column, replaces the row
+/// without its coordinates.
+#[test]
+fn should_lend_a_stored_breadcrumb_only_to_the_same_key_from_a_valid_row() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE2);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x21; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    store_entries(
+        &persister,
+        w,
+        vec![key_entry(id, 0, 0x11), key_entry(id, 1, 0x22)],
+    );
+    // Row 1's typed hash no longer matches its blob.
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "UPDATE identity_keys SET public_key_hash = ?1 WHERE key_id = 1",
+            rusqlite::params![&[0x44u8; 20][..]],
+        )
+        .unwrap();
+
+    let other_key = without_breadcrumb(key_entry(id, 0, 0x33));
+    let same_key = without_breadcrumb(key_entry(id, 1, 0x22));
+    store_entries(&persister, w, vec![other_key.clone(), same_key.clone()]);
+    drop(persister);
+
+    let rows = reload(&path, &w).upserts;
+    assert_eq!(rows.get(&(id, 0)), Some(&other_key));
+    assert_eq!(rows.get(&(id, 1)), Some(&same_key));
+}
+
 /// A stored row within the size limit that does not decode holds no
 /// breadcrumb to keep: the upsert replaces it and the store succeeds.
 #[test]

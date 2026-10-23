@@ -128,10 +128,14 @@ fn map_fk_violation(
 /// [`WalletStorageError::IdentityKeyWalletMismatch`].
 ///
 /// An upsert without a derivation breadcrumb keeps the one the same row
-/// already holds, as the Swift and Kotlin persisters do: a write that only
+/// already holds, as the Swift and Kotlin persisters do (they keep it on any
+/// upsert of the row; this writer also checks the row first): a write that only
 /// knows the key's new state (a refresh, a raised limit, a disable) must not
-/// turn a wallet-derived key watch-only. A stored row that does not decode,
-/// or is over the blob size limit, holds nothing to keep and is replaced.
+/// turn a wallet-derived key watch-only. Only a row that holds the same
+/// public key (type, data and hash) and passes the reader's checks
+/// (`contradicts_columns`) lends its breadcrumb; any other stored row (one
+/// that does not decode, is over the blob size limit, contradicts its
+/// columns or holds another key) holds nothing to keep and is replaced.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -168,7 +172,7 @@ pub fn apply(
         // wallet, no NULL-scoped reader, and no guard.
         let wallet_id_param = super::wallet_id_to_param(wallet_id);
         let mut stored = tx.prepare_cached(
-            "SELECT public_key_blob FROM identity_keys \
+            "SELECT public_key_blob, public_key_hash FROM identity_keys \
              WHERE identity_id = ?1 AND key_id = ?2 AND wallet_id IS ?3 \
                AND length(public_key_blob) <= ?4",
         )?;
@@ -186,7 +190,7 @@ pub fn apply(
             }
             let mut wire = IdentityKeyWire::from_entry(entry)?;
             if wire.derivation_indices.is_none() {
-                let held: Option<Vec<u8>> = stored
+                let held: Option<(Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![
                             identity_id.as_slice(),
@@ -194,11 +198,25 @@ pub fn apply(
                             wallet_id_param,
                             size_limit
                         ],
-                        |row| row.get(0),
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()?;
-                if let Some(held) = held.and_then(|payload| decode_entry(&payload).ok()) {
-                    if held.derivation_indices.is_some() {
+                let held = held.and_then(|(payload, typed_public_key_hash)| {
+                    decode_entry(&payload).ok().filter(|held| {
+                        !contradicts_columns(
+                            held,
+                            identity_id,
+                            *key_id,
+                            &typed_public_key_hash,
+                            wallet_id,
+                        )
+                    })
+                });
+                if let Some(held) = held {
+                    let same_key = held.public_key.key_type() == entry.public_key.key_type()
+                        && held.public_key.data() == entry.public_key.data()
+                        && held.public_key_hash == entry.public_key_hash;
+                    if same_key && held.derivation_indices.is_some() {
                         wire.wallet_id = held.wallet_id;
                         wire.derivation_indices = held.derivation_indices;
                     }
@@ -246,6 +264,25 @@ pub fn apply(
         }
     }
     Ok(())
+}
+
+/// Whether a decoded row names a different identity, key, public-key hash
+/// or wallet than the typed columns it was selected by: corruption, which
+/// the reader skips and the writer never borrows a breadcrumb from.
+fn contradicts_columns(
+    entry: &IdentityKeyEntry,
+    identity_id: &Identifier,
+    key_id: KeyID,
+    typed_public_key_hash: &[u8],
+    wallet_id: &WalletId,
+) -> bool {
+    entry.identity_id != *identity_id
+        || entry.key_id != key_id
+        || entry.public_key.id() != key_id
+        || entry.public_key_hash[..] != typed_public_key_hash[..]
+        || entry
+            .wallet_id
+            .is_some_and(|entry_wallet_id| entry_wallet_id != *wallet_id)
 }
 
 /// Decode an `identity_keys.public_key_blob` cell back to the entry.
@@ -316,14 +353,13 @@ pub fn load_state(
         // `public_key_hash` is the indexed lookup column while the blob is
         // what callers receive, so a divergence makes a key findable under a
         // hash it does not carry.
-        let contradicts_columns = entry.identity_id != identity_id
-            || entry.key_id != key_id
-            || entry.public_key.id() != key_id
-            || entry.public_key_hash[..] != typed_public_key_hash[..]
-            || entry
-                .wallet_id
-                .is_some_and(|entry_wallet_id| entry_wallet_id != *wallet_id);
-        if contradicts_columns {
+        if contradicts_columns(
+            &entry,
+            &identity_id,
+            key_id,
+            &typed_public_key_hash,
+            wallet_id,
+        ) {
             ctx.tolerate(
                 LoadSite::IdentityKeyRow,
                 WalletStorageError::IdentityKeyEntryMismatch,
