@@ -126,7 +126,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    consensus reads the total as it reads any other. `parse_property_constraints`
 ///    0 (protocol version 14) reads such a binding as an integer and refuses it.
 ///
-/// 5. **Documents checked natively**: `CONTRACT_VERSIONS_V7` selects
+/// 5. **Tradeable tokens**: `TokenTradeMode::Tradeable`
+///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`) lets a token's holders list it and make
+///    offers for it. Before this version a contract whose token is tradeable, and a
+///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
+///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
+///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
+///    10281): contract create and update refuse it unpaid, and the batch `advanced_structure` 2
+///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
+///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
+///    earlier keep the batch `advanced_structure` 1.
+///
+/// 6. **Documents checked natively**: `CONTRACT_VERSIONS_V7` selects
 ///    `validate_document` 2, which checks a document against its type's typed
 ///    validation schema (`document_type::schema::validation_schema`) instead of
 ///    the `jsonschema` crate, reaching the same verdicts and error codes. A
@@ -151,7 +162,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 5)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
