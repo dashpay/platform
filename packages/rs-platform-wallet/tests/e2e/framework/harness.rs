@@ -609,7 +609,6 @@ impl E2eContext {
         // sweep so [`cleanup::sweep_orphans`] has a valid sweep
         // destination on its very first invocation.
         let bank_identity = bank_identity::resolve_bank_identity(
-            &manager,
             &bank,
             &workdir,
             config.bank_identity_id.as_deref(),

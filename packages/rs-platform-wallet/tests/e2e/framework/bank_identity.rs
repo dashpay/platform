@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::harness_persister::HarnessPersister;
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::Fetch;
 use dash_sdk::Sdk;
@@ -40,7 +39,7 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use key_wallet::Network;
-use platform_wallet::PlatformWalletManager;
+use platform_wallet::{AssetLockFundingType, AssetLockStatus};
 use serde::{Deserialize, Serialize};
 
 use super::bank::BankWallet;
@@ -92,16 +91,6 @@ pub const MAX_BOOTSTRAP_CORE_OUTLAY_DUFF: u64 = bootstrap_lock_duff(
         .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE),
 )
 .saturating_add(BOOTSTRAP_CORE_FEE_RESERVE_DUFF);
-
-/// Funding-type tag (see `PlatformWalletManager::tracked_asset_locks_blocking`'s
-/// `lock_type`) for asset-locks that top up a Platform address — what the
-/// bootstrap self-fund mints. Used to spot a prior run's actionable lock
-/// before minting a second (QA-001 double-spend guard).
-const LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP: u8 = 4;
-
-/// Terminal `lock_type` status (see `tracked_asset_locks_blocking`):
-/// `4 = Consumed`. Anything below is still actionable / unconsumed.
-const LOCK_STATUS_CONSUMED: u8 = 4;
 
 /// Post-registration on-chain visibility timeout for the bootstrap
 /// path. Generous because bootstrap only happens once per bank.
@@ -156,7 +145,6 @@ impl std::fmt::Debug for BankIdentity {
 /// 3. Auto-register from the bank's primary receive address, persist
 ///    the resulting id, return it.
 pub async fn resolve_bank_identity(
-    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     workdir: &Path,
     bank_identity_env: Option<&str>,
@@ -261,8 +249,7 @@ pub async fn resolve_bank_identity(
         );
         existing_id
     } else {
-        let id =
-            bootstrap_register(manager, bank, network, &master_key, &high_key, disable_spv).await?;
+        let id = bootstrap_register(bank, network, &master_key, &high_key, disable_spv).await?;
         tracing::info!(
             target: "platform_wallet::e2e::bank_identity",
             identity_id = %hex::encode(id),
@@ -330,7 +317,6 @@ async fn try_recover_on_chain(
 /// or the bank's confirmed Core balance can't cover the lock plus its L1
 /// fee.
 async fn bootstrap_register(
-    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     network: Network,
     master_key: &IdentityPublicKey,
@@ -350,7 +336,6 @@ async fn bootstrap_register(
     let primary_balance = primary_platform_balance(bank, &funding_address).await;
     if needs_self_fund(primary_balance) {
         self_fund_bootstrap(
-            manager,
             bank,
             &funding_address,
             primary_balance,
@@ -441,8 +426,12 @@ fn needs_self_fund(primary_credits: Credits) -> bool {
 /// when it tops up a Platform address and has not reached the terminal
 /// `Consumed` status. Minting a fresh lock while one of these exists would
 /// orphan the prior lock's duffs (QA-001 double-spend).
-fn is_unconsumed_address_lock(lock_type: u8, status: u8) -> bool {
-    lock_type == LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP && status != LOCK_STATUS_CONSUMED
+fn is_unconsumed_address_lock(
+    funding_type: AssetLockFundingType,
+    status: &AssetLockStatus,
+) -> bool {
+    funding_type == AssetLockFundingType::AssetLockAddressTopUp
+        && !matches!(status, AssetLockStatus::Consumed)
 }
 
 /// Top the bank's primary Platform `address` up to at least
@@ -458,7 +447,6 @@ fn is_unconsumed_address_lock(lock_type: u8, status: u8) -> bool {
 /// - the bank's confirmed Core balance can't cover the lock plus its L1
 ///   fee — names the Core top-up address and the shortfall.
 async fn self_fund_bootstrap(
-    manager: &Arc<PlatformWalletManager<HarnessPersister>>,
     bank: &BankWallet,
     address: &PlatformAddress,
     current_credits: Credits,
@@ -487,19 +475,20 @@ async fn self_fund_bootstrap(
     // snapshot exposes the recipient (or a per-address lookup lands), so a
     // crashed mid-bootstrap re-run advances the in-flight lock instead of
     // erroring.
-    let wallet_id = bank.platform_wallet().wallet_id();
-    let pending: Vec<_> = manager
-        .tracked_asset_locks(&wallet_id)
+    let pending: Vec<_> = bank
+        .platform_wallet()
+        .asset_locks()
+        .list_tracked_locks()
         .await
         .into_iter()
-        .filter(|l| is_unconsumed_address_lock(l.lock_type, l.status))
+        .filter(|l| is_unconsumed_address_lock(l.funding_type, &l.status))
         .collect();
     if !pending.is_empty() {
         for lock in &pending {
             tracing::warn!(
                 target: "platform_wallet::e2e::bank_identity",
-                outpoint = %lock.outpoint,
-                status = lock.status,
+                outpoint = %lock.out_point,
+                status = ?lock.status,
                 "unconsumed Platform asset-lock from a prior run — NOT minting a fresh lock (QA-001)"
             );
         }
@@ -645,21 +634,25 @@ mod tests {
 
     #[test]
     fn only_unconsumed_address_locks_block_minting() {
-        // AssetLockAddressTopUp (4) below Consumed (4) → blocks a fresh mint.
+        let address_top_up = AssetLockFundingType::AssetLockAddressTopUp;
+        // Any non-consumed address top-up still holds Core value → blocks a fresh mint.
         assert!(is_unconsumed_address_lock(
-            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
-            0
-        )); // Built
+            address_top_up,
+            &AssetLockStatus::Built
+        ));
         assert!(is_unconsumed_address_lock(
-            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
-            1
-        )); // Broadcast
-            // Consumed → no longer holds value, doesn't block.
+            address_top_up,
+            &AssetLockStatus::Broadcast
+        ));
+        // Consumed → no longer holds value, doesn't block.
         assert!(!is_unconsumed_address_lock(
-            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
-            LOCK_STATUS_CONSUMED
+            address_top_up,
+            &AssetLockStatus::Consumed
         ));
         // A different funding type (e.g. identity registration) isn't ours.
-        assert!(!is_unconsumed_address_lock(0, 1));
+        assert!(!is_unconsumed_address_lock(
+            AssetLockFundingType::IdentityRegistration,
+            &AssetLockStatus::Broadcast
+        ));
     }
 }
