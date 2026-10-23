@@ -13,6 +13,7 @@ use grovedb_commitment_tree::{
     DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, OrchardDomain,
     OrchardNoteEncryption, RandomSeed, Rho,
 };
+use rusqlite::Connection;
 use tokio::sync::RwLock;
 
 use super::{serialize_note, sync_notes_across};
@@ -258,8 +259,15 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
     assert_eq!(store.tree_sync_height().unwrap(), Some(1));
     store.set_last_synced_note_index(id, 2).unwrap();
     let store = Arc::new(RwLock::new(store));
-    sync_notes_across(&sdk_with_notes(vec![wire]).await, &store, &[(id, keys.viewing_keys())], None, None)
-        .await.expect("one-block-behind source must not trigger inconsistency");
+    sync_notes_across(
+        &sdk_with_notes(vec![wire]).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+    )
+    .await
+    .expect("one-block-behind source must not trigger inconsistency");
     let mut store = store.write().await;
     assert_eq!(store.tree_size().unwrap(), 2);
     assert_eq!(store.tree_sync_height().unwrap(), Some(1));
@@ -271,13 +279,55 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
 #[test]
 fn should_lookup_only_the_discovered_nullifier_spent_status() {
     let dir = tempfile::tempdir().unwrap();
-    let mut store = FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100).unwrap();
+    let mut store =
+        FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100).unwrap();
     let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
     let id = SubwalletId::new([42; 32], 0);
     let (note, _) = owned_note(&keys, 0);
     assert_eq!(store.note_spent_status(id, &note.nullifier).unwrap(), None);
     store.save_note(id, &note).unwrap();
-    assert_eq!(store.note_spent_status(id, &note.nullifier).unwrap(), Some(false));
+    assert_eq!(
+        store.note_spent_status(id, &note.nullifier).unwrap(),
+        Some(false)
+    );
     store.mark_spent(id, &note.nullifier).unwrap();
-    assert_eq!(store.note_spent_status(id, &note.nullifier).unwrap(), Some(true));
+    assert_eq!(
+        store.note_spent_status(id, &note.nullifier).unwrap(),
+        Some(true)
+    );
+}
+
+#[tokio::test]
+async fn should_record_height_before_appending_commitments() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tree.sqlite");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    ));
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([42; 32], 0);
+    let (_, wire) = owned_note(&keys, 0);
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER reject_height BEFORE INSERT ON shielded_tree_sync_height
+        BEGIN SELECT RAISE(FAIL, 'injected metadata failure'); END;",
+    )
+    .unwrap();
+    let result = sync_notes_across(
+        &sdk_with_notes(vec![wire]).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(PlatformWalletError::ShieldedStoreError(_))
+    ));
+    assert_eq!(
+        store.read().await.tree_size().unwrap(),
+        0,
+        "height persistence must succeed before any corresponding leaf is appended"
+    );
 }

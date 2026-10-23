@@ -1028,6 +1028,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
     }
 
+    /// Rebuild the network's shielded commitment tree on the next sync.
+    /// Preserves notes, nullifiers, spent status, and wallet registrations while
+    /// clearing the tree and rewinding scan cursors. The full rescan from zero
+    /// costs bandwidth and trial decryption proportional to the entire pool.
+    /// Stops background shielded sync like [`Self::clear_shielded`]; restart it
+    /// or request a sync after this explicit repair. Never invoked automatically.
+    #[cfg(feature = "shielded")]
+    pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
+        let Some(_quiesced) = self.shielded_sync_manager.quiesce_held().await else {
+            return Err(PlatformWalletError::ShutdownIncomplete(
+                "shielded sync pass did not drain within the quiesce budget; rebuild aborted"
+                    .to_string(),
+            ));
+        };
+        let coordinator = self.shielded_coordinator().await.ok_or_else(|| {
+            PlatformWalletError::ShieldedStoreError(
+                "shielded rebuild requested but no coordinator is configured".to_string(),
+            )
+        })?;
+        coordinator.rebuild_shielded_tree().await
+    }
+
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync
     /// watermark and drop every cached balance across **all**
     /// registered wallets, forcing a full rescan on the next sync.

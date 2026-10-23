@@ -151,7 +151,10 @@ async fn should_reject_duplicated_commitments_after_sync() {
         AccountViewingKeys::from_full_viewing_key(keys.full_viewing_key),
     )];
     let store = seeded_store(4, id);
-    store.write().await.set_tree_sync_height(0).unwrap();
+    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
+        .await
+        .unwrap();
+    assert_eq!(store.read().await.tree_sync_height().unwrap(), Some(0));
     store
         .write()
         .await
@@ -218,8 +221,15 @@ async fn should_skip_lower_count_for_legacy_tree_with_unknown_height() {
     // A restored healthy tree may have been built at height 1; SDK mock
     // responses have height 0. Without provenance a lower count proves nothing.
     let store = seeded_store(5, id);
-    sync_notes_across(&pool_sdk(4).await, &store, &[(id, keys.viewing_keys())], None, None)
-        .await.expect("an older source must not diagnose a healthy tree as corrupt");
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+    )
+    .await
+    .expect("an older source must not diagnose a healthy tree as corrupt");
     assert_eq!(store.read().await.tree_size().unwrap(), 5);
 }
 
@@ -230,8 +240,18 @@ async fn should_not_infer_tree_height_from_speculative_total() {
     let store = seeded_store(5, id);
     let subwallets = [(id, keys.viewing_keys())];
     // total_count may describe a newer speculative response, not this chunk.
-    sync_notes_across(&pool_sdk_with_total(4, 6).await, &store, &subwallets, None, None).await.unwrap();
+    sync_notes_across(
+        &pool_sdk_with_total(4, 6).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(store.read().await.tree_sync_height().unwrap(), None);
-    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None).await.unwrap();
+    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
+        .await
+        .unwrap();
     assert_eq!(store.read().await.last_synced_note_index(id).unwrap(), 5);
 }

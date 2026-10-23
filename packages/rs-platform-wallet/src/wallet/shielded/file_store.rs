@@ -148,6 +148,13 @@ impl FileBackedShieldedStore {
         }
     }
 
+    /// Rewind all scan cursors without discarding receipts or spend guards.
+    pub(super) fn rewind_scan_watermarks(&mut self) {
+        for state in self.subwallets.values_mut() {
+            state.last_synced_index = 0;
+        }
+    }
+
     /// Open or create a shielded store at `path`.
     ///
     /// SQLite is opened with **WAL journal + synchronous=NORMAL + temp_store=MEMORY**
@@ -193,6 +200,19 @@ impl FileBackedShieldedStore {
             )
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("create pending_spends table: {e}"))
+            })?;
+        // The bound shares the tree's database/WAL: committing it before an
+        // append prevents a restart from pairing new leaves with an old bound.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_tree_sync_height (
+                id INTEGER PRIMARY KEY CHECK (id = 0),
+                height INTEGER NOT NULL CHECK (height >= 0)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create tree sync height: {e}"))
             })?;
         // Additive, idempotent migration: old guards remain active.
         let columns = {
@@ -542,6 +562,17 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
+    fn note_spent_status(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<bool>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note_spent_status(nullifier)))
+    }
+
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);
@@ -857,6 +888,43 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(size)
     }
 
+    fn tree_sync_height(&self) -> Result<Option<u64>, Self::Error> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree sync height mutex: {e}")))?;
+        let height: Option<i64> = conn
+            .query_row(
+                "SELECT MAX(height) FROM shielded_tree_sync_height",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read tree sync height: {e}")))?;
+        height
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("invalid tree sync height: {e}")))
+    }
+
+    fn set_tree_sync_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let height = i64::try_from(height).map_err(|e| {
+            FileShieldedStoreError::Storage(format!(
+                "tree sync height exceeds SQLite integer range: {e}"
+            ))
+        })?;
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("tree sync height mutex: {e}")))?;
+        conn.execute(
+            "INSERT INTO shielded_tree_sync_height (id, height) VALUES (0, ?1)
+             ON CONFLICT(id) DO UPDATE SET height = MAX(height, excluded.height)",
+            [height],
+        )
+        .map_err(|e| FileShieldedStoreError::Storage(format!("write tree sync height: {e}")))?;
+        Ok(())
+    }
+
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
         Ok(self
             .subwallets
@@ -974,7 +1042,8 @@ impl ShieldedStore for FileBackedShieldedStore {
                 "DELETE FROM commitment_tree_checkpoint_marks_removed;
                  DELETE FROM commitment_tree_checkpoints;
                  DELETE FROM commitment_tree_shards;
-                 DELETE FROM commitment_tree_cap;",
+                 DELETE FROM commitment_tree_cap;
+                 DELETE FROM shielded_tree_sync_height;",
             )
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("reset commitment tree tables: {e}"))

@@ -1291,6 +1291,29 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
+    /// Empty only the commitment tree and rewind all subwallet scan cursors.
+    /// Notes, nullifiers, spent status, pending spends, and registrations survive.
+    /// The next sync performs a full rescan from zero, costing bandwidth and
+    /// trial decryption proportional to the entire pool. Never called automatically.
+    pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let mut store = self.store.write().await;
+        // Rewind even if the durable reset fails partway through. Rescanning
+        // an intact tree is harmless; skipping a partially reset tree is not.
+        store.rewind_scan_watermarks();
+        if let Ok(mut caught_up) = self.last_caught_up_at.lock() {
+            *caught_up = None;
+        }
+        store.reset_commitment_tree()?;
+        let remaining = store.tree_size()?;
+        if remaining != 0 {
+            return Err(PlatformWalletError::ShieldedTreeUpdateFailed(format!(
+                "commitment tree still has {remaining} leaves after rebuild reset"
+            )));
+        }
+        Ok(())
+    }
+
     /// Run one shielded sync pass for every registered wallet on
     /// this coordinator's network. Returns a per-wallet outcome
     /// summary suitable for emission to UI / persistence layers
@@ -1315,6 +1338,27 @@ impl NetworkShieldedCoordinator {
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
     pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
+        match self.try_sync(force).await {
+            Ok(summary) => summary,
+            Err(error) => {
+                let subwallets = self
+                    .accounts
+                    .read()
+                    .await
+                    .iter()
+                    .map(|(id, views)| (*id, views.clone()))
+                    .collect::<Vec<_>>();
+                self.fail_all_wallets(&subwallets, &error)
+            }
+        }
+    }
+
+    /// Run the same pass as [`Self::sync`], preserving typed failures for callers
+    /// that need to distinguish an inconsistent tree from a transient sync error.
+    pub async fn try_sync(
+        &self,
+        force: bool,
+    ) -> Result<ShieldedSyncPassSummary, PlatformWalletError> {
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
         // is `!Send` across await points (clippy's
@@ -1336,7 +1380,7 @@ impl NetworkShieldedCoordinator {
                 cooldown_total_secs = CAUGHT_UP_COOLDOWN.as_secs(),
                 "Coordinator sync skipped — within caught-up cooldown"
             );
-            return Self::cooldown_skip_summary(self).await;
+            return Ok(Self::cooldown_skip_summary(self).await);
         }
 
         // Snapshot the flat subwallet registry. This Vec is both
@@ -1350,7 +1394,7 @@ impl NetworkShieldedCoordinator {
         let mut summary = ShieldedSyncPassSummary::default();
         if subwallets.is_empty() {
             summary.sync_unix_seconds = Self::now_unix();
-            return summary;
+            return Ok(summary);
         }
 
         // Snapshot armed reservations and prefetch Platform's recorded
@@ -1378,18 +1422,14 @@ impl NetworkShieldedCoordinator {
         // Second, distinct signal: commitments committed to the local
         // tree as the interleaved consumer drains the SDK stream.
         let on_tree_progress = self.tree_progress_handler();
-        let notes = match super::sync::sync_notes_across(
+        let notes = super::sync::sync_notes_across(
             &self.sdk,
             &self.store,
             &subwallets,
             on_progress.as_ref(),
             on_tree_progress.as_ref(),
         )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
-        };
+        .await?;
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
         // replayed against each subwallet's store as part of the note
@@ -1441,10 +1481,7 @@ impl NetworkShieldedCoordinator {
             self.release_stranded_spends(snapshot, &recorded).await;
         }
 
-        let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
-        };
+        let balances_per_sub = super::sync::balances_across(&self.store, &subwallets).await?;
 
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
@@ -1524,7 +1561,7 @@ impl NetworkShieldedCoordinator {
         summary =
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
-        summary
+        Ok(summary)
     }
 
     /// Build a `ShieldedSyncPassSummary` where every registered
