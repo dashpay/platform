@@ -8,6 +8,7 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v5.1-dev (2026-10-23, shielded funding and cross-wallet coverage)** — SH-037..SH-042 add identity→own/foreign shielded, platform address→foreign shielded, pool→existing identity top-up, private transfer across distinct wallets, and Core asset lock→foreign shielded. Cases use the persisted framework bindings, bank/identity setup and sweeps; assert exact receiver credits, source debits and protocol fees or existing fee bounds; receivers discover funds through their own shielded sync or identity balance refresh. All six APIs are reachable without production changes, including the single foreign `None`-amount asset-lock recipient. Implemented; live verification pending (offline checks only).
 - **v5.1-dev (2026-10-23, Found-031 helper removed)** — ID-002b and AL-001 no longer provision `IdentityTopUp` accounts themselves. Their `add_identity_topup_account` helper inserted the account into memory only, so production's lazy `ensure_identity_topup_account` saw it present and skipped persisting its registration; the pool rows were still written, and with the unmasked harness persister every later `Strict` load of the shared store (each `register_wallet`) failed `ONE_TIME_ROW_UNMATCHED`. The build now provisions the account through the `core_signer`. Not yet re-run live.
 - **v5.1-dev (2026-10-23, #5150 stack merged in — harness persister unmasked)** — (1) **The harness persister no longer masks capabilities.** `framework::harness_persister::HarnessPersister` delegates every `PlatformWalletPersistence` method to its private `SqlitePersister` (`FlushMode::Immediate`), so the wallet sees exactly what the store attests — incl. `WALLET_RESTORE` and `WALLET_DRAIN` — and every live case now drives the durable Core / identity / asset-lock paths (`load` restores wallets, `get_core_tx_record` answers, `persists_durably()` is true). It still captures every stored `CoreChangeSet::records` row (the store keeps only the latest per txid) and reopens disk snapshots for reload checks (`reloaded_record`, new `reloaded_start_state`). `harness_persister_roundtrip` pins capability equality with a fresh `SqlitePersister` and that a registered wallet comes back from `load`. (2) **AL-002 is a real Core→Shielded wallet drain** (`al_002_wallet_drain_core_to_shielded.rs`), replacing the persistence-gate refusal pin. (3) **CR-005 runs on the shared harness**: its own manager, SPV client and `CapturingPersister` existed only because the harness persister was non-durable; they are gone.
 - **v5.1-dev (2026-10-23, post-merge follow-ups)** — (1) **AL-002 added — Core→Shielded wallet drain is an explicit coverage gap.** Every drain entry point requires `PersistenceCapabilities::WALLET_DRAIN` (incl. `WALLET_RESTORE` + `ASSET_LOCK_OPERATION_IDS`) and an inline-commit backend; the harness persister honours only `ATOMIC_CHANGESETS | SHIELDED_VIEWING_KEYS`, and `SqlitePersister` attests the missing bits only further up the #5150 stack (#5210 `WALLET_RESTORE`, #5528 `ASSET_LOCK_OPERATION_IDS`). AL-002 pinned the typed `Persistence` refusal until both landed and the harness honoured `WALLET_DRAIN` — superseded the same day by the real drain case (entry above). (2) **The guard-free Type-18 broadcast seam is gone**: `PlatformWallet::shielded_shield_from_asset_lock` / `operations::shield_from_asset_lock` are removed; SH-035 builds through the `test-utils` seam `build_shield_from_asset_lock_st` and broadcasts through the SDK, SH-018 uses the orchestrated `shielded_fund_from_asset_lock`. (3) **Fee sizing reads the network-agreed protocol version** (`sdk.version()` after `refresh_protocol_version`) instead of the binary's `PlatformVersion::latest()` on every live-network path; offline unit tests keep `latest()`. (4) **Found-021 scope narrowed**: since #5393 platform-wallet keeps the IS-lock on its own persistence path, so the pin covers only key-wallet's in-memory `TransactionRecord`.
@@ -321,6 +322,12 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | SH-033 | ADVERSARIAL: duplicate nullifier WITHIN one bundle — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
 | SH-034 | ADVERSARIAL: tampered binding signature — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
 | SH-035 | ADVERSARIAL: replayed Type 18 asset-lock proof — backend must reject (single-use) | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-037 | Identity → own shielded pool (Type 21) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
+| SH-038 | Identity → another wallet’s shielded address (Type 21) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
+| SH-039 | Platform address → another wallet’s shielded address (Type 15) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
+| SH-040 | Shielded → existing identity top-up (Type 22) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
+| SH-041 | Shielded → shielded across distinct wallets (Type 16) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
+| SH-042 | Core asset lock → another wallet’s shielded address (Type 18) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; Core-L1 gate | L |
 
 #### Found-bug pins
 
@@ -2574,7 +2581,7 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 
 ##### SH-036 — IdentityCreateFromShieldedPool (Type 20): create an identity funded from the pool
 - **Priority**: P1.
-- **Flow**: shield a `DENOMINATION + fee headroom` note into Orchard account 0, then `shielded_identity_create_from_pool` spends the pool note to create a brand-new Platform identity holding `DENOMINATION − consensus_create_fee`. `DENOMINATION` is read at runtime from `platform_version…event_constants.shielded_identity_create_denominations` (smallest member — never hardcoded). The only shielded transition the suite did not previously exercise.
+- **Flow**: shield a `DENOMINATION + fee headroom` note into Orchard account 0, then `shielded_identity_create_from_pool` spends the pool note to create a brand-new Platform identity holding `DENOMINATION − consensus_create_fee`. `DENOMINATION` is read at runtime from `platform_version…event_constants.shielded_identity_create_denominations` (smallest member — never hardcoded). Identity funding and existing-identity top-up are covered separately by SH-037/SH-038 and SH-040.
 - **Transition type**: 20 (identity-create from shielded pool).
 - **Injection point**: public API (`PlatformWallet::shielded_identity_create_from_pool`), so this is a non-INJECT correctness case — but the transition must reach the backend so consensus actually creates the identity and the proof-verified read is the verdict.
 - **Correct behavior**: the call returns the new identity's `Identifier`; the identity exists on chain with exactly the submitted key set; `DENOMINATION` leaves the pool exactly (the metered fee is carved from it, change re-enters the pool).
@@ -2582,7 +2589,68 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 - **Expected current outcome**: PASS = A1∧A2∧A3∧A4. FAIL (not skip) if any authoritative assert fails or the transition is rejected. SKIP (explicit `E2E-SKIP`, never silent green) when the bank floor is unmet / devnet unavailable.
 - **Harness extensions**: Wave H + the `id_*` identity key-set / signer helpers (`derive_identity_key`, `SeedBackedIdentitySigner`).
 - **Severity if it fails**: CRITICAL.
-- **Out of scope (sh_037+)**: adversarial Type 20 — insufficient denomination, forged proof, double-spent funding notes, tampered binding signature, fallback-address-on-failure path.
+- **Out of scope**: adversarial Type 20 — insufficient denomination, forged proof, double-spent funding notes, tampered binding signature, fallback-address-on-failure path.
+
+#### SH-037 — Identity → own shielded pool (Type 21)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live.
+- **Wallet feature exercised**: `PlatformWallet::shielded_shield_from_identity`.
+- **Preconditions**: `setup_with_n_identities(1, 2_000_000_000)`; framework `bind_shielded` for account 0; shared prover.
+- **Scenario**: fetch the funded identity balance; shield `500_000_000`; sync the wallet's shielded account; poll the identity's on-chain debit.
+- **Assertions**: receiver starts at zero and gains exactly `500_000_000`; identity loses that amount plus a fee between the protocol two-action verification fee (inclusive) and the existing `1_000_000_000` shield fee headroom (exclusive); returned proven identity balance equals the fetched post-debit balance.
+- **Cleanup**: unshield the note to the bank; guarded teardown sweeps identity and transparent balances.
+- **Harness extensions**: none. File: `cases/sh_037_shield_from_identity.rs`.
+
+#### SH-038 — Identity → another wallet's shielded address (Type 21)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live.
+- **Wallet feature exercised**: `PlatformWallet::shielded_shield_from_identity_to_recipient`.
+- **Preconditions**: SH-037's identity setup plus a distinct `setup()` recipient wallet; bind both through the persisted shielded framework before sending.
+- **Scenario**: shield `500_000_000` from the sender identity to the receiver's default Orchard address; drive receiver sync and poll the sender identity's on-chain balance.
+- **Assertions**: wallet IDs differ; receiver starts at zero and discovers exactly `500_000_000` under its own viewing key; sender shielded balance stays zero; identity debit and returned proven balance obey SH-037's fee/accounting bounds.
+- **Cleanup**: receiver unshield sweep, sender identity sweep, and both guards' transparent/Core cleanup.
+- **Harness extensions**: none. File: `cases/sh_038_shield_from_identity_to_recipient.rs`.
+
+#### SH-039 — Platform address → another wallet's shielded address (Type 15)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live.
+- **Wallet feature exercised**: `PlatformWallet::shielded_shield_from_account_to_recipient`.
+- **Preconditions**: two distinct guarded wallets; sender bank-funded with `2_220_000_000`, chain-confirmed and locally synced; persisted account-0 bindings for both wallets.
+- **Scenario**: shield `500_000_000` to the receiver's Orchard address; sync the receiver and poll proof-verified source address balance until debited.
+- **Assertions**: exact initial funding; zero→`500_000_000` receiver balance; sender shielded balance remains zero; source address loses exactly the sent amount plus a fee between the two-action verification fee (inclusive) and SH-001's `1_000_000_000` fee headroom (exclusive).
+- **Cleanup**: shielded sweeps and both guards' standard teardown.
+- **Harness extensions**: none. File: `cases/sh_039_shield_from_account_to_recipient.rs`.
+
+#### SH-040 — Shielded → existing identity top-up (Type 22)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live.
+- **Wallet feature exercised**: `PlatformWallet::shielded_identity_top_up_from_pool` (`IdentityTopUpFromShieldedPool`).
+- **Preconditions**: bank-fund sender with `2_220_000_000`, shield and sync exactly `1_120_000_000`; a distinct recipient wallet owns an identity registered with `setup_with_n_identities(1, 100_000_000)`.
+- **Scenario**: top up the existing identity by `500_000_000`; poll its on-chain balance and refresh it through the recipient wallet's `refresh_identity_balance`; sync sender change.
+- **Assertions**: fetched identity balance and receiver wallet refresh both increase by exactly `500_000_000`; returned proof balance is `Some(post_balance)`; shielded source decreases by exactly `500_000_000 + compute_shielded_identity_top_up_fee(2, sdk.version())` and retains the exact positive change.
+- **Cleanup**: guarded recipient identity sweep; sender unshield and standard teardown.
+- **Harness extensions**: none. File: `cases/sh_040_identity_top_up_from_shielded_pool.rs`.
+
+#### SH-041 — Shielded → shielded across distinct wallets (Type 16)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live.
+- **Wallet feature exercised**: `PlatformWallet::shielded_transfer_to`.
+- **Preconditions**: two distinct guarded wallets with persisted account-0 bindings; bank-fund sender with `2_220_000_000` and shield/sync exactly `1_120_000_000`.
+- **Scenario**: send `500_000_000` to the other wallet's Orchard address; receiver discovers its note via its own bound account's sync; sync sender change to the exact expected balance.
+- **Assertions**: wallet IDs differ (unlike SH-003's two accounts of one wallet); receiver starts at zero and gains exactly `500_000_000`; sender loses exactly that amount plus `compute_minimum_shielded_fee(2, sdk.version())`; combined shielded value decreases by exactly the fee.
+- **Cleanup**: both notes are sized above the unshield sweep fee; sweep both shielded accounts and run both guards' teardown.
+- **Harness extensions**: none. File: `cases/sh_041_cross_wallet_shielded_transfer.rs`.
+
+#### SH-042 — Core asset lock → another wallet's shielded address (Type 18)
+- **Priority**: P1.
+- **Status**: implemented; not yet run live; Core-L1 gate as in SH-018.
+- **Wallet feature exercised**: `PlatformWallet::shielded_fund_from_asset_lock(FromWalletBalance)` with `vec![(foreign_orchard_address, None)]`.
+- **Preconditions**: `setup_with_core_funded_test_wallet(1_750_000)` plus a distinct guarded receiver; persisted shielded bindings for both.
+- **Scenario**: quote the pool fee with the existing read-only drain preview (as in AL-002); lock `1_500_000` duffs and send the remainder to the foreign recipient; sync the receiver and await sender Core change.
+- **Assertions**: receiver gains exactly `lock_duffs * CREDITS_PER_DUFF - pool_fee` within SH-018's post-fee bound; sender shielded balance remains zero; exactly one persisted lock has the requested amount and `Consumed` status; framework transaction-accounting checks hold live and after reload; Core balance loses exactly `lock_duffs + core_fee` with fee within SH-018's funding headroom; Core debit converted to credits equals receiver credits plus both fees.
+- **API support**: foreign recipients are supported directly. The API requires one recipient with `None` credits and derives the amount from lock value minus fee; no ownership requirement or account-registration workaround is needed.
+- **Cleanup**: receiver unshield sweep plus guarded sender Core/address and receiver teardown.
+- **Harness extensions**: none. File: `cases/sh_042_asset_lock_to_recipient.rs`.
 
 ### Found-bug pins (Found-NNN)
 

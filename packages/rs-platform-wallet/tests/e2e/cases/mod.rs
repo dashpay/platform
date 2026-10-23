@@ -122,6 +122,18 @@ pub mod sh_034_tampered_binding_signature;
 pub mod sh_035_replayed_asset_lock_proof;
 #[cfg(feature = "shielded")]
 pub mod sh_036_identity_create_from_shielded_pool;
+#[cfg(feature = "shielded")]
+pub mod sh_037_shield_from_identity;
+#[cfg(feature = "shielded")]
+pub mod sh_038_shield_from_identity_to_recipient;
+#[cfg(feature = "shielded")]
+pub mod sh_039_shield_from_account_to_recipient;
+#[cfg(feature = "shielded")]
+pub mod sh_040_identity_top_up_from_shielded_pool;
+#[cfg(feature = "shielded")]
+pub mod sh_041_cross_wallet_shielded_transfer;
+#[cfg(feature = "shielded")]
+pub mod sh_042_asset_lock_to_recipient;
 // Token tests (Wave 2 — per TEST_SPEC.md ### Tokens (TK))
 pub mod tk_001_token_transfer;
 pub mod tk_001b_token_transfer_zero;
