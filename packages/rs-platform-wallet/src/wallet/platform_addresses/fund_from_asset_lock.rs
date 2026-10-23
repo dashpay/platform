@@ -26,8 +26,8 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockBuiltObserver, AssetLockFunding,
+    FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
@@ -105,6 +105,9 @@ impl PlatformAddressWallet {
     ///   this value on consensus-10506 to bypass Tenderdash's
     ///   invalid-tx hash cache; the caller's initial value is the
     ///   starting point.
+    /// * `on_asset_lock_built` — Receives the outpoint of a newly built
+    ///   asset lock before its row is persisted or it is broadcast; see
+    ///   [`AssetLockBuiltObserver`]. Not called on resume.
     ///
     /// # Latency budget
     ///
@@ -166,6 +169,7 @@ impl PlatformAddressWallet {
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -179,6 +183,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::AllOwned,
+            on_asset_lock_built,
         )
         .await
     }
@@ -238,6 +243,7 @@ impl PlatformAddressWallet {
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -251,6 +257,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::ExternalExplicitOutputs,
+            on_asset_lock_built,
         )
         .await
     }
@@ -281,6 +288,7 @@ impl PlatformAddressWallet {
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
         ownership: RecipientOwnership,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -322,6 +330,7 @@ impl PlatformAddressWallet {
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
+                on_asset_lock_built,
             )
             .await?
         {
@@ -876,8 +885,12 @@ fn validate_address_infos_complete(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{fund_test_platform_wallet, test_platform_wallet_manager};
     use dash_sdk::query_types::AddressInfo;
+    use dashcore::OutPoint;
     use dpp::version::LATEST_PLATFORM_VERSION;
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use std::sync::Mutex;
 
     #[derive(Debug)]
     struct NullAddressSigner;
@@ -1431,6 +1444,7 @@ mod tests {
                 &NullAddressSigner,
                 &NullAssetLockSigner,
                 None,
+                None,
             )
             .await
             .expect_err("underfloor fresh asset lock must fail before broadcast");
@@ -1445,6 +1459,105 @@ mod tests {
             }
             other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
         }
+    }
+
+    /// The public entry point hands its `on_asset_lock_built` to the lock
+    /// builder: the caller hears the outpoint of the lock it built, here one
+    /// the never-started SPV client refuses to send, so the lock is untracked
+    /// again when the call fails.
+    #[tokio::test]
+    async fn should_report_the_built_lock_to_the_caller_of_fund_from_asset_lock() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+        let address = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let mut addresses = BTreeMap::new();
+        addresses.insert(address, None);
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: minimum_address_funding_asset_lock_duffs(
+                        1,
+                        LATEST_PLATFORM_VERSION,
+                    ),
+                    account_index: 0,
+                },
+                0,
+                addresses,
+                vec![],
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a lock the SPV client refuses to send must fail the call");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1, "{error:?}");
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet registered");
+        assert!(!info.tracked_asset_locks.contains_key(&seen[0]));
+    }
+
+    /// The same pass-through for the third-party entry point, whose
+    /// remainder output is the wallet's own address.
+    #[tokio::test]
+    async fn should_report_the_built_lock_to_the_caller_of_fund_from_asset_lock_external() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+        let address = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let mut addresses = BTreeMap::new();
+        addresses.insert(address, None);
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: minimum_address_funding_asset_lock_duffs(
+                        1,
+                        LATEST_PLATFORM_VERSION,
+                    ),
+                    account_index: 0,
+                },
+                0,
+                addresses,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a lock the SPV client refuses to send must fail the call");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1, "{error:?}");
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet registered");
+        assert!(!info.tracked_asset_locks.contains_key(&seen[0]));
     }
 
     #[test]

@@ -374,6 +374,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 surplus_ptr,
                 surplus_len,
                 core_signer_handle as *mut MnemonicResolverHandle,
+                // No Kotlin caller observes the built lock yet.
+                None,
+                std::ptr::null_mut(),
             )
         };
         let _ = take_pwffi_error(env, result);
@@ -434,6 +437,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 coin_join_account_index as u32,
                 recipient.as_ptr(),
                 core_signer_handle as *mut MnemonicResolverHandle,
+                // No Kotlin caller observes the built lock yet.
+                None,
+                std::ptr::null_mut(),
             )
         };
         let _ = take_pwffi_error(env, result);
