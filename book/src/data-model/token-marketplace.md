@@ -65,11 +65,16 @@ offer), each with three indexes:
 
 Each side sums what it holds in escrow, so the sums cannot overflow: the tokens listed never exceed
 the token's supply, and the credits offered never exceed the credits on Platform. Every integer of
-an order is a signed 8-byte value, so a partial fill rewrites an order without changing its stored
-size.
+an order is a signed 8-byte value, so a partial fill rewrites them without changing their size. The
+document's `$revision` is a variable-length integer, 7 bits to a byte: a fill that takes an order's
+revision past one of those widths (from 127 to 128, then from 16,383 to 16,384, and so on) adds a
+byte, and no other fill adds storage.
 
-An order's price is in credits per whole token, and each order records the token's decimals when
-it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
+An order's price is in credits per whole token, so the token's decimals set what it is worth. Its
+signer signs the decimals the price is at (`decimals`), and the order is refused
+(`TokenOrderDecimalsMismatchError`, 40758) unless they are the token's when it executes: a change of
+the token's decimals between signing and execution, by whoever controls its conventions, cannot
+reprice it. Each order records those decimals (`decimals`). Every fill prices the order at that scale, so a later change to the
 token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
 open offer pays. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
 then `price`), so a book query and a depth sum name the token's decimals and never mix prices of
@@ -90,3 +95,85 @@ What an order holds is kept outside the contract:
 - The credits of an offer sit in `[PreFundedSpecializedBalances, PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`,
   a SumTree keyed by order id, which the credit conservation check already counts.
 
+
+## Listings
+
+Three token transitions of a batch work with listings. Each is refused before protocol version
+15, unpaid, by the batch's `is_allowed` gate (`StateTransitionNotActiveError` 10603, as
+`TokenPlaceAsk`, `TokenFillAsk` or `TokenCancelOrder`).
+
+| Transition | Fields | Effect |
+|---|---|---|
+| `TokenPlaceAsk` | `amount`, `price`, `decimals`, `minFill` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
+| `TokenFillAsk` | `orderId`, `minAmount`, `maxAmount`, `maxTotalPrice` | Moves part or all of the listing from escrow to the buyer, and its cost from the buyer's credits to the seller's |
+| `TokenCancelOrder` | `orderId`, `side` | Returns what an order holds to its owner and deletes the order |
+
+A listing's id follows from the token, the seller and the transition's identity contract nonce
+(`TokenOrderSide::order_id`), so a client knows it before the listing is placed.
+
+### Price and partial fills
+
+`price` is in credits per whole token, 10 to the power of the token's decimals base units. The
+listing records those decimals when it is placed and every fill prices it at them, so a later
+change to the token's decimals does not change what the rest of the listing costs. A fill
+takes as much as it may: everything open, up to `maxAmount`. A listing never keeps less than
+`minFill` open, so a fill that would leave less takes less, leaving exactly `minFill`; a fill
+that does not take everything open takes at least `minFill`. A `minFill` equal to `amount` makes
+the listing all-or-nothing. The fill is refused when the amount it would take is under
+`minAmount`, or when it costs more than `maxTotalPrice`.
+
+Each fill pays the change in the listing's running total rounded up, so splitting a purchase
+never changes what it costs in all:
+
+```text
+2 decimals, 333 credits per token (3.33 per base unit), a listing of 3 base units
+one fill of 3:          10 credits
+three fills of 1:  4 + 3 + 3 = 10 credits
+```
+
+The rounding favours the seller and is never more than one credit per fill.
+
+### Rules
+
+| Rule | Refused with |
+|---|---|
+| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, and what the order is worth at the `decimals` it signs at most `i64::MAX` credits | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465) |
+| A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
+| The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
+| The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
+| A listing's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758) |
+| The order is open, for this token | `TokenOrderNotFoundError` (40751) |
+| The fill range meets the listing | `TokenOrderFillAmountError` (40753) |
+| The fill costs at most `maxTotalPrice` | `TokenOrderPriceLimitError` (40754) |
+| Only the order's owner cancels it | `TokenOrderNotOwnedError` (40755) |
+| A seller does not fill their own listing | `TokenOrderSelfFillError` (40756) |
+| The seller holds `amount` | `IdentityDoesNotHaveEnoughTokenBalanceError` |
+| The token is not paused (to place or fill) | `TokenIsPausedError` |
+| The seller's account is not frozen (to place or fill), nor the buyer's unless the token allows transfers to frozen balances | `IdentityTokenAccountFrozenError` |
+
+The rules on a transition's own fields (the first two rows) are checked before anything is read and
+refused unpaid. The state rules are paid: a refused transition bumps the signer's nonce and charges
+the work that ran. The rules that read nothing beyond the contract (a tradeable token and the
+decimals a listing signs) run with the batch's advanced structure, so check_tx refuses them too. A
+cancel has no rule beyond ownership, so an order can always be withdrawn, also when the token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
+checked with the batch's fees, which count a fill's cost like a direct purchase.
+
+### Storage and proofs
+
+The seller pays the storage of the `ask` and gets it back when the listing closes, by a fill that
+takes everything left or by a cancel. A partial fill rewrites the `ask` without changing its size,
+so the buyer pays no storage for it beyond their own token balance, except when a fill widens the
+listing's `$revision` by a byte (first at revision 128, then at 16,384 and at every further 7
+bits): that fill's buyer pays for the byte. The `ask` stays the seller's, so those bytes are
+refunded to the seller when the listing closes. Selling a listing charges the seller nothing.
+
+The proof a node returns for each transition:
+
+| Transition | Proves |
+|---|---|
+| `TokenPlaceAsk` | The `ask` document, holding the listing's terms |
+| `TokenFillAsk` | The buyer's token balance |
+| `TokenCancelOrder` | That the order's document is gone |
+
+Offers (`bid`) and their fills come with the next transitions of the marketplace. Until then no
+offer can exist, and a `TokenCancelOrder` for one finds none.

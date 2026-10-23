@@ -34,6 +34,9 @@ use dpp::state_transition::batch_transition::document_base_transition::v2::v2_me
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_fill_ask_transition::v0::v0_methods::TokenFillAskTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -153,14 +156,15 @@ pub struct BatchedTransitionSummary {
     pub action: String,
     pub target: BatchedTransitionTarget,
     /// Credits or tokens moved: a document purchase price or update-price
-    /// value, a token transfer / mint / burn amount, or a direct purchase's
-    /// total agreed price.
+    /// value, a token transfer / mint / burn amount, a direct purchase's
+    /// total agreed price, the tokens a listing places in escrow, or the most
+    /// credits a listing fill spends.
     pub amount: Option<u64>,
     /// The identity on the other side, read against `action`: a document
     /// transfer's new owner, a token transfer's recipient, a mint's issued-to
     /// identity, or the frozen identity of a freeze / unfreeze / destroy.
     pub recipient_id: Option<Identifier>,
-    /// Tokens bought by a direct purchase.
+    /// Tokens bought by a direct purchase, or the most a listing fill buys.
     pub token_count: Option<u64>,
     /// The material fields `amount` / `recipient_id` / `token_count` do not
     /// cover, one per line (document data, a config change item, a price
@@ -593,6 +597,27 @@ fn summarize_token_transition(
             }
             (None, None, None, t.public_note())
         }
+        // A listing moves `amount` tokens into escrow; its price, at the decimals it signs, and
+        // its terms are details.
+        TokenTransition::PlaceAsk(t) => {
+            lines.push(budget.write(format_args!(
+                "price: {} credits per whole token at {} decimals",
+                t.price(),
+                t.decimals()
+            ))?);
+            lines.push(budget.write(format_args!("minimum fill: {}", t.min_fill()))?);
+            (Some(t.amount()), None, None, None)
+        }
+        // A fill spends at most `max_total_price` credits for at most `max_amount` tokens.
+        TokenTransition::FillAsk(t) => {
+            lines.push(budget.write(format_args!("listing: {}", t.order_id()))?);
+            lines.push(budget.write(format_args!("minimum amount: {}", t.min_amount()))?);
+            (Some(t.max_total_price()), None, Some(t.max_amount()), None)
+        }
+        TokenTransition::CancelOrder(t) => {
+            lines.push(budget.write(format_args!("order: {} ({})", t.order_id(), t.side()))?);
+            (None, None, None, None)
+        }
         // Shielded-pool operations carry notes, proofs and amounts with no typed projection: the
         // whole transition is rendered and the row is incomplete.
         TokenTransition::Shield(_)
@@ -669,6 +694,8 @@ mod tests {
     use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
     use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
     use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+    use dpp::state_transition::batch_transition::token_place_ask_transition::v0::TokenPlaceAskTransitionV0;
+    use dpp::state_transition::batch_transition::TokenPlaceAskTransition;
     use dpp::state_transition::batch_transition::{
         BatchTransitionV1, DocumentCreateTransition, TokenClaimTransition,
         TokenConfigUpdateTransition, TokenDirectPurchaseTransition,
@@ -991,6 +1018,41 @@ mod tests {
 
     /// Two config updates granting manual minting to different takers must not
     /// summarize the same; neither is complete from the typed fields alone.
+    /// A listing's row names the decimals it signs: two listings differing only in them render
+    /// different approvals (1,000 base units at 1,000,000,000 credits per whole token are worth
+    /// 10,000 credits at 8 decimals and 1 credit at 16).
+    #[test]
+    fn listing_rows_show_the_signed_decimals() {
+        let listing = |decimals: u8| {
+            BatchedTransition::Token(TokenTransition::PlaceAsk(TokenPlaceAskTransition::V0(
+                TokenPlaceAskTransitionV0 {
+                    base: token_base(),
+                    amount: 1_000,
+                    price: 1_000_000_000,
+                    decimals,
+                    min_fill: 1,
+                },
+            )))
+        };
+        let summary = summarize_bytes(&batch(vec![listing(8), listing(16)]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        assert_ne!(transitions[0], transitions[1]);
+        let details = |row: &BatchedTransitionSummary| row.details.clone().expect("details");
+        assert!(
+            details(&transitions[0]).contains("at 8 decimals"),
+            "{}",
+            details(&transitions[0])
+        );
+        assert!(
+            details(&transitions[1]).contains("at 16 decimals"),
+            "{}",
+            details(&transitions[1])
+        );
+        assert_eq!(transitions[0].amount, Some(1_000));
+    }
+
     #[test]
     fn token_details_cover_config_update_emergency_price_and_claim() {
         let config_update = |takers: AuthorizedActionTakers| {

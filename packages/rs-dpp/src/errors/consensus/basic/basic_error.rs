@@ -111,6 +111,9 @@ use crate::consensus::basic::state_transition::{
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
 };
+use crate::consensus::basic::token::{
+    InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
+};
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
 };
@@ -869,6 +872,18 @@ pub enum BasicError {
     // A non-transferable token cannot be tradeable (protocol version 15).
     #[error(transparent)]
     NonTransferableTokenTradeableError(NonTransferableTokenTradeableError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderFillRangeError(InvalidTokenOrderFillRangeError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderValueError(InvalidTokenOrderValueError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1084,6 +1099,27 @@ mod tests {
                 NonTransferableTokenTradeableError::new(0)
             )),
             206
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderPriceError(
+                InvalidTokenOrderPriceError::new(0, 1)
+            )),
+            207
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
+                InvalidTokenOrderFillRangeError::new(0, 1)
+            )),
+            208
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderValueError(
+                InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
+            )),
+            209
         );
     }
 

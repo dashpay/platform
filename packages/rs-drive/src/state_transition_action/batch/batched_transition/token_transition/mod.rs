@@ -50,6 +50,15 @@ pub mod token_claim_to_pool_transition_action;
 /// Direct purchase paid into the token shielded pool
 pub mod token_direct_purchase_to_pool_transition_action;
 
+/// A listing of a tradeable token (the token marketplace)
+pub mod token_place_ask_transition_action;
+
+/// A purchase from an open listing (the token marketplace)
+pub mod token_fill_ask_transition_action;
+
+/// A maker cancelling an open order (the token marketplace)
+pub mod token_cancel_order_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -64,9 +73,13 @@ use dpp::prelude::{
     ConsensusValidationResult, DataContract, IdentityNonce, UserFeeIncrease,
 };
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use crate::state_transition_action::batch::BatchedTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
@@ -91,6 +104,9 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::{TokenBurnFromPoolTransitionAction, TokenBurnFromPoolTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::{TokenClaimToPoolTransitionAction, TokenClaimToPoolTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::{TokenDirectPurchaseToPoolTransitionAction, TokenDirectPurchaseToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::{TokenPlaceAskTransitionAction, TokenPlaceAskTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::{TokenFillAskTransitionAction, TokenFillAskTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::{TokenCancelOrderTransitionAction, TokenCancelOrderTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -131,6 +147,12 @@ pub enum TokenTransitionAction {
     ClaimToPoolAction(TokenClaimToPoolTransitionAction),
     /// direct purchase paid into the token shielded pool
     DirectPurchaseToPoolAction(TokenDirectPurchaseToPoolTransitionAction),
+    /// lists a tradeable token for sale (the token marketplace)
+    PlaceAskAction(TokenPlaceAskTransitionAction),
+    /// buys from an open listing (the token marketplace)
+    FillAskAction(TokenFillAskTransitionAction),
+    /// cancels an open order (the token marketplace)
+    CancelOrderAction(TokenCancelOrderTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -155,6 +177,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(action) => action.base(),
             TokenTransitionAction::ClaimToPoolAction(action) => action.base(),
             TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base(),
+            TokenTransitionAction::PlaceAskAction(action) => action.base(),
+            TokenTransitionAction::FillAskAction(action) => action.base(),
+            TokenTransitionAction::CancelOrderAction(action) => action.base(),
         }
     }
 
@@ -179,6 +204,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(action) => action.base_owned(),
             TokenTransitionAction::ClaimToPoolAction(action) => action.base_owned(),
             TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::PlaceAskAction(action) => action.base_owned(),
+            TokenTransitionAction::FillAskAction(action) => action.base_owned(),
+            TokenTransitionAction::CancelOrderAction(action) => action.base_owned(),
         }
     }
 
@@ -203,6 +231,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnFromPoolAction(_) => "burnFromPool",
             TokenTransitionAction::ClaimToPoolAction(_) => "claimToPool",
             TokenTransitionAction::DirectPurchaseToPoolAction(_) => "directPurchaseToPool",
+            TokenTransitionAction::PlaceAskAction(_) => "orderPlaced",
+            TokenTransitionAction::FillAskAction(_) => "orderFilled",
+            TokenTransitionAction::CancelOrderAction(_) => "orderCancelled",
         }
     }
 
@@ -275,6 +306,11 @@ impl TokenTransitionAction {
             | TokenTransitionAction::BurnFromPoolAction(_)
             | TokenTransitionAction::ClaimToPoolAction(_)
             | TokenTransitionAction::DirectPurchaseToPoolAction(_) => Ok(false),
+            // The marketplace records no token history yet: the open orders themselves are
+            // documents of the token market contract.
+            TokenTransitionAction::PlaceAskAction(_)
+            | TokenTransitionAction::FillAskAction(_)
+            | TokenTransitionAction::CancelOrderAction(_) => Ok(false),
         }
     }
 }
@@ -304,4 +340,34 @@ pub(crate) fn bump_with_errors(
         ),
         fee_result,
     )
+}
+
+/// The id of the order of \`side\` that \`maker_id\` places for \`token_id\` with the identity
+/// contract nonce \`nonce\`, and the fee of deriving it: a double SHA-256 over the id's preimage,
+/// charged where the placement's transformation computes it, as a document create's id is.
+pub(crate) fn derive_order_id(
+    drive: &Drive,
+    side: TokenOrderSide,
+    token_id: Identifier,
+    maker_id: Identifier,
+    nonce: IdentityNonce,
+    block_info: &BlockInfo,
+    platform_version: &PlatformVersion,
+) -> Result<(Identifier, FeeResult), Error> {
+    let preimage_size = u16::try_from(side.order_id_preimage_size()).map_err(|_| {
+        Error::Drive(DriveError::CorruptedCodeExecution(
+            "an order id's preimage is a few dozen bytes",
+        ))
+    })?;
+    let hash_fee = Drive::calculate_fee(
+        None,
+        Some(vec![LowLevelDriveOperation::FunctionOperation(
+            FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size),
+        )]),
+        &block_info.epoch,
+        drive.config.epochs_per_era,
+        platform_version,
+        None,
+    )?;
+    Ok((side.order_id(token_id, maker_id, nonce), hash_fee))
 }

@@ -13,6 +13,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::shielded::OrchardBundleParams;
@@ -23,6 +24,8 @@ use crate::state_transition::batch_transition::methods::StateTransitionCreationO
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_order_side::TokenOrderSide;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 #[cfg(feature = "state-transition-signing")]
@@ -577,6 +580,64 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         token_contract_position: u16,
         amount: TokenAmount,
         total_agreed_price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Lists `amount` of a tradeable token for sale at `price` credits per whole token. (The token marketplace, protocol version 15.)
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_place_ask_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        price: Credits,
+        decimals: u8,
+        min_fill: TokenAmount,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Buys between `min_amount` and `max_amount` from the open listing `order_id`, paying at most `max_total_price`. (The token marketplace, protocol version 15.)
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_fill_ask_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        order_id: Identifier,
+        min_amount: TokenAmount,
+        max_amount: TokenAmount,
+        max_total_price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Cancels the signer's own open order `order_id`. (The token marketplace, protocol version 15.)
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_cancel_order_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        order_id: Identifier,
+        side: TokenOrderSide,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

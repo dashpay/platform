@@ -261,7 +261,10 @@ impl<C> Platform<C> {
                                         | TokenEvent::Unshield(..)
                                         | TokenEvent::ShieldedTransfer
                                         | TokenEvent::ClaimToPool(..)
-                                        | TokenEvent::DirectPurchaseToPool(..) => {
+                                        | TokenEvent::DirectPurchaseToPool(..)
+                                        | TokenEvent::OrderPlaced(..)
+                                        | TokenEvent::OrderFilled(..)
+                                        | TokenEvent::OrderCancelled(..) => {
                                             return None;
                                         },
                                     },

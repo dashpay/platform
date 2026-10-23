@@ -91,6 +91,17 @@ use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_order_side::TokenOrderSide;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::{TokenCancelOrderTransition, TokenFillAskTransition, TokenPlaceAskTransition};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_cancel_order_transition::TokenCancelOrderTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_fill_ask_transition::TokenFillAskTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_place_ask_transition::TokenPlaceAskTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -1456,6 +1467,188 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         let batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id,
             transitions: vec![BatchedTransition::Token(direct_purchase_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_place_ask_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        price: Credits,
+        decimals: u8,
+        min_fill: TokenAmount,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let transition = TokenPlaceAskTransition::V0(TokenPlaceAskTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            amount,
+            price,
+            decimals,
+            min_fill,
+        });
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_fill_ask_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        order_id: Identifier,
+        min_amount: TokenAmount,
+        max_amount: TokenAmount,
+        max_total_price: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let transition = TokenFillAskTransition::V0(TokenFillAskTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            order_id,
+            min_amount,
+            max_amount,
+            max_total_price,
+        });
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_cancel_order_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        order_id: Identifier,
+        side: TokenOrderSide,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let transition = TokenCancelOrderTransition::V0(TokenCancelOrderTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            order_id,
+            side,
+        });
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),

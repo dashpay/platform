@@ -24,6 +24,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::TokenFillAskTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 
 /// action v0
@@ -242,6 +243,13 @@ impl BatchTransitionActionV0 {
                     // actions, so the fold sees the same sequence of prices there.
                     TokenTransitionAction::DirectPurchaseToPoolAction(token_purchase),
                 ) => Some(token_purchase.total_agreed_price()),
+                BatchedTransitionAction::TokenAction(
+                    // The credits a buyer pays the seller of a listing. Like the
+                    // purchase-into-pool kind above, a fill is refused unpaid at the batch's
+                    // `is_allowed` gate before protocol version 15, so earlier versions see the
+                    // same sequence of prices.
+                    TokenTransitionAction::FillAskAction(fill_ask),
+                ) => Some(fill_ask.credits()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

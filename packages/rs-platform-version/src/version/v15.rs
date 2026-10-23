@@ -158,6 +158,23 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+///
+/// 7. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+///    of a tradeable token at a price in credits per whole token and moves it into escrow),
+///    `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
+///    listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
+///    to its owner). The batch's `is_allowed` gate refuses each, unpaid, before this version,
+///    as software that cannot decode them refuses them. The checks that read nothing beyond the
+///    contract (a tradeable token, its decimals) run with the batch
+///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
+///    A listing's terms and what it is worth at the decimals it signs (at most `i64::MAX` credits,
+///    `InvalidTokenOrderValueError` 10465), are checked with the transition's structure, unpaid. A listing signs the decimals
+///    its price is at and is refused unless they are the token's (`TokenOrderDecimalsMismatchError`
+///    40758, with the batch `advanced_structure`); it records them and its fills are priced at
+///    them; a listing of a token its contract does not define bumps the nonce with the token base
+///    rules' error. Their structure and state
+///    validations and their high-level operation converters are 0 in every table, which only this
+///    version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2

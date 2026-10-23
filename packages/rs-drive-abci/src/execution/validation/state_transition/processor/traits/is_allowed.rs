@@ -169,12 +169,19 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                     }
                 }
                 if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
-                    // The token marketplace: a configuration update that makes a token
-                    // tradeable. Software older than the marketplace cannot decode one, so it
-                    // is refused unpaid, as that software refuses it.
+                    // The token marketplace: the order kinds, and a configuration update that
+                    // makes a token tradeable. Software older than the marketplace cannot decode
+                    // either, so both are refused unpaid, as that software refuses them.
                     if let Some(transition) =
                         st.transitions_iter()
                             .find_map(|transition| match transition {
+                                // Asked as one question, like the pool kinds above, so that an
+                                // order kind added later is gated without being listed here.
+                                BatchedTransitionRef::Token(token_transition)
+                                    if token_transition.is_marketplace_order() =>
+                                {
+                                    Some(format!("Token{}", token_transition.action_type()))
+                                }
                                 BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(
                                     config_update,
                                 )) if matches!(
@@ -786,7 +793,10 @@ mod tests {
         use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
         use dpp::platform_value::BinaryData;
         use dpp::prelude::IdentityNonce;
+        use dpp::state_transition::batch_transition::batched_transition::token_cancel_order_transition::{TokenCancelOrderTransition, TokenCancelOrderTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::token_config_update_transition::{TokenConfigUpdateTransition, TokenConfigUpdateTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_fill_ask_transition::{TokenFillAskTransition, TokenFillAskTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_place_ask_transition::{TokenPlaceAskTransition, TokenPlaceAskTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
         use dpp::state_transition::batch_transition::BatchTransitionV1;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
@@ -922,6 +932,73 @@ mod tests {
                     .validate_is_allowed(platform_version)
                     .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// A batch whose only transition is `token_transition`.
+        fn batch_with(token_transition: TokenTransition) -> StateTransition {
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Default::default(),
+                transitions: vec![BatchedTransition::Token(token_transition)],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::default(),
+            }))
+        }
+
+        /// Every order kind, with the name the gate reports it under.
+        fn every_order_kind() -> Vec<(TokenTransition, &'static str)> {
+            vec![
+                (
+                    TokenTransition::PlaceAsk(TokenPlaceAskTransition::V0(
+                        TokenPlaceAskTransitionV0::default(),
+                    )),
+                    "TokenPlaceAsk",
+                ),
+                (
+                    TokenTransition::FillAsk(TokenFillAskTransition::V0(
+                        TokenFillAskTransitionV0::default(),
+                    )),
+                    "TokenFillAsk",
+                ),
+                (
+                    TokenTransition::CancelOrder(TokenCancelOrderTransition::V0(
+                        TokenCancelOrderTransitionV0::default(),
+                    )),
+                    "TokenCancelOrder",
+                ),
+            ]
+        }
+
+        /// Software older than the marketplace cannot decode an order kind, so each is refused
+        /// unpaid before protocol version 15, under the name a client is told.
+        #[test]
+        fn should_refuse_every_order_kind_before_protocol_version_15() {
+            for (token_transition, expected_name) in every_order_kind() {
+                let result = batch_with(token_transition)
+                    .validate_is_allowed(protocol_version_14())
+                    .expect("should not error");
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                        if error.state_transition_type() == expected_name
+                            && error.required_protocol_version()
+                                == TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
+                    "expected {expected_name} to be refused, got {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        #[test]
+        fn should_allow_every_order_kind_from_protocol_version_15() {
+            let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                .expect("the version that introduced the token marketplace");
+            for (token_transition, name) in every_order_kind() {
+                let result = batch_with(token_transition)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+                assert!(result.is_valid(), "{name}: {:?}", result.errors);
+            }
         }
     }
 }

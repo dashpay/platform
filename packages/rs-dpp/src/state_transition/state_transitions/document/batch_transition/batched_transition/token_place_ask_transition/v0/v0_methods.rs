@@ -1,0 +1,72 @@
+use crate::balances::credits::TokenAmount;
+use crate::fee::Credits;
+use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::batch_transition::token_place_ask_transition::TokenPlaceAskTransitionV0;
+
+impl TokenBaseTransitionAccessors for TokenPlaceAskTransitionV0 {
+    fn base(&self) -> &TokenBaseTransition {
+        &self.base
+    }
+
+    fn base_mut(&mut self) -> &mut TokenBaseTransition {
+        &mut self.base
+    }
+
+    fn set_base(&mut self, base: TokenBaseTransition) {
+        self.base = base;
+    }
+}
+
+pub trait TokenPlaceAskTransitionV0Methods: TokenBaseTransitionAccessors {
+    fn amount(&self) -> TokenAmount;
+
+    fn set_amount(&mut self, amount: TokenAmount);
+
+    fn price(&self) -> Credits;
+
+    fn set_price(&mut self, price: Credits);
+
+    /// The token's decimals the price is at
+    fn decimals(&self) -> u8;
+
+    fn set_decimals(&mut self, decimals: u8);
+
+    fn min_fill(&self) -> TokenAmount;
+
+    fn set_min_fill(&mut self, min_fill: TokenAmount);
+}
+
+impl TokenPlaceAskTransitionV0Methods for TokenPlaceAskTransitionV0 {
+    fn amount(&self) -> TokenAmount {
+        self.amount
+    }
+
+    fn set_amount(&mut self, amount: TokenAmount) {
+        self.amount = amount;
+    }
+
+    fn price(&self) -> Credits {
+        self.price
+    }
+
+    fn set_price(&mut self, price: Credits) {
+        self.price = price;
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
+    }
+
+    fn set_decimals(&mut self, decimals: u8) {
+        self.decimals = decimals;
+    }
+
+    fn min_fill(&self) -> TokenAmount {
+        self.min_fill
+    }
+
+    fn set_min_fill(&mut self, min_fill: TokenAmount) {
+        self.min_fill = min_fill;
+    }
+}

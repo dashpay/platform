@@ -6,6 +6,7 @@ mod direct_selling;
 mod distribution;
 mod emergency_action;
 mod freeze;
+mod marketplace;
 mod mint;
 mod mint_many;
 mod non_transferable;
