@@ -153,6 +153,12 @@ pub struct SystemLimits {
     ///   then start refusing batches that fee validation would have executed. Recheck the
     ///   inequality rather than assuming it.
     ///
+    /// * A token marketplace fill or sale (protocol version 15) reads its order from state and writes
+    ///   an absolute `remaining` and escrow. Two fills of one order in one batch would both read
+    ///   the order as the batch found it, release more than its escrow held, and write a stale
+    ///   `remaining`. Raising the cap needs fills transformed against a batch-local order state
+    ///   (or a refusal of an order filled or cancelled twice in a batch).
+    ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite specify the group drain this cap
     /// guards against; they run at protocol version 15, whose batch application removes the
     /// hazard, and the phantom group generation 1 leaves is characterized at 14. The other

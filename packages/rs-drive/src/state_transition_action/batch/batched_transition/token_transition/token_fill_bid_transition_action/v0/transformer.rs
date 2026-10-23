@@ -30,6 +30,11 @@ impl TokenFillBidTransitionActionV0 {
     /// A token its contract does not define, an offer that is not open for this token, the
     /// seller's own offer, a fill range the offer cannot meet and a payment
     /// below the seller's minimum each bump the nonce with their error instead.
+    ///
+    /// The offer is read as state holds it, and the sale's operations write its new `remaining`
+    /// and escrow as absolute values. That is sound only while a batch carries one transition
+    /// (`SystemLimits::max_transitions_in_documents_batch`): two sales into one offer in a batch
+    /// would both read it unfilled.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_bid_transition_with_contract_lookup(
         drive: &Drive,
