@@ -1113,60 +1113,71 @@ async fn should_not_send_unproved_methods_protocol_14_added_before_it_is_verifie
 
 /// A fresh SDK's first unproved gated call learns protocol 14 from its probe, then reads
 /// the answer with protocol 14 rules: a contract that only those rules parse comes back,
-/// and the honest node that sent it is not banned.
+/// and the honest node that sent it is not banned. ModerationCharters uses protocol 14 types,
+/// AppConnect protocol 14 index keywords.
 #[tokio::test]
 async fn should_read_an_unproved_answer_with_the_version_the_probe_learned() {
     let protocol_14 = PlatformVersion::get(V14).unwrap();
-    let contract =
-        load_system_data_contract(SystemDataContract::ModerationCharters, protocol_14).unwrap();
-    let sdk = mock_sdk(V13, false, 0);
-    answer_probe(&sdk, "pv14").await;
-    let query = DataContractsLatestVersionsQuery::with_contracts(vec![contract.id()]);
-    let request: GetDataContractsLatestVersionsRequest =
-        query.query(&sdk.query_settings().without_proofs()).unwrap();
-    let response = GetDataContractsLatestVersionsResponse {
-        version: Some(get_data_contracts_latest_versions_response::Version::V0(
-            GetDataContractsLatestVersionsResponseV0 {
-                result: Some(LatestVersionsResult::DataContractsLatestVersions(
-                    LatestVersionsEntries {
-                        entries: vec![DataContractLatestVersionEntry {
-                            identifier: contract.id().to_vec(),
-                            version: Some(contract.version()),
-                            data_contract: Some(
-                                contract
-                                    .serialize_to_bytes_with_platform_version(protocol_14)
-                                    .unwrap(),
-                            ),
-                        }],
-                    },
-                )),
-                metadata: Some(ResponseMetadata {
-                    protocol_version: V14,
-                    height: 10,
-                    ..Default::default()
-                }),
-            },
-        )),
-    };
-    answer(&sdk, &request, Ok(response)).await;
+    for system_contract in [
+        SystemDataContract::ModerationCharters,
+        SystemDataContract::AppConnect,
+    ] {
+        let contract = load_system_data_contract(system_contract, protocol_14).unwrap();
+        let sdk = mock_sdk(V13, false, 0);
+        answer_probe(&sdk, "pv14").await;
+        let query = DataContractsLatestVersionsQuery::with_contracts(vec![contract.id()]);
+        let request: GetDataContractsLatestVersionsRequest =
+            query.query(&sdk.query_settings().without_proofs()).unwrap();
+        let response = GetDataContractsLatestVersionsResponse {
+            version: Some(get_data_contracts_latest_versions_response::Version::V0(
+                GetDataContractsLatestVersionsResponseV0 {
+                    result: Some(LatestVersionsResult::DataContractsLatestVersions(
+                        LatestVersionsEntries {
+                            entries: vec![DataContractLatestVersionEntry {
+                                identifier: contract.id().to_vec(),
+                                version: Some(contract.version()),
+                                data_contract: Some(
+                                    contract
+                                        .serialize_to_bytes_with_platform_version(protocol_14)
+                                        .unwrap(),
+                                ),
+                            }],
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata {
+                        protocol_version: V14,
+                        height: 10,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        answer(&sdk, &request, Ok(response)).await;
 
-    let versions = DataContractsLatestVersions::fetch_unproved(&sdk, query)
-        .await
-        .expect("the answer is read with protocol 14 rules")
-        .expect("versions");
-    let latest = versions
-        .0
-        .get(&contract.id())
-        .cloned()
-        .flatten()
-        .expect("the contract's entry");
-    assert_eq!(
-        latest.data_contract.map(|returned| returned.id()),
-        Some(contract.id())
-    );
-    assert_eq!(probes(&sdk).await, 1);
-    assert_eq!(sent(&sdk, &request).await, 1);
-    assert!(!sdk.address_list().is_banned(&node()));
+        let versions = DataContractsLatestVersions::fetch_unproved(&sdk, query)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("{system_contract:?} is read with protocol 14 rules: {error}")
+            })
+            .expect("versions");
+        let latest = versions
+            .0
+            .get(&contract.id())
+            .cloned()
+            .flatten()
+            .expect("the contract's entry");
+        assert_eq!(
+            latest.data_contract.map(|returned| returned.id()),
+            Some(contract.id()),
+            "{system_contract:?}"
+        );
+        assert_eq!(probes(&sdk).await, 1, "{system_contract:?}");
+        assert_eq!(sent(&sdk, &request).await, 1, "{system_contract:?}");
+        assert!(
+            !sdk.address_list().is_banned(&node()),
+            "{system_contract:?}"
+        );
+    }
 }
 
 /// A 4.x node answers every method protocol 14 added with UNIMPLEMENTED, which bans it for
