@@ -1243,7 +1243,7 @@ pub fn as_identity_revision_invalid(
 ) -> Option<&InvalidIdentityRevisionError> {
     use dpp::consensus::state::state_error::StateError;
 
-    match consensus_error_of(error) {
+    match error.consensus_error() {
         Some(ConsensusError::StateError(StateError::InvalidIdentityRevisionError(e))) => Some(e),
         _ => None,
     }
