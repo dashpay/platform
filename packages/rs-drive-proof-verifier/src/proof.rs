@@ -194,6 +194,36 @@ pub trait FromProof<Req> {
     where
         Self: Sized + 'a;
 
+    /// Check, before the request is sent, that this type can be verified from an answer to it.
+    ///
+    /// Several types can share one request type while each accepting only some of its shapes
+    /// (every document view is fetched with the same document query). A shape refused only
+    /// after the answer is reported as a failed proof, which callers retry on another node
+    /// and hold against the one that answered, although every node answered it correctly.
+    /// Refusing it here keeps it off the network.
+    ///
+    /// The default accepts every request. An implementation must not refuse a request that
+    /// [`FromProof::maybe_from_proof_with_metadata()`] can verify.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request that is about to be sent.
+    /// * `platform_version`: The platform version that should be used.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` when the request can be sent.
+    /// * `Err(Error)` when no answer to the request can be verified as this type.
+    fn check_request(
+        _request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+
     /// Retrieve the requested object from the proof.
     ///
     /// Runs full verification of the proof and retrieves enclosed objects.
