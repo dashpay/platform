@@ -293,6 +293,19 @@ fn should_report_where_a_value_fails() {
 }
 
 #[test]
+fn should_list_the_violations_of_a_value_in_the_walks_order() {
+    // The JSON Schema validator lists `enum` first, as the schema writes it first
+    let violations = validator_of(&with_value(&json!({ "enum": ["a"], "type": "string" })))
+        .validate(&json!({ "value": 1 }))
+        .expect("expected the check to run");
+    let keywords: Vec<_> = violations
+        .iter()
+        .map(|violation| violation.keyword)
+        .collect();
+    assert_eq!(keywords, vec!["type", "enum"]);
+}
+
+#[test]
 fn should_refuse_a_cycle_of_references_that_consumes_nothing() {
     let validator = validator_of(&json!({
         "type": "object",
@@ -552,6 +565,11 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
         (
             "a list of one type",
             json!({ "type": ["string"] }),
+            json!(1),
+        ),
+        (
+            "a list repeating a type",
+            json!({ "type": ["string", "string"] }),
             json!(1),
         ),
         ("enum", json!({ "enum": ["a", "b"] }), json!("c")),
