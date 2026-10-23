@@ -6,7 +6,7 @@ use crate::validation::JsonSchemaValidator;
 use std::fmt;
 use std::ops::Deref;
 #[cfg(feature = "validation-schema")]
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// DocumentType requires all fields to implement PartialEq and Clone
 /// JsonSchemaLazyValidator builds on demand with schema from DocumentType
@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")]
-    OnceLock<Result<Arc<DocumentSchemaValidator>, DataContractError>>,
+    OnceLock<Result<DocumentSchemaValidator, DataContractError>>,
 );
 
 impl Default for StatelessJsonSchemaLazyValidator {
@@ -39,9 +39,7 @@ impl StatelessJsonSchemaLazyValidator {
 
     /// The native validator, or the refusal of the schema, once built.
     #[cfg(feature = "validation-schema")]
-    pub(crate) fn native(
-        &self,
-    ) -> &OnceLock<Result<Arc<DocumentSchemaValidator>, DataContractError>> {
+    pub(crate) fn native(&self) -> &OnceLock<Result<DocumentSchemaValidator, DataContractError>> {
         &self.1
     }
 }

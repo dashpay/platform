@@ -22,7 +22,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use std::sync::Arc;
 
 impl DataContract {
     /// Generation 1, with the document type's schema checked by its native validator
@@ -44,7 +43,7 @@ impl DataContract {
                 InvalidDocumentTypeError::new(name.to_owned(), self.id()).into(),
             ));
         };
-        let validator = match self.native_validator(name, document_type, platform_version)? {
+        let validator = match self.native_validator(name, &document_type, platform_version)? {
             Ok(validator) => validator,
             Err(refusal) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -163,24 +162,27 @@ impl DataContract {
     /// The native validator of the document type `name`, built on first use and kept on
     /// the document type, or the refusal of its schema, kept the same way: the
     /// [`DataContractError`] building the validation schema or its patterns returns. Any
-    /// other error is returned as it is, and not kept.
-    fn native_validator(
+    /// other error is returned as it is, and not kept. Both are lent from the document type.
+    fn native_validator<'v>(
         &self,
         name: &str,
-        document_type: DocumentTypeRef,
+        document_type: &'v DocumentTypeRef,
         platform_version: &PlatformVersion,
-    ) -> Result<Result<Arc<DocumentSchemaValidator>, DataContractError>, ProtocolError> {
-        let built = document_type.json_schema_validator_ref().native();
-        if let Some(built) = built.get() {
-            return Ok(built.clone());
-        }
-        let validator = match self.document_type_validation_schema(name, platform_version) {
-            Ok(schema) => DocumentSchemaValidator::new(schema).map(Arc::new),
-            Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
-            Err(error) => return Err(error),
+    ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
+        let slot = document_type.json_schema_validator_ref().native();
+        let built = match slot.get() {
+            Some(built) => built,
+            None => {
+                let validator = match self.document_type_validation_schema(name, platform_version) {
+                    Ok(schema) => DocumentSchemaValidator::new(schema),
+                    Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
+                    Err(error) => return Err(error),
+                };
+                // Building is deterministic: a build that finished first holds the same result
+                slot.get_or_init(|| validator)
+            }
         };
-        // Building is deterministic: a build that finished first holds the same result
-        Ok(built.get_or_init(|| validator).clone())
+        Ok(built.as_ref())
     }
 }
 
