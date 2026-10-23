@@ -1636,11 +1636,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Addresses a resident record pays but the pool still shows
         // available are marked used and stored first, on their own: the
         // send below can still fail before it stores anything, and that
-        // evidence must not depend on it. A failed store is only logged: the
-        // mark stays in memory and rides the contact's next pool snapshot —
-        // this send's own reservation when the send gets that far, and that
-        // store failing stops the send. (The prepared path returns the
-        // failure instead: it is refusing the send anyway.)
+        // evidence must not depend on it. A failed store fails the send
+        // before anything is reserved, and the host sees the store's error:
+        // carried on, a send that then failed to build would report only the
+        // build failure while the mark sat in memory alone. The mark stays in
+        // memory and rides the contact's next stored pool snapshot. (The
+        // prepared path likewise returns this store's failure, on refusal.)
         let found_paid = {
             let mut wm = self.wallet_manager.write().await;
             record_contact_addresses_paid_on_chain(
@@ -1651,12 +1652,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )?
         };
         if let Some(changeset) = found_paid {
-            if let Err(e) = self.store_durably(changeset) {
-                tracing::warn!(
-                    error = %e,
-                    "failed to persist a contact address found paid on-chain"
-                );
-            }
+            self.store_durably(changeset)?;
         }
 
         let (
@@ -14200,6 +14196,39 @@ mod tests {
                     .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
             });
         assert!(stored_used, "the address found paid reaches disk");
+    }
+
+    /// An address found paid that cannot be stored fails the send with the
+    /// store's error, before anything is reserved, even when the send would
+    /// have failed anyway on the build.
+    #[tokio::test]
+    async fn send_payment_reports_a_failed_store_of_an_address_found_paid() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE3, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+
+        *persister.fail_stores.lock().unwrap() = true;
+        let err = with_accepting_broadcaster(iw)
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 10_000_000, None, &signer, &provider)
+            .await
+            .expect_err("more than the wallet holds");
+        *persister.fail_stores.lock().unwrap() = false;
+        assert!(
+            matches!(err, PlatformWalletError::PersisterStore(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the mark stays in memory"
+        );
     }
 
     /// A prepared send refused because a record pays its address reports a
