@@ -496,30 +496,34 @@ fn should_refuse_document_answers_without_a_signed_version() {
     }
 }
 
-/// Every verifier module that checks a document query's signature guards each check. A new
-/// document verifier added without the guard fails here.
+/// Every signature check of a document query answer is guarded. A new document verifier
+/// added without the guard fails here, however its call is spelled or formatted:
+/// - a verifier module that uses document query types guards each of its signature checks;
+/// - `proof.rs`, where most verifiers are not for documents, guards each of its
+///   `GetDocumentsResponse` impls.
 #[test]
 fn should_guard_every_document_query_signature_check() {
-    let directory = concat!(env!("CARGO_MANIFEST_DIR"), "/src/proof");
-    let mut checked = 0;
-    for entry in std::fs::read_dir(directory).unwrap() {
+    const GUARD: &str = "ensure_proof_signed_at_verifier_version(";
+    const SIGNATURE_CHECK: &str = "verify_tenderdash_proof(";
+    let source_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+    let mut guarded = 0;
+    for entry in std::fs::read_dir(format!("{source_dir}/proof")).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
-        let document_module = name.starts_with("document_")
-            || name.starts_with("composite_document")
-            || name.starts_with("chained_document");
-        if !document_module {
+        let source = std::fs::read_to_string(&path).unwrap();
+        if !(source.contains("DriveDocument") || source.contains("GetDocumentsResponse")) {
             continue;
         }
-        let source = std::fs::read_to_string(&path).unwrap();
-        let signature_checks = source.matches("verify_tenderdash_proof(proof").count();
-        let guards = source
-            .matches("ensure_proof_signed_at_verifier_version(mtd, platform_version)?")
-            .count();
-        assert_eq!(guards, signature_checks, "{name}");
-        checked += signature_checks;
+        let guards = source.matches(GUARD).count();
+        assert_eq!(guards, source.matches(SIGNATURE_CHECK).count(), "{name}");
+        guarded += guards;
     }
-    // The 20 checks of the document modules; the generic `Documents` check in `proof.rs` has
-    // its own row in the table above.
-    assert_eq!(checked, VERIFIERS.len() - 1);
+    let proof = std::fs::read_to_string(format!("{source_dir}/proof.rs")).unwrap();
+    let document_impls = proof
+        .lines()
+        .filter(|line| line.contains("type Response") && line.contains("GetDocumentsResponse"))
+        .count();
+    assert_eq!(proof.matches(GUARD).count(), document_impls, "proof.rs");
+    guarded += document_impls;
+    assert_eq!(guarded, VERIFIERS.len());
 }
