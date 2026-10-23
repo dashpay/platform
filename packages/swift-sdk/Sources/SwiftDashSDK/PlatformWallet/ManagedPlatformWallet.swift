@@ -3145,38 +3145,40 @@ extension ManagedPlatformWallet {
         let memoCopy = memo
         // Same signer lifetime contract as `sendDashPayPayment`.
         let coreSigner = MnemonicResolver()
-        return try await Task.detached(priority: .userInitiated) { () -> PreparedDashPayPayment in
-            var paymentHandle: Handle = 0
-            var feeDuffs: UInt64 = 0
-            var totalDuffs: UInt64 = 0
-            var txidTuple: FFIByteTuple32 = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            )
-            let result = Self.withContactPaymentArguments(
-                from: fromBytes, to: toBytes, memo: memoCopy, coreSigner: coreSigner
-            ) { fromPtr, toPtr, memoPtr in
-                platform_wallet_prepare_dashpay_payment(
-                    handle,
-                    fromPtr,
-                    toPtr,
-                    amountDuffs,
-                    memoPtr,
-                    coreSigner.handle,
-                    &paymentHandle,
-                    &feeDuffs,
-                    &totalDuffs,
-                    &txidTuple
+        return try await Task.detached(priority: .userInitiated) { [self] () -> PreparedDashPayPayment in
+            try withExtendedLifetime(self) {
+                var paymentHandle: Handle = 0
+                var feeDuffs: UInt64 = 0
+                var totalDuffs: UInt64 = 0
+                var txidTuple: FFIByteTuple32 = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                let result = Self.withContactPaymentArguments(
+                    from: fromBytes, to: toBytes, memo: memoCopy, coreSigner: coreSigner
+                ) { fromPtr, toPtr, memoPtr in
+                    platform_wallet_prepare_dashpay_payment(
+                        handle,
+                        fromPtr,
+                        toPtr,
+                        amountDuffs,
+                        memoPtr,
+                        coreSigner.handle,
+                        &paymentHandle,
+                        &feeDuffs,
+                        &totalDuffs,
+                        &txidTuple
+                    )
+                }
+                try result.check()
+                return PreparedDashPayPayment(
+                    handle: paymentHandle,
+                    amountDuffs: amountDuffs,
+                    feeDuffs: feeDuffs,
+                    totalDuffs: totalDuffs,
+                    txid: hashData(txidTuple)
                 )
             }
-            try result.check()
-            return PreparedDashPayPayment(
-                handle: paymentHandle,
-                amountDuffs: amountDuffs,
-                feeDuffs: feeDuffs,
-                totalDuffs: totalDuffs,
-                txid: hashData(txidTuple)
-            )
         }.value
     }
 
@@ -3195,20 +3197,22 @@ extension ManagedPlatformWallet {
     ) async throws -> (txid: Data, feeDuffs: UInt64) {
         let handle = self.handle
         let paymentHandle = try payment.take()
-        return try await Task.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
-            var feeDuffs: UInt64 = 0
-            var txidTuple: FFIByteTuple32 = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            )
-            try platform_wallet_send_prepared_dashpay_payment(
-                handle,
-                paymentHandle,
-                &txidTuple,
-                &feeDuffs
-            ).check()
-            let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
-            return (txid: txid, feeDuffs: feeDuffs)
+        return try await Task.detached(priority: .userInitiated) { [self] () -> (txid: Data, feeDuffs: UInt64) in
+            try withExtendedLifetime(self) {
+                var feeDuffs: UInt64 = 0
+                var txidTuple: FFIByteTuple32 = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                try platform_wallet_send_prepared_dashpay_payment(
+                    handle,
+                    paymentHandle,
+                    &txidTuple,
+                    &feeDuffs
+                ).check()
+                let txid = Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+                return (txid: txid, feeDuffs: feeDuffs)
+            }
         }.value
     }
 
