@@ -94,7 +94,8 @@ pub struct DocumentSchemaValidator {
 
 impl DocumentSchemaValidator {
     /// The validator of `schema`. Refuses a `pattern` the JSON Schema validator does not
-    /// compile, which the builder refuses already.
+    /// compile, which the builder refuses already, and a chain of `$ref`s that returns to
+    /// where it started without entering the value.
     pub fn new(schema: ValidationSchema) -> Result<Self, DataContractError> {
         let mut patterns = BTreeMap::new();
         {
@@ -120,6 +121,27 @@ impl DocumentSchemaValidator {
                 }
             }
         }
+        // Each `$ref` is followed at the same value: a chain longer than the references
+        // held returns to one of them, and entering it would consume nothing of the value
+        let references = &schema.references;
+        for (address, start) in references {
+            let mut node: &SchemaNode = start;
+            let mut followed = 0;
+            while let Some(next) = node
+                .reference
+                .as_ref()
+                .and_then(|reference| references.get(reference))
+            {
+                followed += 1;
+                if followed > references.len() {
+                    return Err(structure_error(format!(
+                        "`$ref` `{address}` leads to a cycle of references that consumes \
+                         nothing of the value"
+                    )));
+                }
+                node = next;
+            }
+        }
         Ok(Self { schema, patterns })
     }
 
@@ -129,8 +151,8 @@ impl DocumentSchemaValidator {
     }
 
     /// The violations of `instance`, the JSON the document validator converts a document's
-    /// properties to: none when it satisfies the schema. Errs only when a cycle of `$ref`s
-    /// consumes nothing of the value, on which the JSON Schema validator never returns.
+    /// properties to: none when it satisfies the schema. Errs only on a cycle of `$ref`s that
+    /// consumes nothing of the value, which [`Self::new`] refuses.
     pub fn validate(&self, instance: &JsonValue) -> Result<Vec<SchemaViolation>, ProtocolError> {
         let mut walk = Walk::new(self, false);
         walk.node(&self.schema.root, instance, 0)?;
