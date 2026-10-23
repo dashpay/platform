@@ -225,7 +225,7 @@ signer of each transition owns the record and pays its storage, as for a transfe
 
 | Document type | Written by | Properties |
 |---|---|---|
-| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `minFill`, optional `expiresAt`, `decimals` |
+| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `minFill`, `decimals` |
 | `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits`, `decimals` |
 | `orderCancelled` | `TokenCancelOrder` | `tokenId`, `orderId`, `side` |
 

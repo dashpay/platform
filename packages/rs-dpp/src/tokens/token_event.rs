@@ -9,7 +9,6 @@ use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
-    TimestampMillis,
 };
 #[cfg(feature = "serde-conversion")]
 use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
@@ -218,7 +217,6 @@ pub enum TokenEvent {
     /// - `TokenAmount`: The amount listed or wanted, in base units.
     /// - `Credits`: The price, in credits per whole token.
     /// - `TokenAmount`: The least a fill takes unless it takes everything left.
-    /// - `Option<TimestampMillis>`: When the order expires, if it does.
     /// - `u8`: The token's decimals when the order was placed, which price every fill of it.
     OrderPlaced(
         Identifier,
@@ -226,7 +224,6 @@ pub enum TokenEvent {
         TokenAmount,
         Credits,
         TokenAmount,
-        Option<TimestampMillis>,
         u8,
     ),
 
@@ -416,23 +413,14 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
             }
-            TokenEvent::OrderPlaced(
-                order_id,
-                side,
-                amount,
-                price,
-                min_fill,
-                expires_at,
-                decimals,
-            ) => {
-                let mut m = serializer.serialize_map(Some(8))?;
+            TokenEvent::OrderPlaced(order_id, side, amount, price, min_fill, decimals) => {
+                let mut m = serializer.serialize_map(Some(7))?;
                 m.serialize_entry("$type", "orderPlaced")?;
                 m.serialize_entry("orderId", order_id)?;
                 m.serialize_entry("side", side)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("price", &SafeU64(price))?;
                 m.serialize_entry("minFill", &SafeU64(min_fill))?;
-                m.serialize_entry("expiresAt", &expires_at.as_ref().map(SafeU64))?;
                 m.serialize_entry("decimals", decimals)?;
                 m.end()
             }
@@ -510,7 +498,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut maker: Option<Identifier> = None;
                 let mut price: Option<u64> = None;
                 let mut min_fill: Option<u64> = None;
-                let mut expires_at: Option<u64> = None;
                 let mut decimals: Option<u8> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -538,9 +525,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "maker" => maker = Some(map.next_value()?),
                         "price" => price = Some(map.next_value::<U64Safe>()?.0),
                         "minFill" => min_fill = Some(map.next_value::<U64Safe>()?.0),
-                        "expiresAt" => {
-                            expires_at = map.next_value::<Option<U64Safe>>()?.map(|value| value.0)
-                        }
                         "decimals" => decimals = Some(map.next_value()?),
                         _ => {
                             let _: IgnoredAny = map.next_value()?;
@@ -634,7 +618,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         price.ok_or_else(|| A::Error::missing_field("price"))?,
                         min_fill.ok_or_else(|| A::Error::missing_field("minFill"))?,
-                        expires_at,
                         decimals.ok_or_else(|| A::Error::missing_field("decimals"))?,
                     )),
                     "orderFilled" => Ok(TokenEvent::OrderFilled(
@@ -760,6 +743,74 @@ pub(crate) mod json_convertible_tests {
         );
         let recovered = TokenEvent::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// Above JavaScript's largest safe integer, so the JSON form writes it as a string.
+    const ABOVE_SAFE_INTEGER: u64 = (1 << 53) + 1;
+
+    /// The marketplace events with every field distinct, and amounts, prices and credits on
+    /// both sides of the safe-integer boundary.
+    fn marketplace_fixtures() -> Vec<TokenEvent> {
+        vec![
+            TokenEvent::OrderPlaced(
+                Identifier::new([0xc1; 32]),
+                TokenOrderSide::Ask,
+                ABOVE_SAFE_INTEGER,
+                ABOVE_SAFE_INTEGER + 2,
+                7,
+                8,
+            ),
+            TokenEvent::OrderPlaced(
+                Identifier::new([0xc2; 32]),
+                TokenOrderSide::Bid,
+                1_000,
+                5,
+                1,
+                0,
+            ),
+            TokenEvent::OrderFilled(
+                Identifier::new([0xc3; 32]),
+                TokenOrderSide::Bid,
+                Identifier::new([0xc4; 32]),
+                ABOVE_SAFE_INTEGER,
+                ABOVE_SAFE_INTEGER + 4,
+                2,
+            ),
+            TokenEvent::OrderCancelled(Identifier::new([0xc5; 32]), TokenOrderSide::Ask),
+        ]
+    }
+
+    #[test]
+    fn json_round_trip_marketplace_events() {
+        use crate::serialization::JsonConvertible;
+        for original in marketplace_fixtures() {
+            let json = original.to_json().expect("to_json");
+            match &original {
+                TokenEvent::OrderPlaced(_, _, amount, ..)
+                | TokenEvent::OrderFilled(_, _, _, amount, ..)
+                    if *amount == ABOVE_SAFE_INTEGER =>
+                {
+                    assert_eq!(
+                        json["amount"],
+                        json!(ABOVE_SAFE_INTEGER.to_string()),
+                        "{json}"
+                    );
+                }
+                _ => {}
+            }
+            let recovered = TokenEvent::from_json(json).expect("from_json");
+            assert_eq!(original, recovered);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_marketplace_events() {
+        use crate::serialization::ValueConvertible;
+        for original in marketplace_fixtures() {
+            let value = original.to_object().expect("to_object");
+            let recovered = TokenEvent::from_object(value).expect("from_object");
+            assert_eq!(original, recovered);
+        }
     }
 
     #[test]
@@ -907,20 +958,11 @@ impl fmt::Display for TokenEvent {
                 amount,
                 price,
                 min_fill,
-                expires_at,
                 decimals,
             ) => write!(
                 f,
-                "Order {} placed: {} of {} at {} credits per whole token of {} decimals, fills of at least {}{}",
-                order_id,
-                side,
-                amount,
-                price,
-                decimals,
-                min_fill,
-                expires_at
-                    .map(|expires_at| format!(", expiring at {}", expires_at))
-                    .unwrap_or_default()
+                "Order {} placed: {} of {} at {} credits per whole token of {} decimals, fills of at least {}",
+                order_id, side, amount, price, decimals, min_fill
             ),
             TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => write!(
                 f,
@@ -1225,16 +1267,8 @@ impl TokenEvent {
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
             ]),
-            TokenEvent::OrderPlaced(
-                order_id,
-                side,
-                amount,
-                price,
-                min_fill,
-                expires_at,
-                decimals,
-            ) => {
-                let mut properties = BTreeMap::from([
+            TokenEvent::OrderPlaced(order_id, side, amount, price, min_fill, decimals) => {
+                BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("orderId".to_string(), order_id.into()),
                     ("side".to_string(), (side as u8).into()),
@@ -1242,11 +1276,7 @@ impl TokenEvent {
                     ("price".to_string(), price.into()),
                     ("minFill".to_string(), min_fill.into()),
                     ("decimals".to_string(), decimals.into()),
-                ]);
-                if let Some(expires_at) = expires_at {
-                    properties.insert("expiresAt".to_string(), expires_at.into());
-                }
-                properties
+                ])
             }
             TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => {
                 BTreeMap::from([

@@ -254,7 +254,6 @@ impl TokenTransitionAction {
                 action.amount(),
                 action.price(),
                 action.min_fill(),
-                action.expires_at(),
                 action.decimals(),
             ),
             TokenTransitionAction::FillAskAction(action) => TokenEvent::OrderFilled(
@@ -274,7 +273,6 @@ impl TokenTransitionAction {
                 action.amount(),
                 action.price(),
                 action.min_fill(),
-                action.expires_at(),
                 action.decimals(),
             ),
             TokenTransitionAction::FillBidAction(action) => TokenEvent::OrderFilled(

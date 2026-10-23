@@ -2988,7 +2988,7 @@ mod history {
     #[tokio::test]
     async fn should_record_a_listing_its_fill_and_its_cancel() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
@@ -3026,7 +3026,6 @@ mod history {
             property(&placed[0], "decimals").to_integer::<u8>().ok(),
             Some(8)
         );
-        assert_eq!(placed[0].properties().get("expiresAt"), None);
 
         let filled = market.history("orderFilled");
         assert_eq!(filled.len(), 1);
@@ -3060,7 +3059,7 @@ mod history {
     #[tokio::test]
     async fn should_record_an_offer_and_a_sale_into_it_on_the_bid_side() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
         market.assert_executes(&sale, &BlockInfo::default());
@@ -3091,7 +3090,7 @@ mod history {
     #[tokio::test]
     async fn should_record_the_cancel_of_an_offer_on_the_bid_side() {
         let mut market = tradeable_market();
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let cancel = market.cancel_bid(order_id, false).await;
         market.assert_executes(&cancel, &BlockInfo::default());
@@ -3115,15 +3114,15 @@ mod history {
 
     /// A closed order's placement is proved by its `orderPlaced` record, which holds every term
     /// of the placement. A placement with the same signer, nonce, amount and price but another
-    /// minimum fill, expiry or signed decimals has the same order id and record id, and does
-    /// not verify against that proof, on either side.
+    /// minimum fill or signed decimals has the same order id and record id, and does not verify
+    /// against that proof, on either side.
     #[tokio::test]
     async fn should_not_prove_a_closed_order_for_other_terms() {
         let mut market = tradeable_market();
-        let other_terms = [(11, Some(9_000)), (10, Some(9_001)), (10, None)];
+        let other_min_fills = [11, 9];
 
         let nonce = market.seller.nonce;
-        let (place, order_id) = market.place_ask(1_000, PRICE, 10, Some(9_000)).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 10).await;
         market.assert_executes(&place, &BlockInfo::default());
         let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
@@ -3131,10 +3130,10 @@ mod history {
             market.prove_and_verify(&place),
             StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
         );
-        for (min_fill, expires_at) in other_terms {
+        for min_fill in other_min_fills {
             let next = market.seller.nonce;
             market.seller.nonce = nonce;
-            let (other, other_id) = market.place_ask(1_000, PRICE, min_fill, expires_at).await;
+            let (other, other_id) = market.place_ask(1_000, PRICE, min_fill).await;
             market.seller.nonce = next;
             assert_eq!(other_id, order_id);
             assert!(
@@ -3142,7 +3141,7 @@ mod history {
                     market.prove_and_try_verify(&other),
                     Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
                 ),
-                "a listing with a minimum fill of {min_fill} and expiry {expires_at:?}"
+                "a listing with a minimum fill of {min_fill}"
             );
         }
 
@@ -3157,7 +3156,6 @@ mod history {
             PRICE,
             2,
             10,
-            Some(9_000),
             &market.seller.key,
             nonce,
             0,
@@ -3173,7 +3171,7 @@ mod history {
         ));
 
         let nonce = market.buyer.nonce;
-        let (place, order_id) = market.place_bid(1_000, PRICE, 10, Some(9_000)).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 10).await;
         market.assert_executes(&place, &BlockInfo::default());
         let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
         market.assert_executes(&sale, &BlockInfo::default());
@@ -3181,10 +3179,10 @@ mod history {
             market.prove_and_verify(&place),
             StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
         );
-        for (min_fill, expires_at) in other_terms {
+        for min_fill in other_min_fills {
             let next = market.buyer.nonce;
             market.buyer.nonce = nonce;
-            let (other, other_id) = market.place_bid(1_000, PRICE, min_fill, expires_at).await;
+            let (other, other_id) = market.place_bid(1_000, PRICE, min_fill).await;
             market.buyer.nonce = next;
             assert_eq!(other_id, order_id);
             assert!(
@@ -3192,7 +3190,7 @@ mod history {
                     market.prove_and_try_verify(&other),
                     Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
                 ),
-                "an offer with a minimum fill of {min_fill} and expiry {expires_at:?}"
+                "an offer with a minimum fill of {min_fill}"
             );
         }
     }
@@ -3211,7 +3209,7 @@ mod history {
             );
         };
 
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         refused(&market, &place);
         let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
@@ -3222,7 +3220,7 @@ mod history {
             StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
         );
 
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         refused(&market, &place);
         let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
@@ -3250,7 +3248,7 @@ mod history {
             },
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         market.set_decimals(2).await;
         let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
@@ -3308,7 +3306,7 @@ mod history {
             },
             dash_to_credits!(1.0),
         );
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         assert_matches!(
             market.prove_and_verify(&place),
@@ -3340,7 +3338,7 @@ mod history {
             .expect("expected the token")
             .keeps_history()
             .keeps_transfer_history());
-        let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
@@ -3348,11 +3346,11 @@ mod history {
         market.assert_executes(&cancel, &BlockInfo::default());
 
         // The bid side: an offer, a sale into it and the cancel of another.
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
         market.assert_executes(&sale, &BlockInfo::default());
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1, None).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
         market.assert_executes(&place, &BlockInfo::default());
         let cancel = market.cancel_bid(order_id, false).await;
         market.assert_executes(&cancel, &BlockInfo::default());

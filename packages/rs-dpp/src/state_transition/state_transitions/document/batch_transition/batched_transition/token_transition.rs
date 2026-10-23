@@ -991,7 +991,6 @@ impl TokenTransitionV0Methods for TokenTransition {
                 place_ask.amount(),
                 place_ask.price(),
                 place_ask.min_fill(),
-                place_ask.expires_at(),
                 place_ask.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and costs, before the order
@@ -1017,7 +1016,6 @@ impl TokenTransitionV0Methods for TokenTransition {
                 place_bid.amount(),
                 place_bid.price(),
                 place_bid.min_fill(),
-                place_bid.expires_at(),
                 place_bid.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and pays, before the order is
