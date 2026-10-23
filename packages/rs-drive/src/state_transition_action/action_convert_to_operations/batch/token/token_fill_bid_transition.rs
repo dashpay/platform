@@ -56,6 +56,10 @@ impl DriveHighLevelBatchOperationConverter for TokenFillBidTransitionAction {
                     }),
                 ];
 
+                // The seller is paid, and the buyer later refunded, out of credits already in
+                // the offer's escrow, so neither balance can pass `MAX_CREDITS`: no identity
+                // holds more than all the credits on Platform, which every credit coming from
+                // Core keeps far below it (at most about 2.1e18 against 9.2e18).
                 if credits > 0 {
                     ops.push(IdentityOperation(
                         IdentityOperationType::AddToIdentityBalance {

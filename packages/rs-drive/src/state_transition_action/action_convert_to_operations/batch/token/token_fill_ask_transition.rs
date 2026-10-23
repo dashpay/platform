@@ -55,6 +55,11 @@ impl DriveHighLevelBatchOperationConverter for TokenFillAskTransitionAction {
                     }),
                 ];
 
+                // The buyer's credits move to the seller, so the seller's balance cannot pass
+                // `MAX_CREDITS`: no identity holds more than all the credits on Platform, which
+                // the total credits check keeps far below it (every credit comes from Core, at
+                // most about 2.1e18 against 9.2e18). A direct purchase pays its contract owner
+                // the same way.
                 if credits > 0 {
                     ops.push(IdentityOperation(
                         IdentityOperationType::RemoveFromIdentityBalance {
