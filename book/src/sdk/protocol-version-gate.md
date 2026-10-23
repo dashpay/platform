@@ -71,7 +71,7 @@ to ban.
 |---|---|
 | Rust (`dash-sdk`) | `Error::ProtocolVersionNotActive { method, required, network, pinned, cause }` |
 | JS (`wasm-sdk`, `evo-sdk`) | `WasmSdkError` with kind `ProtocolVersionNotActive` (`error.name === 'ProtocolVersionNotActive'`) |
-| FFI (Swift, Kotlin) | `DashSDKErrorCode::ProtocolError`, with a message that starts with `<method> needs Platform protocol version`; `NetworkError` when asking for the network's version failed |
+| FFI (Swift, Kotlin) | `DashSDKErrorCode::ProtocolError`, with a message that starts with `<method> needs Platform protocol version`; `NetworkError` when asking for the network's version failed for a reason that can pass |
 
 `method` names the gRPC method (for example `get_contract_fee_pots`), `required` the
 version it needs, and `network` the version the SDK could rely on: the lower of its own
@@ -83,16 +83,25 @@ FFI messages include it.
 Another node cannot help, so the SDK never retries the request elsewhere and bans no node
 for it. An app that offers a protocol 14 feature can catch the error and hide the feature
 until the network activates protocol 14; the same call succeeds once it has. When asking
-for the network's version failed, the network may serve the request already: JS reports
-the error as retriable (`isRetriable`), and FFI as a network error, so the app can try
-again later instead of hiding the feature.
+for the network's version failed for a reason that can pass (nodes or a quorum source not
+answering), the network may serve the request already: JS reports the error as retriable
+(`isRetriable`), and FFI as a network error, so the app can try again later instead of
+hiding the feature. A failure the SDK's own setup causes, such as a context provider that
+cannot give quorum keys, is not retriable: Rust apps can tell the two apart with
+`Error::is_transient_protocol_version_refusal`.
 
 ## At the activation
 
 When the network activates protocol 14, a node that has not caught up yet still answers
 at protocol 13. An answer to one of these requests signed below 14 is treated as coming
 from a stale node (`StaleNodeError::ProtocolVersion`): it is discarded, the node is
-banned, and the SDK asks another one.
+banned, and the SDK asks another one. On FFI this is a network error.
+
+The question the SDK asks for the network's version can reach such a node too. Its fresh
+answer, signed at 13, then decides that call: the request is refused as if the network
+had not activated protocol 14. The refusal is not retriable, but it lasts only that call:
+the next one asks again, usually another node. Right after an activation, an app that
+hides a feature on a refusal should look again soon.
 
 ## Adding a request
 
