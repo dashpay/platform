@@ -1482,7 +1482,9 @@ pub fn get_tx_record(
 }
 
 /// Reject internally inconsistent bodies before they can drive replay or sweeps.
-fn decode_transaction_record(payload: &[u8]) -> Result<TransactionRecord, WalletStorageError> {
+pub(crate) fn decode_transaction_record(
+    payload: &[u8],
+) -> Result<TransactionRecord, WalletStorageError> {
     let record: TransactionRecord = blob::decode(payload)?;
     if record.txid != record.transaction.txid() {
         return Err(WalletStorageError::blob_decode(
@@ -1951,6 +1953,65 @@ mod tests {
         assert!(utxos.is_empty(), "no kept row is spendable");
         assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
         assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
+    }
+
+    /// V020 indexes every input of a kept pending record, not only the coin
+    /// the record holds the claim on. A sweep that withholds an input still
+    /// spent by a kept survivor must hand that survivor the claim, so
+    /// removing the survivor can release the coin; a claim handed to the
+    /// winner would outlive the survivor's defeat. No pending record is
+    /// delivered again between the migration and the sweep.
+    #[test]
+    fn should_hand_a_withheld_input_to_its_kept_survivor_after_migrating_to_v020() {
+        let wallet_id = [0xB7u8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
+        let (first, second, shared) = (coin(0x71), coin(0x72), coin(0x73));
+        // The shared coin is claimed by the first record listing it: `loser`.
+        let loser = spend(
+            &[first.outpoint, shared.outpoint],
+            TransactionContext::Mempool,
+        );
+        let survivor = spend(
+            &[second.outpoint, shared.outpoint],
+            TransactionContext::Mempool,
+        );
+        let coins = vec![first.clone(), second.clone(), shared.clone()];
+        let pending = CoreChangeSet {
+            spent_utxos: coins.clone(),
+            ..round(vec![loser.clone(), survivor.clone()], coins)
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &pending).unwrap();
+        tx.commit().unwrap();
+        let claimant = |txid: &Txid| (true, Some(txid.as_byte_array().to_vec()));
+        assert_eq!(
+            spend_claim(&conn, &wallet_id, &shared.outpoint),
+            claimant(&loser.txid)
+        );
+        rewind_v020(&conn);
+        migrations::run(&mut conn).unwrap();
+
+        let block = BlockInfo::new(160, BlockHash::all_zeros(), 1);
+        let winner = spend(&[first.outpoint], TransactionContext::InBlock(block));
+        let settled = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser.txid],
+                superseded_by: winner.txid,
+                winner_mined_height: Some(160),
+                released_outpoints: vec![],
+            }],
+            ..round(vec![winner], vec![])
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &settled).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(
+            spend_claim(&conn, &wallet_id, &shared.outpoint),
+            claimant(&survivor.txid),
+            "the kept survivor, not the winner, holds the withheld input"
+        );
     }
 
     #[test]

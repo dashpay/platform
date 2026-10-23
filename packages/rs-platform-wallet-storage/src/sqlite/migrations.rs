@@ -10,6 +10,7 @@ use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
+mod v020;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -45,6 +46,7 @@ fn run_with_runner(
         tx,
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
+        accounting_sql: hook_sql(20),
     };
     // Grouped reports never claim that rolled-back migrations were applied.
     let report = runner.set_grouped(true).run(&mut driver)?;
@@ -59,6 +61,7 @@ struct MigrationTransaction<'conn> {
     tx: rusqlite::Transaction<'conn>,
     registration_sql: String,
     pool_sql: String,
+    accounting_sql: String,
 }
 
 impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
@@ -75,6 +78,8 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
                 legacy_v008::backfill_registrations(&self.tx)?;
             } else if query == self.pool_sql {
                 legacy_v008::convert_pools(&self.tx)?;
+            } else if query == self.accounting_sql {
+                v020::index_kept_inputs(&self.tx)?;
             }
             count += 1;
         }

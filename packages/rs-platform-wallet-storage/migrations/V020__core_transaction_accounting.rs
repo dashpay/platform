@@ -12,9 +12,11 @@
 //! unmined history as evidence: unconfirmed transactions with their instant
 //! locks and outputs, and every spent row whose claim no mined transaction
 //! stands behind. A kept coin's mined funding is reduced to a height-only row
-//! the rescan records again, and each kept record's claimed inputs are
-//! indexed. The loader then authenticates every kept claim before replay, as
-//! it does any stored one.
+//! the rescan records again. Every input of each kept record is indexed, not
+//! only the coins it holds the claim on, so a sweep can hand a withheld input
+//! to a kept survivor; SQL cannot read a record body, so the typed half in
+//! `src/sqlite/migrations/v020.rs` does that after this SQL. The loader then
+//! authenticates every kept claim before replay, as it does any stored one.
 //!
 //! Kept records carry their possibly wrong stored accounting until the wallet
 //! records them again, at the latest when they mine. SQL cannot recompute it,
@@ -73,10 +75,6 @@ pub fn migration() -> String {
     UPDATE core_transactions
         SET block_hash = NULL, block_time = NULL, finalized = 0, record_blob = NULL
         WHERE height IS NOT NULL;
-    INSERT INTO core_transaction_inputs (wallet_id, txid, outpoint)
-        SELECT u.wallet_id, u.spent_in_txid, u.outpoint FROM core_utxos u
-        JOIN core_transactions t ON t.wallet_id = u.wallet_id AND t.txid = u.spent_in_txid
-        WHERE u.spent = 1 AND t.record_blob IS NOT NULL;
     UPDATE core_sync_state SET synced_height = (
         SELECT MIN(COALESCE(core_sync_state.synced_height, MAX(w.birth_height - 1, 0)),
                    MAX(w.birth_height - 1, 0))
