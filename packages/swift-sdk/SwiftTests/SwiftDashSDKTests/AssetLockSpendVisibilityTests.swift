@@ -293,6 +293,19 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
         )
     }
 
+    func testConflictedFundingDoesNotMarkItsInputsFinal() throws {
+        let outpoint = try seedFundingTxoSpentByAMempoolAssetLock(into: container)
+        let raw = PersistentTxo.makeOutpoint(txid: lockTxid, vout: 0)
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [.init(
+            outPointHex: PersistentAssetLock.encodeOutPoint(rawBytes: raw),
+            transactionBytes: Data([3, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            fundingTypeRaw: 5, identityIndexRaw: 0, accountIndexRaw: 0,
+            amountDuffs: 999_545, statusRaw: 7, proofBytes: nil)], removed: []))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        XCTAssertFalse(try txoIsSpent(outpoint: outpoint))
+    }
+
     /// The reconcile's fetch is the only thing that can find the TXOs a
     /// now-final lock consumed, so an unreadable read must not be spent as
     /// "nothing to heal". `Consumed` is terminal — it never upserts again —

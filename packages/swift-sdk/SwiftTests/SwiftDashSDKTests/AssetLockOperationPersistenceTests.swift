@@ -27,6 +27,75 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
     }
 
+    func testConflictRevisionRejectsStaleSnapshotsAndRemoval() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        try persist(handler, status: 1, operationId: operationId)
+        var conflict = snapshot(status: 7, operationId: operationId)
+        conflict.operationRevision = 1
+        conflict.expectedOperationRevision = 0
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [conflict], removed: [], revisionAware: true))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertFalse(handler.persistAssetLocks(walletId: walletId,
+            upserts: [snapshot(status: 1, operationId: operationId)], removed: [], revisionAware: true))
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [], removed: [rawOutPoint], revisionAware: true))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        let row = try XCTUnwrap(handler.loadCachedAssetLocks(walletId: walletId).first)
+        XCTAssertEqual(row.statusRaw, 7)
+        XCTAssertEqual(row.operationRevision, 1)
+        XCTAssertEqual(row.operationId, operationId)
+        // A lost commit acknowledgement permits identical CAS redelivery.
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [conflict], removed: [], revisionAware: true))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+    }
+
+    func testV4OperationBindingMigratesWithLegacyRevisionAndSurvivesReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("migration.store")
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV4.self)
+            let container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            ])
+            let row = snapshot(status: 1, operationId: operationId)
+            container.mainContext.insert(DashSchemaSnapshotV4.PersistentAssetLock(
+                outPointHex: row.outPointHex, walletId: walletId, transactionBytes: row.transactionBytes,
+                fundingTypeRaw: row.fundingTypeRaw, identityIndexRaw: row.identityIndexRaw,
+                accountIndexRaw: row.accountIndexRaw, amountDuffs: row.amountDuffs,
+                statusRaw: row.statusRaw, operationId: operationId))
+            try container.mainContext.save()
+        }
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            let migrated = try XCTUnwrap(handler.loadCachedAssetLocks(walletId: walletId).first)
+            XCTAssertEqual(migrated.operationId, operationId)
+            XCTAssertEqual(migrated.operationRevision, 0)
+            var conflict = snapshot(status: 7, operationId: operationId)
+            conflict.operationRevision = 1
+            conflict.expectedOperationRevision = 0
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(handler.persistAssetLocks(walletId: walletId, upserts: [conflict], removed: [], revisionAware: true))
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        }
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["5.0.0"])
+        let reopened = try DashModelContainer.create(url: url)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+        let row = try XCTUnwrap(handler.loadCachedAssetLocks(walletId: walletId).first)
+        XCTAssertEqual(row.operationId, operationId)
+        XCTAssertEqual(row.operationRevision, 1)
+        XCTAssertEqual(row.statusRaw, 7)
+        XCTAssertEqual(row.outPointHex, outPointHex)
+    }
+
     func testOperationIdSurvivesConsumptionAndStoreReopen() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -86,7 +155,23 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
-        XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(4, 0, 0))
+        XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(5, 0, 0))
+    }
+
+    func testMissingOrNegativeOperationRevisionFailsRestore() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertThrowsError(try handler.loadAssetLockOperationRevision(walletId: walletId, outPoint: rawOutPoint))
+        let context = ModelContext(container)
+        let row = PersistentAssetLock(outPointHex: outPointHex, walletId: walletId,
+            transactionBytes: snapshot(status: 1, operationId: nil).transactionBytes,
+            fundingTypeRaw: 5, identityIndexRaw: 0, amountDuffs: 1000, statusRaw: 7,
+            operationId: operationId)
+        row.operationRevision = -1
+        context.insert(row)
+        try context.save()
+        XCTAssertThrowsError(try handler.loadAssetLockOperationRevision(walletId: walletId, outPoint: rawOutPoint))
+        XCTAssertThrowsError(try handler.loadCachedAssetLocks(walletId: walletId))
     }
 
     func testMalformedOperationIdFailsLoadInsteadOfBecomingAbsent() throws {

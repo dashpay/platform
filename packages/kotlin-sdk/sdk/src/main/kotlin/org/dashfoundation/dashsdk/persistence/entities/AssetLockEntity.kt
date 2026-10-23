@@ -41,7 +41,8 @@ data class AssetLockEntity(
     /**
      * `AssetLockStatus` discriminant: 0 Built, 1 Broadcast,
      * 2 InstantSendLocked, 3 ChainLocked, 4 Consumed,
-     * 5 RecoveredFromChain.
+     * 5 RecoveredFromChain, 6 DrainCompleted, 7 Conflicted.
+     * Conflicted is not finalized or resumable.
      *
      * `4` is terminal; `5` is NOT, its higher discriminant
      * notwithstanding. `5` means Core finality is proven while

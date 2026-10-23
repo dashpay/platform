@@ -2013,6 +2013,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -2119,6 +2120,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     out_point,
                     transaction,
                     account_index: 0,

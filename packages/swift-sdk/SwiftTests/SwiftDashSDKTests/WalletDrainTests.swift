@@ -36,6 +36,16 @@ final class WalletDrainTests: XCTestCase {
         }
     }
 
+    func testShouldExposeConflictWithItsOriginalOutpoint() {
+        var ffi = WalletDrainOutcomeFFI()
+        ffi.state = 3
+        ffi.has_out_point = true
+        ffi.out_point.vout = 9
+        let outcome = WalletDrainOutcome(ffi: ffi)
+        XCTAssertEqual(outcome.state, .conflicted)
+        XCTAssertEqual(outcome.outpoint?.vout, 9)
+    }
+
     func testShouldTreatAnUnknownOutcomeStateAsPending() {
         var ffi = WalletDrainOutcomeFFI()
         ffi.state = 255
