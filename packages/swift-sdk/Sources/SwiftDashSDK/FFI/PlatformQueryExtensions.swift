@@ -1708,17 +1708,29 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Read the cached authenticated network version; this does not make a request.
+    public func protocolVersionInfo() throws -> ProtocolVersionInfo {
+        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
+        let json = try Self.consumeStringResult(dash_sdk_get_protocol_version_info(handle))
+        return try JSONDecoder().decode(ProtocolVersionInfo.self, from: Data(json.utf8))
+    }
+
     // MARK: - Epoch & Block Queries
 
     /// Get epochs info
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startEpochString = startEpoch.map { String($0) }
-        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected epochs array")
+        }
+        return result
     }
 
     /// Get the current (newest started) epoch — same keys as one
