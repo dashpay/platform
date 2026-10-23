@@ -81,6 +81,9 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
     ) -> Result<usize, Self::Error> {
         let mut count = 0;
         for query in queries {
+            if query == self.accounting_sql {
+                v020::rewind_sync_heights(&self.tx, self.policy)?;
+            }
             self.tx.execute_batch(query)?;
             if query == self.registration_sql {
                 legacy_v008::backfill_registrations(&self.tx)?;

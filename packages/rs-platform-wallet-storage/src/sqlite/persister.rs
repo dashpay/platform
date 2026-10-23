@@ -1,6 +1,6 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
@@ -1751,10 +1751,16 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (mut core_state, mut utxo_accounts) =
-        schema::core_state::load_state(conn, &wallet_id, network, ctx)
-            .map_err(PersistenceError::from)?;
-    if schema::core_spend_authorization::repair(conn, &wallet_id, &core_state)
+    let mut record_keys = HashMap::new();
+    let (mut core_state, mut utxo_accounts) = schema::core_state::load_state_with_record_keys(
+        conn,
+        &wallet_id,
+        network,
+        ctx,
+        &mut record_keys,
+    )
+    .map_err(PersistenceError::from)?;
+    if schema::core_spend_authorization::repair(conn, &wallet_id, &core_state, &record_keys)
         .map_err(PersistenceError::from)?
     {
         (core_state, utxo_accounts) =
