@@ -112,8 +112,8 @@ pub(crate) fn restore_provider_platform_node_pool(
         return Ok(());
     }
 
-    // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-    // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
+    // `reserved_at` is not consumed here: `core_pool::restore_pools` runs next
+    // and overlays each row's reservation state on the entries inserted below.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(
@@ -1149,7 +1149,7 @@ fn owning_account_of(account: &ManagedCoreFundsAccount) -> OwningAccount {
 /// rescan to re-warm — generous enough to cover any realistic per-account
 /// derivation depth. The common (single funds account) path terminates at
 /// the true high-water mark well before this and never reaches the cap.
-const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
+pub(crate) const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 
 /// Soft threshold past which a single chain's discovery scan is treated as
 /// abnormally deep and worth a `tracing::warn!`. Real funds chains anchor
@@ -1410,8 +1410,15 @@ fn extend_pools_for_restored_addresses(
         // reaches 50 and derives idx 45). A single mark-then-refill pass
         // would leave that address in the pool with `used = false`, handing
         // a previously-used address back out as fresh. Terminates: each
-        // round marks at least one new address from the finite restored set
-        // (`mark_used` returns `true` only on an unused→used flip).
+        // round after the first marks at least one new address from the
+        // finite restored set (`mark_used` returns `true` only on an
+        // unused→used flip).
+        //
+        // A pool restored from its stored rows enters with those entries
+        // already used, so no flip announces them. Its window is refilled
+        // once regardless, or the addresses past the stored rows would stay
+        // underived: unobserved, and a funded one among them never marked.
+        let mut restored_used = pool.highest_used.is_some();
         loop {
             let mut marked_any = false;
             for addr in restored_addresses {
@@ -1419,7 +1426,8 @@ fn extend_pools_for_restored_addresses(
                     marked_any = true;
                 }
             }
-            if !marked_any {
+            let refill_restored = std::mem::take(&mut restored_used);
+            if !marked_any && !refill_restored {
                 break;
             }
             // Refill the gap window past the deepest used index (needs the

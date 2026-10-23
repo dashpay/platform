@@ -57,6 +57,11 @@ use crate::verify::{
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
+    get_identity_by_non_unique_public_key_hash_response_v0::Result as NonUniqueLookupV0Result,
+    get_identity_by_non_unique_public_key_hash_response_v1::Result as NonUniqueLookupV1Result,
+    Version as NonUniqueLookupVersion,
+};
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
@@ -396,6 +401,29 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
+// Query construction follows the producer, while security checks keep the caller's
+// verifier version. Metadata is untrusted until the signature binds it to the root.
+// A producer newer than this build is read with the newest known construction rules,
+// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
+// data the signed root does not hold, and a changed layout is expected to fail
+// verification for answers that return data. An absence answer can still verify at a
+// location a newer protocol no longer uses, so relocating such an index needs an SDK
+// update. Reserved mock versions also sit above the newest one, so their tables are
+// never looked up.
+fn proof_query_platform_version(
+    metadata: &ResponseMetadata,
+) -> Result<&'static PlatformVersion, Error> {
+    if metadata.protocol_version > LATEST_VERSION {
+        return Ok(PlatformVersion::latest());
+    }
+    PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
+        error: format!(
+            "unsupported proof query protocol version {}",
+            metadata.protocol_version
+        ),
+    })
+}
+
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
     type Request = platform::GetIdentityByNonUniquePublicKeyHashRequest;
     type Response = platform::GetIdentityByNonUniquePublicKeyHashResponse;
@@ -411,56 +439,85 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
     {
         let request = request.into();
         let response = response.into();
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
-                let public_key_hash =
-                    v0.public_key_hash
-                        .try_into()
-                        .map_err(|_| Error::RequestError {
-                            error: "Invalid public key hash length".to_string(),
-                        })?;
-
-                let after = v0
-                    .start_after
-                    .map(|a| {
-                        a.try_into().map_err(|_| Error::RequestError {
-                            error: "Invalid start_after length".to_string(),
-                        })
-                    })
-                    .transpose()?;
-                (public_key_hash, after)
+        // A V0 answer carries separate index and identity proofs, a V1 answer one proof.
+        // The index proof of a V0 answer is the one carrying the quorum signature.
+        let (proof, identity_proof, mtd, answered_with_two_proofs) = match &response.version {
+            Some(NonUniqueLookupVersion::V0(v0)) => {
+                let Some(NonUniqueLookupV0Result::Proof(proved)) = &v0.result else {
+                    return Err(Error::NoProofInResult);
+                };
+                (
+                    proved
+                        .grovedb_identity_public_key_hash_proof
+                        .as_ref()
+                        .ok_or(Error::NoProofInResult)?,
+                    proved.identity_proof_bytes.as_deref(),
+                    v0.metadata.as_ref(),
+                    true,
+                )
             }
+            Some(NonUniqueLookupVersion::V1(v1)) => {
+                let Some(NonUniqueLookupV1Result::Proof(proof)) = &v1.result else {
+                    return Err(Error::NoProofInResult);
+                };
+                (proof, None, v1.metadata.as_ref(), false)
+            }
+            None => return Err(Error::NoProofInResult),
         };
+        let mtd = mtd.ok_or(Error::EmptyResponseMetadata)?;
+        let (public_key_hash, start_after, two_proofs_requested) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
+                    (v0.public_key_hash, v0.start_after, true)
+                }
+                get_identity_by_non_unique_public_key_hash_request::Version::V1(v1) => {
+                    (v1.public_key_hash, v1.start_after, false)
+                }
+            };
+        let public_key_hash = public_key_hash
+            .try_into()
+            .map_err(|_| Error::RequestError {
+                error: "Invalid public key hash length".to_string(),
+            })?;
+        let after_identity = start_after
+            .map(|a| {
+                a.try_into().map_err(|_| Error::RequestError {
+                    error: "Invalid start_after length".to_string(),
+                })
+            })
+            .transpose()?;
 
-        // Metadata is untrusted until the signature succeeds. Bound lookup to real
-        // production tables, excluding reserved mock versions that may panic on lookup.
-        if mtd.protocol_version > LATEST_VERSION {
+        // The request version chooses the proof shape, and the answer must come in it.
+        // The quorum signature covers the state, not the envelope, so an answer in the
+        // other shape is refused rather than reinterpreted.
+        if two_proofs_requested != answered_with_two_proofs {
             return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
+                error: "non-unique identity response version does not match request version"
+                    .to_string(),
             });
         }
-        let query_platform_version =
-            PlatformVersion::get(mtd.protocol_version).map_err(|_| Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
-            })?;
 
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_non_unique_public_key_hash(
-                supported_grovedb_proof_bytes(proof)?,
+        let query_platform_version = proof_query_platform_version(mtd)?;
+        let bytes = supported_grovedb_proof_bytes(proof)?;
+        let verified = if answered_with_two_proofs {
+            Drive::verify_full_identity_by_non_unique_public_key_hash_two_proofs(
+                bytes,
+                identity_proof,
                 public_key_hash,
                 after_identity,
                 query_platform_version,
                 platform_version,
             )
-            .map_drive_error(proof, mtd)?;
+        } else {
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
+                bytes,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            )
+        };
+        let (root_hash, maybe_identity) = verified.map_drive_error(proof, mtd)?;
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -1495,6 +1552,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: Default::default(),
         };
 
+        let query_platform_version = proof_query_platform_version(mtd)?;
+
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
         // Transition families whose proof cannot be bound to execution
@@ -1505,14 +1564,16 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // preserved here so SDK callers can enforce their required
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            supported_grovedb_proof_bytes(proof)?,
-            &contracts_provider_fn,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, outcome) =
+            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                &state_transition,
+                &block_info,
+                supported_grovedb_proof_bytes(proof)?,
+                &contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3669,212 +3730,273 @@ mod tests {
         }
     }
 
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+    /// A proved request of either version, for a hash and cursor of any length.
+    fn non_unique_request(
+        version: u8,
+        public_key_hash: Vec<u8>,
+        start_after: Option<Vec<u8>>,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashRequest {
+        use platform::get_identity_by_non_unique_public_key_hash_request::{
+            GetIdentityByNonUniquePublicKeyHashRequestV0,
+            GetIdentityByNonUniquePublicKeyHashRequestV1, Version,
         };
-
-        // Build a response with a proved result so we get past the response shape check
-        // and hit the request validation.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 3], // must be 20 bytes
-                start_after: None,
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-
-        match err {
-            Error::RequestError { error } => {
-                assert!(
-                    error.contains("Invalid public key hash length"),
-                    "got: {error}"
-                );
-            }
-            other => panic!("expected RequestError, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],   // good
-                start_after: Some(vec![0u8; 10]), // wrong length; must be 32
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-
-        match err {
-            Error::RequestError { error } => {
-                assert!(error.contains("Invalid start_after length"), "got: {error}");
-            }
-            other => panic!("expected RequestError for start_after, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-        let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
-            .expect("V0 envelope discriminant");
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    ..Proof::default()
-                })),
-                metadata: Some(ResponseMetadata {
-                    protocol_version: PlatformVersion::latest().protocol_version,
-                    ..ResponseMetadata::default()
+        platform::GetIdentityByNonUniquePublicKeyHashRequest {
+            version: Some(match version {
+                0 => Version::V0(GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
                 }),
-            })),
+                _ => Version::V1(GetIdentityByNonUniquePublicKeyHashRequestV1 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                }),
+            }),
+        }
+    }
+
+    /// A proved answer of either version whose signed proof is `proof`; a V0 answer
+    /// carries it as the index proof, without an identity proof.
+    fn non_unique_response(
+        version: u8,
+        proof: Proof,
+        metadata: ResponseMetadata,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashResponse {
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+        platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(match version {
+                0 => NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: Some(proof),
+                        identity_proof_bytes: None,
+                    })),
+                    metadata: Some(metadata),
+                }),
+                _ => NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                    result: Some(NonUniqueLookupV1Result::Proof(proof)),
+                    metadata: Some(metadata),
+                }),
+            }),
+        }
+    }
+
+    fn non_unique_lookup_error(
+        request: platform::GetIdentityByNonUniquePublicKeyHashRequest,
+        response: platform::GetIdentityByNonUniquePublicKeyHashResponse,
+    ) -> Error {
+        <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request,
             response,
             Network::Testnet,
             default_platform_version(),
             &unreachable_provider(),
-        ).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
-        ));
+        )
+        .unwrap_err()
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_retired_wire_tag() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
+        for version in [0, 1] {
+            // A proved answer gets past the response shape check to the request validation.
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 3], None),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid public key hash length")),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], Some(vec![0u8; 10])),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid start_after length")),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    /// The request version chooses the proof shape. An answer in the other version is
+    /// refused before any proof is read, even when its proof would verify.
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_the_other_response_version() {
+        for (request_version, response_version) in [(0, 1), (1, 0)] {
+            let err = non_unique_lookup_error(
+                non_unique_request(request_version, vec![0u8; 20], None),
+                non_unique_response(
+                    response_version,
+                    Proof::default(),
+                    ResponseMetadata::default(),
+                ),
+            );
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains("does not match request version")),
+                "V{request_version} request, V{response_version} response: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
+        for version in [0, 1] {
+            let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
+                .expect("V0 envelope discriminant");
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                non_unique_response(
+                    version,
+                    Proof {
+                        grovedb_proof: proof,
+                        ..Proof::default()
+                    },
+                    ResponseMetadata {
+                        protocol_version: PlatformVersion::latest().protocol_version,
+                        ..ResponseMetadata::default()
+                    },
+                ),
+            );
+            assert!(
+                matches!(
+                    err,
+                    Error::UnsupportedGroveDBProofVersion { version: 0, .. }
+                ),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_malformed_two_proof_answer() {
         use dapi_grpc::Message;
-        // Outer V0 contains the retired result tag 2, including an old nested Proof.
-        // Protobuf discards reserved fields, so the standard response has no result.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
+        // Raw result field 2 decodes as the two-proof answer.
+        let mut response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
             &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
         )
-        .expect("unknown retired fields decode");
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
-        ).unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult));
+        .expect("V0 fields decode");
+        let Some(NonUniqueLookupVersion::V0(v0)) = &mut response.version else {
+            panic!("v0")
+        };
+        let Some(NonUniqueLookupV0Result::Proof(proved)) = &mut v0.result else {
+            panic!("field 2 is the two-proof answer")
+        };
+        // A supported envelope over garbage, signed as protocol 13: the answer passes the
+        // version and envelope checks, so the two-proof verifier itself must refuse it.
+        proved
+            .grovedb_identity_public_key_hash_proof
+            .as_mut()
+            .expect("index proof")
+            .grovedb_proof = vec![0x01, 0xff, 0xff];
+        v0.metadata = Some(ResponseMetadata {
+            protocol_version: 13,
+            ..Default::default()
+        });
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::GroveDBError { .. }), "{err}");
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_two_proof_answer_without_index_proof() {
+        use platform::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse;
+        use platform::get_identity_by_non_unique_public_key_hash_response::GetIdentityByNonUniquePublicKeyHashResponseV0;
+        // The index proof carries the signature; identity bytes alone prove nothing.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(NonUniqueLookupVersion::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: None,
+                        identity_proof_bytes: Some(vec![0x01]),
+                    })),
+                    metadata: Some(ResponseMetadata {
+                        protocol_version: 13,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::NoProofInResult), "{err}");
     }
 
     #[test]
     fn identity_by_non_unique_response_with_no_result_yields_no_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use platform::get_identity_by_non_unique_public_key_hash_response::{
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
+        for version in [0, 1] {
+            let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+                version: Some(match version {
+                    0 => {
+                        NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                    _ => {
+                        NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                }),
+            };
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
+    }
 
-        // v0 with result=None -> NoProofInResult on the `.ok_or` branch.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: None,
-                metadata: None,
-            })),
-        };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
+    #[test]
+    fn identity_by_non_unique_proved_response_without_metadata_is_refused() {
+        for version in [0, 1] {
+            let mut response =
+                non_unique_response(version, Proof::default(), ResponseMetadata::default());
+            match &mut response.version {
+                Some(NonUniqueLookupVersion::V0(v0)) => v0.metadata = None,
+                Some(NonUniqueLookupVersion::V1(v1)) => v1.metadata = None,
+                None => panic!("version"),
             }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(
+                matches!(err, Error::EmptyResponseMetadata),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_request_without_version_is_refused() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                platform::GetIdentityByNonUniquePublicKeyHashRequest { version: None },
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(matches!(err, Error::EmptyVersion), "V{version}: {err:?}");
+        }
     }
 
     #[test]
     fn identity_by_non_unique_response_with_no_version_yields_no_proof() {
-        // A missing response version has no proof through the generic accessor.
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None },
+            );
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
     }
 
     #[test]

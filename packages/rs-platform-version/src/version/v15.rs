@@ -125,6 +125,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    or sum tree holds the key as `serialize_value_for_key` writes it, so
 ///    consensus reads the total as it reads any other. `parse_property_constraints`
 ///    0 (protocol version 14) reads such a binding as an integer and refuses it.
+///
+/// 5. **Tradeable tokens**: `TokenTradeMode::Tradeable`
+///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`) lets a token's holders list it and make
+///    offers for it. Before this version a contract whose token is tradeable, and a
+///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
+///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
+///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
+///    10281): contract create and update refuse it unpaid, and the batch `advanced_structure` 2
+///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
+///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
+///    earlier keep the batch `advanced_structure` 1.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,

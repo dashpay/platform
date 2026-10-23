@@ -87,3 +87,5 @@ mod sqlite_v008_migration;
 mod sqlite_version_bump;
 mod sqlite_wallet_db_identity;
 mod tracked_masternodes_roundtrip;
+
+mod sqlite_wallet_restore;

@@ -80,7 +80,9 @@ class AssetLockDisplayTest {
         assertEquals("Consumed", lock(4).statusLabel)
         // Regression: rendered as "Unknown(5)" before the branch existed.
         assertEquals("RecoveredFromChain", lock(5).statusLabel)
-        assertEquals("Unknown(7)", lock(7).statusLabel)
+        assertEquals("Funding conflicted", lock(7).statusLabel)
+        assertFalse(lock(7).isVisibleAsResumable)
+        assertFalse(lock(7).canFundIdentity)
     }
 
     @Test
