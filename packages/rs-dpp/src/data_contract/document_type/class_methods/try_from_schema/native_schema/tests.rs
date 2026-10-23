@@ -18,6 +18,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validation_schema::ValidationSchema;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::{DataContract, TokenConfiguration, TokenContractPosition};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
@@ -1466,4 +1467,39 @@ fn should_refuse_with_the_keyword_location_and_parameters_of_the_meta_schema_che
         }
     }
     assert!(differences.is_empty(), "{}", differences.join("\n"));
+}
+
+#[test]
+fn should_refuse_a_type_whose_references_cycle_as_its_documents_would_be() {
+    let defs = BTreeMap::from([
+        ("a".to_string(), Value::from(json!({ "$ref": "#/$defs/b" }))),
+        ("b".to_string(), Value::from(json!({ "$ref": "#/$defs/a" }))),
+    ]);
+    let schema = Value::from(json!({
+        "type": "object",
+        "properties": {
+            "tags": {
+                "type": "array",
+                "position": 0,
+                "maxItems": 4,
+                "items": { "type": "integer" },
+                "contains": { "$ref": "#/$defs/a" },
+            },
+        },
+        "additionalProperties": false,
+    }));
+    let error = super::check_validation_schema(&schema, Some(&defs), PlatformVersion::latest())
+        .expect_err("expected the type to be refused");
+    assert!(
+        matches!(
+            &error,
+            ProtocolError::ConsensusError(consensus) if matches!(
+                consensus.as_ref(),
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(_)
+                ))
+            )
+        ),
+        "{error:?}"
+    );
 }

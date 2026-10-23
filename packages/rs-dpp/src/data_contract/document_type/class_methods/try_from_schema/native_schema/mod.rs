@@ -26,7 +26,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::schema::validation_schema::{
-    is_unique, validator_regex_within, ValidationSchema,
+    is_unique, validator_regex_within, DocumentSchemaValidator, ValidationSchema,
 };
 use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
@@ -97,7 +97,11 @@ pub(super) fn check_validation_schema(
         schema_defs.map(|defs| Value::from(defs.clone())),
         platform_version,
     )?;
-    ValidationSchema::try_from_root(&root).map_err(consensus_or_protocol_data_contract_error)?;
+    let schema = ValidationSchema::try_from_root(&root)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // Document validation refuses the documents of a type whose validator does not build, a
+    // cycle of references that consumes nothing included: registration refuses the type
+    DocumentSchemaValidator::new(schema).map_err(consensus_or_protocol_data_contract_error)?;
     Ok(())
 }
 
