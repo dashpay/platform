@@ -5092,6 +5092,20 @@ mod time_range_proof_verification {
             .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
     }
 
+    /// A query whose signed answer verifies as `T` must pass `T`'s check
+    /// before sending, or the SDK would refuse a fetch it can verify.
+    pub(super) fn assert_sendable<T>(query: &SdkDocumentQuery, version: &PlatformVersion)
+    where
+        T: FromProof<SdkDocumentQuery, Request = SdkDocumentQuery>,
+    {
+        if let Err(error) = T::check_request(query, version) {
+            panic!(
+                "{} verifies a query it refuses before sending it: {error}",
+                std::any::type_name::<T>()
+            );
+        }
+    }
+
     /// Wrap a handler proof and its metadata the way the wire does, so the
     /// entry points consume exactly what a node returns.
     pub(super) fn signed_response(proof: Proof, mtd: &ResponseMetadata) -> GetDocumentsResponse {
@@ -5983,9 +5997,11 @@ mod time_range_proof_verification {
         let request = windowed_top_k_request(contract.id().to_vec(), newest_selection());
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
 
+        let query = windowed_top_k_query(&contract, TimeRangeSelector::Newest);
+        assert_sendable::<DocumentRankedEntries>(&query, version);
         let (page, _mtd, _proof) =
             <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                windowed_top_k_query(&contract, TimeRangeSelector::Newest),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6015,14 +6031,16 @@ mod time_range_proof_verification {
         );
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
 
+        let query = windowed_top_k_query(
+            &contract,
+            TimeRangeSelector::ByStart {
+                start_ms: historic_start_ms,
+            },
+        );
+        assert_sendable::<DocumentRankedEntries>(&query, version);
         let (page, _mtd, _proof) =
             <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                windowed_top_k_query(
-                    &contract,
-                    TimeRangeSelector::ByStart {
-                        start_ms: historic_start_ms,
-                    },
-                ),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6142,6 +6160,7 @@ mod time_range_proof_verification {
             }])
             .with_limit(10)
             .with_time_range(CREATED_AT, TimeRangeSelector::Newest);
+        assert_sendable::<DocumentHavingEntries>(&query, version);
         let (entries, _mtd, _proof) =
             <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
@@ -6212,7 +6231,7 @@ mod integer_range_proof_verification {
     //! times — and still verify.
 
     use super::time_range_proof_verification::{
-        prove_and_sign, signed_response, state_with_committed_block_time,
+        assert_sendable, prove_and_sign, signed_response, state_with_committed_block_time,
     };
     use super::*;
     use dapi_grpc::platform::v0::get_documents_request::IntegerRangeSelection as ProtoIntegerRangeSelection;
@@ -6374,9 +6393,11 @@ mod integer_range_proof_verification {
             request(&contract, Value::U64(600), select_count_star()),
             version,
         );
+        let query = sdk_query(&contract, 600, SelectProjection::count_star());
+        assert_sendable::<DocumentCount>(&query, version);
         let (count, _mtd, _proof) =
             <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                sdk_query(&contract, 600, SelectProjection::count_star()),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6401,9 +6422,11 @@ mod integer_range_proof_verification {
             request(&contract, Value::U64(600), select_documents()),
             version,
         );
+        let query = sdk_query(&contract, 600, SelectProjection::documents());
+        assert_sendable::<Documents>(&query, version);
         let (verified, _mtd, _proof) =
             <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                sdk_query(&contract, 600, SelectProjection::documents()),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6822,6 +6845,7 @@ mod composite_trust_boundary {
     //! enable even as dev-dependencies.
 
     use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use super::time_range_proof_verification::assert_sendable;
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::sub_query;
     use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
@@ -7072,6 +7096,7 @@ mod composite_trust_boundary {
             )
             .expect("the borrowed rich query verifies through the generic proof path");
 
+        assert_sendable::<CompositeDocuments>(&query, platform_version());
         let (verified, _mtd, _proof) =
             <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
@@ -7613,7 +7638,7 @@ mod array_element_wire_tests {
 /// offered for an ungrouped total, which the SDK must refuse.
 mod array_element_proof_round_trips {
     use super::time_range_proof_verification::{
-        prove_and_sign, signed_response, state_with_committed_block_time,
+        assert_sendable, prove_and_sign, signed_response, state_with_committed_block_time,
     };
     use super::*;
     use crate::platform_types::platform_state::PlatformState;
@@ -7804,14 +7829,19 @@ mod array_element_proof_round_trips {
         T: FromProof<SdkDocumentQuery, Request = SdkDocumentQuery, Response = GetDocumentsResponse>,
     {
         let (proof, mtd, provider) = prove_and_sign(platform, state, request, version);
-        T::maybe_from_proof_with_metadata(
+        let checked = query.clone();
+        let answer = T::maybe_from_proof_with_metadata(
             query,
             signed_response(proof, &mtd),
             Network::Testnet,
             version,
             &provider,
         )
-        .map(|(answer, _mtd, _proof)| answer)
+        .map(|(answer, _mtd, _proof)| answer);
+        if answer.is_ok() {
+            assert_sendable::<T>(&checked, version);
+        }
+        answer
     }
 
     fn element_clause(operator: WhereOperator, value: Value) -> WhereClause {
@@ -7871,6 +7901,7 @@ mod array_element_proof_round_trips {
             .verify_proof_keep_serialized(&proof.grovedb_proof, version)
             .expect("the page verifies");
         assert_eq!(verified_page.len(), 4, "post 1 once");
+        assert_sendable::<Documents>(&query, version);
         let (documents, _mtd, _proof) =
             <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
