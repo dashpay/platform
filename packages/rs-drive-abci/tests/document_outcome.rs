@@ -12,7 +12,6 @@ use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, ResponseMetadata, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::Message;
-use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -36,7 +35,7 @@ use dpp::version::PlatformVersion;
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use drive_proof_verifier::FromProof;
+use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use std::sync::Arc;
 
@@ -371,8 +370,8 @@ fn should_preserve_document_outcome_verifier_security_floor() {
 #[test]
 #[ignore = "regenerates deterministic signed document-outcome SDK fixtures"]
 fn should_export_document_outcome_sdk_fixtures() {
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/document-outcome");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/document-outcome");
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(
         directory.join("quorum-key.bin"),

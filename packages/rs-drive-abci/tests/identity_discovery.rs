@@ -17,7 +17,6 @@ use dapi_grpc::platform::v0::{
     GetIdentityByNonUniquePublicKeyHashResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::Message;
-use dash_context_provider::ContextProvider;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -28,7 +27,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::PathQuery;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use drive_proof_verifier::{Error, FromProof};
+use drive_proof_verifier::{ContextProvider, Error, FromProof};
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use Lookup::{V0, V1};
 
@@ -736,8 +735,8 @@ fn should_export_nonunique_sdk_fixtures() {
         eprintln!("skipped: set DASH_SDK_EXPORT_NONUNIQUE_VECTORS=1 to rewrite the vectors");
         return;
     }
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/identity-discovery");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/identity-discovery");
     std::fs::create_dir_all(&directory).unwrap();
     // The versions on either side of protocol 14, fixed so that re-running on a later
     // branch rewrites the same files the SDK tests read.
