@@ -400,7 +400,8 @@ unwrapped copy is allocated.
   symlink cannot hide an unsafe ancestor behind a safe-looking one. An
   ancestor is refused at `open` with `SecretStoreError::InsecureParentDir`
   when it is group/other writable (`mode & 0o022`) WITHOUT the sticky bit,
-  or when it is owned by neither the effective user nor a root identity:
+  or when it is owned by neither the effective user nor a root identity
+  (both rules make exceptions for the Android identities trusted below):
   directory write access governs rename/replace of the vault, and an
   untrusted owner can grant itself that access at will (the A1 guarantee
   depends on both). A sticky writable directory such as `/tmp` (`0o1777`)

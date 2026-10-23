@@ -91,6 +91,12 @@ fn trusted_owner(owner: u32, current_uid: u32, root_uid: u32, platform_ids: &[u3
 /// in that group, so `<dataDir>/files` is group-writable by design. No other
 /// app can be a member of that group. Everywhere else the set is empty: a
 /// desktop user's primary group (macOS `staff`, for one) is commonly shared.
+///
+/// The group is keyed on the uid, not `getegid()`. The two are equal in every
+/// app process, but only the uid carries the guarantee: Android reserves the
+/// gid numbered like an app's uid for that app alone, while the effective gid
+/// is whatever group the process was started with, which outside an app
+/// process can be one that other processes share.
 #[cfg(target_os = "android")]
 fn trusted_groups(current_uid: u32) -> Vec<u32> {
     let mut groups = PLATFORM_IDS.to_vec();
