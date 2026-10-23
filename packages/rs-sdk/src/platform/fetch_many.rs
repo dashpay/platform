@@ -237,7 +237,10 @@ where
         let owned_rich: <Self as FetchMany<K, O>>::Query =
             Self::prepare_query(query.query(&settings)?);
         let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
-        check_before_sending::<<Self as FetchMany<K, O>>::Query, O>(&owned_rich, sdk)?;
+        check_before_sending::<<Self as FetchMany<K, O>>::Query, O>(
+            &owned_rich,
+            settings.protocol_version,
+        )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 

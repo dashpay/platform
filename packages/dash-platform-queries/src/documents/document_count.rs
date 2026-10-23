@@ -18,8 +18,9 @@
 //! count twice. [`drive_proof_verifier::DocumentSplitCounts`] keeps one count
 //! per element.
 
-use crate::documents::array_element_clauses::key_element_clauses;
-use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::count_proof_helpers::{
+    assert_select_is_count, check_count_request, verify_count_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -38,16 +39,7 @@ impl FromProof<DocumentQuery> for DocumentCount {
         request: &Self::Request,
         platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
-        request.ensure_no_sub_queries()?;
-        assert_select_is_count(request)?;
-        key_element_clauses(
-            &request.data_contract,
-            &request.document_type_name,
-            request.where_clauses.clone(),
-            false,
-            platform_version,
-        )
-        .map(|_| ())
+        check_count_request(request, true, platform_version)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(

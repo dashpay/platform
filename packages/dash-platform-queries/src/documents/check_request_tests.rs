@@ -10,9 +10,13 @@
 
 use crate::documents::composite_document_query::CompositeSubQuery;
 use crate::documents::document_query::{DocumentQuery, RankingDirection};
-use dpp::data_contract::{DataContract, DataContractFactory};
+use dapi_grpc::platform::v0::GetDocumentsResponse;
+use dash_context_provider::{ContextProvider, ContextProviderError};
+use dpp::dashcore::Network;
+use dpp::data_contract::{DataContract, DataContractFactory, TokenConfiguration};
 use dpp::document::Document;
 use dpp::platform_value::{platform_value, Identifier, Value};
+use dpp::prelude::CoreBlockHeight;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::query::{
@@ -74,6 +78,16 @@ fn having() -> DocumentQuery {
         .with_limit(100)
 }
 
+/// A grouped aggregate is answered per group only when an `In` or a range
+/// constrains the group.
+fn restaurants_in() -> WhereClause {
+    WhereClause {
+        field: "restaurantId".to_string(),
+        operator: WhereOperator::In,
+        value: platform_value!(["a", "b"]),
+    }
+}
+
 fn sub_query() -> CompositeSubQuery {
     CompositeSubQuery::documents(contract(), "niceDocument")
         .expect("the fixture has this document type")
@@ -99,6 +113,7 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
             check::<DocumentSplitCounts>,
             query()
                 .with_select(SelectProjection::count_star())
+                .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
         ),
         (
@@ -111,6 +126,7 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
             check::<DocumentSplitSums>,
             query()
                 .with_select(SelectProjection::sum("grade"))
+                .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
         ),
         (
@@ -123,6 +139,7 @@ fn plain_views() -> Vec<(&'static str, Check, DocumentQuery)> {
             check::<DocumentSplitAverages>,
             query()
                 .with_select(SelectProjection::avg("grade"))
+                .with_where(restaurants_in())
                 .with_group_by("restaurantId"),
         ),
         (
@@ -238,6 +255,115 @@ fn should_refuse_a_having_view_without_a_having_clause() {
         error.contains("not a well-formed having-range query"),
         "{error}"
     );
+}
+
+/// From protocol version 14 a grouped aggregate ordered by its aggregate is
+/// served as a ranked answer, and one with a `having` clause as a having-range
+/// answer. Neither is a grouped total a count, sum or average view verifies,
+/// and its verifier refuses the request outright: a node serves a ranked or
+/// having-range request only when no `In` or range constrains its group, since
+/// the where clauses pin the properties before the grouped one.
+#[test]
+fn should_refuse_an_aggregate_view_of_a_ranked_or_having_query() {
+    let views: [(&str, Check, SelectProjection); 6] = [
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("grade"),
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            SelectProjection::avg("grade"),
+        ),
+    ];
+    for (view, check, select) in views {
+        let ranked = query()
+            .with_select(select.clone())
+            .with_group_by("restaurantId")
+            .order_by_selected_aggregate(RankingDirection::Descending)
+            .with_limit(5);
+        for query in [ranked, having().with_select(select)] {
+            let error = refusal(view, check, &query);
+            assert!(
+                error.contains("not constrained by an `In` or range"),
+                "{view}: {error}"
+            );
+        }
+    }
+}
+
+/// A [`ContextProvider`] for a verifier that refuses the request before it
+/// reads the proof.
+struct NoProvider;
+
+impl ContextProvider for NoProvider {
+    fn get_data_contract(
+        &self,
+        _id: &Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        unreachable!("the request is refused first")
+    }
+
+    fn get_token_configuration(
+        &self,
+        _token_id: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        unreachable!("the request is refused first")
+    }
+
+    fn get_quorum_public_key(
+        &self,
+        _quorum_type: u32,
+        _quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        unreachable!("the request is refused first")
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        unreachable!("the request is refused first")
+    }
+}
+
+/// A caller reading the error gets the same text whether the query was
+/// refused before it was sent or its answer was refused after.
+#[test]
+fn should_refuse_a_composite_shape_in_the_same_words_before_and_after_an_answer() {
+    let query = query().with_limit(10);
+    let before = refusal("CompositeDocuments", check::<CompositeDocuments>, &query);
+    let after = <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
+        query,
+        GetDocumentsResponse::default(),
+        Network::Testnet,
+        PlatformVersion::latest(),
+        &NoProvider,
+    );
+    match after {
+        Err(Error::RequestError { error }) => assert_eq!(error, before),
+        other => panic!("the verifier must refuse the request, got {other:?}"),
+    }
 }
 
 /// Without sub-queries the encoder sends a plain page, which nodes serve.
@@ -386,6 +512,23 @@ fn should_refuse_one_total_over_several_elements_of_a_typed_array() {
     for (view, check, select) in split {
         let query = several_hashtags(select);
         assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
+        // Not grouped by the array alone, or under a range clause, the
+        // elements' totals are folded, and every node refuses the request by
+        // the rule the split verifier refuses it by.
+        let mut ungrouped = query.clone();
+        ungrouped.group_by.clear();
+        let in_a_range = query.with_where(WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::U64(0),
+        });
+        for query in [ungrouped, in_a_range] {
+            let error = refusal(view, check, &query);
+            assert!(
+                error.contains("only answered grouped by"),
+                "{view}: {error}"
+            );
+        }
     }
 }
 

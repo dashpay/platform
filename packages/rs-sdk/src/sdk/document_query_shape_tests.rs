@@ -4,14 +4,17 @@
 //! alone: an `Error::Proof`, which is retried on other nodes and bans each
 //! node that answered.
 use super::{Sdk, SdkInstance};
+use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::documents::composite_document_query::CompositeSubQuery;
 use crate::platform::documents::document_query::RankingDirection;
-use crate::platform::{DocumentQuery, Fetch, FetchMany, Query};
+use crate::platform::{DocumentQuery, Fetch, FetchMany, Query, QuerySettings};
 use crate::{Error, SdkBuilder};
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
+use dash_context_provider::ContextProvider;
+use dpp::dashcore::Network;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::Document;
 use dpp::platform_value::{platform_value, Identifier, Value};
@@ -20,9 +23,11 @@ use dpp::version::PlatformVersion;
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use drive_proof_verifier::{
     CompositeDocuments, DocumentCount, DocumentHavingEntries, DocumentRankedEntries,
+    DocumentSplitCounts, FromProof,
 };
 use rs_dapi_client::ExecutionResponse;
 use std::fmt::Debug;
+use std::sync::atomic::Ordering;
 
 fn sdk() -> Sdk {
     SdkBuilder::new_mock()
@@ -215,6 +220,128 @@ async fn should_refuse_one_count_over_several_elements_of_a_typed_array_without_
     let request = serve(&sdk, &query).await;
     let result = DocumentCount::fetch(&sdk, query).await;
     assert_refused_before_sending(&sdk, &request, result, "one count over several elements").await;
+}
+
+/// From protocol version 14 a grouped count ordered by the count is served as
+/// a ranked answer, which no count view verifies.
+#[tokio::test]
+async fn should_refuse_counts_of_a_ranked_query_without_sending_it() {
+    let sdk = sdk();
+    let query = query()
+        .with_select(SelectProjection::count_star())
+        .with_group_by("restaurantId")
+        .order_by_selected_aggregate(RankingDirection::Descending)
+        .with_limit(5);
+    let request = serve(&sdk, &query).await;
+    let result = DocumentSplitCounts::fetch(&sdk, query).await;
+    assert_refused_before_sending(&sdk, &request, result, "counts of a ranked query").await;
+}
+
+/// Refuses every request, naming the protocol version it was checked at.
+#[derive(Debug, Default)]
+struct CheckedAt;
+
+impl FromProof<DocumentQuery> for CheckedAt {
+    type Request = DocumentQuery;
+    type Response = GetDocumentsResponse;
+
+    fn check_request(
+        _request: &DocumentQuery,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        Err(drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "checked at protocol version {}",
+                platform_version.protocol_version
+            ),
+        })
+    }
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        _response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+        _provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    where
+        Self: 'a,
+    {
+        unreachable!("every request is refused before it is sent")
+    }
+}
+
+impl MockResponse for CheckedAt {
+    fn mock_serialize(&self, _mock_sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        unreachable!("every request is refused before it is sent")
+    }
+
+    fn mock_deserialize(_mock_sdk: &MockDashPlatformSdk, _buf: &[u8]) -> Self {
+        unreachable!("every request is refused before it is sent")
+    }
+}
+
+impl FromIterator<(u8, Option<CheckedAt>)> for CheckedAt {
+    fn from_iter<T: IntoIterator<Item = (u8, Option<CheckedAt>)>>(_iter: T) -> Self {
+        CheckedAt
+    }
+}
+
+impl Fetch for CheckedAt {
+    type Query = DocumentQuery;
+    type Request = GetDocumentsRequest;
+}
+
+impl FetchMany<u8, CheckedAt> for CheckedAt {
+    type Query = DocumentQuery;
+    type Request = GetDocumentsRequest;
+}
+
+/// A query whose building raises the SDK's protocol version, as a verified
+/// answer to another request can while this one is being built.
+#[derive(Clone, Debug)]
+struct RaisesTheVersion {
+    sdk: Sdk,
+    query: DocumentQuery,
+}
+
+impl Query<DocumentQuery> for RaisesTheVersion {
+    fn query(&self, _settings: &QuerySettings<'_>) -> Result<DocumentQuery, Error> {
+        self.sdk.protocol_version.store(
+            PlatformVersion::latest().protocol_version,
+            Ordering::Relaxed,
+        );
+        Ok(self.query.clone())
+    }
+}
+
+/// A request is checked at the protocol version it was encoded with, so the
+/// check judges the request that is sent.
+#[tokio::test]
+async fn should_check_a_request_at_the_version_it_was_encoded_with() {
+    let encoded_with = PlatformVersion::latest().protocol_version - 1;
+    let sdk = SdkBuilder::new_mock()
+        .with_version(PlatformVersion::get(encoded_with).expect("a known version"))
+        .build()
+        .expect("mock sdk");
+    let raises_the_version = || RaisesTheVersion {
+        sdk: sdk.clone(),
+        query: query(),
+    };
+    let fetched = CheckedAt::fetch(&sdk, raises_the_version())
+        .await
+        .map(|_| ());
+    sdk.protocol_version.store(encoded_with, Ordering::Relaxed);
+    let fetched_many = CheckedAt::fetch_many(&sdk, raises_the_version())
+        .await
+        .map(|_| ());
+    let expected = format!("checked at protocol version {encoded_with}");
+    for (case, result) in [("fetch", fetched), ("fetch_many", fetched_many)] {
+        match result {
+            Err(Error::Config(message)) => assert_eq!(message, expected, "{case}"),
+            other => panic!("{case}: must be refused, got {other:?}"),
+        }
+    }
 }
 
 /// Guards the refusals above: a query its view is verified from still goes

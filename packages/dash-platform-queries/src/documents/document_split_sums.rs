@@ -13,7 +13,9 @@
 //! `SumEntry` to `SplitSumEntry`.
 
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
+use crate::documents::sum_proof_helpers::{
+    assert_select_is_sum, check_sum_request, verify_sum_query,
+};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -26,10 +28,9 @@ impl FromProof<DocumentQuery> for DocumentSplitSums {
 
     fn check_request(
         request: &Self::Request,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
-        request.ensure_no_sub_queries()?;
-        assert_select_is_sum(request)
+        check_sum_request(request, false, platform_version)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(

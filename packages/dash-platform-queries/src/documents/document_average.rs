@@ -18,8 +18,9 @@
 //! be counted and summed twice. `DocumentSplitAverages` keeps one pair per
 //! element.
 
-use crate::documents::array_element_clauses::key_element_clauses;
-use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
+use crate::documents::average_proof_helpers::{
+    assert_select_is_avg, check_average_request, verify_average_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -85,16 +86,7 @@ impl FromProof<DocumentQuery> for DocumentAverage {
         request: &Self::Request,
         platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
-        request.ensure_no_sub_queries()?;
-        assert_select_is_avg(request)?;
-        key_element_clauses(
-            &request.data_contract,
-            &request.document_type_name,
-            request.where_clauses.clone(),
-            false,
-            platform_version,
-        )
-        .map(|_| ())
+        check_average_request(request, true, platform_version)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(

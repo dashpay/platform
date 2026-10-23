@@ -22,9 +22,10 @@
 //! can switch to `DocumentSplitSums` (which preserves per-branch
 //! `i64`s and lets the caller pick its own arithmetic).
 
-use crate::documents::array_element_clauses::key_element_clauses;
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
+use crate::documents::sum_proof_helpers::{
+    assert_select_is_sum, check_sum_request, verify_sum_query,
+};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -65,16 +66,7 @@ impl FromProof<DocumentQuery> for DocumentSum {
         request: &Self::Request,
         platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
-        request.ensure_no_sub_queries()?;
-        assert_select_is_sum(request)?;
-        key_element_clauses(
-            &request.data_contract,
-            &request.document_type_name,
-            request.where_clauses.clone(),
-            false,
-            platform_version,
-        )
-        .map(|_| ())
+        check_sum_request(request, true, platform_version)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
