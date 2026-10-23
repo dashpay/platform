@@ -31,9 +31,19 @@ mod token_selling_tests {
             // reads the total supply even though the token sets no max supply. 12_820 credits
             // less in fees: the documents expirations tree joins `Misc` beside the token
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
-            699_868_049_840,
+            // PROTOCOL_VERSION_15: 91_100 credits more in fees: the token history contract v3
+            // at genesis has three more document types, a deeper document type Merk for the
+            // purchase's history document
+            699_867_958_740,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the buyer balance before the token history contract v3 of protocol
+    /// version 15. Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_14() {
+        run_successful_direct_purchase_single_price_at_protocol_version(14, 699_868_049_840).await;
     }
 
     /// PROTOCOL_VERSION_13: pre-stamp buyer balance — genesis system documents

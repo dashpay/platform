@@ -21,6 +21,13 @@ use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
+/// The protocol version whose upgrade these tests cover: the token history contract v2 is
+/// installed by `transition_to_version_14`. Pinned rather than the latest version, whose own
+/// upgrade replaces the contract again (v3 at protocol version 15).
+fn pv14() -> &'static PlatformVersion {
+    PlatformVersion::get(14).expect("PV14")
+}
+
 fn block(epoch: u16) -> BlockInfo {
     BlockInfo {
         time_ms: 1_000_000 + u64::from(epoch) * 1000,
@@ -84,14 +91,14 @@ fn version_item(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg) ->
             &contract_other_path(&id),
             &[CONTRACT_VERSION_KEY],
             tx,
-            &PlatformVersion::latest().drive.grove_version,
+            &pv14().drive.grove_version,
         )
         .value
         .expect("version item")
 }
 
 fn assert_upgraded(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg) {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let info = platform
         .drive
         .fetch_contract(
@@ -129,7 +136,7 @@ fn assert_upgraded(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg)
 #[test]
 fn should_upgrade_historically_owned_token_history_without_version_item_cost_mismatch() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     platform.drive.cache.data_contracts.clear_block_cache();
     let tx = platform.drive.grove.start_transaction();
     let result = platform.perform_events_on_first_block_of_protocol_change(
@@ -149,7 +156,7 @@ fn should_upgrade_historically_owned_token_history_without_version_item_cost_mis
 #[test]
 fn should_attribute_unflagged_replacement_cost_mismatch_to_token_history_version_item() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let tx = platform.drive.grove.start_transaction();
     platform
         .drive
@@ -222,7 +229,7 @@ fn contract_element(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg
             (&contract_root_path(SystemDataContract::TokenHistory.id().as_bytes())).into(),
             &[0],
             tx,
-            &PlatformVersion::latest().drive.grove_version,
+            &pv14().drive.grove_version,
         )
         .value
         .expect("contract element")
@@ -233,7 +240,7 @@ fn document_elements(
     path: Vec<Vec<u8>>,
     tx: TransactionArg,
 ) -> BTreeMap<Vec<Vec<u8>>, Vec<u8>> {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let mut query = Query::new();
     query.insert_all();
     let path_query = PathQuery {
@@ -288,7 +295,7 @@ fn rekeyed_document_elements(
     let tx = platform.drive.grove.start_transaction();
     platform
         .drive
-        .rekey_unsigned_integer_index_values(&tx, PlatformVersion::latest())
+        .rekey_unsigned_integer_index_values(&tx, pv14())
         .expect("expected the unsigned index value keys to move");
     let rekeyed = document_elements(platform, documents_path(), Some(&tx));
     drop(tx);
@@ -349,7 +356,7 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
 
 #[test]
 fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for (flags, epoch) in [
         (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
         (StorageFlags::new_single_epoch(3, Some([99; 32])), 7),
@@ -466,7 +473,7 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
 
 #[test]
 fn should_keep_unflagged_and_absent_token_history_unflagged() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for absent in [false, true] {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
@@ -514,7 +521,7 @@ fn should_keep_unflagged_and_absent_token_history_unflagged() {
 fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
     let platform = historical_platform();
     insert_claim(&platform);
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let old_element = contract_element(&platform, None);
     let documents = rekeyed_document_elements(&platform);
     let old_root = platform
@@ -587,7 +594,7 @@ fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
 
 #[test]
 fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     for previous in [8, 9, 12, 13, pv.protocol_version] {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(previous)
@@ -646,7 +653,7 @@ fn should_skip_historical_versions_and_preserve_current_token_history_noop() {
 #[test]
 fn should_read_token_history_flag_presence_from_the_candidate_transaction() {
     let platform = historical_platform();
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let original = contract_element(&platform, None);
     let Element::Item(bytes, _) = original.clone() else {
         panic!("contract Item")
@@ -684,9 +691,9 @@ fn should_read_token_history_flag_presence_from_the_candidate_transaction() {
 
 #[test]
 fn should_preserve_already_current_flagged_token_history_payload() {
-    let pv = PlatformVersion::latest();
+    let pv = pv14();
     let platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(pv14().protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let Element::Item(bytes, _) = contract_element(&platform, None) else {
@@ -770,4 +777,172 @@ fn should_leave_historical_pv13_dispatch_token_history_unchanged() {
             .expect("replay root"),
         root
     );
+}
+
+/// A token history contract installed by the historical upgrade path and flagged with an owner
+/// and earlier allocations keeps them through the upgrade to protocol version 14 and then to 15,
+/// which replaces it with v3: the owner and base epoch stay, every earlier allocation stays, and
+/// the bytes v3 adds are allocated to the epoch of the upgrade. The legacy documents are
+/// untouched, and a history document of a type v3 adds can be written afterwards.
+#[test]
+fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
+    let pv15 = PlatformVersion::get(15).expect("PV15");
+    let flags = StorageFlags::MultiEpochOwned(3, BTreeMap::from([(5, 50)]), [99; 32]);
+    let platform = historical_platform();
+    insert_claim(&platform);
+    let Element::Item(bytes, _) = contract_element(&platform, None) else {
+        panic!("contract Item")
+    };
+    let tx = platform.drive.grove.start_transaction();
+    platform
+        .drive
+        .grove
+        .insert(
+            &contract_root_path(SystemDataContract::TokenHistory.id().as_bytes()),
+            &[0],
+            Element::Item(bytes, Some(flags.to_element_flags())),
+            None,
+            Some(&tx),
+            &pv14().drive.grove_version,
+        )
+        .value
+        .expect("fixture flag metadata");
+    platform
+        .drive
+        .commit_transaction(tx, &pv14().drive)
+        .expect("commit fixture flags");
+
+    let tx = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &platform.state.load(),
+            &block(7),
+            &tx,
+            13,
+            pv14(),
+        )
+        .expect("upgrade to 14");
+    platform
+        .drive
+        .commit_transaction(tx, &pv14().drive)
+        .expect("commit the upgrade to 14");
+    let Element::Item(bytes_at_14, Some(flags_at_14)) = contract_element(&platform, None) else {
+        panic!("flagged contract at 14")
+    };
+    let flags_at_14 = StorageFlags::from_element_flags_ref(&flags_at_14)
+        .expect("decode flags")
+        .expect("nonempty flags");
+    let documents_at_14 = document_elements(&platform, documents_path(), None);
+
+    let tx = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &platform.state.load(),
+            &block(9),
+            &tx,
+            14,
+            pv15,
+        )
+        .expect("upgrade to 15");
+    platform
+        .drive
+        .commit_transaction(tx, &pv15.drive)
+        .expect("commit the upgrade to 15");
+    platform
+        .drive
+        .cache
+        .data_contracts
+        .merge_and_clear_block_cache();
+
+    let Element::Item(bytes_at_15, Some(flags_at_15)) = contract_element(&platform, None) else {
+        panic!("flagged contract at 15")
+    };
+    let flags_at_15 = StorageFlags::from_element_flags_ref(&flags_at_15)
+        .expect("decode flags")
+        .expect("nonempty flags");
+    assert!(bytes_at_15.len() > bytes_at_14.len(), "v3 adds three types");
+    assert_eq!(flags_at_15.owner_id(), Some(&[99; 32]));
+    assert_eq!(flags_at_15.base_epoch(), flags_at_14.base_epoch());
+    let allocations_at_14 = flags_at_14
+        .epoch_index_map()
+        .expect("the upgrade to 14 allocated at epoch 7");
+    let allocations_at_15 = flags_at_15.epoch_index_map().expect("allocations after 15");
+    for (epoch, allocated) in allocations_at_14 {
+        assert_eq!(
+            allocations_at_15.get(epoch),
+            Some(allocated),
+            "epoch {epoch}"
+        );
+    }
+    assert!(allocations_at_15.get(&5).is_some() && allocations_at_15.get(&7).is_some());
+    assert!(
+        allocations_at_15
+            .get(&9)
+            .is_some_and(|allocated| *allocated > 0),
+        "the bytes v3 adds are allocated at the upgrade's epoch: {flags_at_15:?}"
+    );
+    let Element::Item(version, Some(version_flags)) = version_item(&platform, None) else {
+        panic!("flagged version item")
+    };
+    assert_eq!(version, 3u32.to_be_bytes().to_vec());
+    assert_eq!(
+        StorageFlags::from_element_flags_ref(&version_flags)
+            .expect("decode flags")
+            .expect("nonempty flags")
+            .owner_id(),
+        Some(&[99; 32])
+    );
+
+    // The legacy documents and their index entries are untouched.
+    let documents_at_15 = document_elements(&platform, documents_path(), None);
+    for (path, element) in &documents_at_14 {
+        assert_eq!(documents_at_15.get(path), Some(element), "{path:?}");
+    }
+
+    // A history document of a type v3 adds is written to the upgraded contract.
+    let stored = platform
+        .drive
+        .fetch_contract(
+            SystemDataContract::TokenHistory.id().to_buffer(),
+            None,
+            None,
+            None,
+            pv15,
+        )
+        .value
+        .expect("stored contract")
+        .expect("TokenHistory");
+    assert_eq!(stored.contract.version(), 3);
+    let document_type = stored
+        .contract
+        .document_type_for_name("orderPlaced")
+        .expect("orderPlaced");
+    let document = document_type
+        .random_document(Some(43), pv15)
+        .expect("an orderPlaced document");
+    platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, None)),
+                    owner_id: Some(document.owner_id().to_buffer()),
+                },
+                contract: &stored.contract,
+                document_type,
+            },
+            false,
+            block(9),
+            true,
+            None,
+            pv15,
+            None,
+        )
+        .expect("write a marketplace history document after the upgrade");
+    assert!(platform
+        .drive
+        .grove
+        .verify_grovedb(None, true, false, &pv15.drive.grove_version)
+        .expect("native integrity")
+        .is_empty());
 }

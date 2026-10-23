@@ -524,6 +524,25 @@ impl Market {
         .expect("expected to build the fill")
     }
 
+    /// Replaces the contract a client verifies with by the one stored now, as a client that
+    /// fetches it again sees it.
+    fn refresh_contract(&mut self) {
+        let platform_version = PlatformVersion::latest();
+        self.contract = self
+            .platform
+            .drive
+            .get_contract_with_fetch_info(
+                self.contract.id().to_buffer(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the token's contract")
+            .expect("expected the token's contract")
+            .contract
+            .clone();
+    }
+
     /// The token's decimals as stored now, which a placement signs.
     fn token_decimals(&self) -> u8 {
         let platform_version = PlatformVersion::latest();
@@ -930,8 +949,8 @@ async fn should_not_prove_a_listing_carrying_group_information() {
 
 /// A client waiting for its listing may ask for the proof after the listing was filled. Its
 /// `ask` still proves the placement after a partial fill: the order id is the transition's
-/// alone, and the document holds its terms with less open. A listing filled entirely is gone,
-/// so its document no longer proves it.
+/// alone, and the document holds its terms with less open. A listing filled entirely is gone:
+/// its `orderPlaced` record, which the token keeps as it keeps transfer history, proves it then.
 #[tokio::test]
 async fn should_prove_a_listing_after_it_is_partly_filled() {
     let mut market = tradeable_market();
@@ -957,8 +976,10 @@ async fn should_prove_a_listing_after_it_is_partly_filled() {
     let fill = market.fill_ask(order_id, 1, 600, 6_000).await;
     market.assert_executes(&fill, &BlockInfo::default());
     assert_matches!(
-        market.prove_and_try_verify(&place),
-        Err(DriveError::Proof(ProofError::IncorrectProof(_)))
+        market.prove_and_verify(&place),
+        StateTransitionProofResult::VerifiedTokenActionWithDocument(document)
+            if document.properties().get("orderId")
+                == Some(&dpp::platform_value::Value::Identifier(order_id.to_buffer()))
     );
 }
 
@@ -1885,7 +1906,7 @@ mod offers {
         }
 
         /// An offer by the buyer, and its order id.
-        async fn place_bid(
+        pub(super) async fn place_bid(
             &mut self,
             amount: u64,
             price: Credits,
@@ -1918,7 +1939,7 @@ mod offers {
 
         /// A sale into an offer, by the seller, or by the buyer into their own offer when
         /// `by_buyer`.
-        async fn fill_bid(
+        pub(super) async fn fill_bid(
             &mut self,
             order_id: Identifier,
             min_amount: u64,
@@ -1954,7 +1975,11 @@ mod offers {
         }
 
         /// A cancel of an offer, by the buyer, or by the seller when `by_seller`.
-        async fn cancel_bid(&mut self, order_id: Identifier, by_seller: bool) -> StateTransition {
+        pub(super) async fn cancel_bid(
+            &mut self,
+            order_id: Identifier,
+            by_seller: bool,
+        ) -> StateTransition {
             let platform_version = PlatformVersion::latest();
             let party = if by_seller {
                 &mut self.seller
@@ -2133,7 +2158,7 @@ mod offers {
 
     /// An offer's `bid` still proves its placement after a sale into it: the order id is the
     /// transition's alone, and the document holds its terms with less open and the escrow less
-    /// what was paid. An offer filled entirely is gone, so its document no longer proves it.
+    /// what was paid. An offer filled entirely is gone: its `orderPlaced` record proves it then.
     #[tokio::test]
     async fn should_prove_an_offer_after_it_is_partly_filled() {
         let mut market = tradeable_market();
@@ -2162,7 +2187,12 @@ mod offers {
 
         let sale = market.fill_bid(order_id, 1, 600, 1, false).await;
         market.executes(&sale);
-        assert!(market.prove_and_try_verify(&place).is_err());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(document)
+                if document.properties().get("orderId")
+                    == Some(&dpp::platform_value::Value::Identifier(order_id.to_buffer()))
+        );
     }
 
     #[tokio::test]
@@ -2901,5 +2931,432 @@ mod offers {
         let cancel = market.cancel_bid(order_id, false).await;
         market.executes(&cancel);
         assert_eq!(market.credit_escrow(order_id), None);
+    }
+}
+
+/// The marketplace's events, recorded in the token history contract (v3) for a token that keeps
+/// transfer history, as its transfers are.
+mod history {
+    use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::{
+        TokenKeepsHistoryRulesV0Getters, TokenKeepsHistoryRulesV0Setters,
+    };
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+    use drive::query::DriveDocumentQuery;
+
+    impl Market {
+        /// Every document of `document_type_name` in the token history contract.
+        fn history(&self, document_type_name: &str) -> Vec<Document> {
+            let platform_version = PlatformVersion::latest();
+            let token_history_contract = self
+                .platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_token_history(platform_version)
+                .expect("expected the token history contract");
+            let document_type = token_history_contract
+                .document_type_for_name(document_type_name)
+                .expect("expected the token history contract v3 to have the type");
+            let query =
+                DriveDocumentQuery::all_items_query(&token_history_contract, document_type, None);
+            self.platform
+                .drive
+                .query_documents(
+                    query,
+                    None,
+                    false,
+                    None,
+                    Some(platform_version.protocol_version),
+                )
+                .expect("expected to query the token history")
+                .documents_owned()
+        }
+    }
+
+    fn property(document: &Document, name: &str) -> Value {
+        document
+            .properties()
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| panic!("expected the history document to have {name}"))
+    }
+
+    #[tokio::test]
+    async fn should_record_a_listing_its_fill_and_its_cancel() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        let cancel = market.cancel(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        let placed = market.history("orderPlaced");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].owner_id(), market.seller.id());
+        assert_eq!(
+            property(&placed[0], "tokenId"),
+            Value::Identifier(market.token_id.to_buffer())
+        );
+        assert_eq!(
+            property(&placed[0], "orderId"),
+            Value::Identifier(order_id.to_buffer())
+        );
+        assert_eq!(
+            property(&placed[0], "side").to_integer::<u8>().ok(),
+            Some(0)
+        );
+        assert_eq!(
+            property(&placed[0], "amount").to_integer::<u64>().ok(),
+            Some(1_000)
+        );
+        assert_eq!(
+            property(&placed[0], "price").to_integer::<u64>().ok(),
+            Some(PRICE)
+        );
+        assert_eq!(
+            property(&placed[0], "minFill").to_integer::<u64>().ok(),
+            Some(1)
+        );
+        assert_eq!(
+            property(&placed[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+
+        let filled = market.history("orderFilled");
+        assert_eq!(filled.len(), 1);
+        assert_eq!(filled[0].owner_id(), market.buyer.id());
+        assert_eq!(
+            property(&filled[0], "makerId"),
+            Value::Identifier(market.seller.id().to_buffer())
+        );
+        assert_eq!(
+            property(&filled[0], "amount").to_integer::<u64>().ok(),
+            Some(400)
+        );
+        assert_eq!(
+            property(&filled[0], "credits").to_integer::<u64>().ok(),
+            Some(4_000)
+        );
+        assert_eq!(
+            property(&filled[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+
+        let cancelled = market.history("orderCancelled");
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].owner_id(), market.seller.id());
+        assert_eq!(
+            property(&cancelled[0], "orderId"),
+            Value::Identifier(order_id.to_buffer())
+        );
+    }
+
+    #[tokio::test]
+    async fn should_record_an_offer_and_a_sale_into_it_on_the_bid_side() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+
+        let placed = market.history("orderPlaced");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].owner_id(), market.buyer.id());
+        assert_eq!(
+            property(&placed[0], "side").to_integer::<u8>().ok(),
+            Some(1)
+        );
+
+        let filled = market.history("orderFilled");
+        assert_eq!(filled.len(), 1);
+        assert_eq!(filled[0].owner_id(), market.seller.id());
+        assert_eq!(
+            property(&filled[0], "makerId"),
+            Value::Identifier(market.buyer.id().to_buffer())
+        );
+        assert_eq!(
+            property(&filled[0], "credits").to_integer::<u64>().ok(),
+            Some(10_000)
+        );
+    }
+
+    /// A cancelled offer is recorded on the bid side, owned by the buyer who cancelled it; the
+    /// cancel releases the offer's credit escrow rather than tokens.
+    #[tokio::test]
+    async fn should_record_the_cancel_of_an_offer_on_the_bid_side() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let cancel = market.cancel_bid(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        let cancelled = market.history("orderCancelled");
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].owner_id(), market.buyer.id());
+        assert_eq!(
+            property(&cancelled[0], "tokenId"),
+            Value::Identifier(market.token_id.to_buffer())
+        );
+        assert_eq!(
+            property(&cancelled[0], "orderId"),
+            Value::Identifier(order_id.to_buffer())
+        );
+        assert_eq!(
+            property(&cancelled[0], "side").to_integer::<u8>().ok(),
+            Some(1)
+        );
+    }
+
+    /// A closed order's placement is proved by its `orderPlaced` record, which holds every term
+    /// of the placement. A placement with the same signer, nonce, amount and price but another
+    /// minimum fill or signed decimals has the same order id and record id, and does not verify
+    /// against that proof, on either side.
+    #[tokio::test]
+    async fn should_not_prove_a_closed_order_for_other_terms() {
+        let mut market = tradeable_market();
+        let other_min_fills = [11, 9];
+
+        let nonce = market.seller.nonce;
+        let (place, order_id) = market.place_ask(1_000, PRICE, 10).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        for min_fill in other_min_fills {
+            let next = market.seller.nonce;
+            market.seller.nonce = nonce;
+            let (other, other_id) = market.place_ask(1_000, PRICE, min_fill).await;
+            market.seller.nonce = next;
+            assert_eq!(other_id, order_id);
+            assert!(
+                matches!(
+                    market.prove_and_try_verify(&other),
+                    Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+                ),
+                "a listing with a minimum fill of {min_fill}"
+            );
+        }
+
+        // The same listing signed at other decimals.
+        let platform_version = PlatformVersion::latest();
+        let other_decimals = BatchTransition::new_token_place_ask_transition(
+            market.token_id,
+            market.seller.id(),
+            market.contract.id(),
+            0,
+            1_000,
+            PRICE,
+            2,
+            10,
+            &market.seller.key,
+            nonce,
+            0,
+            &market.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the listing");
+        assert!(matches!(
+            market.prove_and_try_verify(&other_decimals),
+            Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+        ));
+
+        let nonce = market.buyer.nonce;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 10).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        for min_fill in other_min_fills {
+            let next = market.buyer.nonce;
+            market.buyer.nonce = nonce;
+            let (other, other_id) = market.place_bid(1_000, PRICE, min_fill).await;
+            market.buyer.nonce = next;
+            assert_eq!(other_id, order_id);
+            assert!(
+                matches!(
+                    market.prove_and_try_verify(&other),
+                    Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+                ),
+                "an offer with a minimum fill of {min_fill}"
+            );
+        }
+    }
+
+    /// A placement is never a group action. A placement carrying group action information,
+    /// with every other term of one that executed, is refused rather than proved, while its
+    /// order is open and once it has closed (where a group action's evidence could otherwise
+    /// stand in for the missing placement record), on either side.
+    #[tokio::test]
+    async fn should_not_prove_a_placement_carrying_group_information() {
+        let mut market = tradeable_market();
+        let refused = |market: &Market, transition: &StateTransition| {
+            assert_matches!(
+                market.prove_and_try_verify(&with_group_info(transition)),
+                Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+            );
+        };
+
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        refused(&market, &place);
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        refused(&market, &place);
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        refused(&market, &place);
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        refused(&market, &place);
+    }
+
+    /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
+    /// the token changes to 2 records 8 on its placement and its fill, and its placement is
+    /// still proved once it has closed, against the contract at either scale.
+    #[tokio::test]
+    async fn should_record_the_decimals_an_order_was_placed_at() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration.set_conventions_change_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        market.set_decimals(2).await;
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+
+        let placed = market.history("orderPlaced");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(
+            property(&placed[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+        let filled = market.history("orderFilled");
+        assert_eq!(filled.len(), 1);
+        assert_eq!(
+            property(&filled[0], "decimals").to_integer::<u8>().ok(),
+            Some(8)
+        );
+        assert_eq!(
+            property(&filled[0], "credits").to_integer::<u64>().ok(),
+            Some(10_000)
+        );
+        // A client still holding the contract at 8 decimals, and one that fetched it again at 2,
+        // both confirm the closed placement.
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+        market.refresh_contract();
+        assert_eq!(
+            market
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected the token")
+                .conventions()
+                .decimals(),
+            2
+        );
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(_)
+        );
+    }
+
+    /// A closed order of a token that keeps no transfer history leaves nothing that proves its
+    /// placement: the verification refuses rather than take the order's absence for it. An
+    /// order still open is proved by its document, history or not.
+    #[tokio::test]
+    async fn should_not_prove_a_closed_order_of_a_token_without_history() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration
+                    .keeps_history_mut()
+                    .set_keeps_transfer_history(false);
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedDocuments(documents)
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+        let fill = market.fill_ask(order_id, 1, 1_000, 10_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert_matches!(
+            market.prove_and_try_verify(&place),
+            Err(DriveError::Proof(ProofError::IncorrectProof(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_record_nothing_for_a_token_that_keeps_no_transfer_history() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration
+                    .keeps_history_mut()
+                    .set_keeps_transfer_history(false);
+            },
+            dash_to_credits!(1.0),
+        );
+        assert!(!market
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token")
+            .keeps_history()
+            .keeps_transfer_history());
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let fill = market.fill_ask(order_id, 1, 400, 4_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        let cancel = market.cancel(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        // The bid side: an offer, a sale into it and the cancel of another.
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        market.assert_executes(&sale, &BlockInfo::default());
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let cancel = market.cancel_bid(order_id, false).await;
+        market.assert_executes(&cancel, &BlockInfo::default());
+
+        assert!(market.history("orderPlaced").is_empty());
+        assert!(market.history("orderFilled").is_empty());
+        assert!(market.history("orderCancelled").is_empty());
     }
 }

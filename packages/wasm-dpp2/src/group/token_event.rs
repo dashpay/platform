@@ -36,8 +36,8 @@ const TS_TYPES: &str = r#"
  *   - BurnFromPool: { $type: "burnFromPool", amount, actionsDigest, publicNote }
  *   - ClaimToPool: { $type: "claimToPool", amount }
  *   - DirectPurchaseToPool: { $type: "directPurchaseToPool", amount, credits }
- *   - OrderPlaced: { $type: "orderPlaced", orderId, side, amount, price }
- *   - OrderFilled: { $type: "orderFilled", orderId, side, maker, amount, credits }
+ *   - OrderPlaced: { $type: "orderPlaced", orderId, side, amount, price, minFill, decimals }
+ *   - OrderFilled: { $type: "orderFilled", orderId, side, maker, amount, credits, decimals }
  *   - OrderCancelled: { $type: "orderCancelled", orderId, side }
  *
  * `side` is `"ask"` (a listing) or `"bid"` (an offer).
@@ -290,8 +290,9 @@ mod tests {
             TokenEvent::BurnFromPool(1, id, None),
             TokenEvent::ClaimToPool(1),
             TokenEvent::DirectPurchaseToPool(1, 1),
-            TokenEvent::OrderPlaced(id, TokenOrderSide::Ask, 1, 1),
-            TokenEvent::OrderFilled(id, TokenOrderSide::Ask, id, 1, 1),
+            TokenEvent::OrderPlaced(id, TokenOrderSide::Ask, 1, 1, 1, 8),
+            TokenEvent::OrderPlaced(id, TokenOrderSide::Bid, 1, 1, 1, 0),
+            TokenEvent::OrderFilled(id, TokenOrderSide::Ask, id, 1, 1, 8),
             TokenEvent::OrderCancelled(id, TokenOrderSide::Bid),
         ]
     }

@@ -46,6 +46,13 @@ mod tests {
     use tenderdash_abci::proto::FromMillis;
     use tenderdash_abci::Application;
 
+    /// The protocol version these tests activate: 14, whose upgrade backfills the credit pool
+    /// nullifiers and installs the token history contract v2 the assertions describe. Pinned,
+    /// as the latest version's upgrade installs a later token history contract.
+    fn activation_target() -> &'static PlatformVersion {
+        PlatformVersion::get(14).expect("expected protocol version 14")
+    }
+
     /// The proposal of `round` for the next height, at chain-locked `core_chain_locked_height`
     fn proposal(
         outcome: &ChainExecutionOutcome,
@@ -70,10 +77,10 @@ mod tests {
             core_chain_locked_height,
             core_chain_lock_update: None,
             proposer_pro_tx_hash: proposer.to_byte_array().to_vec(),
-            proposed_app_version: PlatformVersion::latest().protocol_version as u64,
+            proposed_app_version: activation_target().protocol_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: PlatformVersion::latest().protocol_version as u64,
+                app: activation_target().protocol_version as u64,
             }),
             quorum_hash: outcome
                 .current_quorum()
@@ -167,7 +174,7 @@ mod tests {
         let pv = if version == 1 {
             PlatformVersion::get(13).expect("PV13")
         } else {
-            PlatformVersion::latest()
+            activation_target()
         };
         let stored = platform
             .drive
@@ -236,7 +243,7 @@ mod tests {
 
     async fn activation_lifecycle(historical_token_history: bool) {
         let old = PlatformVersion::get(13).expect("PV13");
-        let latest = PlatformVersion::latest();
+        let target = activation_target();
         let config = PlatformConfig {
             block_spacing_ms: 1000,
             validator_set: ValidatorSetConfig {
@@ -259,7 +266,7 @@ mod tests {
             chain_lock_quorum_count: 24,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 13,
-                proposed_protocol_versions_with_weight: vec![(latest.protocol_version, 1)],
+                proposed_protocol_versions_with_weight: vec![(target.protocol_version, 1)],
                 upgrade_three_quarters_life: 0.0,
             }),
             ..Default::default()
@@ -288,7 +295,7 @@ mod tests {
             .await;
             let state = outcome.abci_app.platform.state.load();
             assert_eq!(state.current_protocol_version_in_consensus(), 13);
-            assert_eq!(state.next_epoch_protocol_version(), latest.protocol_version);
+            assert_eq!(state.next_epoch_protocol_version(), target.protocol_version);
             assert_eq!(state.last_committed_block_epoch().index, 1);
             drop(state);
 
@@ -450,7 +457,7 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None, &latest.drive.grove_version)
+                    .root_hash(None, &target.drive.grove_version)
                     .unwrap()
                     .expect("unchanged committed root"),
                 committed_root
@@ -459,7 +466,7 @@ mod tests {
                 assert!(!abci_app
                     .platform
                     .drive
-                    .has_nullifier(&rho, None, &mut vec![], latest)
+                    .has_nullifier(&rho, None, &mut vec![], target)
                     .expect("uncommitted backfill"));
             }
             {
@@ -477,7 +484,7 @@ mod tests {
                     assert!(abci_app
                         .platform
                         .drive
-                        .has_nullifier(&rho, transaction.as_ref(), &mut vec![], latest)
+                        .has_nullifier(&rho, transaction.as_ref(), &mut vec![], target)
                         .expect("candidate union"));
                 }
             }
@@ -538,7 +545,7 @@ mod tests {
                     assert!(abci_app
                         .platform
                         .drive
-                        .has_nullifier(&rho, transaction.as_ref(), &mut vec![], latest)
+                        .has_nullifier(&rho, transaction.as_ref(), &mut vec![], target)
                         .expect("retried candidate union"));
                 }
             }
@@ -560,7 +567,7 @@ mod tests {
                         .platform
                         .drive
                         .grove
-                        .root_hash(None, &latest.drive.grove_version)
+                        .root_hash(None, &target.drive.grove_version)
                         .unwrap()
                         .expect("committed root after rejection"),
                     committed_root
@@ -576,7 +583,7 @@ mod tests {
                         .platform
                         .drive
                         .grove
-                        .root_hash(None, &latest.drive.grove_version)
+                        .root_hash(None, &target.drive.grove_version)
                         .value
                         .expect("no speculative commit"),
                     committed_root
@@ -589,7 +596,7 @@ mod tests {
             assert_token_history(abci_app.platform, None, 2, historical_token_history);
             assert_eq!(
                 state.current_protocol_version_in_consensus(),
-                latest.protocol_version
+                target.protocol_version
             );
             assert_eq!(
                 state.last_committed_block_app_hash().map(Vec::from),
@@ -600,7 +607,7 @@ mod tests {
                 assert!(abci_app
                     .platform
                     .drive
-                    .has_nullifier(&rho, None, &mut vec![], latest)
+                    .has_nullifier(&rho, None, &mut vec![], target)
                     .expect("committed backfill"));
             }
             observations.push(accepted_root);
@@ -617,16 +624,16 @@ mod tests {
                     .state
                     .load()
                     .current_protocol_version_in_consensus(),
-                latest.protocol_version
+                target.protocol_version
             );
             assert_eq!(
                 reopened.state.load().next_epoch_protocol_version(),
-                latest.protocol_version
+                target.protocol_version
             );
             for rho in [[1u8; 32], [3u8; 32]] {
                 assert!(reopened
                     .drive
-                    .has_nullifier(&rho, None, &mut vec![], latest)
+                    .has_nullifier(&rho, None, &mut vec![], target)
                     .expect("backfill survives restart"));
             }
         }

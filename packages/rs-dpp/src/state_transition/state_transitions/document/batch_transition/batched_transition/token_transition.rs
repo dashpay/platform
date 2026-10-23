@@ -1,4 +1,5 @@
 use derive_more::{Display, From};
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
@@ -989,6 +990,8 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Ask,
                 place_ask.amount(),
                 place_ask.price(),
+                place_ask.min_fill(),
+                place_ask.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and costs, before the order
             // is read
@@ -998,6 +1001,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 Identifier::default(),
                 fill_ask.max_amount(),
                 fill_ask.max_total_price(),
+                token_configuration.conventions().decimals(),
             ),
             TokenTransition::CancelOrder(cancel_order) => {
                 TokenEvent::OrderCancelled(cancel_order.order_id(), cancel_order.side())
@@ -1011,6 +1015,8 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Bid,
                 place_bid.amount(),
                 place_bid.price(),
+                place_bid.min_fill(),
+                place_bid.decimals(),
             ),
             // we do not know the maker, nor how much the fill takes and pays, before the order is
             // read
@@ -1020,6 +1026,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 Identifier::default(),
                 fill_bid.max_amount(),
                 fill_bid.min_total_received(),
+                token_configuration.conventions().decimals(),
             ),
         })
     }
