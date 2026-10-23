@@ -185,6 +185,37 @@ fn describe_proven_protocol_version(
 }
 
 impl Error {
+    /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
+    /// SDK could not learn the network's version for a reason that can pass, such as nodes
+    /// or a quorum source not answering, so the network may serve the request already.
+    ///
+    /// False for any other error, for a refusal the network's verified version explains,
+    /// and for one caused by this SDK's own setup: no context provider, or one that cannot
+    /// give quorum keys at all. Retrying cannot change those.
+    pub fn is_transient_protocol_version_refusal(&self) -> bool {
+        match self {
+            Self::ProtocolVersionNotActive {
+                cause: Some(cause), ..
+            } => !cause.cannot_verify_answers(),
+            _ => false,
+        }
+    }
+
+    /// Whether this SDK's own setup keeps it from verifying any answer, looking through
+    /// retry-exhaustion wrappers.
+    fn cannot_verify_answers(&self) -> bool {
+        match self {
+            Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
+            Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
+            Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
+            | Self::ContextProviderError(error) => matches!(
+                error,
+                ContextProviderError::Generic(_) | ContextProviderError::Config(_)
+            ),
+            _ => false,
+        }
+    }
+
     /// Whether this error is a trusted quorum-source failure, looking through
     /// nested retry-exhaustion wrappers. This is distinct from
     /// [`CanRetry::can_retry`] and does not affect node-ban attribution.
@@ -576,6 +607,67 @@ mod tests {
             signed: 13,
         })
         .can_retry());
+    }
+
+    /// A refusal may lift soon only when the SDK could not learn the network's version for a
+    /// reason that can pass; not when its own setup can never verify an answer, nor when the
+    /// network's verified version explains it.
+    #[test]
+    fn should_call_a_refusal_transient_only_when_its_cause_can_pass() {
+        let refused = |cause: Option<Error>| Error::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            pinned: false,
+            cause: cause.map(Box::new),
+        };
+        let quorum_key = |error| {
+            Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                quorum_type: 106,
+                quorum_hash: [2; 32],
+                core_chain_locked_height: 1,
+                error,
+            })
+        };
+        let transient = [
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(
+                "HTTP 503".to_string(),
+            )),
+            quorum_key(ContextProviderError::InvalidQuorum(
+                "unknown yet".to_string(),
+            )),
+            Error::StaleNode(StaleNodeError::Time {
+                expected_timestamp_ms: 1,
+                received_timestamp_ms: 2,
+                tolerance_ms: 0,
+            }),
+        ];
+        for cause in transient {
+            let message = cause.to_string();
+            assert!(
+                refused(Some(cause)).is_transient_protocol_version_refusal(),
+                "{message}"
+            );
+        }
+        let permanent = [
+            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            quorum_key(ContextProviderError::Generic(
+                "Non-trusted mode is not supported".to_string(),
+            )),
+            Error::NoAvailableAddressesToRetry(Box::new(quorum_key(ContextProviderError::Config(
+                "no quorum source".to_string(),
+            )))),
+        ];
+        for cause in permanent {
+            let message = cause.to_string();
+            assert!(
+                !refused(Some(cause)).is_transient_protocol_version_refusal(),
+                "{message}"
+            );
+        }
+        assert!(!refused(None).is_transient_protocol_version_refusal());
+        assert!(!Error::Generic("offline".to_string()).is_transient_protocol_version_refusal());
     }
 
     mod from_dapi_client_error {

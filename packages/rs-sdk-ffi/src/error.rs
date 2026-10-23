@@ -246,14 +246,17 @@ impl From<FFIError> for DashSDKError {
                 } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
                     // The SDK refused a request the network cannot serve yet, without
                     // sending it, and retrying sooner does not help. Unless the query for
-                    // the network's version failed: then the network may serve it already,
-                    // the failure is the network's, and it is kept in the message.
+                    // the network's version failed for a reason that can pass: then the
+                    // network may serve it already, and the failure is the network's. A
+                    // failed query is kept in the message either way.
+                    let code = if sdk_err.is_transient_protocol_version_refusal() {
+                        DashSDKErrorCode::NetworkError
+                    } else {
+                        DashSDKErrorCode::ProtocolError
+                    };
                     match std::error::Error::source(sdk_err) {
-                        Some(cause) => (
-                            DashSDKErrorCode::NetworkError,
-                            format!("{error_str}: {cause}"),
-                        ),
-                        None => (DashSDKErrorCode::ProtocolError, error_str),
+                        Some(cause) => (code, format!("{error_str}: {cause}")),
+                        None => (code, error_str),
                     }
                 } else if matches!(
                     sdk_err,
@@ -499,6 +502,22 @@ mod tests {
                 )),
                 false,
                 DashSDKErrorCode::NetworkError,
+            ),
+            // The context provider cannot give quorum keys: the version can never be
+            // verified, so retrying does not help.
+            (
+                Some(dash_sdk::Error::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error: dash_sdk::error::ContextProviderError::Generic(
+                            "host callback failed; connection refused".to_string(),
+                        ),
+                    },
+                )),
+                false,
+                DashSDKErrorCode::ProtocolError,
             ),
         ] {
             let has_cause = cause.is_some();

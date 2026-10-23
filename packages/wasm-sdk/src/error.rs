@@ -55,7 +55,8 @@ pub enum WasmSdkErrorKind {
     EncryptionKeyNotFound,
     /// The query uses a feature that not every node of the network serves yet, so the SDK
     /// did not send it. It works once the network has activated the protocol version that
-    /// added the feature; retrying sooner does not help.
+    /// added the feature; retrying sooner does not help, unless the error is retriable: the
+    /// SDK could not learn the network's version, which may serve the query already.
     ProtocolVersionNotActive,
 }
 
@@ -285,12 +286,14 @@ impl From<SdkError> for WasmSdkError {
             EncryptedFor(e) => e.into(),
             error @ ProtocolVersionNotActive { .. } => {
                 // The SDK's message names what is missing; a failed query for the network's
-                // version is its source, and JS sees only the message. Without that query
-                // failing, the refusal holds until the network activates the version; with
-                // it, the network may already serve the request, so the app may retry.
-                let (message, retriable) = match std::error::Error::source(&error) {
-                    Some(cause) => (format!("{error}: {cause}"), true),
-                    None => (error.to_string(), false),
+                // version is its source, and JS sees only the message. The refusal holds
+                // until the network activates the version, unless that query failed for a
+                // reason that can pass: then the network may serve the request already, and
+                // the app may retry.
+                let retriable = error.is_transient_protocol_version_refusal();
+                let message = match std::error::Error::source(&error) {
+                    Some(cause) => format!("{error}: {cause}"),
+                    None => error.to_string(),
                 };
                 Self::new(
                     WasmSdkErrorKind::ProtocolVersionNotActive,
@@ -624,6 +627,31 @@ mod tests {
             "the reason the version is unknown reaches JS: {}",
             unconfirmed.message()
         );
+
+        // An SDK whose context provider cannot give quorum keys, like a non-trusted wasm
+        // SDK, can never verify the network's version: retrying does not help.
+        let unverifiable = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            pinned: false,
+            cause: Some(Box::new(SdkError::Proof(
+                dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                    quorum_type: 106,
+                    quorum_hash: [2; 32],
+                    core_chain_locked_height: 1,
+                    error: dash_sdk::error::ContextProviderError::Generic(
+                        "Non-trusted mode is not supported in WASM".to_string(),
+                    ),
+                },
+            ))),
+        });
+        assert_eq!(
+            unverifiable.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(!unverifiable.is_retriable());
+        assert!(unverifiable.message().contains("Non-trusted mode"));
     }
 
     #[test]
