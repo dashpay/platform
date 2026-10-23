@@ -182,6 +182,10 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
+                        // `spvIsRunning` turns false before the async Pause
+                        // has finished tearing the client down; a Start in
+                        // that window would be refused by the SDK.
+                        .disabled(walletManagerStore.isStoppingSpv)
 
                         Button(action: { showRescanDialog = true }) {
                             Text("Rescan")
@@ -819,6 +823,10 @@ var body: some View {
         store.invalidatePendingSpvStarts()
         let generation = store.spvStartGeneration
         Task {
+            // A Pause still tearing down would make the SDK refuse this
+            // start; run after it instead. A Pause landing meanwhile bumps
+            // the generation, and `stillCurrent` then bails below.
+            await store.awaitPendingSpvStop()
             do {
                 try await CoreSpvLauncher.start(
                     network: network,

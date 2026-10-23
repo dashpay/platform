@@ -3,13 +3,13 @@ use anyhow::bail;
 use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-#[cfg(feature = "random-public-keys")]
-use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
-#[cfg(feature = "random-public-keys")]
-use dashcore::secp256k1::rand::SeedableRng;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+#[cfg(feature = "random-public-keys")]
+use secp256k1::rand::rngs::StdRng as EcdsaRng;
+#[cfg(feature = "random-public-keys")]
+use secp256k1::rand::SeedableRng;
 
 #[cfg(feature = "bls-signatures")]
 use crate::bls::{self, BlsError};
@@ -163,9 +163,9 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
-                private_key.public_key().to_bytes()
+                let secret_key = secp256k1::SecretKey::new(&mut rng);
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
+                public_key.serialize().to_vec()
             }
             KeyType::BLS12_381 => {
                 let private_key = bls::SecretKey::random(rng);
@@ -203,16 +203,15 @@ impl KeyType {
     pub fn public_key_data_from_private_key_data(
         &self,
         private_key_bytes: &[u8; 32],
-        network: Network,
+        _network: Network,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             KeyType::ECDSA_SECP256K1 => {
-                let secret_key =
-                    dashcore::secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-                let private_key = dashcore::PrivateKey::new(secret_key, network);
+                let secret_key = secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
 
-                Ok(private_key.public_key().to_bytes())
+                Ok(public_key.serialize().to_vec())
             }
             KeyType::BLS12_381 => {
                 #[cfg(feature = "bls-signatures")]
@@ -234,12 +233,11 @@ impl KeyType {
                 ));
             }
             KeyType::ECDSA_HASH160 => {
-                let secret_key =
-                    dashcore::secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-                let private_key = dashcore::PrivateKey::new(secret_key, network);
+                let secret_key = secp256k1::SecretKey::from_secret_bytes(*private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
 
-                Ok(ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).to_vec())
+                Ok(ripemd160_sha256(public_key.serialize().as_slice()).to_vec())
             }
             KeyType::EDDSA_25519_HASH160 => {
                 #[cfg(feature = "ed25519-dalek")]
@@ -266,11 +264,11 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
+                let secret_key = secp256k1::SecretKey::new(&mut rng);
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
                 (
-                    private_key.public_key().to_bytes(),
-                    private_key.inner.to_secret_bytes(),
+                    public_key.serialize().to_vec(),
+                    secret_key.to_secret_bytes(),
                 )
             }
             KeyType::BLS12_381 => {
@@ -282,11 +280,11 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
+                let secret_key = secp256k1::SecretKey::new(&mut rng);
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
                 (
-                    ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).to_vec(),
-                    private_key.inner.to_secret_bytes(),
+                    ripemd160_sha256(public_key.serialize().as_slice()).to_vec(),
+                    secret_key.to_secret_bytes(),
                 )
             }
             KeyType::EDDSA_25519_HASH160 => {
@@ -301,11 +299,11 @@ impl KeyType {
                 let mut seed = [0u8; 32];
                 rng.fill(&mut seed);
                 let mut rng = EcdsaRng::from_seed(seed);
-                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
+                let secret_key = secp256k1::SecretKey::new(&mut rng);
+                let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
                 (
-                    ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).to_vec(),
-                    private_key.inner.to_secret_bytes(),
+                    ripemd160_sha256(public_key.serialize().as_slice()).to_vec(),
+                    secret_key.to_secret_bytes(),
                 )
             }
         }

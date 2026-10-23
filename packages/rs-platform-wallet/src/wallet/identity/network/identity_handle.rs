@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use dashcore::secp256k1::PublicKey;
+use dashcore::crypto::ecdsa::EcdsaPublicKey as PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
@@ -183,8 +183,8 @@ pub fn derive_connect_keypair_from_master(
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
-        public_key: extended_pub.public_key.serialize(),
+        private_key: derived.private_key.to_bytes(),
+        public_key: extended_pub.public_key.to_compressed(),
     })
 }
 
@@ -229,16 +229,7 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         identity_index,
         key_index,
     )?;
-    // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
-    // wrap it in `Zeroizing` directly — but its inner
-    // `secp256k1::SecretKey` does implement `Drop` with a memzero,
-    // so the secret scalar is scrubbed when `derived` falls out of
-    // scope. The surrounding `chain_code` / `depth` /
-    // `parent_fingerprint` / `child_number` are non-secret BIP-32
-    // metadata; leaking them on the stack is a non-event. The
-    // returned `private_key` is wrapped in `Zeroizing` below so
-    // the 32-byte scalar copy crossing the function boundary is
-    // also scrubbed on the caller's drop.
+    // The derived scalar and its exported byte copy zeroize on drop.
     let derived = master.derive_priv(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
@@ -248,8 +239,8 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
-        public_key: extended_pub.public_key.serialize(),
+        private_key: derived.private_key.to_bytes(),
+        public_key: extended_pub.public_key.to_compressed(),
     })
 }
 
@@ -310,7 +301,7 @@ pub(crate) fn derive_identity_auth_key_hash(
 
     let (_path, _priv, public_key) =
         derive_identity_auth_keypair(wallet, network, identity_index, key_index)?;
-    let public_key_bytes = public_key.serialize();
+    let public_key_bytes = public_key.to_compressed();
     let key_hash = ripemd160_sha256(&public_key_bytes);
 
     let mut key_hash_array = [0u8; 20];
@@ -519,7 +510,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             ))
         })?;
 
-        Ok(Zeroizing::new(secret_key.to_secret_bytes()))
+        Ok(secret_key.to_bytes())
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].
@@ -753,7 +744,7 @@ mod tests {
     /// the returned scalar.
     #[test]
     fn connect_keypairs_match_the_pinned_vectors() {
-        use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+        use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
 
         for (network, key, expected) in [
             (
