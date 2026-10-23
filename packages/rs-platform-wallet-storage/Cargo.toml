@@ -42,6 +42,7 @@ platform-wallet = { path = "../rs-platform-wallet", features = [
 ], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 key-wallet = { workspace = true, optional = true }
+v019-codec = { package = "platform-wallet-storage-v019-codec", path = "v019-codec", optional = true }
 dashcore = { workspace = true, optional = true }
 dpp = { path = "../rs-dpp", optional = true }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = [
@@ -224,6 +225,7 @@ sqlite = [
     "dep:platform-wallet",
     "dep:serde",
     "dep:key-wallet",
+    "dep:v019-codec",
     "dep:dashcore",
     "dep:dpp",
     "dep:dash-sdk",

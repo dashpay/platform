@@ -83,7 +83,7 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
         let mut count = 0;
         for query in queries {
             if query == self.accounting_sql {
-                v020::rewind_sync_heights(&self.tx)?;
+                v020::rewind_sync_heights(&self.tx, self.policy)?;
             }
             self.tx.execute_batch(query)?;
             if query == self.registration_sql {

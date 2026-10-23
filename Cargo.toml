@@ -47,6 +47,7 @@ members = [
     "packages/rs-platform-wallet",
     "packages/rs-platform-wallet-ffi",
     "packages/rs-platform-wallet-storage",
+    "packages/rs-platform-wallet-storage/v019-codec",
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",

@@ -5515,6 +5515,7 @@ dependencies = [
  "memsec",
  "platform-wallet",
  "platform-wallet-storage",
+ "platform-wallet-storage-v019-codec",
  "proptest",
  "refinery",
  "refinery-core",
@@ -5537,6 +5538,17 @@ dependencies = [
  "tracing-test",
  "windows-native-keyring-store",
  "zeroize",
+]
+
+[[package]]
+name = "platform-wallet-storage-v019-codec"
+version = "0.1.0"
+dependencies = [
+ "dashcore",
+ "grovedb-bincode",
+ "hex",
+ "key-wallet",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

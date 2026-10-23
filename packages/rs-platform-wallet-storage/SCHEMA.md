@@ -505,14 +505,23 @@ drops the mined history stored before the index existed, and the rescan from
 birth fills the index again. V020 indexes every input of each unmined record
 it keeps through the versioned V019 record adapter in a typed step after its
 SQL, so a conflict sweep can hand a withheld input to a kept surviving spender.
-The adapter pins record/transaction field order and enum tags; immutable
-pre-V020 transaction fixtures also pin the upstream Core payload codecs.
-Length-gated SQLite expressions keep oversized bodies and malformed identifier
-keys out of the result row. Strict aborts the upgrade on an unreadable kept
-record; Recovery skips it. Before any mined history is deleted, every wallet's
-birth height is validated as a `u32`, and its rescan watermark is lowered using
-saturating subtraction in Rust. An invalid birth height aborts and rolls back
-the upgrade under either policy, preserving the history needed for recovery.
+The storage-owned `v019-codec` crate pins the full historical decoder (including
+leaf and special-payload serde) to rust-dashcore/key-wallet revision
+`aca020263990a86a15cc1d97ae2cbf965d488db5` and grovedb-bincode 2.1.0. It exposes
+only verified txid bytes and historical input keys; runtime dependency upgrades
+cannot change this migration's decoding. Immutable fixtures cover both retained
+contexts (Mempool and InstantSend), non-null inputs, and special payloads.
+Lazy SQLite type and byte-length gates reject non-BLOB values, oversized bodies,
+and malformed identifiers before materialization. Strict aborts on an unreadable
+kept record; Recovery logs and skips it. Before deleting mined history, the typed
+pre-step validates birth heights and binds saturating `u32` rewind values without
+raising valid sync watermarks. Strict rejects invalid heights; Recovery logs a
+structured warning, repairs the invalid birth height to zero, and rewinds that
+wallet to zero for a full rescan while other wallets migrate normally.
+
+V020 is unreleased and its SQL body and pinned fingerprint changed in place.
+Developer databases that applied an earlier V020 must be recreated. Its stacked
+V021 migrations must include the same V020 body and update their fingerprints.
 
 - PK: `(wallet_id, txid, outpoint)`.
 - FK: `(wallet_id, txid) → core_transactions(wallet_id, txid) ON DELETE
@@ -944,4 +953,4 @@ table-rebuild migration, as V004 does.
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
 | V019 | `V019__asset_lock_operation_id.rs` | Adds the nullable `asset_locks.operation_id BLOB` column (CHECK: NULL or exactly 16 bytes) that correlates a wallet-drain operation with its funding outpoint; the lifecycle blob is untouched. Adds the unique partial index `asset_locks_wallet_operation_id` on `(wallet_id, operation_id) WHERE operation_id IS NOT NULL` and the `asset_locks_operation_id_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `operation_id`. Purely additive; existing rows read back NULL. |
-| V020 | `V020__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). Indexes `core_utxos` by funding txid (`idx_core_utxos_funding`) and by claimant (`idx_core_utxos_claimant`) before its deletions, so neither they nor later cleanups visit every kept coin once per deleted transaction. Records stored before V020 may carry wrong input details, net amounts and directions and have no indexed inputs, so instead of repairing them in place V020 deletes every wallet's mined Core history and lowers each `core_sync_state.synced_height` to just below the wallet's birth height (never raising it); a typed pre-step validates all birth heights as `u32` and binds their saturating rewind before destructive SQL, so the next SPV start rescans from birth and records the history again through the current accounting. A block rescan cannot redeliver unmined transactions, so V020 keeps them as spend evidence: every `core_transactions` row with a NULL `height`, its `core_instant_locks` row and its `core_utxos` outputs, and every spent `core_utxos` row whose claim no mined transaction stands behind (no `winner_mined_height`, and no claimant row with a `height`). The mined funding row of a kept coin becomes a height-only row, and a typed step after the SQL indexes every input of each kept record in `core_transaction_inputs` (through the versioned V019 adapter; Strict aborts on an unreadable body or identifier, Recovery skips it; lazy SQL length gates prevent oversized values from being materialized). The loader authenticates every kept claim before replay, as it does any stored one; kept records keep their stored accounting until the wallet records them again. `last_processed_height` and the chainlock stay, as chain facts; the SPV header/filter store, address pools, asset locks, identities, DashPay and metadata rows are untouched. |
+| V020 | `V020__core_transaction_accounting.rs` | Adds the [raw-input index](#core_transaction_inputs), its outpoint index, and the [original-record archive](#core_transaction_record_originals), plus funding/claimant indexes on `core_utxos`. Rebuilds mined Core history by rescanning from birth, preserving unmined spend evidence and height-only funding rows for held coins. The raw-input-index section above documents the historical codec, type/size gates, rewind policies, and unreleased-migration compatibility. `last_processed_height`, chainlocks, the SPV header/filter store, address pools, asset locks, identities, DashPay, and metadata remain unchanged. |
