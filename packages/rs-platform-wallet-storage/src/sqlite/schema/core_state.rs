@@ -735,8 +735,11 @@ fn apply_sweep(
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
+        // SQLite plans a DELETE through an expression index only when named
+        // (V020 explains the index); naming it also fails loudly if it goes.
         tx.execute(
-            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            "DELETE FROM core_utxos INDEXED BY idx_core_utxos_funding \
+             WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         return Ok(());
@@ -2011,6 +2014,60 @@ mod tests {
             spend_claim(&conn, &wallet_id, &shared.outpoint),
             claimant(&survivor.txid),
             "the kept survivor, not the winner, holds the withheld input"
+        );
+    }
+
+    /// A txid unique to `(tag, index)`.
+    fn indexed_txid(tag: u8, index: u32) -> Txid {
+        let mut bytes = [tag; 32];
+        bytes[..4].copy_from_slice(&index.to_le_bytes());
+        Txid::from_byte_array(bytes)
+    }
+
+    /// Kept coins are cheap for a peer to add: an unmined receipt paying the
+    /// wallet is enough. Dropping the mined history must not visit every kept
+    /// coin once per dropped record, neither to find a dropped record's
+    /// outputs nor in the cleanup trigger clearing its claims, so doubling
+    /// both at once at most roughly doubles the migration's work.
+    #[test]
+    fn should_migrate_to_v020_in_work_linear_in_kept_coins_and_dropped_history() {
+        let ops = |n: u32| {
+            let wallet_id = [0xB8u8; 32];
+            let mut conn = wallet_db(&wallet_id);
+            for index in 0..n {
+                let (receipt, mined) = (indexed_txid(1, index), indexed_txid(2, index));
+                for (txid, height) in [(receipt, None), (mined, Some(200))] {
+                    conn.execute(
+                        "INSERT INTO core_transactions (wallet_id, txid, height, finalized) \
+                         VALUES (?1, ?2, ?3, 0)",
+                        params![&wallet_id[..], txid.as_byte_array().as_slice(), height],
+                    )
+                    .unwrap();
+                }
+                conn.execute(
+                    "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+                     VALUES (?1, ?2, 1, X'51', 0)",
+                    params![
+                        &wallet_id[..],
+                        blob::encode_outpoint(&OutPoint::new(receipt, 0)).unwrap()
+                    ],
+                )
+                .unwrap();
+            }
+            rewind_v020(&conn);
+            let ops = migrations::count_vm_ops(&conn);
+            migrations::run(&mut conn).unwrap();
+            let kept: i64 = conn
+                .query_row("SELECT COUNT(*) FROM core_transactions", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(kept, i64::from(n), "only the unmined receipts stay");
+            ops.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        let (small, large) = (ops(300), ops(600));
+        assert!(
+            large < 3 * small,
+            "V020 work must grow linearly, not with kept coins times dropped records: \
+             {small} VM ops for 300 of each, {large} for 600"
         );
     }
 
