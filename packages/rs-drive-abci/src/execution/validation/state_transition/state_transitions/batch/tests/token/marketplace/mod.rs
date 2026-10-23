@@ -24,11 +24,16 @@ use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::{Identity, IdentityPublicKey};
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::{
+    StateTransitionProofGuarantee, StateTransitionProofOutcome, StateTransitionProofResult,
+};
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::tokens::calculate_token_id;
@@ -138,6 +143,45 @@ fn market_with(
     }
 }
 
+/// The guarantee the proof of a marketplace transition gives. A placement's binds its
+/// execution: the order's document carries an id only this transition derives, and its terms,
+/// also once fills have changed what is left. A fill leaves a balance snapshot and a cancel an
+/// absence, which the order being filled entirely would leave too, so their proofs only
+/// authenticate the state.
+fn marketplace_proof_guarantee(
+    transition: &StateTransition,
+) -> Option<StateTransitionProofGuarantee> {
+    let StateTransition::Batch(batch) = transition else {
+        return None;
+    };
+    match batch.first_transition()? {
+        BatchedTransitionRef::Token(
+            TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_),
+        ) => Some(StateTransitionProofGuarantee::ExecutionProved),
+        BatchedTransitionRef::Token(
+            TokenTransition::FillAsk(_)
+            | TokenTransition::FillBid(_)
+            | TokenTransition::CancelOrder(_),
+        ) => Some(StateTransitionProofGuarantee::AffectedState),
+        _ => None,
+    }
+}
+
+/// The verified result, once the proof's guarantee is the one `claimed` earns.
+fn checked_result(
+    claimed: &StateTransition,
+    outcome: StateTransitionProofOutcome,
+) -> StateTransitionProofResult {
+    if let Some(expected) = marketplace_proof_guarantee(claimed) {
+        assert_eq!(
+            outcome.guarantee(),
+            expected,
+            "the proof's guarantee for this marketplace transition"
+        );
+    }
+    outcome.into_result()
+}
+
 fn tradeable_market() -> Market {
     market_with(make_token_tradeable, dash_to_credits!(1.0))
 }
@@ -155,17 +199,31 @@ impl Market {
         transition: &StateTransition,
         block_info: &BlockInfo,
     ) -> StateTransitionsProcessingResult {
+        self.process_in_one_block(&[transition], block_info)
+    }
+
+    /// Processes `transitions` in order in one block transaction, committed after the last.
+    fn process_in_one_block(
+        &mut self,
+        transitions: &[&StateTransition],
+        block_info: &BlockInfo,
+    ) -> StateTransitionsProcessingResult {
         let platform_version = PlatformVersion::latest();
-        let serialized = transition
-            .serialize_to_bytes()
-            .expect("expected the batch to serialize");
+        let serialized: Vec<Vec<u8>> = transitions
+            .iter()
+            .map(|transition| {
+                transition
+                    .serialize_to_bytes()
+                    .expect("expected the batch to serialize")
+            })
+            .collect();
         let platform_state = self.platform.state.load();
         let transaction = self.platform.drive.grove.start_transaction();
         let processing_result = self
             .platform
             .platform
             .process_raw_state_transitions(
-                &[serialized],
+                &serialized,
                 &platform_state,
                 block_info,
                 &transaction,
@@ -683,7 +741,7 @@ impl Market {
                 self.committed_root(),
                 "the proof authenticates the committed state"
             );
-            outcome.into_result()
+            checked_result(claimed, outcome)
         })
     }
 
@@ -714,7 +772,7 @@ impl Market {
                 self.committed_root(),
                 "the proof authenticates the committed state"
             );
-            outcome.into_result()
+            checked_result(transition, outcome)
         })
     }
 
@@ -744,7 +802,7 @@ impl Market {
             self.committed_root(),
             "the proof authenticates the committed state"
         );
-        outcome.into_result()
+        checked_result(transition, outcome)
     }
 
     /// The root of the state committed so far, which a client authenticates a proof against.
@@ -977,6 +1035,49 @@ async fn should_sell_part_of_a_listing_and_then_the_rest() {
     assert!(
         seller_gain > 10_000,
         "expected the price and the listing's storage refund, got {seller_gain}"
+    );
+    market.assert_supply_balanced();
+}
+
+/// Two fills of one listing in one block, each asking for up to 700 of its 1,000: the second
+/// reads what the first left in the block's transaction, not the committed listing, so the
+/// first takes 700 and the second the 300 left, which closes the listing.
+#[tokio::test]
+async fn should_fill_a_listing_twice_in_one_block() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(1_000, PRICE, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+    let seller_credits = market.credit_balance(market.seller.id());
+
+    let first = market.fill_ask(order_id, 1, 700, 7_000).await;
+    let second = market.fill_ask(order_id, 1, 700, 7_000).await;
+    let processing_result = market.process_in_one_block(&[&first, &second], &BlockInfo::default());
+    let [StateTransitionExecutionResult::SuccessfulExecution { .. }, StateTransitionExecutionResult::SuccessfulExecution {
+        fee_result: closing_fee,
+        ..
+    }] = processing_result.execution_results().as_slice()
+    else {
+        panic!(
+            "expected both fills to execute: {:?}",
+            processing_result.execution_results()
+        );
+    };
+    let listing_refund = closing_fee
+        .fee_refunds
+        .calculate_refunds_amount_for_identity(market.seller.id())
+        .expect("expected the closing fill to refund the seller's listing");
+
+    assert_eq!(market.token_balance(market.buyer.id()), Some(1_000));
+    assert_eq!(
+        market.token_balance(market.seller.id()),
+        Some(BASE_SUPPLY - 1_000)
+    );
+    assert_eq!(market.listing(order_id), None, "the second fill closed it");
+    assert_eq!(market.escrow(order_id), None);
+    // 700 and 300 base units at 10 credits each, and the listing's storage back.
+    assert_eq!(
+        market.credit_balance(market.seller.id()),
+        seller_credits + 10_000 + listing_refund
     );
     market.assert_supply_balanced();
 }
