@@ -2919,3 +2919,69 @@ async fn should_keep_authorization_repair_atomic_and_recovery_read_only() {
         );
     }
 }
+
+#[tokio::test]
+async fn should_remove_drifted_unauthorized_rows_from_the_recovery_snapshot() {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let funding = spend_of(&[outside(98)], vec![pay(100_000, &address)]);
+    let coin = OutPoint::new(funding.txid(), 0);
+    let bad = spend_of(&[coin], vec![pay(99_000, &address)]);
+    let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+    records.extend(records_of(&mut info, &mut wallet, &bad, MEMPOOL).await);
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: vec![
+                stored_utxo(&funding, 0, address.clone()),
+                stored_utxo(&bad, 0, address.clone()),
+            ],
+            spent_utxos: vec![stored_utxo(&funding, 0, address)],
+            ..Default::default()
+        },
+    );
+    let path = persister.config_for_test().path.clone();
+    drop(persister);
+    // Deliberately corrupt the physical key without cascading related rows.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    conn.execute(
+        "UPDATE core_transactions SET txid = ?1 WHERE txid = ?2",
+        rusqlite::params![
+            [0xE1u8; 32].as_slice(),
+            bad.txid().as_byte_array().as_slice()
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE core_transaction_inputs SET txid = ?1 WHERE txid = ?2",
+        rusqlite::params![
+            [0xE1u8; 32].as_slice(),
+            bad.txid().as_byte_array().as_slice()
+        ],
+    )
+    .unwrap();
+    drop(conn);
+    let persister = SqlitePersister::open(
+        SqlitePersisterConfig::new(path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let state = persister.load().unwrap();
+        let restored = &state.wallets[&wallet.wallet_id];
+        assert_eq!(
+            coin_set(&restored.wallet_info),
+            vec![coin],
+            "unauthorized drifted body must not restore a reservation"
+        );
+    }
+    let count: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT count(*) FROM core_transactions WHERE txid = ?1",
+            [[0xE1u8; 32].as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "Recovery repairs only its rolled-back snapshot");
+}

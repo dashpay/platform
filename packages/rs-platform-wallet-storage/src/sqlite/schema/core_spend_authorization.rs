@@ -1,6 +1,7 @@
 //! Revalidate persisted peer spend claims before rebuilding spendable funds.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::slice;
 
 use dashcore::{hashes::Hash, OutPoint, ScriptBuf, TxOut, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -19,6 +20,7 @@ pub(crate) fn repair(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     state: &CoreChangeSet,
+    record_keys: &HashMap<Txid, Vec<Txid>>,
 ) -> Result<bool, WalletStorageError> {
     if !state
         .records
@@ -155,6 +157,18 @@ pub(crate) fn repair(
                 .or_insert(txid);
             claims
         });
+    let physical_keys: HashSet<Txid> = rejected
+        .iter()
+        .flat_map(|txid| {
+            record_keys
+                .get(txid)
+                .map(Vec::as_slice)
+                .unwrap_or_else(|| slice::from_ref(txid))
+        })
+        .copied()
+        .collect();
+    // Related evidence may name either the blob txid or the drifted row key.
+    let rejected_evidence: HashSet<Txid> = rejected.union(&physical_keys).copied().collect();
     // Release before deleting bodies: their cleanup trigger clears claimant IDs.
     // Never reinterpret an anonymous or recordless final claim as a rejected peer claim.
     let mut claims = Vec::new();
@@ -165,7 +179,7 @@ pub(crate) fn repair(
         let raw: Vec<u8> = row.get(1)?;
         blob::check_fixed_width(row.get(2)?, 32, "core_utxos.spent_in_txid")?;
         let claimant: Vec<u8> = row.get(3)?;
-        if rejected.contains(&Txid::from_slice(&claimant)?) {
+        if rejected_evidence.contains(&Txid::from_slice(&claimant)?) {
             claims.push((raw, row.get::<_, bool>(4)?));
         }
     }
@@ -189,12 +203,14 @@ pub(crate) fn repair(
             tx.execute("UPDATE core_utxos SET spent = 0, spent_in_txid = NULL, winner_mined_height = NULL WHERE wallet_id = ?1 AND outpoint = ?2", params![wallet_id.as_slice(), raw])?;
         }
     }
-    for txid in &rejected {
-        let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
+    for txid in &physical_keys {
         tx.execute(
             "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
-            key,
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
         )?;
+    }
+    for txid in &rejected_evidence {
+        let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
         tx.execute(
             "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
             key,
@@ -208,8 +224,8 @@ pub(crate) fn repair(
             key,
         )?;
     }
-    asset_locks::remove_swept(tx, wallet_id, &rejected)?;
-    dashpay::settle_swept_payments(tx, wallet_id, &rejected)?;
+    asset_locks::remove_swept(tx, wallet_id, &rejected_evidence)?;
+    dashpay::settle_swept_payments(tx, wallet_id, &rejected_evidence)?;
     Ok(true)
 }
 
@@ -302,7 +318,7 @@ mod tests {
         let tx = conn.transaction().unwrap();
         let started = Instant::now();
         assert!(
-            repair(&tx, &wallet_id, &state).unwrap(),
+            repair(&tx, &wallet_id, &state, &HashMap::new()).unwrap(),
             "the unsigned spend of an owned output is rejected"
         );
         let elapsed = started.elapsed();
@@ -374,7 +390,7 @@ mod tests {
             };
             let tx = conn.transaction().unwrap();
             let ops = migrations::count_vm_ops(&tx);
-            assert!(repair(&tx, &wallet_id, &state).unwrap());
+            assert!(repair(&tx, &wallet_id, &state, &HashMap::new()).unwrap());
             let left: i64 = tx
                 .query_row("SELECT COUNT(*) FROM core_utxos WHERE spent = 0", [], |r| {
                     r.get(0)

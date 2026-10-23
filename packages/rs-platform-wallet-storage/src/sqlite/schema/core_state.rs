@@ -1118,6 +1118,23 @@ pub fn load_state(
     ),
     WalletStorageError,
 > {
+    load_state_with_record_keys(conn, wallet_id, network, ctx, &mut HashMap::new())
+}
+
+/// Retain physical row keys so authorization repair can remove drifted bodies.
+pub(crate) fn load_state_with_record_keys(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
+    record_keys: &mut HashMap<Txid, Vec<Txid>>,
+) -> Result<
+    (
+        CoreChangeSet,
+        std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
+    ),
+    WalletStorageError,
+> {
     let mut cs = CoreChangeSet::default();
     let mut utxo_accounts: HashMap<dashcore::OutPoint, OwningAccount> = HashMap::new();
 
@@ -1154,6 +1171,7 @@ pub fn load_state(
                     // using it; the typed columns are left exactly as found.
                     ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
                 }
+                record_keys.entry(record.txid).or_default().push(txid);
                 cs.records.push(record);
                 transaction_heights.insert(effective_txid, effective_height);
                 blob_backed_transaction_heights.insert(effective_txid);
