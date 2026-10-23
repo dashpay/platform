@@ -201,6 +201,11 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(MultiSyncNotesResult::default());
     }
 
+    // Keep the snapshot and streamed consume under one write guard so another
+    // sync cannot append between them and leave this pass using stale gates.
+    // SDK fetches never access the store, so the stream can run under this lock.
+    let mut store = store.write().await;
+
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest
     // of this pass:
@@ -218,7 +223,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // it already stored, while a lagging one still saves from its
     // own start.
     let (watermarks, already_have, tree_size) = {
-        let store = store.read().await;
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
         for (id, _) in subwallets {
@@ -301,15 +305,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
             cb(downloaded.max(tree_baseline), height);
         }));
     }
-
-    // Acquire the store write lock for the whole interleaved consume.
-    // This is the only writer during a pass, so holding it across
-    // `stream.next().await` is safe: the stream's producer side is the
-    // SDK's network fetch loop, which never touches the store, so there
-    // is no lock-ordering deadlock. Backpressure is pull-based — a slow
-    // append simply polls the stream less often, capping in-flight
-    // network fetches at `max_concurrent`.
-    let mut store = store.write().await;
 
     let stream = sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config));
     futures::pin_mut!(stream);
@@ -1074,3 +1069,6 @@ mod ovk_builder_roundtrip_tests;
 /// full-decryption and the OVK send-history recovery primitives.
 #[cfg(test)]
 mod memo_roundtrip_tests;
+
+#[cfg(test)]
+mod concurrent_sync_tests;
