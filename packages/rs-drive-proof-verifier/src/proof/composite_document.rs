@@ -21,7 +21,9 @@
 //! path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{
+    ensure_proof_signed_at_verifier_version, supported_grovedb_proof_bytes, verify_tenderdash_proof,
+};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -67,6 +69,10 @@ pub struct CompositeDocuments {
 /// hash the proof commits to is only an attested fact once it is tied
 /// to the quorum-signed app hash, and this function exists so the
 /// composition can never be skipped by accident.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_composite_documents_proof(
     query: &DriveDocumentQuery,
     proof: &Proof,
@@ -74,6 +80,7 @@ pub fn verify_composite_documents_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, CompositeDocuments), Error> {
+    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, result) = query
         .verify_composite_documents_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;

@@ -269,7 +269,9 @@ An outcome signed by a protocol newer than any this SDK build knows is checked
 with the newest layout and rules the build knows, so results stay verifiable
 after that protocol activates. The signature binds the protocol version to the
 state root, and the SDK learns the producer's version only after the signature
-and freshness checks pass.
+and freshness checks pass. Document query answers, unlike outcomes, must be
+signed at the version they are verified with (see
+[The Internal Fetch Pipeline](fetch-traits.md#the-internal-fetch-pipeline)).
 
 ### Timeout Handling
 

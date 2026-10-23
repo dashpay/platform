@@ -3,12 +3,18 @@ use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::trunk_branch_sync::{
     run_full_tree_scan, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
 };
+use crate::platform::DocumentQuery;
 use crate::Error;
+use dapi_grpc::platform::v0::get_documents_response::{
+    get_documents_response_v0::Result as DocumentsResult, GetDocumentsResponseV0,
+    Version as DocumentsResponseVersion,
+};
 use dapi_grpc::platform::v0::get_epochs_info_response::Version as EpochResponseVersion;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version as WaitResponseVersion;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, GetDataContractRequest, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, Proof, ResponseMetadata, WaitForStateTransitionResultResponse,
+    BroadcastStateTransitionRequest, GetDataContractRequest, GetDocumentsResponse,
+    GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
+    WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::Message;
@@ -21,9 +27,10 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use drive::grovedb::{GroveBranchQueryResult, GroveTrunkQueryResult, LeafInfo, MerkProofNode};
+use drive_proof_verifier::types::Documents;
 use drive_proof_verifier::{Error as ProofError, FromProof};
 use platform_version::version::PlatformVersion;
-use rs_dapi_client::{AddressList, DumpData, RequestSettings};
+use rs_dapi_client::{AddressList, CanRetry, DumpData, RequestSettings};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -830,4 +837,136 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
     assert!(outcome.is_execution_proved());
     assert!(outcome.owner_balance().is_some());
     assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
+}
+
+/// An SDK that verifies document outcomes at protocol 14 (the fixture contract's version)
+/// and starts at protocol `version`, pinned or seeded.
+fn document_sdk(version: u32, pinned: bool) -> Sdk {
+    let builder = SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .with_context_provider(DocumentOutcomeProvider::new(14))
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(10);
+    let version = PlatformVersion::get(version).unwrap();
+    if pinned {
+        builder.with_version(version)
+    } else {
+        builder.with_initial_version(version)
+    }
+    .build()
+    .unwrap()
+}
+
+/// Verify the document outcome signed at `version`, as an SDK does after a write.
+async fn verify_document_outcome_signed_at(sdk: &Sdk, version: u32) {
+    let (request, response) = document_outcome_response(version);
+    sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+        request,
+        response,
+        &DocumentOutcomeProvider::new(version),
+        "wait_for_state_transition_result",
+    )
+    .await
+    .expect("signed document outcome verifies");
+}
+
+/// Ask `sdk` to verify a document query answer signed at protocol 13. The verifier refuses
+/// it before reading its proof, so the proof bytes are arbitrary. Its height is above every
+/// height the SDK has seen, so learning from it would show.
+async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath) -> Error {
+    let provider = DocumentOutcomeProvider::new(14);
+    let query = DocumentQuery::new(provider.contract.clone(), "preorder").unwrap();
+    let response = GetDocumentsResponse {
+        version: Some(DocumentsResponseVersion::V0(GetDocumentsResponseV0 {
+            result: Some(DocumentsResult::Proof(Proof {
+                grovedb_proof: vec![1; 32],
+                ..Default::default()
+            })),
+            metadata: Some(ResponseMetadata {
+                height: 20,
+                protocol_version: 13,
+                ..Default::default()
+            }),
+        })),
+    };
+    match path {
+        ProofPath::Network => {
+            sdk.verify_fetching_quorum_key::<DocumentQuery, Documents>(
+                query,
+                response,
+                &provider,
+                "get_documents",
+            )
+            .await
+        }
+        ProofPath::Mock => {
+            sdk.parse_proof_with_metadata_and_proof::<DocumentQuery, Documents>(
+                query,
+                response,
+                "get_documents",
+            )
+            .await
+        }
+    }
+    .expect_err("a document answer signed below the verifier's version is not verified")
+}
+
+/// The stored version, the highest verified version and the height mark.
+fn learned_state(sdk: &Sdk) -> (u32, u32, u64) {
+    (
+        sdk.protocol_version_number(),
+        sdk.verified_protocol_version.load(Ordering::Relaxed),
+        sdk.metadata_last_seen_height.load(Ordering::Relaxed),
+    )
+}
+
+/// Once a verified answer has shown the network running the SDK's version, a node that
+/// answers a document query at an older version is behind: the error is retryable, so the
+/// request moves to another node and this one is banned, and nothing is learned from it.
+#[tokio::test]
+async fn should_retry_document_answers_signed_below_a_version_the_network_has_shown() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        let sdk = document_sdk(13, false);
+        verify_document_outcome_signed_at(&sdk, 14).await;
+        let learned = learned_state(&sdk);
+        assert_eq!(learned, (14, 14, 10));
+        let error = verify_older_document_answer(&sdk, path).await;
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::ProofProtocolVersionMismatch {
+                    signed: 13,
+                    verifier: 14
+                })
+            ),
+            "{error:?}"
+        );
+        assert!(error.can_retry());
+        assert_eq!(learned_state(&sdk), learned);
+    }
+}
+
+/// An SDK pinned, seeded or persisted ahead of its network has no verified answer at its
+/// own version. Every node would be refused and banned alike, emptying the pool, so a
+/// document query fails at once without a retry and nothing is learned from the answer.
+#[tokio::test]
+async fn should_fail_fast_on_document_answers_signed_below_a_version_the_network_has_not_shown() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        for pinned in [false, true] {
+            // Fresh, or having verified only answers signed below the SDK's version.
+            for network in [None, Some(13)] {
+                let sdk = document_sdk(14, pinned);
+                if let Some(network) = network {
+                    verify_document_outcome_signed_at(&sdk, network).await;
+                }
+                let learned = learned_state(&sdk);
+                assert_eq!(learned, (14, network.unwrap_or(0), 10));
+                let error = verify_older_document_answer(&sdk, path).await;
+                assert!(matches!(error, Error::Config(_)), "{error:?}");
+                assert!(!error.can_retry());
+                assert_eq!(learned_state(&sdk), learned);
+            }
+        }
+    }
 }

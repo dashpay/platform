@@ -52,7 +52,7 @@ pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    ensure_proof_signed_at_verifier_version, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -1932,6 +1932,7 @@ where
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
 
         let (root_hash, documents) = request
             .verify_proof(supported_grovedb_proof_bytes(proof)?, platform_version)

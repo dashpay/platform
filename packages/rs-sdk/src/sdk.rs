@@ -71,6 +71,9 @@ impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
 }
 
 /// Select proof rules without weakening the SDK's stored version.
+///
+/// Document query verifiers also require the answer to be signed at the selected
+/// version.
 pub(crate) fn verifier_version(
     stored: &'static PlatformVersion,
     signed: u32,
@@ -517,6 +520,34 @@ impl Sdk {
         Ok(())
     }
 
+    /// Turn a proof verifier error into an SDK error.
+    ///
+    /// Document queries are verified only at the protocol version that signed the
+    /// answer ([`drive_proof_verifier::Error::ProofProtocolVersionMismatch`]). An answer
+    /// signed below the SDK's version is classified by what verified answers have shown:
+    /// * the network runs the SDK's version: the node is behind, so the error stays
+    ///   [`Error::Proof`], the request moves to another node and this one is banned;
+    /// * nothing has shown it yet: the SDK may be pinned, seeded or persisted ahead of its
+    ///   network, where every node would be refused and banned alike, so the query fails
+    ///   at once with [`Error::Config`] and no node is banned.
+    fn classify_verifier_error(&self, error: drive_proof_verifier::Error) -> Error {
+        if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
+            error
+        {
+            if signed < verifier
+                && self.verified_protocol_version.load(Ordering::Relaxed) < verifier
+            {
+                return Error::Config(format!(
+                    "this answer names protocol version {signed}, below the SDK's \
+                     protocol version {verifier}, and no verified answer has yet shown the \
+                     network running {verifier}; if the SDK was set ahead of its network, let \
+                     it follow the network's protocol version instead"
+                ));
+            }
+        }
+        error.into()
+    }
+
     /// Update the stored protocol version if `received_version` is newer and known.
     ///
     /// Uses `fetch_max` so the highest version always wins under concurrent updates.
@@ -630,6 +661,9 @@ impl Sdk {
     /// requests also need a verified network version before they use a newer
     /// request version (see
     /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
+    /// Document query answers signed below the stored version are not verified:
+    /// they fail with [`Error::Proof`] once a verified answer has shown the network
+    /// running the stored version, and with [`Error::Config`] before that.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -651,11 +685,11 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let (verified, from_expectation) = mock.lock().await.parse_proof_with_metadata(
-                    request,
-                    response,
-                    self.version(),
-                )?;
+                let (verified, from_expectation) = mock
+                    .lock()
+                    .await
+                    .parse_proof_with_metadata(request, response, self.version())
+                    .map_err(|error| self.classify_verifier_error(error))?;
                 if from_expectation {
                     // An expectation's metadata is made up, not verified: it moves
                     // the stored version as a real answer would, but is no evidence
@@ -1174,6 +1208,8 @@ impl SdkBuilder {
     /// Some requests also need a verified network version before they use a newer
     /// request version (see
     /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
+    /// Document queries need answers signed at least at the pinned version: pinned
+    /// above the network, they fail with [`Error::Config`].
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].

@@ -26,7 +26,9 @@
 //! contract, which this crate does not carry.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{
+    ensure_proof_signed_at_verifier_version, supported_grovedb_proof_bytes, verify_tenderdash_proof,
+};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     ranked_entry, result_data, RankedEntry as ProtoRankedEntry, ResultData,
@@ -324,6 +326,10 @@ pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<Ranked
 /// log or cross-check it (e.g. against a root hash they verified for a
 /// different query at the same height). Callers must not treat it as
 /// something they still have to check.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_ranked_top_k_proof(
     query: &DriveDocumentRankedQuery,
     proof: &Proof,
@@ -331,6 +337,7 @@ pub fn verify_ranked_top_k_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, RankedPage), Error> {
+    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, page) = query
         .verify_ranked_top_k_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;

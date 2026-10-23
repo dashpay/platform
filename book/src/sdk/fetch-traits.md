@@ -308,6 +308,16 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    `FromProof::maybe_from_proof_with_metadata`, which verifies the GroveDB proof
    against quorum signatures.
 
+   Document queries (documents, counts, sums, averages and their split forms,
+   ranked, having, composite and chained queries) are rebuilt with the rules of
+   the protocol version they are verified with, so their answers must be signed
+   at that version. Once a verified answer has shown the network running the
+   SDK's protocol version, an answer from a node still on an older version fails
+   with a retryable proof error and the request moves to another node. Until
+   then such an answer fails the query with `Error::Config` and no node is
+   excluded, as for an SDK set to a newer protocol version than its network
+   runs.
+
 4. **Metadata validation**: The SDK checks that the response metadata (height, time)
    is fresh enough based on the configured tolerances.
 

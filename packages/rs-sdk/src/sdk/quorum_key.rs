@@ -73,7 +73,7 @@ impl Sdk {
             ..
         } = missing
         else {
-            return Err(missing.into());
+            return Err(self.classify_verifier_error(missing));
         };
         let Some(fetch) =
             provider.fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
@@ -113,7 +113,7 @@ impl Sdk {
                     self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                     Ok(verified)
                 }
-                Err(error) => Err(error.into()),
+                Err(error) => Err(self.classify_verifier_error(error)),
             },
             Ok(None) => {
                 tracing::warn!(
