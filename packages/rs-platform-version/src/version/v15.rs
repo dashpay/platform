@@ -152,8 +152,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    document type's schema with the rules of document meta-schema v3 in
 ///    Platform's own code instead of through the `jsonschema` crate, refusing
 ///    with the same `JsonSchemaError`. It holds an index property name to 255
-///    bytes, where the meta-schema admitted 256 characters, and refuses a
-///    document type the typed validation schema does not represent
+///    bytes, where the meta-schema admitted 256 characters, compares the
+///    numbers of a list that must be unique, such as an `enum`'s members, by
+///    value however long the list, as the document check of note 6 does, and
+///    refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
 ///    at both versions, and loading a stored contract runs no schema check.
