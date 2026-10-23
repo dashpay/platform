@@ -560,12 +560,16 @@ impl MockDashPlatformSdk {
     }
 
     /// Wrapper around [FromProof] that uses mock expectations, falling back to [FromProof] if no expectation is found.
+    ///
+    /// The flag is `true` when an expectation answered, so the metadata was made up
+    /// rather than verified.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
         &self,
         request: O::Request,
         response: O::Response,
         platform_version: &'static PlatformVersion,
-    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    ) -> Result<((Option<O>, ResponseMetadata, Proof), bool), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
         O::Response: ProofResponseMetadata,
@@ -579,12 +583,15 @@ impl MockDashPlatformSdk {
             // (`maybe_update_protocol_version`) fires as it would against a real
             // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
-                Option::<O>::mock_deserialize(self, d),
-                ResponseMetadata {
-                    protocol_version: dpp::version::LATEST_VERSION,
-                    ..Default::default()
-                },
-                Proof::default(),
+                (
+                    Option::<O>::mock_deserialize(self, d),
+                    ResponseMetadata {
+                        protocol_version: dpp::version::LATEST_VERSION,
+                        ..Default::default()
+                    },
+                    Proof::default(),
+                ),
+                true,
             ),
             None => {
                 let platform_version = verifier_version(
@@ -595,13 +602,16 @@ impl MockDashPlatformSdk {
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof_with_metadata(
-                    request,
-                    response,
-                    Network::Regtest,
-                    platform_version,
-                    &provider,
-                )?
+                (
+                    O::maybe_from_proof_with_metadata(
+                        request,
+                        response,
+                        Network::Regtest,
+                        platform_version,
+                        &provider,
+                    )?,
+                    false,
+                )
             }
         };
 

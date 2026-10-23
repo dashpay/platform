@@ -1,3 +1,15 @@
+## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** version the non-unique identity lookup so 4.1 clients keep working (#5515)
+
+### Bug Fixes
+
+* **sdk:** verify operation proofs signed by older and newer protocol versions ([#5541](https://github.com/dashpay/platform/issues/5541))
+* **sdk:** version the non-unique identity lookup so 4.1 clients keep working ([#5515](https://github.com/dashpay/platform/issues/5515))
+
 ## [5.0.0-rc.7](https://github.com/dashpay/platform/compare/v5.0.0-rc.6...v5.0.0-rc.7) (2026-10-21)
 
 
