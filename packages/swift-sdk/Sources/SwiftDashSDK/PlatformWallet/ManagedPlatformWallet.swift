@@ -3739,12 +3739,12 @@ extension ManagedPlatformWallet {
     /// revision this update can land at: Drive takes an identity update
     /// only at one above the identity's revision. Read the revision to
     /// record from `nextIdentityUpdateRevision(identityId:)`. When Drive
-    /// refuses the update for its revision and reports one below the
-    /// cached identity's, the call throws
-    /// `PlatformWalletError.identityRevisionRefused` and the reader then
-    /// gives the revision Drive takes. `nil` takes whatever the cache
-    /// gives, and on such a refusal is sent once more at the revision Drive
-    /// takes.
+    /// refuses the update for its revision and proofs show the refused
+    /// transition's nonce spent and the identity below that revision, the
+    /// call throws `PlatformWalletError.identityRevisionRefused` and the
+    /// reader then gives the revision Drive takes. `nil` takes whatever the
+    /// cache gives, and on such a refusal is sent once more at one above the
+    /// proved revision.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
@@ -3759,14 +3759,16 @@ extension ManagedPlatformWallet {
         }
         let addPubkeys = addPublicKeys
         let disableIds = disablePublicKeyIds
-        try await Task.detached(priority: .userInitiated) {
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        try await Task.detached(priority: .userInitiated) { [self] in
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
             // FFI sees stays valid for the call duration.
             let pubkeyBuffers: [Data] = addPubkeys.map { $0.pubkeyBytes }
             // The Rust worker borrows the signer's vtable for the whole
             // synchronous call, so the signer must outlive it.
-            let result = withExtendedLifetime(signer) {
+            let result = withExtendedLifetime((self, signer)) {
                 idBytes.withUnsafeBufferPointer {
                     idBp -> PlatformWalletFFIResult in
                     disableIds.withUnsafeBufferPointer { disableBp -> PlatformWalletFFIResult in
@@ -3800,20 +3802,26 @@ extension ManagedPlatformWallet {
     /// The revision the next `updateIdentity` of `identityId` carries: one
     /// above the cached identity's, or, after
     /// `PlatformWalletError.identityRevisionRefused`, one above the revision
-    /// Drive reported while the cache is still where it was then. Record it
-    /// before submitting and pass it as `updateIdentity(…, revision:)`.
+    /// proved while the cache is still where it was then. Record it before
+    /// submitting and pass it as `updateIdentity(…, revision:)`. The note of
+    /// a refusal lives in memory: after a restart this gives one above the
+    /// cached identity's again.
     public func nextIdentityUpdateRevision(identityId: Identifier) async throws -> UInt64 {
-        let handle = self.handle
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await Task.detached(priority: .userInitiated) {
-            var revision: UInt64 = 0
-            let result = idBytes.withUnsafeBufferPointer { idBp in
-                platform_wallet_identity_next_update_revision(handle, idBp.baseAddress!, &revision)
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> UInt64 in
+            try withExtendedLifetime(self) {
+                var revision: UInt64 = 0
+                let result = idBytes.withUnsafeBufferPointer { idBp in
+                    platform_wallet_identity_next_update_revision(
+                        handle, idBp.baseAddress!, &revision)
+                }
+                try result.check()
+                return revision
             }
-            try result.check()
-            return revision
         }.value
     }
 

@@ -251,13 +251,14 @@ sealed class DashSdkError(
 
         /**
          * `ErrorIdentityRevisionRefused` (native code 63). Drive refused an
-         * identity update asked for a revision, for its revision, and
-         * reported one below the cached identity's (a cache ahead of the
-         * chain). Drive charged a processing fee and took the nonce; nothing
-         * else changed, and the cache
-         * was left as it is; the revisions are in [message]. Not retryable
-         * as is: the next update may ask for the revision Drive reported plus
-         * one. Port of Swift `PlatformWalletError.identityRevisionRefused`.
+         * identity update asked for a revision, for its revision, and proofs
+         * show its nonce spent and the identity at a revision below the one
+         * it would take (a cache ahead of the chain). Drive charged a
+         * processing fee and took the nonce, so the refused update can never
+         * execute; nothing else changed, and the cache was left as it is;
+         * the revisions are in [message]. Not retryable as is: the next
+         * update may ask for the proved revision plus one. Port of Swift
+         * `PlatformWalletError.identityRevisionRefused`.
          */
         class IdentityRevisionRefused(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

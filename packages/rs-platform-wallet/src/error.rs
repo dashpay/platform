@@ -101,10 +101,12 @@ pub enum PlatformWalletError {
     },
 
     /// Drive refused an identity update asked to carry `refused` for its
-    /// revision, and reported `drive_revision`, below the cached identity's:
+    /// revision, and proofs show the refused transition's nonce spent and
+    /// the identity at `drive_revision`, below the revision it would take:
     /// the cache is ahead of the chain. Drive charged a processing fee and
-    /// took the nonce; nothing else changed. The cache is left as it is; the next update may be asked to
-    /// carry `drive_revision + 1`
+    /// took the nonce, so the refused transition can never execute; nothing
+    /// else changed. The cache is left as it is; the next update may be
+    /// asked to carry `drive_revision + 1` while the cache has not moved
     /// (`IdentityWallet::next_update_revision` gives it).
     #[error(
         "identity {identity_id}: Drive refused the update at revision {refused} and holds \

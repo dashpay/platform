@@ -350,9 +350,11 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
 /// before anything is signed or broadcast, so a caller that recorded
 /// `revision` knows the only revision this update can land at. Read the
 /// revision to record from [`platform_wallet_identity_next_update_revision`].
-/// When Drive refuses the update for its revision and reports one below the
-/// cached identity's, the call fails with `ErrorIdentityRevisionRefused`
-/// (63) and the next call to that reader gives the revision Drive takes.
+/// When Drive refuses the update for its revision and proofs show the
+/// refused transition's nonce spent and the identity below that revision,
+/// the call fails with `ErrorIdentityRevisionRefused` (63) and the next
+/// call to that reader gives the revision Drive takes. Any other failure
+/// keeps its own code.
 ///
 /// # Safety
 /// Same pointer, length and lifetime rules as
@@ -385,8 +387,9 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
 /// `out_revision`: one above the cached identity's, or, after
 /// Drive refused the last update for its revision below the cache's
 /// (`ErrorIdentityRevisionRefused` for a pinned update), one above the
-/// revision Drive reported while the cache is still where it was then. Record it before
-/// submitting and pass it to
+/// proved revision while the cache is still where it was then. The note
+/// lives in memory: after a restart this gives one above the cache again.
+/// Record it before submitting and pass it to
 /// [`platform_wallet_update_identity_with_signer_at_revision`].
 ///
 /// # Safety

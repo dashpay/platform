@@ -58,14 +58,17 @@ pub struct ManagedIdentity {
     /// retry. Query results are published only after that retry commits.
     pending_balance_snapshot: Option<(u64, BlockTime)>,
 
-    /// The revision Drive reported when it refused an update of this
-    /// identity for its revision, below the cached one, with the cached
-    /// revision it was refused against: `(cached, drive)`. Memory only and
-    /// unproven: it lets the next update be asked to carry `drive + 1`
-    /// while the cache is still at `cached`, and changes nothing else.
+    /// The identity's proved revision after Drive refused an update of it
+    /// for its revision, below the cached one, with the cached revision it
+    /// was refused against: `(cached, drive)`. Noted only once proofs show
+    /// the refused transition's nonce spent (it can never execute). Memory
+    /// only: it lets the next update be asked to carry `drive + 1` while the
+    /// cache is still at `cached`, and changes nothing else.
     pub(crate) revision_refused_at: Option<(u64, u64)>,
 
-    /// Last block time when keys were synced for this identity
+    /// Block of the last fetch whose key states the cache took whole: a
+    /// fetch at the cached revision takes its key states only from a block
+    /// at or above it (see `take_fetched_identity`).
     pub last_synced_keys_block_time: Option<BlockTime>,
 
     /// Identity lifecycle status on Platform.

@@ -624,10 +624,11 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::IdentityRevisionRefused`: Drive refused an
     /// identity update asked to carry a revision, for its revision, and
-    /// reported one below the cached identity's (a cache ahead of the
-    /// chain). Drive charged a processing fee and took the nonce; nothing else
-    /// changed, and the cache was
-    /// left as it is. Read the revision Drive takes from
+    /// proofs show its nonce spent and the identity at a revision below the
+    /// one it would take (a cache ahead of the chain). Drive charged a
+    /// processing fee and took the nonce, so the refused update can never
+    /// execute; nothing else changed, and the cache was left as it is. Read
+    /// the revision Drive takes from
     /// `platform_wallet_identity_next_update_revision`, record it, and
     /// update again asking for it. The revisions are in the message.
     ErrorIdentityRevisionRefused = 63,

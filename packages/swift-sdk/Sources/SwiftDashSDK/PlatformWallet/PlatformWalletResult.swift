@@ -268,8 +268,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// give it; refused before signing, nothing was broadcast.
     case errorIdentityRevisionMismatch = 62
     /// Drive refused an identity update asked for a revision, for its
-    /// revision, and reported one below the cached identity's. Nothing
-    /// changed but a processing fee and the nonce;
+    /// revision, and proofs show the identity below it. Nothing changed but
+    /// a processing fee and the nonce;
     /// `nextIdentityUpdateRevision` gives the one Drive takes.
     case errorIdentityRevisionRefused = 63
     /// The named thing does not exist. Besides the handle/lookup failures this
@@ -574,10 +574,11 @@ public enum PlatformWalletError: LocalizedError {
     /// identity and decide again rather than retrying the same call.
     case identityRevisionMismatch(String)
     /// `updateIdentity(…, revision:)` was refused by Drive for its revision,
-    /// and Drive reported one below the cached identity's (a cache ahead of
-    /// the chain). Drive charged a processing fee and took the nonce; nothing
-    /// else changed, and the cache was left as it is; the revisions are in
-    /// the message. Read the revision Drive takes from
+    /// and proofs show its nonce spent and the identity at a revision below
+    /// the one it would take (a cache ahead of the chain). Drive charged a
+    /// processing fee and took the nonce, so the refused update can never
+    /// execute; nothing else changed, and the cache was left as it is; the
+    /// revisions are in the message. Read the revision Drive takes from
     /// `nextIdentityUpdateRevision(identityId:)`, record it, and update
     /// again asking for it.
     case identityRevisionRefused(String)

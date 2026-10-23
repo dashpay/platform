@@ -178,9 +178,11 @@ impl ManagedIdentity {
         }
     }
 
-    /// Update the last keys sync block time.
-    ///
-    /// Persists the resulting changeset via `persister` and returns `()`.
+    /// Set the key watermark (`last_synced_keys_block_time`) to
+    /// `block_time`, as is, and persist the scalar snapshot. A fetch at the
+    /// cached revision then takes its key states only from that block or a
+    /// later one (see `take_fetched_identity`), so set it only from a block
+    /// whose key states the cache holds.
     pub fn update_keys_sync_block_time(
         &mut self,
         block_time: BlockTime,
