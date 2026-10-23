@@ -128,7 +128,9 @@ impl Sdk {
         let Some(required) = required else {
             return Ok(());
         };
-        let cause = match decide(required, &self.gate_state()) {
+        let state = self.gate_state();
+        let pinned = state.pinned && state.settings.protocol_version.protocol_version < required;
+        let cause = match decide(required, &state) {
             Gate::Send => return Ok(()),
             Gate::Refuse => None,
             Gate::Probe => self
@@ -146,6 +148,7 @@ impl Sdk {
             method,
             required,
             network,
+            pinned,
             cause,
         })
     }
@@ -161,7 +164,14 @@ impl Sdk {
             prove: true,
             ..self.query_settings()
         })?;
-        ExtendedEpochInfo::fetch_with_metadata(self, request, settings).await?;
+        let mut settings = settings.unwrap_or_default();
+        if !self.prove() {
+            // An SDK that does not ask for proofs may hold a context provider that cannot
+            // give quorum keys. Its probe then fails on every node, which says nothing
+            // about the nodes, so it bans none of them.
+            settings.ban_failed_address = Some(false);
+        }
+        ExtendedEpochInfo::fetch_with_metadata(self, request, Some(settings)).await?;
         Ok(())
     }
 

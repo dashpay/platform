@@ -285,16 +285,18 @@ impl From<SdkError> for WasmSdkError {
             EncryptedFor(e) => e.into(),
             error @ ProtocolVersionNotActive { .. } => {
                 // The SDK's message names what is missing; a failed query for the network's
-                // version is its source, and JS sees only the message.
-                let message = match std::error::Error::source(&error) {
-                    Some(cause) => format!("{error}: {cause}"),
-                    None => error.to_string(),
+                // version is its source, and JS sees only the message. Without that query
+                // failing, the refusal holds until the network activates the version; with
+                // it, the network may already serve the request, so the app may retry.
+                let (message, retriable) = match std::error::Error::source(&error) {
+                    Some(cause) => (format!("{error}: {cause}"), true),
+                    None => (error.to_string(), false),
                 };
                 Self::new(
                     WasmSdkErrorKind::ProtocolVersionNotActive,
                     message,
                     None,
-                    false,
+                    retriable,
                 )
             }
         }
@@ -584,38 +586,41 @@ mod tests {
     }
 
     /// A query the network cannot serve yet is refused before it is sent: JS can tell it
-    /// from other failures by its kind, and retrying it sooner does not help.
+    /// from other failures by its kind, and retrying it sooner does not help, unless the
+    /// query for the network's version failed: then the network may serve it already.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     fn should_report_a_query_the_network_cannot_serve_yet_by_its_kind() {
-        let refused = SdkError::ProtocolVersionNotActive {
-            method: "get_contract_fee_pots",
-            required: 14,
-            network: 13,
-            cause: None,
-        };
-        let message = refused.to_string();
-        let error = WasmSdkError::from(refused);
-        assert_eq!(error.kind(), WasmSdkErrorKind::ProtocolVersionNotActive);
-        assert_eq!(error.name(), "ProtocolVersionNotActive");
-        assert!(!error.is_retriable());
-        assert_eq!(error.message(), message);
+        for pinned in [false, true] {
+            let refused = SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 13,
+                pinned,
+                cause: None,
+            };
+            let message = refused.to_string();
+            let error = WasmSdkError::from(refused);
+            assert_eq!(error.kind(), WasmSdkErrorKind::ProtocolVersionNotActive);
+            assert_eq!(error.name(), "ProtocolVersionNotActive");
+            assert!(!error.is_retriable(), "pinned {pinned}");
+            assert_eq!(error.message(), message);
+        }
 
         let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
             network: 0,
+            pinned: false,
             cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
         });
         assert_eq!(
             unconfirmed.kind(),
             WasmSdkErrorKind::ProtocolVersionNotActive
         );
-        assert!(!unconfirmed.is_retriable());
+        assert!(unconfirmed.is_retriable());
         assert!(
-            unconfirmed
-                .message()
-                .ends_with("SDK error: all nodes refused"),
+            unconfirmed.message().contains("all nodes refused"),
             "the reason the version is unknown reaches JS: {}",
             unconfirmed.message()
         );

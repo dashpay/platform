@@ -72,6 +72,8 @@ where
     {
         // Default implementation
         let settings = sdk.query_settings().without_proofs();
+        // Answers are read with the version the request was encoded with.
+        let platform_version = settings.protocol_version;
         let request: &<Self as FetchUnproved>::Request = &query.query(&settings)?;
         let required_protocol_version = request.needs_protocol_version();
         sdk.ensure_network_serves(
@@ -98,7 +100,7 @@ where
                     request.clone(),
                     response,
                     sdk.network,
-                    sdk.version(),
+                    platform_version,
                 )
                 .map_err(Error::from)
                 .and_then(|parsed| {

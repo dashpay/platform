@@ -245,14 +245,16 @@ impl From<FFIError> for DashSDKError {
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
                 } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
                     // The SDK refused a request the network cannot serve yet, without
-                    // sending it: not a network failure, and retrying sooner does not help.
-                    // A failed query for the network's version is its source; keep it in
-                    // the message the host reads.
-                    let message = match std::error::Error::source(sdk_err) {
-                        Some(cause) => format!("{error_str}: {cause}"),
-                        None => error_str,
-                    };
-                    (DashSDKErrorCode::ProtocolError, message)
+                    // sending it, and retrying sooner does not help. Unless the query for
+                    // the network's version failed: then the network may serve it already,
+                    // the failure is the network's, and it is kept in the message.
+                    match std::error::Error::source(sdk_err) {
+                        Some(cause) => (
+                            DashSDKErrorCode::NetworkError,
+                            format!("{error_str}: {cause}"),
+                        ),
+                        None => (DashSDKErrorCode::ProtocolError, error_str),
+                    }
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
@@ -478,22 +480,29 @@ mod tests {
         }
     }
 
-    /// A request the network cannot serve yet is refused before it is sent. Its message
-    /// may name DAPI or a timeout from the failed query for the network's version, which
-    /// the substring chain would turn into a retryable network error.
+    /// A request the network cannot serve yet is refused before it is sent: a protocol
+    /// error, not a network one, whatever words a method name holds. When the query for the
+    /// network's version failed, the network may serve it already: that failure is the
+    /// network's, and the host reads it in the message.
     #[test]
-    fn protocol_version_not_active_maps_to_protocol_error() {
-        for cause in [
-            None,
-            Some(dash_sdk::Error::Generic(
-                "dapi: request timeout, connection refused".to_string(),
-            )),
+    fn should_map_a_request_the_network_cannot_serve_yet_to_protocol_error() {
+        for (cause, pinned, expected) in [
+            (None, false, DashSDKErrorCode::ProtocolError),
+            (None, true, DashSDKErrorCode::ProtocolError),
+            (
+                Some(dash_sdk::Error::Generic(
+                    "dapi: request timeout, connection refused".to_string(),
+                )),
+                false,
+                DashSDKErrorCode::NetworkError,
+            ),
         ] {
             let has_cause = cause.is_some();
             let err = dash_sdk::Error::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
                 network: 13,
+                pinned,
                 cause: cause.map(Box::new),
             };
             let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
@@ -504,8 +513,8 @@ mod tests {
                 let _ = CString::from_raw(dash_sdk_error.message);
                 message
             };
-            assert_eq!(dash_sdk_error.code, DashSDKErrorCode::ProtocolError);
-            assert!(message.starts_with("get_contract_fee_pots needs Platform protocol version 14"));
+            assert_eq!(dash_sdk_error.code, expected, "{message}");
+            assert!(message.contains("get_contract_fee_pots"), "{message}");
             assert_eq!(
                 message.contains("connection refused"),
                 has_cause,

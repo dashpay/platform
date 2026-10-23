@@ -439,7 +439,11 @@ impl Sdk {
     }
 
     /// Check that response metadata is fresh: its time within the time tolerance, and
-    /// its height not too far below the highest height seen so far, which it may raise.
+    /// its height not too far below the highest height seen so far.
+    ///
+    /// Pass only the metadata of an answer whose proof and quorum signature were
+    /// verified: its height raises the height every later answer is checked against,
+    /// for this SDK and its clones.
     ///
     /// Protocol versions are learned only from answers the SDK verified itself, so
     /// this changes neither [`Self::version`] nor the network version the SDK has
@@ -498,8 +502,10 @@ impl Sdk {
     /// Record the protocol version of a fresh response whose proof and signature
     /// were verified. Never lowers it; unknown versions are recorded too.
     fn record_verified_protocol_version(&self, protocol_version: u32) {
+        // Release: a reader that sees this version also sees the stored version this
+        // answer ratcheted before it (see `query_settings`).
         self.verified_protocol_version
-            .fetch_max(protocol_version, Ordering::Relaxed);
+            .fetch_max(protocol_version, Ordering::Release);
     }
 
     /// Accept the metadata of a response whose proof and signature were
@@ -805,7 +811,8 @@ impl Sdk {
     /// network a verified answer showed runs a version this build does not know
     /// encodes with the newest version it knows, the rules it reads those answers with.
     pub fn query_settings(&self) -> crate::platform::QuerySettings<'_> {
-        let verified = self.verified_protocol_version.load(Ordering::Relaxed);
+        // Acquire, before reading the stored version: see `record_verified_protocol_version`.
+        let verified = self.verified_protocol_version.load(Ordering::Acquire);
         crate::platform::QuerySettings {
             request_settings: &self.dapi_client_settings,
             protocol_version: protocol_gate::version_for_requests(
@@ -2368,7 +2375,7 @@ mod test {
     /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
     /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
     /// Both ratchet sites run the `FromProof` verifier (structural + `verify_tenderdash_proof`)
-    /// BEFORE `verify_response_metadata` → `maybe_update_protocol_version`: the query path via
+    /// BEFORE `accept_verified_metadata` → `maybe_update_protocol_version`: the query path via
     /// `parse_proof_with_metadata_and_proof`, the broadcast wait-path in `broadcast.rs` (see the
     /// guard comments at both call sites). Here we lock in the ratchet's own gates: it must NOT
     /// raise the stored version off untrustworthy inputs (unknown / zero / lower), so even a

@@ -48,8 +48,8 @@ use drive_abci::platform_types::platform_state::{PlatformState, PlatformStateV0M
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use drive_proof_verifier::types::{
-    MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedNotesCount,
-    ShieldedNullifierStatuses, ShieldedPoolState,
+    Documents, MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes,
+    ShieldedNotesCount, ShieldedNullifierStatuses, ShieldedPoolState,
 };
 use drive_proof_verifier::{
     ChainedDocuments, CompositeDocuments, ContextProvider, ContextProviderError, FromProof,
@@ -383,6 +383,19 @@ fn should_refuse_an_older_node_answer_to_a_composite_query() {
         let request = GetDocumentsRequest::try_from_platform_versioned(query.clone(), sender)
             .expect("encode the composite query");
         let answer = node.answer_as_older_node(&request, v13());
+        // The answer is a genuine, verifiable answer to the plain page.
+        let mut page = query.clone();
+        page.sub_queries.clear();
+        let documents = <Documents as FromProof<DocumentQuery>>::maybe_from_proof(
+            page,
+            answer.clone(),
+            Network::Testnet,
+            v13(),
+            &Provider,
+        )
+        .expect("the answer proves the plain page")
+        .expect("documents");
+        assert_eq!(documents.len(), 2);
         for rules in [v13(), v14()] {
             let verified = <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof(
                 query.clone(),
@@ -443,11 +456,22 @@ fn should_refuse_an_older_node_answer_to_a_chained_query() {
             value: Value::Identifier(owner),
         })
         .with_limit(10);
-    let query = ChainedDocumentQuery::new(inner, "postId", "post");
+    let query = ChainedDocumentQuery::new(inner.clone(), "postId", "post");
     for sender in [v13(), v14()] {
         let request = GetDocumentsRequest::try_from_platform_versioned(query.clone(), sender)
             .expect("encode the chained query");
         let answer = node.answer_as_older_node(&request, v14());
+        // The answer is a genuine, verifiable answer to the inner query.
+        let likes = <Documents as FromProof<DocumentQuery>>::maybe_from_proof(
+            inner.clone(),
+            answer.clone(),
+            Network::Testnet,
+            v14(),
+            &Provider,
+        )
+        .expect("the answer proves the inner query")
+        .expect("documents");
+        assert_eq!(likes.len(), 2);
         for rules in [v13(), v14()] {
             let verified = <ChainedDocuments as FromProof<ChainedDocumentQuery>>::maybe_from_proof(
                 query.clone(),
@@ -505,6 +529,15 @@ fn should_refuse_an_older_node_answer_to_a_token_pool_request() {
             };
             sign(proof, &mut metadata, node.root());
             v0.metadata = Some(metadata);
+            // The answer is a genuine, verifiable answer about the credit pool.
+            <$object as FromProof<$request>>::maybe_from_proof(
+                request(None),
+                answer.clone(),
+                Network::Testnet,
+                v13(),
+                &Provider,
+            )
+            .expect("the answer proves the credit pool");
             for rules in [v13(), v14()] {
                 let verified = <$object as FromProof<$request>>::maybe_from_proof(
                     request(token_id.clone()),

@@ -146,7 +146,7 @@ pub enum Error {
     /// `required`. See [`TransportRequest::needs_protocol_version`](rs_dapi_client::transport::TransportRequest::needs_protocol_version).
     #[error(
         "{method} needs Platform protocol version {required}; {}",
-        describe_proven_protocol_version(*.network, .cause.is_some())
+        describe_proven_protocol_version(*.network, *.pinned, .cause.is_some())
     )]
     ProtocolVersionNotActive {
         /// gRPC method of the refused request, e.g. `get_contract_fee_pots`.
@@ -156,20 +156,31 @@ pub enum Error {
         /// Protocol version the SDK could rely on: the lower of its own version and the
         /// newest version a verified answer was signed with; 0 before any verified answer.
         network: u32,
+        /// Whether the SDK is pinned to a version below `required`
+        /// ([`SdkBuilder::with_version`](crate::SdkBuilder::with_version)): then no answer
+        /// can lift the refusal, whatever the network runs.
+        pinned: bool,
         /// Why the network's version could not be confirmed, when a query for it failed.
+        /// The refusal may then be transient.
         #[source]
         cause: Option<Box<Error>>,
     },
 }
 
 /// The end of [`Error::ProtocolVersionNotActive`]'s message.
-fn describe_proven_protocol_version(network: u32, confirmation_failed: bool) -> String {
-    if confirmation_failed {
+fn describe_proven_protocol_version(
+    network: u32,
+    pinned: bool,
+    confirmation_failed: bool,
+) -> String {
+    if pinned {
+        "this SDK is pinned to an earlier protocol version".to_string()
+    } else if confirmation_failed {
         "the network's protocol version could not be confirmed".to_string()
     } else if network == 0 {
         "the network's protocol version is not verified yet".to_string()
     } else {
-        format!("only protocol version {network} is proven for this SDK")
+        format!("the network is proven at protocol version {network}")
     }
 }
 
@@ -524,36 +535,42 @@ mod tests {
     }
 
     /// Another node cannot serve a request the network has not activated yet, and the
-    /// refusal names no node to ban. A stale answer to such a request is retried elsewhere.
+    /// refusal names no node to ban. The message says why it was refused. A stale answer to
+    /// such a request is retried elsewhere.
     #[test]
     fn should_not_retry_a_request_the_network_cannot_serve_yet() {
-        let refused = Error::ProtocolVersionNotActive {
+        let refused = |network, pinned, cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
-            network: 13,
-            cause: None,
+            network,
+            pinned,
+            cause: cause.map(Box::new),
         };
-        assert!(!refused.can_retry());
-        assert_eq!(
-            refused.to_string(),
-            "get_contract_fee_pots needs Platform protocol version 14; only protocol version 13 \
-             is proven for this SDK"
-        );
-        let unverified = Error::ProtocolVersionNotActive {
-            method: "get_contract_fee_pots",
-            required: 14,
-            network: 0,
-            cause: None,
-        };
-        assert!(unverified.to_string().ends_with("not verified yet"));
-        let unconfirmed = Error::ProtocolVersionNotActive {
-            method: "get_contract_fee_pots",
-            required: 14,
-            network: 0,
-            cause: Some(Box::new(Error::Generic("offline".to_string()))),
-        };
-        assert!(!unconfirmed.can_retry());
-        assert!(std::error::Error::source(&unconfirmed).is_some());
+        for (error, reason) in [
+            (refused(13, false, None), "proven at protocol version 13"),
+            (refused(0, false, None), "not verified"),
+            (refused(0, true, None), "pinned"),
+            (refused(13, true, None), "pinned"),
+            (
+                refused(0, false, Some(Error::Generic("offline".to_string()))),
+                "could not be confirmed",
+            ),
+        ] {
+            assert!(!error.can_retry(), "{error}");
+            let message = error.to_string();
+            assert!(
+                message.contains("get_contract_fee_pots")
+                    && message.contains("version 14")
+                    && message.contains(reason),
+                "{message}"
+            );
+        }
+        assert!(std::error::Error::source(&refused(
+            0,
+            false,
+            Some(Error::Generic("offline".into()))
+        ))
+        .is_some());
         assert!(Error::StaleNode(StaleNodeError::ProtocolVersion {
             required: 14,
             signed: 13,

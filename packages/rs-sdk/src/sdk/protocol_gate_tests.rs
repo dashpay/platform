@@ -19,6 +19,7 @@ use crate::platform::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{IdentityRequest, NonUniquePublicKeyHashQuery};
 use crate::platform::{
     ChainedDocumentQuery, ChainedDocuments, CompositeDocuments, CompositeSubQuery, DocumentQuery,
@@ -75,7 +76,7 @@ use tokio::sync::Mutex;
 
 /// The protocol version a later protocol upgrade's requests need.
 const V14: u32 = PROTOCOL_VERSION_14;
-/// The protocol version mainnet runs before that upgrade activates.
+/// The protocol version before that upgrade.
 const V13: u32 = PROTOCOL_VERSION_13;
 /// The version `epoch-probe-newer.bin` is signed as: newer than any build knows.
 const NEWER: u32 = 1_000;
@@ -122,6 +123,37 @@ impl ContextProvider for Provider {
     }
 }
 
+/// Knows no quorum keys, as a host's provider that cannot reach its quorum source.
+struct NoQuorumKeys;
+impl ContextProvider for NoQuorumKeys {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        _: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        Err(ContextProviderError::InvalidQuorum(
+            "no quorum keys here".to_string(),
+        ))
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
 /// The node every answer comes from. It is in the SDK's address list, so a ban shows.
 fn node() -> Address {
     "http://127.0.0.1:9000".parse().unwrap()
@@ -134,10 +166,20 @@ fn mock_sdk(seed: u32, pinned: bool, verified: u32) -> Sdk {
 }
 
 fn sdk_with_proofs(seed: u32, pinned: bool, verified: u32, proofs: bool) -> Sdk {
+    sdk_with_provider(seed, pinned, verified, proofs, Provider)
+}
+
+fn sdk_with_provider<C: ContextProvider + 'static>(
+    seed: u32,
+    pinned: bool,
+    verified: u32,
+    proofs: bool,
+    provider: C,
+) -> Sdk {
     let version = PlatformVersion::get(seed).unwrap();
     let builder = SdkBuilder::new_mock()
         .with_network(dpp::dashcore::Network::Testnet)
-        .with_context_provider(Provider)
+        .with_context_provider(provider)
         .with_proofs(proofs)
         // The vectors are signed at height 10, mock expectations at 0.
         .with_height_tolerance(None);
@@ -224,11 +266,13 @@ fn once() -> RequestSettings {
     }
 }
 
-/// `result` is the gate's refusal of `method`, with the network proven at `network`.
+/// `result` is the gate's refusal of `method`, with the network proven at `network`, by an
+/// SDK `pinned` below the version or not.
 fn assert_refused<T: std::fmt::Debug>(
     result: Result<T, Error>,
     method: &str,
     network: u32,
+    pinned: bool,
     context: &str,
 ) {
     match result {
@@ -236,11 +280,12 @@ fn assert_refused<T: std::fmt::Debug>(
             method: refused,
             required,
             network: proven,
+            pinned: refused_for_pin,
             cause: None,
         }) => {
             assert_eq!(
-                (refused, required, proven),
-                (method, V14, network),
+                (refused, required, proven, refused_for_pin),
+                (method, V14, network, pinned),
                 "{context}"
             );
         }
@@ -294,28 +339,44 @@ fn chained_query() -> ChainedDocumentQuery {
 fn should_decide_from_the_versions_the_network_and_this_sdk_are_proven_to_serve() {
     let request_settings = RequestSettings::default();
     let latest = PlatformVersion::latest().protocol_version;
-    let decision = |stored: u32, verified: u32, pinned, has_context_provider, enforced| {
-        let settings = QuerySettings {
-            request_settings: &request_settings,
-            protocol_version: version_for_requests(
-                PlatformVersion::get(stored).unwrap(),
-                verified,
-                pinned,
-            ),
-            verified_protocol_version: verified,
-            prove: true,
+    let decide_for =
+        |required: u32, stored: u32, verified: u32, pinned, has_context_provider, enforced| {
+            let settings = QuerySettings {
+                request_settings: &request_settings,
+                protocol_version: version_for_requests(
+                    PlatformVersion::get(stored).unwrap(),
+                    verified,
+                    pinned,
+                ),
+                verified_protocol_version: verified,
+                prove: true,
+            };
+            decide(
+                required,
+                &GateState {
+                    settings,
+                    pinned,
+                    has_context_provider,
+                    enforced,
+                },
+            )
         };
-        decide(
+    let decision = |stored, verified, pinned, has_context_provider, enforced| {
+        decide_for(
             V14,
-            &GateState {
-                settings,
-                pinned,
-                has_context_provider,
-                enforced,
-            },
+            stored,
+            verified,
+            pinned,
+            has_context_provider,
+            enforced,
         )
     };
-    for stored in PLATFORM_VERSIONS.iter().map(|v| v.protocol_version) {
+    // A feature of a later release needs a later version: the same rule.
+    for (required, stored) in [V14, V14 + 1].into_iter().flat_map(|required| {
+        PLATFORM_VERSIONS
+            .iter()
+            .map(move |version| (required, version.protocol_version))
+    }) {
         for verified in std::iter::once(0).chain(1..=latest + 1) {
             for pinned in [false, true] {
                 for has_context_provider in [false, true] {
@@ -327,18 +388,26 @@ fn should_decide_from_the_versions_the_network_and_this_sdk_are_proven_to_serve(
                         } else {
                             stored
                         };
-                        let expected = if !enforced || speaks.min(verified) >= V14 {
+                        let expected = if !enforced || speaks.min(verified) >= required {
                             Gate::Send
-                        } else if (pinned && stored < V14) || !has_context_provider {
+                        } else if (pinned && stored < required) || !has_context_provider {
                             Gate::Refuse
                         } else {
                             Gate::Probe
                         };
                         assert_eq!(
-                            decision(stored, verified, pinned, has_context_provider, enforced),
+                            decide_for(
+                                required,
+                                stored,
+                                verified,
+                                pinned,
+                                has_context_provider,
+                                enforced
+                            ),
                             expected,
-                            "stored {stored}, verified {verified}, pinned {pinned}, \
-                             context provider {has_context_provider}, enforced {enforced}"
+                            "required {required}, stored {stored}, verified {verified}, \
+                             pinned {pinned}, context provider {has_context_provider}, \
+                             enforced {enforced}"
                         );
                     }
                 }
@@ -394,6 +463,7 @@ async fn should_refuse_when_the_network_proves_protocol_13() {
         ContractFeePots::fetch(&sdk, fee_pots()).await,
         "get_contract_fee_pots",
         V13,
+        false,
         "network at 13",
     );
     assert_eq!(probes(&sdk).await, 1);
@@ -411,6 +481,7 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
         ContractFeePots::fetch(&sdk, fee_pots()).await,
         "get_contract_fee_pots",
         V13,
+        true,
         "pinned at 13",
     );
     assert_eq!(probes(&sdk).await, 0);
@@ -429,6 +500,7 @@ async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
         ContractFeePots::fetch(&sdk, fee_pots()).await,
         "get_contract_fee_pots",
         0,
+        false,
         "no context provider",
     );
     assert_eq!(probes(&sdk).await, 0);
@@ -448,6 +520,33 @@ async fn should_ask_with_a_proof_when_the_sdk_does_not_request_proofs() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 1);
 }
 
+/// An SDK that does not ask for proofs may have a context provider that gives no quorum
+/// keys. Its probe then fails on every node, which says nothing about the nodes: the gated
+/// call is refused with that failure, and no node is banned for it. An SDK that asks for
+/// proofs bans a node whose answer it cannot verify, as for any proved request.
+#[tokio::test]
+async fn should_ban_no_node_for_a_probe_an_sdk_without_proofs_cannot_verify() {
+    for proofs in [false, true] {
+        let mut sdk = sdk_with_provider(V13, false, 0, proofs, NoQuorumKeys);
+        answer_probe(&sdk, "pv14").await;
+        expect_fee_pots(&mut sdk).await;
+        let result = ContractFeePots::fetch(&sdk, fee_pots()).await;
+        assert!(
+            matches!(
+                result,
+                Err(Error::ProtocolVersionNotActive { cause: Some(_), .. })
+            ),
+            "proofs {proofs}: {result:?}"
+        );
+        assert_eq!(sent(&sdk, &fee_pots()).await, 0, "proofs {proofs}");
+        assert_eq!(
+            sdk.address_list().is_banned(&node()),
+            proofs,
+            "proofs {proofs}"
+        );
+    }
+}
+
 /// When the network's version cannot be learned, the refusal says why.
 #[tokio::test]
 async fn should_refuse_with_the_cause_when_the_network_version_cannot_be_learned() {
@@ -458,6 +557,7 @@ async fn should_refuse_with_the_cause_when_the_network_version_cannot_be_learned
             method: "get_contract_fee_pots",
             required: V14,
             network: 0,
+            pinned: false,
             cause: Some(_),
         }) => {}
         other => panic!("expected a refusal with its cause, got {other:?}"),
@@ -466,10 +566,70 @@ async fn should_refuse_with_the_cause_when_the_network_version_cannot_be_learned
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// The probe is served by every node at every version, so asking never recurses.
+/// The probe asks for the genesis epoch, which every node serves at every version, so
+/// asking never recurses.
 #[test]
 fn should_ask_with_a_request_every_node_serves() {
-    assert_eq!(probe_request().needs_protocol_version(), None);
+    let sent: GetEpochsInfoRequest = current_epoch_probe_query()
+        .query(&QuerySettings {
+            request_settings: &RequestSettings::default(),
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
+            prove: true,
+        })
+        .unwrap();
+    assert_eq!(sent, probe_request());
+    assert_eq!(sent.needs_protocol_version(), None);
+}
+
+/// A seed, a pin or a persisted version of 14 says nothing about the network: the SDK asks
+/// first, and sends only when the network proves 14.
+#[tokio::test]
+async fn should_ask_the_network_before_trusting_a_seed_or_pin_of_14() {
+    for pinned in [false, true] {
+        for (signed, sends) in [("pv13", false), ("pv14", true)] {
+            let mut sdk = mock_sdk(V14, pinned, 0);
+            answer_probe(&sdk, signed).await;
+            expect_fee_pots(&mut sdk).await;
+            let result = ContractFeePots::fetch(&sdk, fee_pots()).await;
+            let context = format!("pinned {pinned}, network {signed}");
+            if sends {
+                result.unwrap_or_else(|error| panic!("{context}: {error}"));
+            } else {
+                assert_refused(result, "get_contract_fee_pots", V13, false, &context);
+            }
+            assert_eq!(probes(&sdk).await, 1, "{context}");
+            assert_eq!(
+                sent(&sdk, &fee_pots()).await,
+                usize::from(sends),
+                "{context}"
+            );
+        }
+    }
+}
+
+/// The probe runs under the caller's request settings, as the request it stands for
+/// would have.
+#[tokio::test]
+async fn should_ask_under_the_caller_settings() {
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer(
+        &sdk,
+        &probe_request(),
+        Err(Status::unavailable("restarting")),
+    )
+    .await;
+    expect_fee_pots(&mut sdk).await;
+    let result = ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()).await;
+    assert!(
+        matches!(
+            result,
+            Err(Error::ProtocolVersionNotActive { cause: Some(_), .. })
+        ),
+        "{result:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1, "no retries, as the caller asked");
+    assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
 /// The value the transport layer declares is the version that added these requests.
@@ -602,12 +762,14 @@ async fn should_refuse_composite_and_chained_queries_until_protocol_14_is_verifi
         CompositeDocuments::fetch(&sdk, composite_query()).await,
         "get_documents",
         V13,
+        false,
         "composite",
     );
     assert_refused(
         ChainedDocuments::fetch(&sdk, chained_query()).await,
         "get_documents",
         V13,
+        false,
         "chained",
     );
     assert_eq!(sent(&sdk, &composite).await, 0);
@@ -794,7 +956,7 @@ async fn should_refuse_token_pool_requests_until_protocol_14_is_verified() {
         sdk
     };
     for (method, result, sent) in fetch_shielded(sdk_at_13().await, token.clone()).await {
-        assert_refused(result, method, V13, method);
+        assert_refused(result, method, V13, false, method);
         assert_eq!(sent, 0, "{method}");
     }
     for (method, result, sent) in fetch_shielded(sdk_at_13().await, None).await {
@@ -864,6 +1026,80 @@ async fn fetch_new_methods(sdk: &Sdk) -> Vec<(&'static str, Result<(), Error>, u
     ]
 }
 
+/// Fetches, unproved, each method protocol 14 added that has an unproved form, from a node
+/// that answers UNIMPLEMENTED as a 4.x node does; returns, per method, the result and how
+/// many times the request reached it.
+async fn fetch_new_methods_unproved(sdk: &Sdk) -> Vec<(&'static str, Result<(), Error>, usize)> {
+    macro_rules! fetch_unproved {
+        ($object:ty, $request:ty) => {{
+            let request = <$request>::default();
+            answer(sdk, &request, Err(Status::unimplemented("unknown method"))).await;
+            let result = <$object>::fetch_unproved_with_settings(sdk, request.clone(), once())
+                .await
+                .map(drop);
+            (request.method_name(), result, sent(sdk, &request).await)
+        }};
+    }
+    vec![
+        fetch_unproved!(
+            IdentityKeysRemainingBudgets,
+            GetIdentityKeysRemainingBudgetsRequest
+        ),
+        fetch_unproved!(
+            DataContractsLatestVersions,
+            GetDataContractsLatestVersionsRequest
+        ),
+        fetch_unproved!(ContractGroupInfo, GetContractGroupInfoRequest),
+        fetch_unproved!(ContractGroupMembersPage, GetContractGroupMembersRequest),
+        fetch_unproved!(
+            ContractGroupMembershipsForContract,
+            GetContractGroupsForContractRequest
+        ),
+        fetch_unproved!(
+            ContractModerationListStatuses,
+            GetContractModerationStatusRequest
+        ),
+        fetch_unproved!(
+            ContractModerationEntries,
+            GetContractModerationEntriesRequest
+        ),
+        fetch_unproved!(ContractDocumentRemovals, GetContractDocumentRemovalsRequest),
+        fetch_unproved!(ContractTeamActions, GetContractTeamActionsRequest),
+        fetch_unproved!(
+            ContractTeamActionSigners,
+            GetContractTeamActionSignersRequest
+        ),
+        fetch_unproved!(
+            ContractModerationActionCounts,
+            GetContractModerationActionCountsRequest
+        ),
+        fetch_unproved!(ContractFeePots, GetContractFeePotsRequest),
+    ]
+}
+
+/// The unproved forms of the methods protocol 14 added reach 4.x nodes the same way.
+#[tokio::test]
+async fn should_not_send_unproved_methods_protocol_14_added_before_it_is_verified() {
+    let sdk = mock_sdk(V13, false, V13);
+    answer_probe(&sdk, "pv13").await;
+    let calls = fetch_new_methods_unproved(&sdk).await;
+    assert_eq!(calls.len(), 12);
+    for (method, result, sent) in calls {
+        assert_refused(result, method, V13, false, method);
+        assert_eq!(sent, 0, "{method}");
+    }
+    assert!(!sdk.address_list().is_banned(&node()));
+
+    let sdk = mock_sdk(V14, false, V14);
+    for (method, result, sent) in fetch_new_methods_unproved(&sdk).await {
+        assert!(
+            matches!(&result, Err(Error::DapiClientError(_))),
+            "{method}: the node's own answer surfaces, got {result:?}"
+        );
+        assert_eq!(sent, 1, "{method}");
+    }
+}
+
 /// A 4.x node answers every method protocol 14 added with UNIMPLEMENTED, which bans it for
 /// every method. Until the network has proven 14 the SDK sends none of them, so the node
 /// keeps serving everything else.
@@ -874,7 +1110,7 @@ async fn should_not_send_methods_protocol_14_added_before_it_is_verified() {
     let calls = fetch_new_methods(&sdk).await;
     assert_eq!(calls.len(), 13);
     for (method, result, sent) in calls {
-        assert_refused(result, method, V13, method);
+        assert_refused(result, method, V13, false, method);
         assert_eq!(sent, 0, "{method}");
     }
     assert!(!sdk.address_list().is_banned(&node()));
@@ -938,7 +1174,7 @@ async fn should_speak_the_newest_known_version_on_a_network_proven_newer() {
         let result = ContractFeePots::fetch(&sdk, fee_pots()).await;
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}: no second probe");
         if pinned {
-            assert_refused(result, "get_contract_fee_pots", V13, "pinned at 13");
+            assert_refused(result, "get_contract_fee_pots", V13, true, "pinned at 13");
             assert!(matches!(
                 lookup.version,
                 Some(get_identity_by_non_unique_public_key_hash_request::Version::V0(_))

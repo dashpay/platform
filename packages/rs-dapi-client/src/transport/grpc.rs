@@ -319,6 +319,12 @@ fn documents_request_needs_protocol_version(
     }
 }
 
+/// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
+/// answers for the credit pool instead.
+fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
+    token_id.as_ref().map(|_| PROTOCOL_VERSION_OF_5_0)
+}
+
 // Link to each platform gRPC request what client and method to use:
 
 const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -777,12 +783,9 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_shielded_encrypted_notes_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_shielded_encrypted_notes_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetShieldedEncryptedNotesRequest,
     platform_proto::GetShieldedEncryptedNotesResponse,
@@ -798,12 +801,9 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_shielded_anchors_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_shielded_anchors_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetShieldedAnchorsRequest,
     platform_proto::GetShieldedAnchorsResponse,
@@ -814,12 +814,9 @@ impl_transport_request_grpc!(
 
 // rpc getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_most_recent_shielded_anchor_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_most_recent_shielded_anchor_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetMostRecentShieldedAnchorRequest,
     platform_proto::GetMostRecentShieldedAnchorResponse,
@@ -830,12 +827,9 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_shielded_pool_state_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_shielded_pool_state_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetShieldedPoolStateRequest,
     platform_proto::GetShieldedPoolStateResponse,
@@ -846,12 +840,9 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_shielded_notes_count_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_shielded_notes_count_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetShieldedNotesCountRequest,
     platform_proto::GetShieldedNotesCountResponse,
@@ -862,12 +853,9 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
 impl_transport_request_grpc!(
-    // A 4.x node drops `token_id` and answers for the credit pool.
     needs_protocol_version: |request| match &request.version {
-        Some(platform_proto::get_shielded_nullifiers_request::Version::V0(v0)) if v0.token_id.is_some() => {
-            Some(PROTOCOL_VERSION_OF_5_0)
-        }
-        _ => None,
+        Some(platform_proto::get_shielded_nullifiers_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
     };
     platform_proto::GetShieldedNullifiersRequest,
     platform_proto::GetShieldedNullifiersResponse,

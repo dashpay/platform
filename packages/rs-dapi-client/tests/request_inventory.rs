@@ -8,10 +8,11 @@
 //!
 //! `request_inventory/v4.1.1.txt` lists what 4.1 nodes understand: every method and every
 //! field, oneof arm and enum value reachable from a request in v4.1.1's `platform.proto`.
-//! This test fails on anything reachable from a request today that is neither in that
-//! baseline nor in [`ADDITIONS`], and checks each addition's verdict against
-//! `needs_protocol_version` on real wire bytes, as well as that requests made only of
-//! baseline features need no protocol version at all.
+//! `request_inventory/v5.0.txt` lists the same for 5.0 nodes, whose first protocol version
+//! is 14. This test fails on anything reachable from a request today that is in neither
+//! list nor in [`ADDITIONS`], and on an addition 5.0 nodes do not know that declares 14 or
+//! less. It checks each addition's verdict against `needs_protocol_version` on real wire
+//! bytes, and that requests made only of what 4.1 nodes know need no protocol version.
 
 use dapi_grpc::platform::v0 as proto;
 use dapi_grpc::Message;
@@ -28,9 +29,9 @@ enum Verdict {
     NoGate(&'static str),
 }
 
-/// Request features added since 4.1.1. An item's verdict covers everything reachable only
-/// through it. A feature a later release adds declares that release's first protocol
-/// version, not 14.
+/// Request features added since 4.1.1. The verdict of a feature 5.0 added covers everything
+/// reachable only through it; anything a later release adds, inside it or not, is declared
+/// on its own, with that release's first protocol version, not 14.
 const ADDITIONS: &[(&str, Verdict)] = &[
     ("rpc getIdentityKeysRemainingBudgets GetIdentityKeysRemainingBudgetsRequest", Verdict::Gate(14)),
     ("rpc getDataContractsLatestVersions GetDataContractsLatestVersionsRequest", Verdict::Gate(14)),
@@ -63,11 +64,11 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     ("field GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.token_id = 3 bytes", Verdict::Gate(14)),
     (
         "field GetDocumentsRequest.WhereClause.time_range = 4 GetDocumentsRequest.TimeRangeSelection",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT, and the SDK checks it against its own version"),
+        Verdict::NoGate("sent only with the IN_TIME_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT"),
     ),
     (
         "field GetDocumentsRequest.WhereClause.integer_range = 5 GetDocumentsRequest.IntegerRangeSelection",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT, and the SDK checks it against its own version"),
+        Verdict::NoGate("sent only with the IN_INTEGER_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT"),
     ),
     (
         "enum GetDocumentsRequest.WhereOperator.IN_TIME_RANGE = 11",
@@ -732,12 +733,19 @@ fn head() -> Schema {
 }
 
 fn baseline() -> BTreeSet<String> {
-    std::fs::read_to_string(packages().join("rs-dapi-client/tests/request_inventory/v4.1.1.txt"))
-        .unwrap()
-        .lines()
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_string)
-        .collect()
+    inventory("v4.1.1")
+}
+
+/// What nodes of `release` understand, as `should_export_an_inventory` wrote it.
+fn inventory(release: &str) -> BTreeSet<String> {
+    std::fs::read_to_string(packages().join(format!(
+        "rs-dapi-client/tests/request_inventory/{release}.txt"
+    )))
+    .unwrap()
+    .lines()
+    .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    .map(str::to_string)
+    .collect()
 }
 
 fn additions() -> BTreeMap<&'static str, Verdict> {
@@ -822,6 +830,31 @@ fn should_declare_every_request_feature_older_nodes_do_not_know() {
     let baseline = baseline();
     let additions = additions();
     let reachable = schema.reachable(&|item| additions.contains_key(item));
+    let five = inventory("v5.0");
+    // Everything 5.0 nodes do not know, also inside what 5.0 added, is declared on its own.
+    let later: Vec<_> = schema
+        .reachable(&|item| additions.contains_key(item) && !five.contains(item))
+        .into_iter()
+        .filter(|item| !five.contains(item) && !additions.contains_key(item.as_str()))
+        .collect();
+    assert!(
+        later.is_empty(),
+        "request features 5.0 nodes do not know, without a verdict in ADDITIONS:\n{}",
+        later
+            .iter()
+            .map(|item| format!("  {item}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    for (item, verdict) in &additions {
+        if let (false, Verdict::Gate(version)) = (five.contains(*item), verdict) {
+            assert!(
+                *version > 14,
+                "{item}: 5.0 nodes do not know it, so it needs a version after 14, the first \
+                 5.0 nodes sign"
+            );
+        }
+    }
     let undeclared: Vec<_> = reachable
         .iter()
         .filter(|item| !baseline.contains(*item) && !additions.contains_key(item.as_str()))
@@ -1031,29 +1064,38 @@ fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() 
     );
 }
 
-/// Writes the baseline from another release's `platform.proto`: run with
-/// `REQUEST_INVENTORY_BASELINE_PROTO=<path to v4.1.1's platform.proto>`, e.g. from
-/// `git show v4.1.1:packages/dapi-grpc/protos/platform/v0/platform.proto`.
+/// Writes what nodes of a release understand from its `platform.proto`: run with
+/// `REQUEST_INVENTORY_PROTO=<path to the proto>` and `REQUEST_INVENTORY_RELEASE=<release>`,
+/// e.g. `v4.1.1` with `git show v4.1.1:packages/dapi-grpc/protos/platform/v0/platform.proto`,
+/// or `v5.0` with this tree's proto while 5.0 is the release in development.
 #[test]
-#[ignore = "requires REQUEST_INVENTORY_BASELINE_PROTO; rewrites the committed 4.1.1 baseline"]
-fn should_export_the_baseline() {
-    let Ok(path) = std::env::var("REQUEST_INVENTORY_BASELINE_PROTO") else {
-        eprintln!("skipped: set REQUEST_INVENTORY_BASELINE_PROTO to rewrite the baseline");
+#[ignore = "requires REQUEST_INVENTORY_PROTO and REQUEST_INVENTORY_RELEASE; rewrites a committed inventory"]
+fn should_export_an_inventory() {
+    let (Ok(path), Ok(release)) = (
+        std::env::var("REQUEST_INVENTORY_PROTO"),
+        std::env::var("REQUEST_INVENTORY_RELEASE"),
+    ) else {
+        eprintln!(
+            "skipped: set REQUEST_INVENTORY_PROTO and REQUEST_INVENTORY_RELEASE to rewrite an \
+             inventory"
+        );
         return;
     };
     let schema = Schema::parse(&std::fs::read_to_string(path).unwrap());
     let items: BTreeSet<String> = schema.reachable(&|_| false).into_iter().collect();
-    let mut text = String::from(
+    let mut text = format!(
         "# Methods, and fields, oneof arms and enum values reachable from their requests, in\n\
-         # v4.1.1's platform.proto: what 4.1 nodes understand. Generated by\n\
-         # `request_inventory.rs::should_export_the_baseline`; never edit by hand.\n",
+         # {release}'s platform.proto: what {release} nodes understand. Generated by\n\
+         # `request_inventory.rs::should_export_an_inventory`; never edit by hand.\n"
     );
     for item in items {
         text.push_str(&item);
         text.push('\n');
     }
     std::fs::write(
-        packages().join("rs-dapi-client/tests/request_inventory/v4.1.1.txt"),
+        packages().join(format!(
+            "rs-dapi-client/tests/request_inventory/{release}.txt"
+        )),
         text,
     )
     .unwrap();

@@ -48,13 +48,19 @@ its protocol 14 features.
 
 When the network may have reached protocol 14 since the SDK last heard from it (nothing
 verified yet, or the last verified answer was signed below 14), the SDK first asks for the
-genesis epoch, with a proof whatever the SDK's proof setting, using the caller's request
-settings. One round trip; once an answer signed at 14 has been verified, the SDK never
+genesis epoch, with a proof whatever the SDK's proof setting, under the caller's request
+settings (timeouts, retries). Once an answer signed at 14 has been verified, the SDK never
 asks again. It does not ask when no answer can change the outcome:
 
 - an SDK pinned below 14 speaks its pinned version, whatever the network runs;
 - an SDK without a context provider cannot verify the answer, and an answer it cannot
   verify would ban the node that sent it.
+
+An SDK that does not ask for proofs still asks for this one, and needs a context provider
+that can give quorum keys for it. When its provider cannot, the question fails on every
+node; that says nothing about the nodes, so none is banned for it, and the request is
+refused with that failure as its cause. Before this check, such an SDK sent these requests
+unverified.
 
 Mock SDKs do not enforce the rule: they answer what a test registered, and have no nodes
 to ban.
@@ -63,19 +69,23 @@ to ban.
 
 | Surface | Error |
 |---|---|
-| Rust (`dash-sdk`) | `Error::ProtocolVersionNotActive { method, required, network, cause }` |
-| JS (`wasm-sdk`, `evo-sdk`) | `WasmSdkError` with kind `ProtocolVersionNotActive` (`error.name === 'ProtocolVersionNotActive'`), `isRetriable` false |
-| FFI (Swift, Kotlin) | `DashSDKErrorCode::ProtocolError` |
+| Rust (`dash-sdk`) | `Error::ProtocolVersionNotActive { method, required, network, pinned, cause }` |
+| JS (`wasm-sdk`, `evo-sdk`) | `WasmSdkError` with kind `ProtocolVersionNotActive` (`error.name === 'ProtocolVersionNotActive'`) |
+| FFI (Swift, Kotlin) | `DashSDKErrorCode::ProtocolError`, with a message that starts with `<method> needs Platform protocol version`; `NetworkError` when asking for the network's version failed |
 
 `method` names the gRPC method (for example `get_contract_fee_pots`), `required` the
 version it needs, and `network` the version the SDK could rely on: the lower of its own
 version and the newest version a verified answer was signed at, 0 before the first one.
+`pinned` says the SDK is pinned below `required`, so that no answer can lift the refusal.
 When asking for the network's version failed, `cause` carries that error, and the JS and
 FFI messages include it.
 
-The error is not retryable: another node cannot help. An app that offers a protocol 14
-feature can catch it and hide the feature until the network activates protocol 14; the
-same call succeeds once it has.
+Another node cannot help, so the SDK never retries the request elsewhere and bans no node
+for it. An app that offers a protocol 14 feature can catch the error and hide the feature
+until the network activates protocol 14; the same call succeeds once it has. When asking
+for the network's version failed, the network may serve the request already: JS reports
+the error as retriable (`isRetriable`), and FFI as a network error, so the app can try
+again later instead of hiding the feature.
 
 ## At the activation
 
