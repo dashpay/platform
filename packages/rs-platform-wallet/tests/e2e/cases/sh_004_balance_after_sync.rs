@@ -5,16 +5,18 @@
 //!
 //! Pins that balances read from the LOCAL store, not a live chain query:
 //! before `coordinator.sync` the on-chain note is invisible; after a
-//! forced sync it appears exactly. Also confirms the map is filtered to
-//! this wallet's id (a second bound wallet's notes never leak in — here
-//! we only assert the single-account exact-value shape).
+//! forced sync it appears exactly. A private coordinator and store keep
+//! concurrent cases' syncs from scanning this wallet's note early.
 //!
 //! Expected outcome: PASS.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::framework::prelude::*;
-use crate::framework::shielded::{bind_shielded, shielded_prover, teardown_sweep_shielded};
+use crate::framework::shielded::{
+    new_file_backed_coordinator, shielded_prover, teardown_sweep_shielded, ShieldedHandle,
+};
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
@@ -60,9 +62,19 @@ async fn sh_004_balance_after_sync() {
         .await
         .expect("pre-shield sync");
 
-    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+    // Only this case may sync the store whose pre-sync balance we assert.
+    let coordinator = new_file_backed_coordinator(&s.test_wallet, &s.ctx.workdir)
+        .await
+        .expect("private coordinator");
+    s.test_wallet
+        .platform_wallet()
+        .bind_shielded(&s.test_wallet.seed_bytes(), &[0], &coordinator)
         .await
         .expect("bind_shielded");
+    let handle = ShieldedHandle {
+        coordinator,
+        accounts: vec![0],
+    };
 
     s.test_wallet
         .platform_wallet()
@@ -110,8 +122,8 @@ async fn sh_004_balance_after_sync() {
         tokio::time::sleep(Duration::from_millis(500)).await;
     };
     assert_eq!(
-        post.get(&0).copied(),
-        Some(SHIELD_AMOUNT),
+        post,
+        BTreeMap::from([(0, SHIELD_AMOUNT)]),
         "post-sync shielded_balances must equal {{0: {SHIELD_AMOUNT}}} exactly; observed {post:?}"
     );
 

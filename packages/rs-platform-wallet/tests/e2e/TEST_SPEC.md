@@ -2179,14 +2179,14 @@ while those bugs persist; SH-007 is designed to PASS and stay green.
 
 #### SH-004 — `shielded_balances` reflects a shielded note after coordinator sync
 - **Priority**: P1
-- **Status**: not implemented (Wave H).
+- **Status**: implemented.
 - **Wallet feature exercised**: `shielded_balances` (`platform_wallet.rs:515`) → `sync::balances_across`; `coordinator.sync` (`coordinator.rs:400`).
-- **Preconditions**: SH-001 shield completed.
-- **Scenario**: After shielding `50_000_000`, assert `shielded_balances` returns `{}` BEFORE `coordinator.sync`, then `{0: 50_000_000}` AFTER `coordinator.sync(true)`.
+- **Preconditions**: Fresh wallet bound to a private file-backed coordinator/store, so parallel cases cannot sync its notes.
+- **Scenario**: Shield `50_000_000`, assert account 0 is absent or zero BEFORE syncing this store, then assert the exact map `{0: 50_000_000}` AFTER `coordinator.sync(true)`.
 - **Assertions**:
   - Pre-sync: `shielded_balances` does NOT yet include the note (the note is on-chain but not yet scanned into the local store) — pins that balances read from the local store, not a live query.
   - Post-`sync(true)`: `shielded_balances == {0: 50_000_000}` (exact key + value; not "non-empty").
-  - The returned map is filtered to THIS wallet's `wallet_id` (`platform_wallet.rs:537`) — a second bound wallet's notes never leak in.
+  - The returned map contains only account 0; cross-wallet filtering is not exercised by this isolated single-wallet case.
 - **Expected current outcome**: PASS.
 - **Harness extensions required**: Wave H.
 - **Estimated complexity**: M

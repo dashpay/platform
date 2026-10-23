@@ -29,8 +29,8 @@
 //! (~25-30x on the Orchard-scan portion of the suite).
 //!
 //! [`new_file_backed_coordinator`] still mints a private per-call tree
-//! for the two cases that need a controlled, isolated tree (SH-007's
-//! bind-ordering hook and SH-013's empty-accounts error path); they do
+//! for cases that need a controlled, isolated tree (including SH-004's
+//! pre-sync balance assertion and SH-007's bind-ordering hook); they do
 //! not benefit from the shared tree but keep the rest of the suite's win.
 //!
 //! # Adversarial injection hooks (SH-020..SH-035 — follow-up wave)
@@ -102,7 +102,7 @@ pub fn shielded_prover() -> &'static CachedOrchardProver {
 pub struct ShieldedHandle {
     /// Coordinator backing this case. For [`bind_shielded`] this is the
     /// process-shared coordinator (one persisted tree across the suite);
-    /// SH-007 / SH-013 build a private one via
+    /// Cases needing exclusive control of sync build a private one via
     /// [`new_file_backed_coordinator`] and wrap it themselves.
     pub coordinator: Arc<NetworkShieldedCoordinator>,
     /// ZIP-32 account indices bound on the wallet, ascending.
@@ -132,7 +132,7 @@ impl ShieldedHandle {
 /// Bind `accounts` on the wallet's shielded sub-wallet, routed through
 /// the process-shared coordinator.
 ///
-/// All cases (except SH-007 / SH-013, which use
+/// Cases using this helper (rather than
 /// [`new_file_backed_coordinator`] for a controlled private tree) share
 /// ONE [`NetworkShieldedCoordinator`] over ONE persisted SQLite tree
 /// (see [`shared_coordinator`]). The first case pays the full ~1M-note
@@ -150,9 +150,9 @@ impl ShieldedHandle {
 ///
 /// Per-case isolation holds because notes / spent-marks / watermarks are
 /// `SubwalletId`-scoped and each case uses a distinct (fresh-seed)
-/// `wallet_id`; `shielded_balances` reads per-subwallet notes, never the
-/// shared tree, so a case's pre-sync "balance is 0" assertion stays
-/// genuine.
+/// `wallet_id`. Sync timing is NOT isolated: any case's sync scans every
+/// registered subwallet. A case asserting an on-chain note is absent
+/// before its own sync must use [`new_file_backed_coordinator`].
 ///
 /// Errors: [`FrameworkError::Wallet`] for coordinator, `bind_shielded`,
 /// or watermark-seed failures.
@@ -245,7 +245,7 @@ async fn shared_coordinator(
 
 /// Unregister `wallet_id` from the process-shared coordinator, bounding
 /// its registry as cases complete. No-op when the shared coordinator was
-/// never built (e.g. a non-shielded case, or SH-007/SH-013 which use a
+/// never built (e.g. a non-shielded case, or SH-004/SH-007 which use a
 /// private tree). Idempotent: a second call (or a wallet that never bound
 /// on the shared coordinator) is a clean no-op, so it is safe to call
 /// from both [`teardown_sweep_shielded`] and the universal guard teardown.
@@ -260,12 +260,10 @@ pub async fn unregister_shared_coordinator(wallet_id: [u8; 32]) {
 }
 
 /// Construct a PRIVATE per-call FileBacked coordinator over a fresh
-/// SQLite path WITHOUT binding — the controlled-tree path for the two
-/// cases that need an isolated tree: SH-007's bind-ordering hook (the
-/// coordinator's tree is advanced via `sync(true)` before the second
-/// wallet binds, so it must start empty) and SH-013's empty-accounts
-/// error path (which errors before any sync). These two skip the shared
-/// tree of [`bind_shielded`]; the rest of the suite keeps the speedup.
+/// SQLite path WITHOUT binding. Use this when a case needs exclusive
+/// control of sync timing or tree contents, such as SH-004's pre-sync
+/// balance assertion and SH-007's bind-ordering hook. Other cases keep
+/// the shared-tree speedup via [`bind_shielded`].
 pub async fn new_file_backed_coordinator(
     wallet: &TestWallet,
     workdir: &std::path::Path,
