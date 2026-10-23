@@ -3,31 +3,28 @@
 
 use crate::balances::credits::TokenAmount;
 use crate::consensus::basic::token::{
-    InvalidTokenAmountError, InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError,
-    InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
+    InvalidTokenAmountError, InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
+    InvalidTokenOrderValueError,
 };
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::fee::Credits;
-use crate::prelude::TimestampMillis;
 use crate::tokens::token_order::TokenOrder;
 use crate::validation::SimpleConsensusValidationResult;
 
-/// The largest amount, price and expiry an order may carry: its document stores each as a signed
+/// The largest amount and price an order may carry: its document stores each as a signed
 /// 8-byte value, and its value is computed from the amount and the price in u128.
 pub(crate) const MAX_TOKEN_ORDER_TERM: u64 = i64::MAX as u64;
 
 /// The amount and the price are between 1 and `i64::MAX`, the minimum fill between 1 and the
-/// amount, an expiry at most `i64::MAX`, and what the order is worth at the decimals it signs
-/// (`TokenOrder::order_value`) at most `i64::MAX` credits. Whether the signed decimals are the
-/// token's and whether it expires after the block are checked with the batch's advanced
-/// structure, which knows the token and the block.
+/// amount, and what the order is worth at the decimals it signs (`TokenOrder::order_value`) at
+/// most `i64::MAX` credits. Whether the signed decimals are the token's is checked with the
+/// batch's advanced structure, which knows the token.
 pub(crate) fn validate_token_order_terms(
     amount: TokenAmount,
     price: Credits,
     decimals: u8,
     min_fill: TokenAmount,
-    expires_at: Option<TimestampMillis>,
 ) -> SimpleConsensusValidationResult {
     if amount == 0 || amount > MAX_TOKEN_ORDER_TERM {
         return SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(
@@ -47,13 +44,6 @@ pub(crate) fn validate_token_order_terms(
             InvalidTokenOrderFillRangeError::new(min_fill, amount).into(),
         );
     }
-    if let Some(expires_at) = expires_at {
-        if expires_at > MAX_TOKEN_ORDER_TERM {
-            return SimpleConsensusValidationResult::new_with_error(
-                InvalidTokenOrderExpiryError::new(expires_at, MAX_TOKEN_ORDER_TERM).into(),
-            );
-        }
-    }
     if TokenOrder::order_value(amount, price, decimals).is_none() {
         return SimpleConsensusValidationResult::new_with_error(
             InvalidTokenOrderValueError::new(amount, price, decimals).into(),
@@ -66,22 +56,13 @@ pub(crate) fn validate_token_order_terms(
 mod tests {
     use super::*;
 
-    fn errors(
-        amount: TokenAmount,
-        price: Credits,
-        min_fill: TokenAmount,
-        expires_at: Option<TimestampMillis>,
-    ) -> Vec<ConsensusError> {
-        validate_token_order_terms(amount, price, 8, min_fill, expires_at).errors
-    }
-
     /// An order is worth its amount at its price at the decimals it signs, at most `i64::MAX`
     /// credits: 1 base unit at `i64::MAX` credits per whole token is worth exactly that at 0
     /// decimals, 2 are worth more; at 8 decimals 2 are worth far less.
     #[test]
     fn should_refuse_an_order_worth_more_than_an_order_holds() {
         let at = |amount, decimals| {
-            validate_token_order_terms(amount, MAX_TOKEN_ORDER_TERM, decimals, 1, None).errors
+            validate_token_order_terms(amount, MAX_TOKEN_ORDER_TERM, decimals, 1).errors
         };
         assert!(at(1, 0).is_empty());
         assert!(at(2, 8).is_empty());
@@ -92,24 +73,5 @@ mod tests {
                     && error.price() == MAX_TOKEN_ORDER_TERM
                     && error.decimals() == 0
         ));
-    }
-
-    #[test]
-    fn should_accept_an_expiry_up_to_i64_max() {
-        assert!(errors(1_000, 1, 1, None).is_empty());
-        assert!(errors(1_000, 1, 1, Some(0)).is_empty());
-        assert!(errors(1_000, 1, 1, Some(MAX_TOKEN_ORDER_TERM)).is_empty());
-    }
-
-    #[test]
-    fn should_refuse_an_expiry_above_i64_max() {
-        for expires_at in [MAX_TOKEN_ORDER_TERM + 1, u64::MAX] {
-            assert!(matches!(
-                errors(1_000, 1, 1, Some(expires_at)).as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidTokenOrderExpiryError(error))]
-                    if error.expires_at() == expires_at
-                        && error.max_expires_at() == MAX_TOKEN_ORDER_TERM
-            ));
-        }
     }
 }

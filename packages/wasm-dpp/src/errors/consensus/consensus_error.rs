@@ -7,13 +7,12 @@ use crate::errors::consensus::basic::{
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::basic::token::{
-    InvalidTokenOrderExpiryError, InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError,
-    InvalidTokenOrderValueError,
+    InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
 };
 use dpp::consensus::state::token::{
-    TokenNotTradeableError, TokenOrderDecimalsMismatchError, TokenOrderExpiredError,
-    TokenOrderFillAmountError, TokenOrderNotFoundError, TokenOrderNotOwnedError,
-    TokenOrderPriceLimitError, TokenOrderSelfFillError,
+    TokenNotTradeableError, TokenOrderDecimalsMismatchError, TokenOrderFillAmountError,
+    TokenOrderNotFoundError, TokenOrderNotOwnedError, TokenOrderPriceLimitError,
+    TokenOrderSelfFillError,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
@@ -541,9 +540,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::TokenOrderNotFoundError(e) => {
             generic_consensus_error!(TokenOrderNotFoundError, e).into()
-        }
-        StateError::TokenOrderExpiredError(e) => {
-            generic_consensus_error!(TokenOrderExpiredError, e).into()
         }
         StateError::TokenOrderFillAmountError(e) => {
             generic_consensus_error!(TokenOrderFillAmountError, e).into()
@@ -1462,9 +1458,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidTokenOrderFillRangeError(e) => {
             generic_consensus_error!(InvalidTokenOrderFillRangeError, e).into()
-        }
-        BasicError::InvalidTokenOrderExpiryError(e) => {
-            generic_consensus_error!(InvalidTokenOrderExpiryError, e).into()
         }
         BasicError::InvalidTokenOrderValueError(e) => {
             generic_consensus_error!(InvalidTokenOrderValueError, e).into()

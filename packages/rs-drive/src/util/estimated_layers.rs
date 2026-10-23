@@ -74,14 +74,21 @@ fn compare_layer_cost(
     if a == b {
         return Ok(Ordering::Equal);
     }
-    Ok(a.estimated_layer_count
+    let by_depth = a
+        .estimated_layer_count
         .estimate_levels()
-        .cmp(&b.estimated_layer_count.estimate_levels())
-        .then(
-            propagation_credits(a, platform_version)?
-                .cmp(&propagation_credits(b, platform_version)?),
-        )
-        .then_with(|| format!("{a:?}").cmp(&format!("{b:?}"))))
+        .cmp(&b.estimated_layer_count.estimate_levels());
+    if by_depth != Ordering::Equal {
+        return Ok(by_depth);
+    }
+    // Priced only when the depths tie, so a pricing error of a description the depth already
+    // ranks cannot fail the comparison.
+    let by_price =
+        propagation_credits(a, platform_version)?.cmp(&propagation_credits(b, platform_version)?);
+    if by_price != Ordering::Equal {
+        return Ok(by_price);
+    }
+    Ok(format!("{a:?}").cmp(&format!("{b:?}")))
 }
 
 /// Merges `layer` into the batch's description of the layer at `path`, keeping the costlier of

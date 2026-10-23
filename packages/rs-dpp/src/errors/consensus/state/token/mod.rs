@@ -71,8 +71,6 @@ mod token_not_tradeable_error;
 pub use token_not_tradeable_error::*;
 mod token_order_not_found_error;
 pub use token_order_not_found_error::*;
-mod token_order_expired_error;
-pub use token_order_expired_error::*;
 mod token_order_fill_amount_error;
 pub use token_order_fill_amount_error::*;
 mod token_order_price_limit_error;
