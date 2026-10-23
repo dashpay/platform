@@ -2,10 +2,9 @@ use crate::error::WasmDppResult;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use crate::utils::{try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u64, try_to_u8};
+use crate::utils::{try_from_options, try_from_options_with, try_to_u64, try_to_u8};
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
-use dpp::prelude::TimestampMillis;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_place_bid_transition::v0::v0_methods::TokenPlaceBidTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_bid_transition::TokenPlaceBidTransitionV0;
@@ -17,8 +16,7 @@ const TOKEN_PLACE_BID_OPTIONS_TS: &str = r#"
 /**
  * Offers `price` credits per whole token for `amount` of the token. What the offer is worth moves
  * from the buyer's credits into escrow until it is filled or cancelled. A fill takes at least
- * `minFill`, unless it takes everything still wanted. An offer with `expiresAt` can no longer be
- * filled from that block time.
+ * `minFill`, unless it takes everything still wanted.
  */
 export interface TokenPlaceBidTransitionOptions {
     base: TokenBaseTransition;
@@ -27,7 +25,6 @@ export interface TokenPlaceBidTransitionOptions {
     /** The token's decimals the price is at; the offer is refused unless they are the token's. */
     decimals: number;
     minFill: bigint;
-    expiresAt?: bigint;
 }
 "#;
 
@@ -72,9 +69,6 @@ impl TokenPlaceBidTransitionWasm {
         let min_fill: TokenAmount =
             try_from_options_with(&options, "minFill", |v| try_to_u64(v, "minFill"))?;
 
-        let expires_at: Option<TimestampMillis> =
-            try_from_options_optional_with(&options, "expiresAt", |v| try_to_u64(v, "expiresAt"))?;
-
         Ok(TokenPlaceBidTransitionWasm(TokenPlaceBidTransition::V0(
             TokenPlaceBidTransitionV0 {
                 base: base.into(),
@@ -82,7 +76,6 @@ impl TokenPlaceBidTransitionWasm {
                 price,
                 decimals,
                 min_fill,
-                expires_at,
             },
         )))
     }
@@ -110,11 +103,6 @@ impl TokenPlaceBidTransitionWasm {
     #[wasm_bindgen(getter = minFill)]
     pub fn min_fill(&self) -> TokenAmount {
         self.0.min_fill()
-    }
-
-    #[wasm_bindgen(getter = expiresAt)]
-    pub fn expires_at(&self) -> Option<TimestampMillis> {
-        self.0.expires_at()
     }
 
     #[wasm_bindgen(setter = base)]
@@ -148,18 +136,6 @@ impl TokenPlaceBidTransitionWasm {
         #[wasm_bindgen(js_name = "minFill")] min_fill: &js_sys::BigInt,
     ) -> WasmDppResult<()> {
         self.0.set_min_fill(try_to_u64(min_fill, "minFill")?);
-        Ok(())
-    }
-
-    #[wasm_bindgen(setter = expiresAt)]
-    pub fn set_expires_at(
-        &mut self,
-        #[wasm_bindgen(js_name = "expiresAt")] expires_at: Option<js_sys::BigInt>,
-    ) -> WasmDppResult<()> {
-        let expires_at = expires_at
-            .map(|value| try_to_u64(&value, "expiresAt"))
-            .transpose()?;
-        self.0.set_expires_at(expires_at);
         Ok(())
     }
 }

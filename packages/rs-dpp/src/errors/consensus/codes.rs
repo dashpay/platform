@@ -128,7 +128,6 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::InvalidTokenOrderPriceError(_) => 10462,
             Self::InvalidTokenOrderFillRangeError(_) => 10463,
-            Self::InvalidTokenOrderExpiryError(_) => 10464,
             Self::InvalidTokenOrderValueError(_) => 10465,
 
             // Group Errors: 10350-10399
@@ -394,7 +393,6 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentPrecededError(_) => 40149,
             Self::TokenNotTradeableError(_) => 40750,
             Self::TokenOrderNotFoundError(_) => 40751,
-            Self::TokenOrderExpiredError(_) => 40752,
             Self::TokenOrderFillAmountError(_) => 40753,
             Self::TokenOrderPriceLimitError(_) => 40754,
             Self::TokenOrderNotOwnedError(_) => 40755,

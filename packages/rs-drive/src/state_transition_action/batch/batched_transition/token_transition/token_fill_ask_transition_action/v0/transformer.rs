@@ -2,7 +2,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::token::{
-    TokenOrderExpiredError, TokenOrderFillAmountError, TokenOrderNotFoundError,
+    TokenOrderFillAmountError, TokenOrderNotFoundError,
     TokenOrderPriceLimitError, TokenOrderSelfFillError,
 };
 use dpp::consensus::ConsensusError;
@@ -26,8 +26,8 @@ use crate::state_transition_action::batch::BatchedTransitionAction;
 impl TokenFillAskTransitionActionV0 {
     /// Converts a borrowed `TokenFillAskTransitionV0` into an action: reads the listing, and
     /// works out the amount the fill takes and the credits the buyer pays. A token its contract
-    /// does not define, a listing that is not open for this token, the buyer's own listing, an
-    /// expired listing, a fill range the listing cannot meet and a cost above the buyer's limit
+    /// does not define, a listing that is not open for this token, the buyer's own listing, a
+    /// fill range the listing cannot meet and a cost above the buyer's limit
     /// each bump the nonce with their error instead.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_ask_transition_with_contract_lookup(
@@ -128,17 +128,6 @@ impl TokenFillAskTransitionActionV0 {
                 vec![TokenOrderSelfFillError::new(*order_id, owner_id).into()],
                 fee_result,
             );
-        }
-        if let Some(expires_at) = order.expires_at {
-            if order.is_expired_at(block_info.time_ms) {
-                return bump(
-                    vec![
-                        TokenOrderExpiredError::new(*order_id, expires_at, block_info.time_ms)
-                            .into(),
-                    ],
-                    fee_result,
-                );
-            }
         }
         let Some(fill_amount) = order.fill_amount(*min_amount, *max_amount) else {
             return bump(
