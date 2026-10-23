@@ -39,6 +39,8 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::PlaceAskAction(_) => TokenTransitionActionType::PlaceAsk,
             TokenTransitionAction::FillAskAction(_) => TokenTransitionActionType::FillAsk,
             TokenTransitionAction::CancelOrderAction(_) => TokenTransitionActionType::CancelOrder,
+            TokenTransitionAction::PlaceBidAction(_) => TokenTransitionActionType::PlaceBid,
+            TokenTransitionAction::FillBidAction(_) => TokenTransitionActionType::FillBid,
         }
     }
 }

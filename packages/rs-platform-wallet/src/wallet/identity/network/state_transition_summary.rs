@@ -35,8 +35,11 @@ use dpp::state_transition::batch_transition::document_create_transition::v0::v0_
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_fill_bid_transition::v0::v0_methods::TokenFillBidTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_bid_transition::v0::v0_methods::TokenPlaceBidTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_fill_ask_transition::v0::v0_methods::TokenFillAskTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
+use dpp::tokens::token_order::TokenOrder;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -157,14 +160,16 @@ pub struct BatchedTransitionSummary {
     pub target: BatchedTransitionTarget,
     /// Credits or tokens moved: a document purchase price or update-price
     /// value, a token transfer / mint / burn amount, a direct purchase's
-    /// total agreed price, the tokens a listing places in escrow, or the most
-    /// credits a listing fill spends.
+    /// total agreed price, the tokens a listing places in escrow, the most
+    /// credits a listing fill spends, the credits an offer moves into escrow,
+    /// or the most tokens a sale into an offer moves.
     pub amount: Option<u64>,
     /// The identity on the other side, read against `action`: a document
     /// transfer's new owner, a token transfer's recipient, a mint's issued-to
     /// identity, or the frozen identity of a freeze / unfreeze / destroy.
     pub recipient_id: Option<Identifier>,
-    /// Tokens bought by a direct purchase, or the most a listing fill buys.
+    /// Tokens bought by a direct purchase, the most a listing fill buys, or the tokens an
+    /// offer wants.
     pub token_count: Option<u64>,
     /// The material fields `amount` / `recipient_id` / `token_count` do not
     /// cover, one per line (document data, a config change item, a price
@@ -618,6 +623,34 @@ fn summarize_token_transition(
             lines.push(budget.write(format_args!("order: {} ({})", t.order_id(), t.side()))?);
             (None, None, None, None)
         }
+        // An offer wants `amount` tokens and moves what they are worth, at its price and the
+        // decimals it signs, from the buyer's credits into escrow: the credits it commits, worked
+        // out as Platform works them out (`TokenOrder::order_value`).
+        TokenTransition::PlaceBid(t) => {
+            lines.push(budget.write(format_args!(
+                "price: {} credits per whole token at {} decimals",
+                t.price(),
+                t.decimals()
+            ))?);
+            lines.push(budget.write(format_args!("minimum fill: {}", t.min_fill()))?);
+            let escrow = TokenOrder::order_value(t.amount(), t.price(), t.decimals());
+            if escrow.is_none() {
+                lines.push(budget.write(format_args!(
+                    "escrow: more credits than an order holds (Platform refuses it)"
+                ))?);
+            }
+            (escrow, None, Some(t.amount()), None)
+        }
+        // A sale moves at most `max_amount` tokens for at least `min_total_received` credits.
+        TokenTransition::FillBid(t) => {
+            lines.push(budget.write(format_args!("offer: {}", t.order_id()))?);
+            lines.push(budget.write(format_args!("minimum amount: {}", t.min_amount()))?);
+            lines.push(budget.write(format_args!(
+                "minimum received: {} credits",
+                t.min_total_received()
+            ))?);
+            (Some(t.max_amount()), None, None, None)
+        }
         // Shielded-pool operations carry notes, proofs and amounts with no typed projection: the
         // whole transition is rendered and the row is incomplete.
         TokenTransition::Shield(_)
@@ -695,7 +728,8 @@ mod tests {
     use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
     use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
     use dpp::state_transition::batch_transition::token_place_ask_transition::v0::TokenPlaceAskTransitionV0;
-    use dpp::state_transition::batch_transition::TokenPlaceAskTransition;
+    use dpp::state_transition::batch_transition::token_place_bid_transition::v0::TokenPlaceBidTransitionV0;
+    use dpp::state_transition::batch_transition::{TokenPlaceAskTransition, TokenPlaceBidTransition};
     use dpp::state_transition::batch_transition::{
         BatchTransitionV1, DocumentCreateTransition, TokenClaimTransition,
         TokenConfigUpdateTransition, TokenDirectPurchaseTransition,
@@ -1051,6 +1085,62 @@ mod tests {
             details(&transitions[1])
         );
         assert_eq!(transitions[0].amount, Some(1_000));
+    }
+
+    /// An offer's row shows the credits it commits to escrow, worked out at the decimals it
+    /// signs, and the decimals themselves: two offers differing only in their decimals render
+    /// different approvals (1,000 base units at 1,000,000,000 credits per whole token commit
+    /// 10,000 credits at 8 decimals and 100,000,000 at 4). A listing's row shows its decimals.
+    #[test]
+    fn offer_and_listing_rows_show_the_signed_decimals_and_the_offers_escrow() {
+        let offer = |decimals: u8| {
+            BatchedTransition::Token(TokenTransition::PlaceBid(TokenPlaceBidTransition::V0(
+                TokenPlaceBidTransitionV0 {
+                    base: token_base(),
+                    amount: 1_000,
+                    price: 1_000_000_000,
+                    decimals,
+                    min_fill: 1,
+                },
+            )))
+        };
+        let summary = summarize_bytes(&batch(vec![
+            offer(8),
+            offer(4),
+            BatchedTransition::Token(TokenTransition::PlaceAsk(TokenPlaceAskTransition::V0(
+                TokenPlaceAskTransitionV0 {
+                    base: token_base(),
+                    amount: 1_000,
+                    price: 1_000_000_000,
+                    decimals: 8,
+                    min_fill: 1,
+                },
+            ))),
+        ]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        assert_eq!(transitions[0].amount, Some(10_000));
+        assert_eq!(transitions[1].amount, Some(100_000_000));
+        assert_eq!(transitions[0].token_count, Some(1_000));
+        assert_ne!(transitions[0], transitions[1]);
+        let details = |row: &BatchedTransitionSummary| row.details.clone().expect("details");
+        assert!(
+            details(&transitions[0]).contains("at 8 decimals"),
+            "{}",
+            details(&transitions[0])
+        );
+        assert!(
+            details(&transitions[1]).contains("at 4 decimals"),
+            "{}",
+            details(&transitions[1])
+        );
+        assert!(
+            details(&transitions[2]).contains("at 8 decimals"),
+            "{}",
+            details(&transitions[2])
+        );
+        assert_eq!(transitions[2].amount, Some(1_000));
     }
 
     #[test]

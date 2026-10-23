@@ -72,6 +72,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_place_ask_transition: FeatureVersion,
     pub token_fill_ask_transition: FeatureVersion,
     pub token_cancel_order_transition: FeatureVersion,
+    pub token_place_bid_transition: FeatureVersion,
+    pub token_fill_bid_transition: FeatureVersion,
     pub identity_credit_transfer_to_addresses_transition: FeatureVersion,
     pub address_funds_transfer_transition: FeatureVersion,
     pub address_credit_withdrawal_transition: FeatureVersion,

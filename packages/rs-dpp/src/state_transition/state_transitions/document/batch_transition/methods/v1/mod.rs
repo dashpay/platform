@@ -628,6 +628,46 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError>;
 
+    /// Offers `price` credits per whole token for `amount` of a tradeable token, holding what the offer is worth in escrow. (The token marketplace, protocol version 15.)
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_place_bid_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        price: Credits,
+        decimals: u8,
+        min_fill: TokenAmount,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Sells between `min_amount` and `max_amount` into the open offer `order_id`, receiving at least `min_total_received`. (The token marketplace, protocol version 15.)
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_fill_bid_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        order_id: Identifier,
+        min_amount: TokenAmount,
+        max_amount: TokenAmount,
+        min_total_received: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
     /// Cancels the signer's own open order `order_id`. (The token marketplace, protocol version 15.)
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]

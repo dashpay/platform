@@ -59,6 +59,12 @@ pub mod token_fill_ask_transition_action;
 /// A maker cancelling an open order (the token marketplace)
 pub mod token_cancel_order_transition_action;
 
+/// An offer for a tradeable token (the token marketplace)
+pub mod token_place_bid_transition_action;
+
+/// A sale into an open offer (the token marketplace)
+pub mod token_fill_bid_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -107,6 +113,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::{TokenPlaceAskTransitionAction, TokenPlaceAskTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::{TokenFillAskTransitionAction, TokenFillAskTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::{TokenCancelOrderTransitionAction, TokenCancelOrderTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::{TokenPlaceBidTransitionAction, TokenPlaceBidTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_bid_transition_action::{TokenFillBidTransitionAction, TokenFillBidTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -153,6 +161,10 @@ pub enum TokenTransitionAction {
     FillAskAction(TokenFillAskTransitionAction),
     /// cancels an open order (the token marketplace)
     CancelOrderAction(TokenCancelOrderTransitionAction),
+    /// offers credits for a tradeable token (the token marketplace)
+    PlaceBidAction(TokenPlaceBidTransitionAction),
+    /// sells into an open offer (the token marketplace)
+    FillBidAction(TokenFillBidTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -180,6 +192,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::PlaceAskAction(action) => action.base(),
             TokenTransitionAction::FillAskAction(action) => action.base(),
             TokenTransitionAction::CancelOrderAction(action) => action.base(),
+            TokenTransitionAction::PlaceBidAction(action) => action.base(),
+            TokenTransitionAction::FillBidAction(action) => action.base(),
         }
     }
 
@@ -207,6 +221,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::PlaceAskAction(action) => action.base_owned(),
             TokenTransitionAction::FillAskAction(action) => action.base_owned(),
             TokenTransitionAction::CancelOrderAction(action) => action.base_owned(),
+            TokenTransitionAction::PlaceBidAction(action) => action.base_owned(),
+            TokenTransitionAction::FillBidAction(action) => action.base_owned(),
         }
     }
 
@@ -234,6 +250,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::PlaceAskAction(_) => "orderPlaced",
             TokenTransitionAction::FillAskAction(_) => "orderFilled",
             TokenTransitionAction::CancelOrderAction(_) => "orderCancelled",
+            TokenTransitionAction::PlaceBidAction(_) => "orderPlaced",
+            TokenTransitionAction::FillBidAction(_) => "orderFilled",
         }
     }
 
@@ -310,7 +328,9 @@ impl TokenTransitionAction {
             // documents of the token market contract.
             TokenTransitionAction::PlaceAskAction(_)
             | TokenTransitionAction::FillAskAction(_)
-            | TokenTransitionAction::CancelOrderAction(_) => Ok(false),
+            | TokenTransitionAction::CancelOrderAction(_)
+            | TokenTransitionAction::PlaceBidAction(_)
+            | TokenTransitionAction::FillBidAction(_) => Ok(false),
         }
     }
 }

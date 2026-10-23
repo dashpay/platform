@@ -49,6 +49,8 @@ use crate::state_transition::batch_transition::token_direct_purchase_to_pool_tra
 use crate::state_transition::batch_transition::token_place_ask_transition::validate_structure::TokenPlaceAskTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_fill_ask_transition::validate_structure::TokenFillAskTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_cancel_order_transition::validate_structure::TokenCancelOrderTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_fill_bid_transition::validate_structure::TokenFillBidTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_place_bid_transition::validate_structure::TokenPlaceBidTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
@@ -292,6 +294,12 @@ impl BatchTransition {
                 }
                 TokenTransition::CancelOrder(cancel_order_transition) => {
                     cancel_order_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::PlaceBid(place_bid_transition) => {
+                    place_bid_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::FillBid(fill_bid_transition) => {
+                    fill_bid_transition.validate_structure(platform_version)?
                 }
             };
 

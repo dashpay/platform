@@ -25,6 +25,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::TokenFillAskTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::TokenPlaceBidTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 
 /// action v0
@@ -250,6 +251,11 @@ impl BatchTransitionActionV0 {
                     // same sequence of prices.
                     TokenTransitionAction::FillAskAction(fill_ask),
                 ) => Some(fill_ask.credits()),
+                BatchedTransitionAction::TokenAction(
+                    // The credits an offer moves from the buyer's balance into escrow, refused
+                    // unpaid before protocol version 15 like a fill.
+                    TokenTransitionAction::PlaceBidAction(place_bid),
+                ) => Some(place_bid.escrow()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {
