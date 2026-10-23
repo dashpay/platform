@@ -5,6 +5,15 @@
 //! hands it to a surviving spender found through this index; a survivor
 //! missing from it loses the claim to the winner, and the coin stays held
 //! after the survivor is defeated. Every input is therefore indexed here.
+//!
+//! CODEC PIN: this step decodes `TransactionRecord` bodies with the CURRENT
+//! record codec (`core_state::decode_transaction_record`), and V020 is the
+//! last migration allowed to depend on it. A later change to that codec must
+//! keep every body V020 can meet decodable: one it cannot read is skipped,
+//! silently leaving its inputs unindexed. The golden rows in
+//! `tests/integration/persisted_core_transactions.rs` guard that decoding
+//! across dependency upgrades. A later migration that needs record contents
+//! must freeze its own decoder instead of calling the live one.
 
 use dashcore::hashes::Hash;
 use rusqlite::Transaction;

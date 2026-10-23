@@ -2027,8 +2027,9 @@ mod tests {
     /// Kept coins are cheap for a peer to add: an unmined receipt paying the
     /// wallet is enough. Dropping the mined history must not visit every kept
     /// coin once per dropped record, neither to find a dropped record's
-    /// outputs nor in the cleanup trigger clearing its claims, so doubling
-    /// both at once at most roughly doubles the migration's work.
+    /// outputs nor in the cleanup trigger clearing its claims, so quadrupling
+    /// both at once roughly quadruples the migration's work; quadratic work
+    /// would grow sixteenfold. The bound sits between, with headroom both ways.
     #[test]
     fn should_migrate_to_v020_in_work_linear_in_kept_coins_and_dropped_history() {
         let ops = |n: u32| {
@@ -2063,11 +2064,11 @@ mod tests {
             assert_eq!(kept, i64::from(n), "only the unmined receipts stay");
             ops.load(std::sync::atomic::Ordering::Relaxed)
         };
-        let (small, large) = (ops(300), ops(600));
+        let (small, large) = (ops(200), ops(800));
         assert!(
-            large < 3 * small,
+            large < 8 * small,
             "V020 work must grow linearly, not with kept coins times dropped records: \
-             {small} VM ops for 300 of each, {large} for 600"
+             {small} VM ops for 200 of each, {large} for 800"
         );
     }
 

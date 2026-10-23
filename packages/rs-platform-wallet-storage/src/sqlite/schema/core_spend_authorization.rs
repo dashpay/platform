@@ -314,8 +314,9 @@ mod tests {
 
     /// Removing a rejected spend deletes its outputs and, through the cleanup
     /// trigger, clears its claims. Neither may visit every stored coin once
-    /// per rejected spend, so doubling both at once at most roughly doubles
-    /// the repair's SQL work.
+    /// per rejected spend, so quadrupling both at once roughly quadruples
+    /// the repair's SQL work; quadratic work would grow sixteenfold. The bound
+    /// sits between, with headroom both ways.
     #[test]
     fn should_remove_many_rejected_spends_in_work_linear_in_stored_coins() {
         let hash = PubkeyHash::from_byte_array([0x32; 20]);
@@ -382,11 +383,11 @@ mod tests {
             assert_eq!(left, i64::from(n), "each released coin stays, no output");
             ops.load(std::sync::atomic::Ordering::Relaxed)
         };
-        let (small, large) = (ops(300), ops(600));
+        let (small, large) = (ops(200), ops(800));
         assert!(
-            large < 3 * small,
+            large < 8 * small,
             "repair work must grow linearly, not with stored coins times rejected spends: \
-             {small} VM ops for 300 of each, {large} for 600"
+             {small} VM ops for 200 of each, {large} for 800"
         );
     }
 }
