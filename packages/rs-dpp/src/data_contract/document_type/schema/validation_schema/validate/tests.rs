@@ -309,15 +309,77 @@ fn should_list_the_violations_of_a_value_in_the_walks_order() {
 
 #[test]
 fn should_refuse_a_cycle_of_references_that_consumes_nothing() {
-    let validator = validator_of(&json!({
-        "type": "object",
-        "properties": { "value": { "$ref": "#/$defs/a" } },
-        "$defs": { "a": { "$ref": "#/$defs/b" }, "b": { "$ref": "#/$defs/a" } },
+    // Reached at the value, and through `contains`, whose candidates are only matched
+    for value in [
+        json!({ "$ref": "#/$defs/a" }),
+        json!({ "type": "array", "contains": { "$ref": "#/$defs/a" } }),
+    ] {
+        let schema = ValidationSchema::try_from_root(&Value::from(json!({
+            "type": "object",
+            "properties": { "value": value },
+            "$defs": { "a": { "$ref": "#/$defs/b" }, "b": { "$ref": "#/$defs/a" } },
+        })))
+        .expect("expected the schema to build");
+        assert!(
+            matches!(
+                DocumentSchemaValidator::new(schema),
+                Err(DataContractError::InvalidContractStructure(_))
+            ),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn should_refuse_the_documents_of_a_type_whose_references_cycle() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = item_contract(platform_value!({
+        "name": { "type": "string", "position": 0 },
     }));
-    assert!(matches!(
-        validator.validate(&json!({ "value": 1 })),
-        Err(ProtocolError::CorruptedCodeExecution(_))
-    ));
+    // The definitions and the type are set without full validation
+    let mut defs = contract.schema_defs().cloned().unwrap_or_default();
+    defs.insert("a".to_string(), platform_value!({ "$ref": "#/$defs/b" }));
+    defs.insert("b".to_string(), platform_value!({ "$ref": "#/$defs/a" }));
+    contract
+        .set_schema_defs(Some(defs), false, &mut Vec::new(), platform_version)
+        .expect("expected the definitions to set");
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "position": 0,
+                        "maxItems": 4,
+                        "items": { "type": "integer" },
+                        "contains": { "$ref": "#/$defs/a" },
+                    },
+                },
+                "additionalProperties": false,
+            }),
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to set");
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "tags": [1] }),
+        platform_version,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(_)
+            ))]
+        ),
+        "{errors:?}"
+    );
+    assert_eq!(native_validator_state(&contract), Some(false));
 }
 
 /// Generated schemas and documents: wherever the builder builds a schema the existing
