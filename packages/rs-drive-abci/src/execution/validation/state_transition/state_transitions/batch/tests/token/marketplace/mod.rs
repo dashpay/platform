@@ -3453,6 +3453,10 @@ mod frozen {
             trees_with_listings.len()
         );
         assert!(
+            cancel_refunds > 0,
+            "the cancellation control must refund the listing owner's storage"
+        );
+        assert!(
             destroy_refund >= cancel_refunds,
             "the destroy refunds {destroy_refund}, the cancels {cancel_refunds}"
         );
