@@ -51,7 +51,10 @@ pub fn funding_record(records: &[TransactionRecord], txid: &Txid) -> Transaction
 /// Only valid when all inputs are the wallet's own (true for anything the
 /// wallet built itself); `None` when the record spends less than it
 /// outputs, i.e. it does not carry every wallet input.
-fn fee_from_inputs(record: &TransactionRecord) -> Option<u64> {
+///
+/// Use this, not `record.fee`: key-wallet leaves `TransactionRecord::fee`
+/// unset on the records it emits.
+pub fn record_fee(record: &TransactionRecord) -> Option<u64> {
     let spent: u64 = record.input_details.iter().map(|d| d.value).sum();
     let out: u64 = record.transaction.output.iter().map(|o| o.value).sum();
     spent.checked_sub(out)
@@ -64,7 +67,7 @@ fn asset_lock_accounting_error(
     lock_amount_duffs: u64,
 ) -> Option<String> {
     let txid = record.txid;
-    let Some(fee) = fee_from_inputs(record) else {
+    let Some(fee) = record_fee(record) else {
         return Some(format!(
             "asset lock {txid}: the record's wallet inputs ({} input details) do not cover \
              its outputs, so it is not the funding wallet's view (direction {:?}, net {})",
@@ -144,7 +147,7 @@ pub fn assert_every_asset_lock_record(
 /// Pin a plain Core send's wallet-level accounting: `Outgoing`, and
 /// `net_amount == -(sent_duffs + fee)`.
 pub fn assert_send_accounting(record: &TransactionRecord, sent_duffs: u64) {
-    let fee = fee_from_inputs(record).expect("wallet-built send spends at least its outputs");
+    let fee = record_fee(record).expect("wallet-built send spends at least its outputs");
     assert_eq!(
         record.direction,
         TransactionDirection::Outgoing,
@@ -230,7 +233,7 @@ mod tests {
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::AccountType;
 
-    use super::assert_every_asset_lock_record;
+    use super::{assert_every_asset_lock_record, record_fee};
 
     const LOCK: u64 = 5_000_000;
     const FEE: u64 = 1_000;
@@ -260,6 +263,22 @@ mod tests {
 
     fn correct() -> TransactionRecord {
         lock_record(TransactionDirection::Internal, -((LOCK + FEE) as i64))
+    }
+
+    /// key-wallet leaves `TransactionRecord::fee` unset on the records it
+    /// emits, so the fee comes from the record's own details.
+    #[test]
+    fn record_fee_derives_the_fee_when_the_record_leaves_it_unset() {
+        let record = correct();
+        assert_eq!(record.fee, None, "precondition: no recorded fee");
+        assert_eq!(record_fee(&record), Some(FEE));
+    }
+
+    #[test]
+    fn record_fee_is_none_when_the_wallet_inputs_do_not_cover_the_outputs() {
+        let mut record = correct();
+        record.input_details.clear();
+        assert_eq!(record_fee(&record), None);
     }
 
     #[test]

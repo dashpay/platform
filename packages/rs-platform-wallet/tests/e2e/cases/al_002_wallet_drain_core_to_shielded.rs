@@ -45,7 +45,7 @@ use crate::framework::shielded::{
     wait_for_shielded_balance,
 };
 use crate::framework::signer::SeedBackedCoreSigner;
-use crate::framework::tx_accounting::assert_tracked_lock_accounting;
+use crate::framework::tx_accounting::{assert_tracked_lock_accounting, record_fee};
 
 /// Core duffs the bank sends the test wallet in ONE transaction; the drain
 /// locks all of it minus the L1 fee. Comfortably above Type 18's
@@ -174,13 +174,29 @@ async fn al_002_wallet_drain_core_to_shielded() {
     // Every stored record and the reloaded row: Internal, net == -(lock + fee).
     assert_tracked_lock_accounting(&s.ctx.persister, wallet_id, &lock).await;
 
-    // The drain spent every candidate duff: lock value plus L1 fee.
-    let fee = s
+    // The drain spent exactly the quoted candidates, with no change: the
+    // lock transaction's only output is the burn of the lock value, so the
+    // L1 fee is the rest of the spent inputs.
+    let live = s
         .ctx
         .persister
         .live_record(wallet_id, &out_point.txid)
-        .and_then(|record| record.fee)
-        .expect("the drained lock's wallet-level record carries its fee");
+        .expect("the drained lock has a wallet-level record");
+    let spent: u64 = live.input_details.iter().map(|input| input.value).sum();
+    assert_eq!(
+        spent, preview.candidate_balance_duffs,
+        "the drain must spend exactly the previewed candidate balance"
+    );
+    assert!(
+        live.transaction.output.len() == 1
+            && live.transaction.output[0].script_pubkey.is_op_return()
+            && live.transaction.output[0].value == lock.amount,
+        "the drain's only output must be the burn of the lock value {} (no change), got {:?}",
+        lock.amount,
+        live.transaction.output
+    );
+    let fee = record_fee(&live).expect("the wallet's inputs cover the lock's outputs");
+    assert!(fee > 0, "the drain pays an L1 fee");
     assert_eq!(
         lock.amount + fee,
         preview.candidate_balance_duffs,

@@ -1755,7 +1755,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
   - status after the drain returns is `Completed` with the lock's outpoint (read from the durable row);
   - the reopened store holds the lock under that outpoint with `operation_id == Some(uuid)` and `DrainCompleted`;
   - the lock's wallet-level records are `Internal`, `net_amount == -(amount + fee)`, live and after reload (`assert_tracked_lock_accounting`);
-  - `amount + fee == preview.candidate_balance_duffs` (every candidate duff spent);
+  - the live record's inputs sum to `preview.candidate_balance_duffs`, the lock transaction's only output is the OP_RETURN burn of `amount` (no change), and `amount + fee == preview.candidate_balance_duffs` with the fee derived from the record's inputs minus outputs (key-wallet leaves `TransactionRecord::fee` unset);
   - shielded balance `== amount × CREDITS_PER_DUFF − preview.pool_fee_credits` (exact: production shields `lock_value − pool_fee`, the preview quotes the same action count, and the wallet holds no other note);
   - a post-drain preview has no candidate inputs and zero balance;
   - re-registering the UUID still reads `Completed` with the same outpoint.
