@@ -2,13 +2,13 @@
 //! keep each record's pre-repair blob so every repair stays reversible, and
 //! rebuild the mined Core history stored before both by rescanning it.
 //!
-//! Records stored before V021 may carry wrong input details, net amounts and
+//! Records stored before V020 may carry wrong input details, net amounts and
 //! directions, and their raw inputs were never indexed. Rather than repair
-//! them in place, V021 drops each wallet's mined Core history and rewinds its
+//! them in place, V020 drops each wallet's mined Core history and rewinds its
 //! filter checkpoint to just below its birth height, so the next SPV start
 //! rescans it from birth and records it again through the current accounting.
 //!
-//! A block rescan cannot redeliver what was never mined, so V021 keeps the
+//! A block rescan cannot redeliver what was never mined, so V020 keeps the
 //! unmined history as evidence: unconfirmed transactions with their instant
 //! locks and outputs, and every spent row whose claim no mined transaction
 //! stands behind. A kept coin's mined funding is reduced to a height-only row

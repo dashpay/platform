@@ -3756,7 +3756,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
         params![w.as_slice(), encoded],
     )
     .unwrap();
-    // Through V018: V021 drops mined Core history for a rescan, mined holds included.
+    // Through V018: V020 drops mined Core history for a rescan, mined holds included.
     migrations::runner()
         .set_target(refinery::Target::Version(18))
         .run(&mut conn)
@@ -3771,7 +3771,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     migrations::run(&mut conn).unwrap();
     assert!(
         !row_exists(&conn, &w, &input),
-        "V021 drops a mined winner's hold with the rest of mined Core history"
+        "V020 drops a mined winner's hold with the rest of mined Core history"
     );
 }
 

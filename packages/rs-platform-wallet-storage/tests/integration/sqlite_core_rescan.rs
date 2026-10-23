@@ -1,6 +1,6 @@
 #![cfg(feature = "sqlite")]
 
-//! A wallet whose mined Core history was wiped (what V021 does to an older store)
+//! A wallet whose mined Core history was wiped (what V020 does to an older store)
 //! rebuilds it by rescanning from its birth height. These tests drive that
 //! rescan through the real manager, event adapter, store and load replay.
 
@@ -83,7 +83,7 @@ impl Chain {
     }
 }
 
-/// A registered wallet with no Core history, as V021 leaves it, and its first
+/// A registered wallet with no Core history, as V020 leaves it, and its first
 /// receive address.
 fn wiped_wallet(persister: &SqlitePersister) -> (WalletId, Address) {
     let (wallet, _, address) = wallet_with_receive_address();
@@ -131,14 +131,14 @@ async fn rescan(
         .unwrap()
 }
 
-/// Undo V021 on the store at `path`, so its next open replays V021 over the
-/// history it holds, as on a store upgraded from before V021.
-fn rewind_v021(path: &std::path::Path) {
+/// Undo V020 on the store at `path`, so its next open replays V020 over the
+/// history it holds, as on a store upgraded from before V020.
+fn rewind_v020(path: &std::path::Path) {
     rusqlite::Connection::open(path)
         .unwrap()
         .execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 21;",
+             DELETE FROM refinery_schema_history WHERE version >= 20;",
         )
         .unwrap();
 }
@@ -185,7 +185,7 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
     }
 }
 
-/// R3: a wallet upgraded from V018. V021 drops its mined Core history but keeps
+/// R3: a wallet upgraded from V018. V020 drops its mined Core history but keeps
 /// `last_processed_height` and the ChainLock, both above that history, so the
 /// rescan replays every historical block below a ChainLock the loaded wallet
 /// already holds: key-wallet's ChainLocked path, not the ordinary block one.
@@ -227,7 +227,7 @@ async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_cha
         )
         .unwrap()
     };
-    rewind_v021(&path);
+    rewind_v020(&path);
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
         let rows: i64 = conn
@@ -239,13 +239,13 @@ async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_cha
     }
     assert_eq!(sync_state(), (Some(500), Some(500), Some(400)));
 
-    // `rescan` opens through `SqlitePersister::open`, so V021 runs first.
+    // `rescan` opens through `SqlitePersister::open`, so V020 runs first.
     let state = rescan(&path, wallet_id, &chain.blocks()).await;
 
     assert_eq!(
         sync_state(),
         (Some(500), Some(0), Some(400)),
-        "V021 rewinds only the filter checkpoint"
+        "V020 rewinds only the filter checkpoint"
     );
     for tx in [&chain.funding, &chain.spend, &chain.lock] {
         assert!(
@@ -468,7 +468,7 @@ fn manager_of(
 }
 
 /// R4: a V019 store holding unmined spends of a confirmed funding. A block
-/// rescan redelivers the funding but never the spends, so V021 keeps their
+/// rescan redelivers the funding but never the spends, so V020 keeps their
 /// evidence for the load to authenticate: an InstantSend-locked spend and a
 /// signed pending send keep their inputs reserved, a forged claim is
 /// released. Nothing is redelivered from the mempool or InstantSend.
@@ -519,7 +519,7 @@ async fn should_keep_unmined_spends_reserved_when_an_upgraded_wallet_rescans() {
     }
     persist_events(&manager, &persister, &mut events).await;
     drop((manager, events, persister));
-    rewind_v021(&path);
+    rewind_v020(&path);
 
     let persister = Arc::new(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
     let loaded = persister

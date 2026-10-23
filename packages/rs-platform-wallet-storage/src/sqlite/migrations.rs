@@ -420,12 +420,12 @@ pub fn embedded_migrations_sql() -> Vec<String> {
         .collect()
 }
 
-/// Undo V021 so the next [`run`] replays it over the current rows.
+/// Undo V020 so the next [`run`] replays it over the current rows.
 #[cfg(test)]
-pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
+pub(crate) fn rewind_v020(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-         DELETE FROM refinery_schema_history WHERE version >= 21;",
+         DELETE FROM refinery_schema_history WHERE version >= 20;",
     )
     .unwrap();
 }
