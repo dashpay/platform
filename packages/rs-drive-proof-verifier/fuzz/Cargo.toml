@@ -1,0 +1,53 @@
+[package]
+name = "drive-proof-verifier-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+dapi-grpc = { path = "../../dapi-grpc", default-features = false, features = [
+  "platform",
+  "client",
+] }
+dash-platform-queries = { path = "../../dash-platform-queries" }
+dpp = { path = "../../rs-dpp", default-features = false, features = [
+  "dpns-contract",
+] }
+drive = { path = "../../rs-drive", default-features = false, features = [
+  "verify",
+] }
+drive-proof-verifier = { path = ".." }
+hex = { version = "0.4.3" }
+
+# Not a member of the repository workspace.
+[workspace]
+members = ["."]
+
+# Every helper returns the verifier's own error type.
+[lints.clippy]
+result_large_err = "allow"
+
+[[bin]]
+name = "identity"
+path = "fuzz_targets/identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "documents"
+path = "fuzz_targets/documents.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "contested"
+path = "fuzz_targets/contested.rs"
+test = false
+doc = false
+bench = false
