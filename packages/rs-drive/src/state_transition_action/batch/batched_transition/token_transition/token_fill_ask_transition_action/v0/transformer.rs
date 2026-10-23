@@ -29,6 +29,11 @@ impl TokenFillAskTransitionActionV0 {
     /// does not define, a listing that is not open for this token, the buyer's own listing, a
     /// fill range the listing cannot meet and a cost above the buyer's limit
     /// each bump the nonce with their error instead.
+    ///
+    /// The listing is read as state holds it, and the fill's operations write its new
+    /// `remaining` and escrow as absolute values. That is sound only while a batch carries one
+    /// transition (`SystemLimits::max_transitions_in_documents_batch`): two fills of one listing
+    /// in a batch would both read it unfilled.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_fill_ask_transition_with_contract_lookup(
         drive: &Drive,
