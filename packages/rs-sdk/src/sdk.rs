@@ -35,8 +35,7 @@ pub use rs_dapi_client::AddressBanInfo;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
-    transport::{TransportError, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
+    transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
@@ -45,23 +44,31 @@ use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::Mutex as StdMutex;
 use std::sync::{atomic, Arc};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
-mod protocol_compatibility;
-mod quorum_key;
-use protocol_compatibility::Compatibility;
-pub use protocol_compatibility::{
-    ProtocolCompatibility, ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
-};
 #[cfg(all(test, feature = "mocks"))]
-pub(crate) mod put_test_support;
+mod identity_discovery_tests;
+mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
+
+/// A local view of the authenticated network observation and this SDK's version tables.
+/// This is informational: a newer network version does not disable operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolVersionInfo {
+    /// Highest fresh, proof-and-signature-verified version, or no observation yet.
+    pub verified_version: Option<u32>,
+    /// Version table currently used to build operations (possibly pinned).
+    pub effective_version: u32,
+    /// Highest protocol version whose tables are included in this SDK.
+    pub maximum_supported_version: u32,
+    /// Whether the authenticated network observation exceeds the known tables.
+    pub newer_protocol_available: bool,
+}
 
 /// Metadata needed to select the rules for interpreting a proved response.
 /// Reading it does not authenticate it or update the SDK's stored version.
@@ -296,15 +303,17 @@ pub struct Sdk {
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
 
-    /// Advisory authenticated version observations, shared by every clone.
-    protocol_compatibility: Arc<StdMutex<Compatibility>>,
-    /// Tags the private clone running one explicit compatibility query.
-    compatibility_check_generation: Option<u64>,
-
     /// Whether the protocol version is pinned, i.e. auto-detection from network
     /// response metadata is disabled. Set to `true` when the user explicitly calls
     /// [`SdkBuilder::with_version()`].
     version_pinned: bool,
+
+    /// Highest protocol version seen in a response whose proof, signature and
+    /// freshness were verified, or 0 before the first one. Unlike `protocol_version`
+    /// it is never seeded or pinned and also records versions this build does not
+    /// know: it is evidence of what the network runs, not a choice of rules. Shared
+    /// between clones.
+    verified_protocol_version: Arc<atomic::AtomicU32>,
 
     /// Notified each time auto-detect ratchets the protocol version upward, so a
     /// host can persist the learned version and seed the next SDK with it.
@@ -344,9 +353,8 @@ impl Clone for Sdk {
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
-            protocol_compatibility: Arc::clone(&self.protocol_compatibility),
-            compatibility_check_generation: self.compatibility_check_generation,
             version_pinned: self.version_pinned,
+            verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
@@ -440,13 +448,17 @@ impl Sdk {
     /// Verify response metadata against the current state of the SDK.
     ///
     /// The metadata must come from a proof whose quorum signature has already
-    /// been verified: this method learns the reported protocol version.
+    /// been verified: this method learns the reported protocol version, and
+    /// records it as evidence of what the network runs, which decides whether
+    /// some requests are sent in a newer version.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None)
+        self.verify_response_metadata_as_of(method_name, metadata, None)?;
+        self.record_verified_protocol_version(metadata.protocol_version);
+        Ok(())
     }
 
     /// [`Self::verify_response_metadata`], with optional arrival-time height
@@ -483,6 +495,13 @@ impl Sdk {
         Ok(())
     }
 
+    /// Record the protocol version of a fresh response whose proof and signature
+    /// were verified. Never lowers it; unknown versions are recorded too.
+    fn record_verified_protocol_version(&self, protocol_version: u32) {
+        self.verified_protocol_version
+            .fetch_max(protocol_version, Ordering::Relaxed);
+    }
+
     /// Accept the metadata of a response whose proof and signature were
     /// verified: check it is fresh and learn its protocol version.
     ///
@@ -510,7 +529,7 @@ impl Sdk {
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
             })?;
-        self.observe_compatible_metadata(metadata.protocol_version);
+        self.record_verified_protocol_version(metadata.protocol_version);
         Ok(())
     }
 
@@ -623,7 +642,10 @@ impl Sdk {
     /// it is newer than the stored version, including on a pinned SDK. An
     /// unknown newer version uses the newest known verifier table with a warning.
     /// The stored version is learned only after proof and signature verification
-    /// succeeds, and is never lowered; a pin still governs construction.
+    /// succeeds, and is never lowered; a pin still governs construction. Some
+    /// requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -645,14 +667,23 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let verified = mock.lock().await.parse_proof_with_metadata(
+                let (verified, from_expectation) = mock.lock().await.parse_proof_with_metadata(
                     request,
                     response,
                     self.version(),
                 )?;
-                // Proof and signature verification (the `?`) must precede this
-                // call; see `accept_verified_metadata`.
-                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                if from_expectation {
+                    // An expectation's metadata is made up, not verified: it moves
+                    // the stored version as a real answer would, but is no evidence
+                    // of what a network serves. Recording it would also change the
+                    // request versions later fetches send, and so the keys of
+                    // expectations registered before this fetch.
+                    self.verify_response_metadata_as_of(method_name, &verified.1, None)?;
+                } else {
+                    // Proof and signature verification (the `?`) must precede this
+                    // call; see `accept_verified_metadata`.
+                    self.accept_verified_metadata(method_name, &verified.1, None)?;
+                }
                 Ok(verified)
             }
         }
@@ -757,6 +788,19 @@ impl Sdk {
         self.protocol_version.load(Ordering::Relaxed)
     }
 
+    /// Read the cached verified observation without making a request.
+    /// Ordinary proved queries update it even when the operation version is pinned.
+    pub fn protocol_version_info(&self) -> ProtocolVersionInfo {
+        let observed = self.verified_protocol_version.load(Ordering::Relaxed);
+        let maximum_supported_version = PlatformVersion::latest().protocol_version;
+        ProtocolVersionInfo {
+            verified_version: (observed != 0).then_some(observed),
+            effective_version: self.protocol_version_number(),
+            maximum_supported_version,
+            newer_protocol_available: observed > maximum_supported_version,
+        }
+    }
+
     // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
@@ -773,6 +817,7 @@ impl Sdk {
         crate::platform::QuerySettings {
             request_settings: &self.dapi_client_settings,
             protocol_version: self.version(),
+            verified_protocol_version: self.verified_protocol_version.load(Ordering::Relaxed),
             prove: self.prove(),
         }
     }
@@ -896,23 +941,8 @@ impl DapiRequestExecutor for Sdk {
         request: R,
         settings: RequestSettings,
     ) -> ExecutionResult<R::Response, DapiClientError> {
-        self.execute_with_transport_error_observer(request, settings, &|_| {})
-            .await
-    }
-}
-
-impl Sdk {
-    pub(crate) async fn execute_with_transport_error_observer<R: TransportRequest>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-        observer: &(dyn Fn(&TransportError) + Send + Sync),
-    ) -> ExecutionResult<R::Response, DapiClientError> {
         match self.inner {
-            SdkInstance::Dapi { ref dapi, .. } => {
-                dapi.execute_with_transport_error_observer(request, settings, observer)
-                    .await
-            }
+            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = dapi.lock().await;
@@ -1187,6 +1217,9 @@ impl SdkBuilder {
     ///
     /// The pin governs construction. Proof verification may use a newer table
     /// named in the response's quorum-signed metadata without changing the pin.
+    /// Some requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].
@@ -1401,9 +1434,8 @@ impl SdkBuilder {
                     // Seed atomic with the initial version; whether the version is
                     // pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
-                    protocol_compatibility: Arc::new(Compatibility::new()),
-                    compatibility_check_generation: None,
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
@@ -1473,9 +1505,8 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
-                    protocol_compatibility: Arc::new(Compatibility::new()),
-                    compatibility_check_generation: None,
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
@@ -2006,6 +2037,29 @@ pub(crate) mod test {
         sdk.protocol_version
             .store(starting_version, Ordering::Relaxed);
         sdk
+    }
+
+    #[test]
+    fn test_protocol_version_info_tracks_observation_without_changing_pinned_version() {
+        let version = super::PlatformVersion::latest();
+        let sdk = SdkBuilder::new_mock()
+            .with_version(version)
+            .build()
+            .unwrap();
+        let clone = sdk.clone();
+        let initial = sdk.protocol_version_info();
+        assert_eq!(initial.verified_version, None);
+        assert!(!initial.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert!(!clone.protocol_version_info().newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version + 1);
+        let info = clone.protocol_version_info();
+        assert_eq!(info.verified_version, Some(version.protocol_version + 1));
+        assert_eq!(info.effective_version, version.protocol_version);
+        assert_eq!(info.maximum_supported_version, version.protocol_version);
+        assert!(info.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert_eq!(sdk.protocol_version_info(), info);
     }
 
     #[test]

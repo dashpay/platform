@@ -124,47 +124,6 @@ mod tests {
     use super::*;
     use crate::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
     use crate::RequestSettings;
-    use dapi_grpc::platform::v0::BroadcastStateTransitionRequest;
-    use dapi_grpc::tonic::{Code, ConnectError};
-    use hyper_util::rt::TokioIo;
-    use std::io;
-    use tokio::io::DuplexStream;
-    use tower::service_fn;
-
-    #[tokio::test]
-    async fn should_preserve_typed_connector_failure_in_real_grpc_status() {
-        for kind in [
-            io::ErrorKind::ConnectionRefused,
-            io::ErrorKind::NotFound,
-            io::ErrorKind::InvalidData,
-        ] {
-            // Exercise tonic's actual connector -> channel -> generated unary
-            // request path. The failing connector never opens a socket.
-            let channel = Channel::builder("http://unreachable.invalid".parse().unwrap())
-                .connect_with_connector_lazy(service_fn(move |_| async move {
-                    Err::<TokioIo<DuplexStream>, _>(io::Error::new(kind, "establishment failed"))
-                }));
-            let mut client = PlatformGrpcClient::new(channel);
-            let status = client
-                .broadcast_state_transition(BroadcastStateTransitionRequest::default())
-                .await
-                .unwrap_err();
-            assert_eq!(status.code(), Code::Unavailable);
-            let mut source = status.source();
-            let mut found = false;
-            while let Some(error) = source {
-                if error.is::<ConnectError>() {
-                    found = true;
-                    break;
-                }
-                source = error.source();
-            }
-            assert!(
-                found,
-                "the SDK can distinguish establishment from a lost ACK: {status:?}"
-            );
-        }
-    }
 
     #[test]
     fn should_strip_only_ipv6_brackets() {

@@ -164,21 +164,14 @@ pub enum PlatformWalletError {
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
-    /// A transaction broadcast or address-funded identity top-up has an
-    /// **ambiguous** outcome. Reconcile it before submitting a replacement.
-    ///
-    /// For Core transactions, the
+    /// A core transaction broadcast failed with an **ambiguous** outcome — the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent Core inputs are
+    /// whose earlier attempt may have succeeded). The spent inputs are
     /// intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
-    /// An address-funded identity top-up may instead have been accepted but its
-    /// result proof could not be verified. Its balances must be re-read before
-    /// retrying; the Core input protections below do not apply to Platform addresses.
-    ///
-    /// # Core input reconciliation
+    /// # What actually reconciles this, and what does not
     ///
     /// The inputs are held by TWO independent things, and only one of them
     /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
@@ -211,8 +204,9 @@ pub enum PlatformWalletError {
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
-        "Transaction outcome unknown — it may already have executed; \
-         sync and reconcile the original operation before submitting another: {0}"
+        "Transaction broadcast outcome unknown — it may already be on the \
+         network; its inputs stay unspendable until this wallet observes them \
+         spent: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 

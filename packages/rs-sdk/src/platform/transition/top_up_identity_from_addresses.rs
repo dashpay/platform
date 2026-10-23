@@ -6,16 +6,14 @@ use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::address_inputs::{collect_address_infos_from_proof, nonce_inc};
-use crate::platform::transition::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastStateTransition,
-};
+use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
-use dpp::prelude::{AddressNonce, Identifier};
+use dpp::prelude::AddressNonce;
 use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -139,60 +137,41 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddressesWithMetadata<S> for I
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        // Only the wait future runs after accepted/possibly accepted submission.
-        // Keep preparation and definite broadcast refusals outside the wrapper.
-        wait_after_broadcast(
-            broadcast_with_observation(&state_transition, sdk, settings).await,
-            async {
-                let result = async {
-                    // `metadata.height` pins these proved balance absolutes.
-                    let (st_result, metadata) = state_transition
-                        .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
-                            sdk, settings,
-                        )
-                        .await?;
-                    top_up_result(self.id(), st_result, &expected_addresses)
-                        .map(|(infos, balance)| (infos, balance, metadata))
+        // `metadata.height` is the proof's committed block — the height
+        // pin for these absolutes (`AddressFunds::as_of_height`).
+        let (st_result, metadata) = state_transition
+            .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+                sdk, settings,
+            )
+            .await?;
+        match st_result {
+            StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                identity,
+                address_infos_map,
+            ) => {
+                if identity.id != self.id() {
+                    return Err(Error::InvalidProvedResponse(format!(
+                        "proof returned identity {} but {} was topped up",
+                        identity.id,
+                        self.id()
+                    )));
                 }
-                .await;
-                result.map_err(|error| Error::StateTransitionResultUnconfirmed(Box::new(error)))
-            },
-        )
-        .await
-    }
-}
 
-fn top_up_result(
-    identity_id: Identifier,
-    st_result: StateTransitionProofResult,
-    expected_addresses: &BTreeSet<PlatformAddress>,
-) -> Result<(AddressInfos, Credits), Error> {
-    match st_result {
-        StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-            identity,
-            address_infos_map,
-        ) => {
-            if identity.id != identity_id {
-                return Err(Error::InvalidProvedResponse(format!(
-                    "proof returned identity {} but {} was topped up",
-                    identity.id, identity_id
-                )));
+                let address_infos =
+                    collect_address_infos_from_proof(address_infos_map, &expected_addresses)?;
+
+                let balance = identity.balance.ok_or_else(|| {
+                    Error::InvalidProvedResponse(
+                        "identity proof did not include updated balance".to_string(),
+                    )
+                })?;
+
+                Ok((address_infos, balance, metadata))
             }
-
-            let address_infos =
-                collect_address_infos_from_proof(address_infos_map, expected_addresses)?;
-
-            let balance = identity.balance.ok_or_else(|| {
-                Error::InvalidProvedResponse(
-                    "identity proof did not include updated balance".to_string(),
-                )
-            })?;
-
-            Ok((address_infos, balance))
+            other => Err(Error::InvalidProvedResponse(format!(
+                "identity proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
         }
-        other => Err(Error::InvalidProvedResponse(format!(
-            "identity top-up proof was expected for {}, but received {:?}",
-            identity_id, other
-        ))),
     }
 }

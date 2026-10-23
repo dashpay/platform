@@ -1,8 +1,6 @@
 use crate::{Error, Sdk};
 
-use super::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastStateTransition,
-};
+use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
@@ -60,19 +58,42 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let transition = prepare_price_update_state_transition(
-            self,
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) =
+            settings.and_then(|settings| settings.state_transition_creation_options)
+        {
+            creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
+        }
+
+        let new_identity_contract_nonce = sdk
+            .get_identity_contract_nonce(
+                self.owner_id(),
+                document_type.data_contract_id(),
+                true,
+                settings,
+            )
+            .await?;
+
+        let settings = settings.unwrap_or_default();
+
+        let transition = BatchTransition::new_document_update_price_transition_from_document(
+            self.clone(),
+            document_type.as_ref(),
             price,
-            sdk,
-            document_type,
-            identity_public_key,
+            &identity_public_key,
+            new_identity_contract_nonce,
+            settings.user_fee_increase.unwrap_or_default(),
             token_payment_info,
             signer,
-            settings,
+            sdk.version(),
+            settings.state_transition_creation_options,
         )
         .await?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
+
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        transition.broadcast(sdk, settings).await?;
+        transition.broadcast(sdk, Some(settings)).await?;
         Ok(transition)
     }
 
@@ -86,73 +107,20 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
-        let state_transition = prepare_price_update_state_transition(
-            self,
-            price,
-            sdk,
-            document_type,
-            identity_public_key,
-            token_payment_info,
-            signer,
-            settings,
-        )
-        .await?;
+        let state_transition = self
+            .update_price_of_document(
+                price,
+                sdk,
+                document_type,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
 
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
-        wait_after_broadcast(broadcast, async move {
-            Self::wait_for_response(sdk, state_transition, settings).await
-        })
-        .await
+        Self::wait_for_response(sdk, state_transition, settings).await
     }
-}
-
-/// Construct and sign once; dispatch is chosen by the calling API.
-#[allow(clippy::too_many_arguments)]
-async fn prepare_price_update_state_transition<S: Signer<IdentityPublicKey>>(
-    document: &Document,
-    price: Credits,
-    sdk: &Sdk,
-    document_type: DocumentType,
-    identity_public_key: IdentityPublicKey,
-    token_payment_info: Option<TokenPaymentInfo>,
-    signer: &S,
-    settings: Option<PutSettings>,
-) -> Result<StateTransition, Error> {
-    // A local failure after the nonce is reserved would leave the cached nonce ahead of
-    // Platform's, so what can be refused without it is refused first.
-    if let Some(creation_options) =
-        settings.and_then(|settings| settings.state_transition_creation_options)
-    {
-        creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
-    }
-
-    let new_identity_contract_nonce = sdk
-        .get_identity_contract_nonce(
-            document.owner_id(),
-            document_type.data_contract_id(),
-            true,
-            settings,
-        )
-        .await?;
-
-    let settings = settings.unwrap_or_default();
-
-    let transition = BatchTransition::new_document_update_price_transition_from_document(
-        document.clone(),
-        document_type.as_ref(),
-        price,
-        &identity_public_key,
-        new_identity_contract_nonce,
-        settings.user_fee_increase.unwrap_or_default(),
-        token_payment_info,
-        signer,
-        sdk.version(),
-        settings.state_transition_creation_options,
-    )
-    .await?;
-    ensure_valid_state_transition_structure(&transition, sdk.version())?;
-
-    Ok(transition)
 }
 
 #[cfg(test)]
@@ -266,90 +234,5 @@ mod tests {
             ),
             "unexpected error: {error}"
         );
-    }
-}
-
-#[cfg(test)]
-mod submission_tests {
-    use super::*;
-    use crate::sdk::put_test_support::PutFixture;
-    use dapi_grpc::tonic::Status;
-
-    #[tokio::test]
-    async fn should_wait_for_original_signed_transition_after_ambiguous_submission() {
-        for (status, expected_waits) in [
-            (Status::unavailable("acknowledgement lost"), 1),
-            (Status::already_exists("tx already exists in cache"), 1),
-            (
-                Status::resource_exhausted("broadcasting state transition is timed out"),
-                1,
-            ),
-            (Status::resource_exhausted("mempool is full"), 0),
-        ] {
-            let mut fixture = PutFixture::new().await;
-            let prepared = prepare_price_update_state_transition(
-                &fixture.document,
-                10,
-                &fixture.sdk,
-                fixture.document_type.clone(),
-                fixture.key.clone(),
-                None,
-                &fixture.signer,
-                PutFixture::settings(),
-            )
-            .await
-            .unwrap();
-            let requests = fixture.expect_submission(&prepared, status).await;
-            let result = fixture
-                .document
-                .update_price_of_document_and_wait_for_response(
-                    10,
-                    &fixture.sdk,
-                    fixture.document_type.clone(),
-                    fixture.key.clone(),
-                    None,
-                    &fixture.signer,
-                    PutFixture::settings(),
-                )
-                .await
-                .map(|_| ());
-            fixture
-                .assert_calls(&requests, expected_waits, result)
-                .await;
-        }
-    }
-
-    #[tokio::test]
-    async fn should_preserve_plain_broadcast_error_without_waiting() {
-        let mut fixture = PutFixture::new().await;
-        let prepared = prepare_price_update_state_transition(
-            &fixture.document,
-            10,
-            &fixture.sdk,
-            fixture.document_type.clone(),
-            fixture.key.clone(),
-            None,
-            &fixture.signer,
-            PutFixture::settings(),
-        )
-        .await
-        .unwrap();
-        let requests = fixture
-            .expect_submission(&prepared, Status::unavailable("acknowledgement lost"))
-            .await;
-        let result = fixture
-            .document
-            .update_price_of_document(
-                10,
-                &fixture.sdk,
-                fixture.document_type.clone(),
-                fixture.key.clone(),
-                None,
-                &fixture.signer,
-                PutFixture::settings(),
-            )
-            .await
-            .map(|_| ());
-        fixture.assert_calls(&requests, 0, result).await;
     }
 }

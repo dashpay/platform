@@ -124,12 +124,6 @@ public enum ErrorFormatter {
 
     /// Extract a user-friendly message from any error
     public static func userFriendlyMessage(from error: Error) -> String {
-        if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
-            return sdkError.localizedDescription
-        }
-        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
-            return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(walletError.localizedDescription)"
-        }
         // Handle specific SDK error types
         let errorString = String(describing: error)
 
@@ -327,25 +321,6 @@ public enum ErrorCategorizer {
     public static func toUserFacingError(_ error: Error) -> UserFacingError {
         if let userFacing = error as? UserFacingError {
             return userFacing
-        }
-
-        if let sdkError = error as? SDKError, case .stateTransitionResultUnconfirmed = sdkError {
-            return UserFacingError(
-                title: "Submission unconfirmed",
-                message: sdkError.localizedDescription,
-                category: .unknown,
-                underlyingError: String(describing: sdkError),
-                isRetryable: false
-            )
-        }
-        if let walletError = error as? PlatformWalletError, case .transactionBroadcastUnconfirmed = walletError {
-            return UserFacingError(
-                title: "Submission unconfirmed",
-                message: ErrorFormatter.userFriendlyMessage(from: walletError),
-                category: .unknown,
-                underlyingError: String(describing: walletError),
-                isRetryable: false
-            )
         }
 
         let category = categorize(error)

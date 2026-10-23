@@ -87,10 +87,7 @@ pub mod platform;
 pub mod sdk;
 
 pub use error::Error;
-pub use sdk::{
-    ProtocolCompatibility, ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
-    RequestSettings, Sdk, SdkBuilder,
-};
+pub use sdk::{ProtocolVersionInfo, RequestSettings, Sdk, SdkBuilder};
 
 pub use dapi_grpc;
 pub use dash_platform_queries;

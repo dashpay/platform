@@ -70,8 +70,8 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `TokenTradeMode` is an externally-tagged enum with a single unit
-        // variant (`NotTradeable`) that serializes as a bare string.
+        // `TokenTradeMode` is an externally-tagged enum of unit variants
+        // (`NotTradeable`, `Tradeable`) that serialize as bare strings.
         // `ChangeControlRules` is a versioned enum with `tag = "$formatVersion"`,
         // and `AuthorizedActionTakers` unit variants serialize as bare strings.
         // No sized integers in this fixture — only Text + Bool.
@@ -117,5 +117,43 @@ mod json_convertible_tests {
         );
         let recovered = TokenMarketplaceRules::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_serialize_tradeable_as_a_bare_string_on_both_wire_formats() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        let mut original = fixture();
+        let TokenMarketplaceRules::V0(v0) = &mut original;
+        v0.trade_mode = TokenTradeMode::Tradeable;
+
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json["tradeMode"], json!("Tradeable"));
+        assert_eq!(
+            TokenMarketplaceRules::from_json(json).expect("from_json"),
+            original
+        );
+
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value.get_str("tradeMode").expect("expected a tradeMode"),
+            "Tradeable"
+        );
+        assert_eq!(
+            TokenMarketplaceRules::from_object(value).expect("from_object"),
+            original
+        );
+    }
+
+    /// `TokenTradeMode` is bincode-encoded positionally inside every stored token configuration
+    /// and every `MarketplaceTradeMode` configuration update, so its variants keep their tags: a
+    /// new mode goes after `Tradeable`.
+    #[test]
+    fn should_keep_the_bincode_tags_of_the_trade_modes() {
+        let tag_of = |mode: TokenTradeMode| {
+            bincode::encode_to_vec(mode, bincode::config::standard())
+                .expect("expected to encode the trade mode")
+        };
+        assert_eq!(tag_of(TokenTradeMode::NotTradeable), vec![0]);
+        assert_eq!(tag_of(TokenTradeMode::Tradeable), vec![1]);
     }
 }

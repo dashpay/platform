@@ -43,9 +43,6 @@ use crate::identity_registration::IdentityFundingInputFFI;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
-#[cfg(test)]
-mod submission_result_tests;
-
 /// Top up an existing identity's credit balance from one or more
 /// Platform addresses, using an external `SignerHandle` for the
 /// per-address funding signatures.

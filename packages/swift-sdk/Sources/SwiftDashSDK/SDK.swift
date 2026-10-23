@@ -611,9 +611,6 @@ public enum SDKError: Error {
   case timeout(String)
   case notImplemented(String)
   case internalError(String)
-  /// The transition may have executed. Reconcile the original operation
-  /// before submitting again; the associated diagnostic is not a safe retry verdict.
-  case stateTransitionResultUnconfirmed(String)
   /// Platform refused the state transition. Carries the rs-dpp consensus
   /// code and family, so a host can branch on the exact rule that refused it
   /// (`error.consensusError?.code == 10422` is a violated propertyConstraints
@@ -631,10 +628,6 @@ public enum SDKError: Error {
 
   public static func fromDashSDKError(_ error: DashSDKError) -> SDKError {
     let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
-
-    if error.code == StateTransitionResultUnconfirmed {
-      return .stateTransitionResultUnconfirmed(message)
-    }
 
     // Platform's verdict wins over the coarse code, which rs-sdk-ffi picks
     // from the rendered text: the same refusal can arrive as ProtocolError or
@@ -670,9 +663,8 @@ public enum SDKError: Error {
   }
 
   /// The error to throw under `message` when an FFI call that signs,
-  /// broadcasts or waits for a state transition fails: an unconfirmed result
-  /// retains its submission status; `.consensusRejection` when `ffiError`
-  /// carries Platform's definitive verdict, otherwise
+  /// broadcasts or waits for a state transition fails: `.consensusRejection`
+  /// when `ffiError` carries Platform's verdict, otherwise
   /// `fallback(message)`, the case the call site threw before the verdict
   /// crossed the FFI. Read `ffiError` before freeing it.
   static func stateTransitionFailure(
@@ -680,9 +672,6 @@ public enum SDKError: Error {
     ffiError: DashSDKError?,
     otherwise fallback: (String) -> SDKError = SDKError.internalError
   ) -> SDKError {
-    if let ffiError, ffiError.code == StateTransitionResultUnconfirmed {
-      return .stateTransitionResultUnconfirmed(message)
-    }
     if let ffiError, let consensus = PlatformConsensusError(ffi: ffiError) {
       return .consensusRejection(consensus, message)
     }
@@ -713,8 +702,6 @@ extension SDKError: LocalizedError {
       return "Feature Not Implemented: \(message)"
     case .internalError(let message):
       return "Internal Error: \(message)"
-    case .stateTransitionResultUnconfirmed(let message):
-      return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(message)"
     case .consensusRejection(_, let message):
       return "Rejected by Platform: \(message)"
     case .unknown(let message):
