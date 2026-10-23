@@ -458,6 +458,8 @@ jobs:
             --package dash-async \
             --package platform-value \
             --package platform-encryption \
+            --package dash-platform-macros \
+            --package simple-signer \
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \
