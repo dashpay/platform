@@ -491,7 +491,7 @@ impl<'v> Walk<'v> {
                 });
             }
         }
-        if array.unique_items == Some(true) && !is_unique(items) {
+        if !self.done() && array.unique_items == Some(true) && !is_unique(items) {
             self.fail("uniqueItems", "", || {
                 (json!({}), "the array has non-unique elements".to_string())
             });
