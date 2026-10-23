@@ -14,6 +14,29 @@ use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry, PlatformWal
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::error::WalletStorageError;
 use platform_wallet_storage::sqlite::schema::asset_locks;
+#[cfg(feature = "shielded")]
+use platform_wallet_storage::{sqlite::schema::core_state, LoadCtx};
+
+#[cfg(feature = "shielded")]
+use dashcore::Network;
+#[cfg(feature = "shielded")]
+use key_wallet::account::StandardAccountType;
+#[cfg(feature = "shielded")]
+use platform_wallet::{
+    changeset::changeset::SweepBatch,
+    changeset::{
+        AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, WalletMetadataEntry,
+    },
+    events::EventHandler,
+    test_support::funded_wallet_manager,
+    wallet::{
+        asset_lock::{AssetLockFunding, AssetLockOperationContext},
+        shielded::CachedOrchardProver,
+    },
+    PlatformEventHandler, PlatformWalletError, PlatformWalletManager,
+};
+#[cfg(feature = "shielded")]
+use std::sync::Arc;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -337,6 +360,159 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
         assert_eq!(
             stored_row(&reopened.lock_conn_for_test(), &wallet_id),
             before
+        );
+    }
+}
+
+/// Sweep cleanup removes a conflicting operation's resumable row. Its absence
+/// cannot establish that the operation was never sent, even after reopening.
+#[cfg(feature = "shielded")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_refuse_drain_after_swept_operation_is_removed_and_store_reopened() {
+    struct NoopHandler;
+    impl EventHandler for NoopHandler {}
+    impl PlatformEventHandler for NoopHandler {}
+
+    let (source, wallet_id, _, signer) =
+        funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let (persister, tmp, path) = fresh_persister();
+    let snapshot = {
+        let source = source.read().await;
+        let wallet = source.get_wallet(&wallet_id).unwrap();
+        let info = &source.get_wallet_info(&wallet_id).unwrap().core_wallet;
+        PlatformWalletChangeSet {
+            wallet_metadata: Some(WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [0; 32],
+                birth_height: 1,
+            }),
+            account_registrations: wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .map(|account| AccountRegistrationEntry {
+                    account_type: account.account_type,
+                    account_xpub: account.account_xpub,
+                })
+                .collect(),
+            core: Some(CoreChangeSet {
+                new_utxos: info.accounts.standard_bip44_accounts[&0]
+                    .utxos
+                    .values()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    };
+    persister.store(wallet_id, snapshot).unwrap();
+    let operation_id = [7; 16];
+    let mut lock = entry(op(0x70), AssetLockStatus::Broadcast);
+    lock.out_point.txid = lock.transaction.txid();
+    lock.operation_id = Some(operation_id);
+    let loser = lock.out_point;
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(loser, lock)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        asset_locks::load_unconsumed(
+            &persister.lock_conn_for_test(),
+            &wallet_id,
+            &LoadCtx::strict()
+        )
+        .unwrap()[&0][&loser]
+            .operation_id,
+        Some(operation_id)
+    );
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply_replay_sweeps(
+            &tx,
+            &wallet_id,
+            vec![SweepBatch {
+                txids: vec![loser.txid],
+                superseded_by: op(0x71).txid,
+                winner_mined_height: Some(400),
+                released_outpoints: vec![],
+            }],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    drop(persister);
+    let persister = Arc::new(reopen(&path));
+    assert!(asset_locks::load_unconsumed(
+        &persister.lock_conn_for_test(),
+        &wallet_id,
+        &LoadCtx::strict()
+    )
+    .unwrap()
+    .is_empty());
+    let manager = PlatformWalletManager::new(
+        Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .unwrap(),
+        ),
+        Arc::clone(&persister),
+        Arc::new(NoopHandler),
+    );
+    manager.load_from_persistor().await.unwrap();
+    manager
+        .configure_shielded(tmp.path().join("shielded.db"))
+        .await
+        .unwrap();
+    let coordinator = manager.shielded_coordinator().await.unwrap();
+    let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+    let changes_before = persister.lock_conn_for_test().total_changes();
+    let status_error = wallet
+        .asset_locks()
+        .wallet_drain_operation_status(operation_id)
+        .await
+        .unwrap_err();
+    let drain_error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: Arc::new(AssetLockOperationContext::new(operation_id)),
+            },
+            Vec::new(),
+            &signer,
+            &CachedOrchardProver::new(),
+            None,
+            0,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        persister.lock_conn_for_test().total_changes(),
+        changes_before
+    );
+    assert!(wallet.asset_locks().list_tracked_locks().await.is_empty());
+    assert!(manager.shutdown().await.all_clean());
+    for error in [status_error, drain_error] {
+        let PlatformWalletError::Persistence(message) = error else {
+            panic!("unexpected drain error: {error:?}")
+        };
+        assert!(
+            message.contains("asset_lock_operation_ids"),
+            "cleanup cannot attest durable operation evidence: {message}"
         );
     }
 }
