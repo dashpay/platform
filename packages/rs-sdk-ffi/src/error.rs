@@ -259,6 +259,10 @@ impl From<FFIError> for DashSDKError {
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
                         | dash_sdk::Error::NoAvailableAddressesToRetry(_)
+                        // A node answered with stale metadata, for example signed at a
+                        // protocol version below the one the request needs; another node may
+                        // serve it, whatever protocol words the message holds.
+                        | dash_sdk::Error::StaleNode(_)
                 ) {
                     // Transport / connectivity failure (e.g. all DAPI nodes
                     // unreachable or serving expired TLS certificates). Match the
@@ -518,6 +522,31 @@ mod tests {
             assert_eq!(
                 message.contains("connection refused"),
                 has_cause,
+                "{message}"
+            );
+        }
+    }
+
+    /// A node behind the network answered a request with stale metadata: another node
+    /// may serve it, so it is a network error, not the protocol error a host reads as
+    /// "the network cannot serve this yet", although the message names a protocol version.
+    #[test]
+    fn should_map_a_stale_node_to_network_error() {
+        for stale in [
+            dash_sdk::error::StaleNodeError::ProtocolVersion {
+                required: 14,
+                signed: 13,
+            },
+            dash_sdk::error::StaleNodeError::Height {
+                expected_height: 100,
+                received_height: 90,
+                tolerance_blocks: 1,
+            },
+        ] {
+            let message = stale.to_string();
+            assert_eq!(
+                classify(dash_sdk::Error::StaleNode(stale)),
+                DashSDKErrorCode::NetworkError,
                 "{message}"
             );
         }
