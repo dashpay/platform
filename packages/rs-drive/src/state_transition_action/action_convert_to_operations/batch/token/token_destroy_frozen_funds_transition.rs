@@ -101,7 +101,7 @@ impl DriveHighLevelBatchOperationConverter for TokenDestroyFrozenFundsTransition
             }
             // From protocol version 15: also destroys what the frozen identity's open listings
             // hold in escrow, and deletes their `ask` documents.
-            1 => self.destroy_frozen_funds_and_listings_operations_v1(owner_id),
+            1 => self.destroy_frozen_funds_and_listings_operations_v1(owner_id, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "TokenDestroyFrozenFundsTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
@@ -123,6 +123,7 @@ impl TokenDestroyFrozenFundsTransitionAction {
     fn destroy_frozen_funds_and_listings_operations_v1<'b>(
         self,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let data_contract_id = self.base().data_contract_id();
 
@@ -134,11 +135,7 @@ impl TokenDestroyFrozenFundsTransitionAction {
             .iter()
             .map(|listing| (listing.id, listing.remaining))
             .collect();
-        let destroyed_amount =
-            self.total_destroyed()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a frozen holding is more tokens than a u64 holds",
-                )))?;
+        let destroyed_amount = self.destroyed_amount(platform_version)?;
 
         let mut ops = vec![IdentityOperation(
             IdentityOperationType::UpdateIdentityContractNonce {
@@ -239,6 +236,8 @@ mod tests {
         TokenBaseTransitionAction, TokenBaseTransitionActionV0,
     };
     use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionV0;
+    use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
     use dpp::tokens::token_order::TokenOrder;
@@ -500,5 +499,53 @@ mod tests {
                 if *document_ids == vec![Identifier::from([1; 32]), Identifier::from([2; 32])]
         ));
         assert!(is_history_of(&operations[4], AMOUNT + 500));
+    }
+
+    /// The history the converter emits is the history the shared builders reconstruct
+    /// (`associated_token_event`, `build_historical_document`): the frozen balance alone at
+    /// protocol version 14, also when the action carries listings, and the balance with the
+    /// listings' escrow at 15.
+    #[test]
+    fn should_emit_the_history_the_shared_builders_reconstruct() {
+        let block_info = BlockInfo::default();
+        for (platform_version, destroyed) in
+            [(pv14(), AMOUNT), (PlatformVersion::latest(), AMOUNT + 500)]
+        {
+            let action = action(None, true, vec![listing(1, 300), listing(2, 200)]);
+            let token_action = TokenTransitionAction::DestroyFrozenFundsAction(action.clone());
+            let operations = convert(action, platform_version);
+            let Some(TokenOperation(TokenOperationType::TokenHistory { event, .. })) =
+                operations.last()
+            else {
+                panic!("expected the history last: {operations:?}");
+            };
+            assert!(is_history_of(operations.last().unwrap(), destroyed));
+
+            let reconstructed = token_action
+                .associated_token_event(platform_version)
+                .expect("expected the event");
+            assert_eq!(&reconstructed, event);
+
+            let emitted_document = event
+                .clone()
+                .build_historical_document_owned(
+                    Identifier::from(TOKEN_ID),
+                    Identifier::from(SIGNER),
+                    NONCE,
+                    &block_info,
+                    platform_version,
+                )
+                .expect("expected the emitted history document");
+            let rebuilt_document = token_action
+                .build_historical_document(
+                    Identifier::from(TOKEN_ID),
+                    Identifier::from(SIGNER),
+                    NONCE,
+                    &block_info,
+                    platform_version,
+                )
+                .expect("expected the rebuilt history document");
+            assert_eq!(rebuilt_document, emitted_document);
+        }
     }
 }
