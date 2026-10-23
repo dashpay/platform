@@ -741,8 +741,9 @@ fn registered_before_validation_schemas(properties: Value, defs: Value) -> DataC
     .expect("expected the document type to register at protocol version 14")
 }
 
-/// Whether document validation, the JSON Schema validation and the `maxBytes` check that
-/// follows it, accepts `properties` as an `item`.
+/// Whether document validation through the JSON Schema validator, and the `maxBytes` check
+/// that follows it, accepts `properties` as an `item`: generation 1, which protocol version
+/// 14 runs and the validation schema models.
 #[cfg(feature = "validation")]
 fn accepts(contract: &DataContract, properties: Value) -> bool {
     contract
@@ -750,7 +751,7 @@ fn accepts(contract: &DataContract, properties: Value) -> bool {
             "item",
             properties,
             &DocumentSystemValues::default(),
-            PlatformVersion::latest(),
+            PlatformVersion::get(14).expect("expected protocol version 14"),
         )
         .expect("expected document validation to run")
         .is_valid()

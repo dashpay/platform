@@ -2,6 +2,8 @@ use super::super::tests::{
     existing_validator_accepts, generated_schema, generated_values, registered, Cases,
 };
 use super::*;
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -385,7 +387,7 @@ fn item_contract(properties: Value) -> DataContract {
 }
 
 /// What document validation has built of `item`'s native validator: nothing yet (`None`),
-/// the validator (`Some(true)`), or none, for a schema without a validation schema
+/// the validator (`Some(true)`), or the refusal of a schema without a validation schema
 /// (`Some(false)`).
 fn native_validator_state(contract: &DataContract) -> Option<bool> {
     contract
@@ -394,7 +396,7 @@ fn native_validator_state(contract: &DataContract) -> Option<bool> {
         .json_schema_validator_ref()
         .native()
         .get()
-        .map(Option::is_some)
+        .map(Result::is_ok)
 }
 
 /// Drops what document validation has built for `item`, as a contract loaded anew.
@@ -492,7 +494,7 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
 }
 
 #[test]
-fn should_keep_the_existing_check_for_a_schema_without_a_validation_schema() {
+fn should_refuse_the_documents_of_a_type_without_a_validation_schema() {
     let platform_version = PlatformVersion::latest();
     let mut contract = item_contract(platform_value!({
         "name": { "type": "string", "position": 0 },
@@ -517,34 +519,54 @@ fn should_keep_the_existing_check_for_a_schema_without_a_validation_schema() {
     assert!(contract
         .document_type_validation_schema("item", platform_version)
         .is_err());
+
+    // Protocol version 14 checks the documents through the `jsonschema` crate
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
     assert!(document_errors(
         &contract,
         platform_value!({ "name": "y" }),
-        platform_version
+        protocol_version_14
     )
     .is_empty());
-    // The native validator was looked for, and the type has none
-    assert_eq!(native_validator_state(&contract), Some(false));
     assert!(!document_errors(
         &contract,
         platform_value!({ "name": "x" }),
-        platform_version
+        protocol_version_14
     )
     .is_empty());
+    assert_eq!(native_validator_state(&contract), None);
+
+    // Protocol version 15 refuses every document of the type, valid under the schema or not
+    for name in ["y", "x"] {
+        let errors = document_errors(
+            &contract,
+            platform_value!({ "name": name }),
+            platform_version,
+        );
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(_)
+                ))]
+            ),
+            "{name}: {errors:?}"
+        );
+    }
+    // The refusal is kept with the document type, as a validator would be
+    assert_eq!(native_validator_state(&contract), Some(false));
 }
 
 /// The first error of the existing validator on `document` under `root`, as it reports it.
 fn existing_validator_first_error(
     root: &JsonValue,
     document: &JsonValue,
-) -> Option<crate::consensus::basic::json_schema_error::JsonSchemaError> {
+) -> Option<JsonSchemaError> {
     let result = JsonSchemaValidator::new()
         .compile_and_validate(root, document, PlatformVersion::latest())
         .expect("expected the schema to compile");
     result.errors.into_iter().next().map(|error| match error {
-        ConsensusError::BasicError(crate::consensus::basic::BasicError::JsonSchemaError(error)) => {
-            error
-        }
+        ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => error,
         other => panic!("expected a JSON Schema error, got {other:?}"),
     })
 }

@@ -48,8 +48,9 @@
 //! registration admits, and refuses the `$id`s that could make the JSON Schema validator
 //! resolve one elsewhere: so a reference reaches the schema at its pointer.
 //!
-//! Nothing reads it yet at any protocol version. It is built with the `validation-schema`
-//! feature, which `validation` enables, and does not need the JSON Schema validator it
+//! From protocol version 15, document validation checks every document against its type's
+//! validation schema (`validate_document` 2), and refuses the documents of a type whose
+//! schema has none. It is built with the `validation-schema` feature, which `validation` enables, and does not need the JSON Schema validator it
 //! mirrors. It models the document validation of protocol version 14 and later, whose parser
 //! reads `maxBytes` and `encryptedFor`, and refuses an earlier protocol version.
 
