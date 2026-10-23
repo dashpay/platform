@@ -35,7 +35,7 @@ use rs_dapi_client::{AddressList, CanRetry, DumpData, RequestSettings};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// A verifier double that exposes the table supplied by the SDK without
 /// interpreting proof bytes. Signature acceptance is tested separately using
@@ -1008,4 +1008,33 @@ async fn should_retry_stale_document_answers_signed_below_a_version_the_network_
             assert_eq!(learned_state(&sdk), learned);
         }
     }
+}
+
+/// The verified version is recorded before the stored version is raised, so whatever sees a
+/// raised stored version also sees the verified answer that raised it. The observer runs
+/// as the stored version is raised.
+#[tokio::test]
+async fn should_record_the_verified_version_before_raising_the_stored_one() {
+    let verified: Arc<OnceLock<Arc<AtomicU32>>> = Arc::new(OnceLock::new());
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let (verified_slot, record) = (verified.clone(), observed.clone());
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .with_initial_version(PlatformVersion::get(13).unwrap())
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(10)
+        .with_protocol_version_observer(Arc::new(move |stored| {
+            let verified = verified_slot
+                .get()
+                .map(|verified| verified.load(Ordering::Relaxed));
+            record.lock().unwrap().push((stored, verified));
+        }))
+        .build()
+        .unwrap();
+    verified
+        .set(Arc::clone(&sdk.verified_protocol_version))
+        .unwrap();
+    verify_document_outcome_signed_at(&sdk, 14).await;
+    assert_eq!(*observed.lock().unwrap(), vec![(14, Some(14))]);
 }

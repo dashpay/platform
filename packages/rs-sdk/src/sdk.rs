@@ -443,16 +443,30 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None)?;
-        self.record_verified_protocol_version(metadata.protocol_version);
+        self.check_response_freshness_as_of(method_name, metadata, None)?;
+        self.learn_verified_protocol_version(metadata.protocol_version);
         Ok(())
     }
 
-    /// [`Self::verify_response_metadata`], with optional arrival-time height
-    /// and clock anchors. A response verified after fetching its quorum key
-    /// is not made stale by the client's wait or by newer responses accepted
-    /// while it waited.
+    /// Check that response metadata is fresh and learn its protocol version
+    /// as the stored version, without recording it as verified, with optional
+    /// arrival-time height and clock anchors.
     pub(crate) fn verify_response_metadata_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        self.check_response_freshness_as_of(method_name, metadata, arrival)?;
+        self.maybe_update_protocol_version(metadata.protocol_version);
+        Ok(())
+    }
+
+    /// Check that response metadata is fresh, with optional arrival-time height
+    /// and clock anchors. A response verified after fetching its quorum key is
+    /// not made stale by the client's wait or by newer responses accepted while
+    /// it waited.
+    fn check_response_freshness_as_of(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
@@ -477,9 +491,19 @@ impl Sdk {
             )?;
         };
 
-        self.maybe_update_protocol_version(metadata.protocol_version);
-
         Ok(())
+    }
+
+    /// Learn the protocol version of a fresh response whose proof and signature
+    /// were verified: record it as verified, then raise the stored version.
+    ///
+    /// In that order, whatever reads the raised stored version also reads the
+    /// verified version that raised it (the stored version is raised with
+    /// `Release` and read with `Acquire`), so a document query refused at the
+    /// new version is classified with the evidence for it.
+    fn learn_verified_protocol_version(&self, protocol_version: u32) {
+        self.record_verified_protocol_version(protocol_version);
+        self.maybe_update_protocol_version(protocol_version);
     }
 
     /// Record the protocol version of a fresh response whose proof and signature
@@ -512,11 +536,11 @@ impl Sdk {
                 "authenticated network protocol version is unknown; using newest known verifier table"
             );
         }
-        self.verify_response_metadata_as_of(method_name, metadata, arrival)
+        self.check_response_freshness_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
             })?;
-        self.record_verified_protocol_version(metadata.protocol_version);
+        self.learn_verified_protocol_version(metadata.protocol_version);
         Ok(())
     }
 
@@ -597,7 +621,7 @@ impl Sdk {
 
         let previous = self
             .protocol_version
-            .fetch_max(received_version, Ordering::Relaxed);
+            .fetch_max(received_version, Ordering::Release);
         if previous < received_version {
             tracing::info!(
                 target: "dash_sdk::protocol_version",
@@ -822,13 +846,13 @@ impl Sdk {
     /// — auto-detection only ever ratchets *upward* (`fetch_max`). A version pinned
     /// via [`SdkBuilder::with_version()`] is returned as pinned.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
-        let v = self.protocol_version.load(Ordering::Relaxed);
+        let v = self.protocol_version.load(Ordering::Acquire);
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
     }
 
     /// Return the raw protocol version number currently used by this SDK.
     pub fn protocol_version_number(&self) -> u32 {
-        self.protocol_version.load(Ordering::Relaxed)
+        self.protocol_version.load(Ordering::Acquire)
     }
 
     // TODO: Move to settings
