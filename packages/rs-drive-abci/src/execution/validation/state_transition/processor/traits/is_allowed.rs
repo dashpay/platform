@@ -23,7 +23,7 @@ use dpp::version::feature_initial_protocol_versions::{
     IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
-    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -62,28 +62,28 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
             | StateTransition::ContractFeeClaim(_) => Ok(true),
-            // Newly decoded token formats need an unpaid activation check even while the
-            // older contract basic-structure generations remain frozen.
+            // Newly decoded token formats and trade modes need an unpaid activation check even
+            // while the older contract basic-structure generations remain frozen.
             //
             // This predicate is load-bearing rather than a shortcut: contract basic structure
             // validation 0 and 1, which protocol versions 9 through 13 select, walk the token
             // configurations through the version 0 accessors and never ask what format version
-            // they carry. On those versions the format-version check `validate_is_allowed` runs
-            // is the only one there is, and it is reached only where this returns true, so a
-            // token configuration format they do not admit is refused here or nowhere.
-            // Narrowing the predicate means first teaching both of those frozen generations to
-            // validate token configurations. Generation 2 does validate them, which makes this
-            // redundant from protocol version 14 on, and only from there.
+            // or trade mode they carry. On those versions the checks `validate_is_allowed` runs
+            // are the only ones there are, and they are reached only where this returns true,
+            // so a token configuration format or trade mode they do not admit is refused here
+            // or nowhere. Narrowing the predicate means first teaching both of those frozen
+            // generations to validate token configurations. Generation 2 does validate them,
+            // which makes this redundant from protocol version 14 on, and only from there.
             StateTransition::DataContractCreate(st) => Ok(st
                 .data_contract()
                 .tokens()
                 .values()
-                .any(|configuration| configuration.format_version() > 0)),
+                .any(|configuration| configuration.needs_activation_check())),
             StateTransition::DataContractUpdate(st) => Ok(st
                 .data_contract()
                 .tokens()
                 .values()
-                .any(|configuration| configuration.format_version() > 0)),
+                .any(|configuration| configuration.needs_activation_check())),
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
@@ -168,8 +168,41 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                         ]));
                     }
                 }
-                // A batch needs no further `is_allowed` check: the token shielded pool version
-                // gate above is the only one it carries.
+                if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
+                    // The token marketplace: a configuration update that makes a token
+                    // tradeable. Software older than the marketplace cannot decode one, so it
+                    // is refused unpaid, as that software refuses it.
+                    if let Some(transition) =
+                        st.transitions_iter()
+                            .find_map(|transition| match transition {
+                                BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(
+                                    config_update,
+                                )) if matches!(
+                                    config_update.update_token_configuration_item(),
+                                    TokenConfigurationChangeItem::MarketplaceTradeMode(mode)
+                                        if mode.is_tradeable()
+                                ) =>
+                                {
+                                    Some(
+                                        "TokenConfigUpdateMarketplaceTradeModeTradeable"
+                                            .to_string(),
+                                    )
+                                }
+                                _ => None,
+                            })
+                    {
+                        return Ok(ConsensusValidationResult::new_with_errors(vec![
+                            StateTransitionNotActiveError::new(
+                                transition,
+                                platform_version.protocol_version,
+                                TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
+                            )
+                            .into(),
+                        ]));
+                    }
+                }
+                // A batch needs no further `is_allowed` check: the token shielded pool and the
+                // token marketplace version gates above are the only ones it carries.
                 Ok(ConsensusValidationResult::new())
             }
             StateTransition::IdentityTopUpFromAddresses(_)
@@ -738,6 +771,157 @@ mod tests {
                     .expect("should not error");
                 assert!(result.is_valid(), "{name}: {:?}", result.errors);
             }
+        }
+    }
+
+    mod token_marketplace_gate {
+        use super::*;
+        use assert_matches::assert_matches;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
+        use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+        use dpp::platform_value::BinaryData;
+        use dpp::prelude::IdentityNonce;
+        use dpp::state_transition::batch_transition::batched_transition::token_config_update_transition::{TokenConfigUpdateTransition, TokenConfigUpdateTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV1;
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+
+        fn protocol_version_14() -> &'static PlatformVersion {
+            PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("the version before the token marketplace")
+        }
+
+        /// A batch whose only transition sets a token's trade mode to `trade_mode`.
+        fn trade_mode_update(trade_mode: TokenTradeMode) -> StateTransition {
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Default::default(),
+                transitions: vec![BatchedTransition::Token(TokenTransition::ConfigUpdate(
+                    TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+                        base: Default::default(),
+                        update_token_configuration_item:
+                            TokenConfigurationChangeItem::MarketplaceTradeMode(trade_mode),
+                        public_note: None,
+                    }),
+                ))],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::default(),
+            }))
+        }
+
+        /// A contract create whose only token has `trade_mode`, in a format version 0
+        /// configuration, so the trade mode is the only thing that can call for the check.
+        fn contract_create_with_trade_mode(
+            trade_mode: TokenTradeMode,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            let identity_nonce = IdentityNonce::default();
+            let mut data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+            let mut configuration = TokenConfigurationV0::default_most_restrictive();
+            configuration.marketplace_rules.set_trade_mode(trade_mode);
+            data_contract.add_token(0, TokenConfiguration::V0(configuration));
+            StateTransition::DataContractCreate(
+                DataContractCreateTransitionV0 {
+                    data_contract: data_contract
+                        .try_into_platform_versioned(platform_version)
+                        .expect("failed to convert data contract"),
+                    identity_nonce,
+                    user_fee_increase: 0,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                }
+                .into(),
+            )
+        }
+
+        #[test]
+        fn should_refuse_making_a_token_tradeable_before_protocol_version_15() {
+            let result = trade_mode_update(TokenTradeMode::Tradeable)
+                .validate_is_allowed(protocol_version_14())
+                .expect("should not error");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                    if error.state_transition_type()
+                        == "TokenConfigUpdateMarketplaceTradeModeTradeable"
+                        && error.current_protocol_version() == 14
+                        && error.required_protocol_version()
+                            == TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+            );
+        }
+
+        /// Setting the trade mode to the only mode older software knows stays allowed.
+        #[test]
+        fn should_allow_setting_the_trade_mode_to_not_tradeable_before_protocol_version_15() {
+            let result = trade_mode_update(TokenTradeMode::NotTradeable)
+                .validate_is_allowed(protocol_version_14())
+                .expect("should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        #[test]
+        fn should_allow_making_a_token_tradeable_from_protocol_version_15() {
+            let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                .expect("the version that introduced the token marketplace");
+            let result = trade_mode_update(TokenTradeMode::Tradeable)
+                .validate_is_allowed(platform_version)
+                .expect("should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// A format version 0 configuration needs the check only when it is tradeable: the
+        /// frozen contract basic structure generations of protocol versions 9 to 13 never read
+        /// the trade mode, so this check is the only one they have.
+        #[test]
+        fn should_run_the_check_on_a_contract_with_a_tradeable_token() {
+            let platform_version = PlatformVersion::latest();
+            assert!(
+                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
+                    .has_is_allowed_validation()
+                    .expect("should not error")
+            );
+            assert!(!contract_create_with_trade_mode(
+                TokenTradeMode::NotTradeable,
+                platform_version
+            )
+            .has_is_allowed_validation()
+            .expect("should not error"));
+        }
+
+        #[test]
+        fn should_refuse_a_contract_with_a_tradeable_token_before_protocol_version_15() {
+            let platform_version = protocol_version_14();
+            let result =
+                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                    if error.state_transition_type() == "TokenTradeModeTradeable"
+                        && error.required_protocol_version()
+                            == TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+            );
+        }
+
+        #[test]
+        fn should_allow_a_contract_with_a_tradeable_token_from_protocol_version_15() {
+            let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                .expect("the version that introduced the token marketplace");
+            let result =
+                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
 }
