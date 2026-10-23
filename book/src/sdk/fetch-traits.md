@@ -310,13 +310,14 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
 
    Document queries (documents, counts, sums, averages and their split forms,
    ranked, having, composite and chained queries) are rebuilt with the rules of
-   the protocol version they are verified with, so their answers must be signed
-   at that version. Once a verified answer has shown the network running the
-   SDK's protocol version, an answer from a node still on an older version fails
-   with a retryable proof error and the request moves to another node. Until
-   then such an answer fails the query with `Error::Config` and no node is
-   excluded, as for an SDK set to a newer protocol version than its network
-   runs.
+   the protocol version they are verified with, so an answer signed at an older
+   protocol version than the SDK's is not verified with them. Once a verified
+   answer has shown the network running the SDK's protocol version, an answer
+   from a node still on an older version fails with a retryable proof error and
+   the request moves to another node. Until then such an answer fails the query
+   with `Error::Config` and no node is excluded, as for an SDK set to a newer
+   protocol version than its network runs; an answer outside the time tolerance
+   still fails as stale and is retried.
 
 4. **Metadata validation**: The SDK checks that the response metadata (height, time)
    is fresh enough based on the configured tolerances.

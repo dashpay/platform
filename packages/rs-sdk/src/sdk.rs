@@ -582,7 +582,8 @@ impl Sdk {
                     "this answer names protocol version {signed}, below the SDK's \
                      protocol version {verifier}, and no verified answer has yet shown the \
                      network running {verifier}; if the SDK was set ahead of its network, let \
-                     it follow the network's protocol version instead"
+                     it follow the network's protocol version instead, or seed it with the \
+                     network's version (with_initial_version)"
                 ));
             }
         }
@@ -704,7 +705,8 @@ impl Sdk {
     /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     /// Document query answers signed below the stored version are not verified:
     /// they fail with [`Error::Proof`] once a verified answer has shown the network
-    /// running the stored version, and with [`Error::Config`] before that.
+    /// running the stored version, and before that with [`Error::Config`], or as
+    /// stale when outside the time tolerance.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
