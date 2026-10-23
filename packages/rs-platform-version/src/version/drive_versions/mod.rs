@@ -124,7 +124,8 @@ pub struct DriveProveMethodVersions {
     /// Also selects the layout `verify_state_transition_was_executed_with_proof`
     /// expects from a producer at this version: from 1, the proof of an owned,
     /// fee-paying transition carries the owner's credit balance. A new generation
-    /// needs a verifier that knows its layout.
+    /// needs a mapping in `Drive::proof_carries_owner_balance`, which refuses an
+    /// unmapped one with `UnknownVersionMismatch`.
     pub prove_state_transition: FeatureVersion,
 }
 

@@ -707,10 +707,10 @@ fn document_outcome_vectors(
     )
 }
 
-/// Each signed producer's outcome verifies in its own layout, from an SDK at or below the
-/// producer, pinned or not. A pin keeps the stored version even when a newer producer
+/// Each signed producer's outcome verifies in its own layout, from an SDK above, at or below
+/// the producer, pinned or not. A pin keeps the stored version even when a newer producer
 /// raised the rules for one answer (`should_verify_with_the_signed_newer_version_when_pinned`
-/// shows which table that answer used); an unpinned SDK learns the newer producer.
+/// shows which table that answer used); an unpinned SDK learns the newer producer's version.
 #[tokio::test]
 async fn should_verify_signed_document_outcome_layouts_without_lowering_security_or_pins() {
     let latest = PlatformVersion::latest().protocol_version;

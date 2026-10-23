@@ -5,7 +5,9 @@
 //! synthetic fixtures, never network trust anchors.
 //!
 //! The suites using it test drive-proof-verifier but live here, because generating proofs needs
-//! drive's server feature, which the client crate must not enable even as a dev-dependency.
+//! drive's server feature, which the client crate must not enable even as a dev-dependency:
+//! with resolver 2, `cargo test -p drive-proof-verifier` would compile the library itself
+//! against it.
 //! Their vectors stay in `rs-drive-proof-verifier/tests/vectors`, next to the crate they verify.
 
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};

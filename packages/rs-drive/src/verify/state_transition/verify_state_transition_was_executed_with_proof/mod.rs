@@ -33,8 +33,8 @@ impl Drive {
     /// document; it is a snapshot at the proof's block whatever the outcome's
     /// guarantee, and `None` for a proof made at an earlier version.
     ///
-    /// The proof must have been made at `platform_version`. To verify a proof made at
-    /// another version, use
+    /// Expects the layout a producer at `platform_version` proves. To verify a proof
+    /// made at another version, use
     /// [`Self::verify_state_transition_was_executed_with_proof_for_query_version`].
     ///
     /// # Parameters
@@ -78,9 +78,9 @@ impl Drive {
     /// Verifies the producer's execution-proof layout using the caller's verifier rules.
     ///
     /// The caller's `platform_version` selects the generation of this method and every
-    /// rule inside it, so an older producer cannot lower them. `query_platform_version`
+    /// rule inside it, so a producer's version cannot lower them. `query_platform_version`
     /// selects only the layout the producer proved: whether the proof of an owned,
-    /// fee-paying transition carries the owner's credit balance, which its
+    /// fee-paying transition carries the owner's credit balance, which the producer's
     /// `prove_state_transition` generation decides. The caller must authenticate the
     /// producer version together with the resulting root.
     ///
@@ -114,11 +114,13 @@ impl Drive {
             .state_transition
             .verify_state_transition_was_executed_with_proof
         {
-            // Generation 1 checks what generation 0 checks; it came with the protocol
-            // whose producers prove the owner balance. That layout is read from the
-            // producer's prover generation, which every protocol version pairs with the
-            // verifier generation of the same number, so either generation verifies a
-            // proof made at its own version, an older one or a newer one.
+            // Generations 0 and 1 run the same checks. The layout comes from the
+            // producer's `prove_state_transition` generation, so either one verifies a
+            // proof from any producer whose prover generation this build knows; an
+            // unknown prover generation is refused. Protocol versions 1 to 13 select
+            // verifier and prover generation 0, and protocol version 14 selects 1 for
+            // both, so a proof checked at the version that made it runs the same body
+            // with the layout that version's verifier generation named.
             0 | 1 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
                 block_info,

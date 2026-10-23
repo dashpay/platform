@@ -9,11 +9,12 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 ///
 /// Changed from v2:
 /// - `verify_state_transition_was_executed_with_proof` 0 → 1, with
-///   `DriveProveMethodVersions::prove_state_transition` 0 → 1: a document batch
-///   proof carries the owner's credit balance next to the document (one strict
-///   verification of the merged query). The verifier reads that layout from the
-///   producer's `prove_state_transition` generation, so feature version 1 checks
-///   what feature version 0 checks, and either verifies both layouts.
+///   `DriveProveMethodVersions::prove_state_transition` 0 → 1: the proof of an
+///   owned, fee-paying transition carries the owner's credit balance (a document
+///   batch's as one strictly verified merged query). The verifier reads that
+///   layout from the producer's `prove_state_transition` generation, so feature
+///   version 1 checks what feature version 0 checks, and either verifies both
+///   layouts.
 /// - The six range-total verifiers (`verify_aggregate_count_proof`,
 ///   `verify_carrier_aggregate_count_proof`, `verify_aggregate_sum_proof`,
 ///   `verify_carrier_aggregate_sum_proof`, `verify_aggregate_count_and_sum_proof`,

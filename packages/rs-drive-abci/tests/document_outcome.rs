@@ -36,6 +36,7 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
+use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use std::sync::Arc;
 
@@ -328,6 +329,7 @@ fn should_preserve_document_outcome_verifier_security_floor() {
         0,
         PlatformVersion::latest().protocol_version + 1,
         0x10000000,
+        TEST_PROTOCOL_VERSION_2,
     ] {
         let mut response = response.clone();
         let Some(Version::V0(v0)) = &mut response.version else {
@@ -335,9 +337,10 @@ fn should_preserve_document_outcome_verifier_security_floor() {
         };
         v0.metadata.as_mut().unwrap().protocol_version = version;
         // Version 0 names no table. A newer version, including the start of the range
-        // reserved for mock versions, is read with the newest rules, which need the
-        // owner balance this protocol 13 proof lacks, so the proof check refuses it
-        // before the signature, which covers 13, is checked.
+        // reserved for mock versions and a mock version this build's tables hold, is
+        // read with the newest rules, which need the owner balance this protocol 13
+        // proof lacks, so the proof check refuses it before the signature, which
+        // covers 13, is checked.
         let error = verify(request.clone(), response, &provider).unwrap_err();
         if version == 0 {
             assert!(
