@@ -158,15 +158,13 @@ dash-async = { path = "../rs-dash-async" }
 # `rt` feature gives us `CancellationToken` for the e2e harness's
 # graceful shutdown of its background tasks.
 tokio-util = { version = "0.7", features = ["rt"] }
-# `TrustedHttpContextProvider` is the e2e harness's current default
-# context provider. It backs `Sdk::set_context_provider` with the
-# operator-trusted Quorum HTTP endpoint built into the crate (per
-# network) so testnet / mainnet runs work without spinning up an
-# SPV client. The SPV-backed provider lives in `framework/spv.rs`
-# and `framework/context_provider.rs` and is currently disabled
-# (see harness.rs) — re-enable when SPV cold-start is stable
-# (Task #15). Also used by `examples/shielded_sync_paloma.rs` to run
-# against a remote devnet without a reachable Core RPC.
+# `TrustedHttpContextProvider` backs the e2e harness's SDK. In `http`
+# context-provider mode (auto-selected on mainnet / testnet) it is the
+# live proof-verification backend (operator-trusted Quorum HTTP endpoint);
+# in `spv` mode it is only the contract cache and the harness swaps in the
+# SPV-backed `CompositeContextProvider` (`framework/context_provider.rs`)
+# once the mn-list syncs. Also used by `examples/shielded_sync_paloma.rs`
+# to run against a remote devnet without a reachable Core RPC.
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
 
 [features]
