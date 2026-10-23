@@ -213,7 +213,7 @@ async fn cr_005_asset_lock_record_accounting() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(ctx.sdk()),
         Arc::clone(&persister),
-        vec![Arc::clone(&mn_list_observer) as Arc<dyn PlatformEventHandler>],
+        Arc::clone(&mn_list_observer) as Arc<dyn PlatformEventHandler>,
     ));
 
     let mut seed = [0u8; 64];

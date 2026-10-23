@@ -235,7 +235,7 @@ async fn found_coinjoin_gap_limit_sync() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         persister,
-        vec![event_handler],
+        event_handler,
     ));
 
     // --- Restore both wallets BEFORE sync so the bloom filter watches
@@ -266,7 +266,7 @@ async fn found_coinjoin_gap_limit_sync() {
     let manager_b = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         Arc::new(NoopPersister),
-        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+        Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
     ));
     let mut coinjoin = std::collections::BTreeSet::new();
     coinjoin.insert(0u32);
@@ -692,7 +692,9 @@ async fn sync_capped(
 
     // Stop at the cutoff, and fully before the next pass reuses the
     // shared SDK / spawns its own runtime.
-    let _ = spv.stop().await;
+    crate::framework::spv::stop_spv(&spv)
+        .await
+        .expect("stop capped SPV pass");
 }
 
 /// Seed `config` with P2P peers extracted from the SDK's live testnet
@@ -743,7 +745,7 @@ async fn found_coinjoin_gap_limit_sweep_f1() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         Arc::new(NoopPersister),
-        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+        Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
     ));
 
     let mnemonic: Mnemonic = TEST_MNEMONIC.parse().expect("valid BIP-39 mnemonic");
@@ -890,7 +892,7 @@ async fn found_coinjoin_gap_limit_sync_height_analysis() {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         Arc::new(NoopPersister),
-        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+        Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
     ));
 
     let mnemonic: Mnemonic = TEST_MNEMONIC.parse().expect("valid BIP-39 mnemonic");

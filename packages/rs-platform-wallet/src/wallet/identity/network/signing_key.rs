@@ -377,7 +377,7 @@ pub(super) mod tests {
         let manager = PlatformWalletManager::new(
             Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
             Arc::new(NoPlatformPersistence),
-            vec![Arc::new(Events)],
+            Arc::new(Events),
         );
         let wallet = manager
             .create_wallet_from_seed_bytes(

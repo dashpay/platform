@@ -2216,8 +2216,8 @@ mod tests {
                 wallet,
                 managed: ctx.managed_wallet,
             }),
-            vec![std::sync::Arc::new(RestoreEventHandler)
-                as std::sync::Arc<dyn crate::events::PlatformEventHandler>],
+            std::sync::Arc::new(RestoreEventHandler)
+                as std::sync::Arc<dyn crate::events::PlatformEventHandler>,
         ));
         manager
             .load_from_persistor()

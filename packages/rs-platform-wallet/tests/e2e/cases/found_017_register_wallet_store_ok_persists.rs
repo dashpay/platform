@@ -52,7 +52,7 @@ impl PlatformWalletPersistence for StoreOkPersister {
 
 /// No-op event handler. Every `EventHandler` / `PlatformEventHandler`
 /// method has a default body, so this empty impl satisfies the
-/// `PlatformWalletManager::new` `app_handlers` parameter.
+/// `PlatformWalletManager::new` `app_handler` parameter.
 struct NoopEventHandler;
 impl EventHandler for NoopEventHandler {}
 impl PlatformEventHandler for NoopEventHandler {}
@@ -83,7 +83,7 @@ async fn found_017_register_wallet_store_ok_persists() {
     let sdk = Arc::new(dash_sdk::Sdk::new_mock());
     let persister = Arc::new(StoreOkPersister);
     let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-    let manager = PlatformWalletManager::new(Arc::clone(&sdk), persister, vec![handler]);
+    let manager = PlatformWalletManager::new(Arc::clone(&sdk), persister, handler);
 
     let result = manager
         .create_wallet_from_seed_bytes(

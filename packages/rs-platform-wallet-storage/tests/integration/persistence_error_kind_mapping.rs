@@ -118,11 +118,14 @@ fn tc_code_004_b_constraint_variants_map_to_constraint_kind() {
     }
 }
 
-/// Identity-slot uniqueness is enforced in Rust rather than by a SQL
-/// constraint, so its variants have to claim the `Constraint` kind
-/// explicitly — they are caller-data violations like any FK breach.
+/// Identity-slot uniqueness and history invariants are enforced in Rust
+/// rather than by a SQL constraint, so their variants have to claim the
+/// `Constraint` kind explicitly — they are caller-data violations like any
+/// FK breach: an incoming record that contradicts stored history is a data
+/// fault, not a retryable or engine failure.
 #[test]
-fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
+fn tc_code_004_b_rust_enforced_variants_map_to_constraint_kind() {
+    let txid = dashcore::Txid::from_byte_array([0x44; 32]);
     let cases: Vec<(&str, WalletStorageError)> = vec![
         (
             "IdentityIndexConflict",
@@ -140,24 +143,6 @@ fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
                 identity_index: 2,
             },
         ),
-    ];
-    for (label, err) in cases {
-        assert!(!err.is_transient(), "{label}: must not be transient");
-        assert_eq!(
-            kind_of(err),
-            PersistenceErrorKind::Constraint,
-            "{label}: trait-boundary kind must be Constraint"
-        );
-    }
-}
-
-/// History invariants are enforced in Rust on the write path: an incoming
-/// record that contradicts stored history is a data fault, not a retryable
-/// or engine failure.
-#[test]
-fn history_integrity_variants_map_to_constraint_kind() {
-    let txid = dashcore::Txid::from_byte_array([0x44; 32]);
-    let cases: Vec<(&str, WalletStorageError)> = vec![
         (
             "TransactionBodyConflict",
             WalletStorageError::TransactionBodyConflict {

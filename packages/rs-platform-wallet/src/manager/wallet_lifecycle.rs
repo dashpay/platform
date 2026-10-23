@@ -1264,7 +1264,7 @@ mod register_wallet_duplicate_tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![event_handler],
+            event_handler,
         ));
 
         let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC)
@@ -1313,11 +1313,7 @@ mod register_wallet_duplicate_tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        Arc::new(PlatformWalletManager::new(
-            sdk,
-            persister,
-            vec![event_handler],
-        ))
+        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
     }
 
     /// Registering the SAME wallet (same mnemonic/seed + network) twice
@@ -1804,11 +1800,7 @@ mod persister_error_tests {
     ) -> Arc<PlatformWalletManager<FaultyPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
-        Arc::new(PlatformWalletManager::new(
-            sdk,
-            persister,
-            vec![event_handler],
-        ))
+        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
     }
 
     fn seed_bytes() -> [u8; 64] {
@@ -2082,7 +2074,7 @@ mod persister_error_tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
-        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), vec![event_handler]);
+        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), event_handler);
         let _ = persister
             .wallet_manager
             .set(Arc::downgrade(&manager.wallet_manager));

@@ -44,6 +44,6 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
                 .expect("mock sdk"),
         ),
         Arc::new(persister),
-        vec![Arc::new(events)],
+        Arc::new(events),
     )
 }

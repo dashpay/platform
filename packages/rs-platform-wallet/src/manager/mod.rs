@@ -516,12 +516,24 @@ pub(crate) fn retain_coverage_for_held_accounts(
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a new PlatformWalletManager.
     ///
-    /// `app_handlers` all receive every SPV and platform event by
-    /// reference. Internally, a `LockNotifyHandler`, a
-    /// `BalanceUpdateHandler` and a `SpendObservationHandler` are always
-    /// appended after them so the lock-wake, balance-atomic and
-    /// fence-release invariants hold regardless of what the caller passes.
+    /// `app_handler` receives all SPV and platform events by reference.
+    /// Internally, a `LockNotifyHandler` is also registered to wake
+    /// `AssetLockManager` async waiters on lock events.
     pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        app_handler: Arc<dyn PlatformEventHandler>,
+    ) -> Self {
+        Self::with_handlers(sdk, persister, vec![app_handler])
+    }
+
+    /// Create a new PlatformWalletManager that dispatches to several
+    /// application handlers.
+    ///
+    /// `app_handlers` all receive every SPV and platform event by
+    /// reference, in order. The internal handlers [`new`](Self::new)
+    /// registers are appended after them.
+    pub fn with_handlers(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
         app_handlers: Vec<Arc<dyn PlatformEventHandler>>,
@@ -1361,7 +1373,7 @@ mod tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NoopPersister),
-            vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
         ))
     }
 
@@ -1521,7 +1533,7 @@ mod tests {
         let manager = PlatformWalletManager::new(
             sdk,
             persister,
-            vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
         );
 
         // `Some(0)` skips the SPV-tip birth-height lookup, so nothing here

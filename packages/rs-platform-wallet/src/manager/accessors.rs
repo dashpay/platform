@@ -1568,7 +1568,7 @@ mod spv_rescan_tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NoopPersister),
-            vec![event_handler],
+            event_handler,
         ));
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let wallet = manager
@@ -1683,7 +1683,7 @@ mod computed_balance_tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NoopPersister),
-            vec![event_handler],
+            event_handler,
         ));
         let adopted = std::mem::replace(
             &mut *funded.write().await,

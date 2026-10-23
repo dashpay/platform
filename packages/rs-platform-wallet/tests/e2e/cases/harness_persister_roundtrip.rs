@@ -43,7 +43,7 @@ async fn harness_persister_round_trips_a_wallet_record() {
     let manager = PlatformWalletManager::new(
         Arc::new(dash_sdk::Sdk::new_mock()),
         Arc::clone(&persister),
-        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+        Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
     );
     let wallet = manager
         .create_wallet_from_seed_bytes(
@@ -177,7 +177,7 @@ async fn harness_persister_honours_shielded_fvk_restart() {
     let manager = PlatformWalletManager::new(
         Arc::clone(&sdk),
         Arc::clone(&persister),
-        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+        Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
     );
     let wallet = manager
         .create_wallet_from_seed_bytes(

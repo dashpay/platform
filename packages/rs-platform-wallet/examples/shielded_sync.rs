@@ -211,7 +211,7 @@ async fn run_wallet_sync_test(wallet: WalletIndex) {
     let manager = Arc::new(PlatformWalletManager::new(
         Arc::clone(&sdk),
         persister,
-        vec![event_handler],
+        event_handler,
     ));
 
     // --- 3. Configure shielded support (creates the SQLite store) ---

@@ -2377,7 +2377,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
@@ -2409,7 +2409,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
@@ -2444,7 +2444,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
@@ -3089,7 +3089,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
@@ -3612,7 +3612,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         manager
             .load_from_persistor()
@@ -4565,11 +4565,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         if let Some(entry) = leftover_entry {
             manager
                 .durable_cursors
@@ -4946,11 +4942,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         manager
             .load_from_persistor()
             .await
@@ -5018,11 +5010,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         manager.durable_cursors.lock().await.insert(
             wallet_id,
             crate::changeset::DurableCursor {
@@ -5181,11 +5169,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         // The entry the removed predecessor left.
         manager
             .durable_cursors
@@ -5261,11 +5245,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         // The entry a removed same-id predecessor left.
         manager
             .durable_cursors
@@ -5499,7 +5479,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NonAtomicHost(Arc::clone(&host))),
-            vec![handler],
+            handler,
         ));
         manager
             .load_from_persistor()
@@ -6142,7 +6122,7 @@ mod tests {
                     inner: Arc::clone(&snapshot),
                     fail_flushes: std::sync::atomic::AtomicBool::new(false),
                 });
-                let manager = Arc::new(PlatformWalletManager::new(sdk, host, vec![handler]));
+                let manager = Arc::new(PlatformWalletManager::new(sdk, host, handler));
                 manager.load_from_persistor().await.expect("load");
                 let wm = manager.wallet_manager.read().await;
                 wm.get_wallet_info(&wallet_id)
@@ -6155,7 +6135,7 @@ mod tests {
                     .clone()
             } else {
                 let host = Arc::new(NonAtomicHost(Arc::clone(&snapshot)));
-                let manager = Arc::new(PlatformWalletManager::new(sdk, host, vec![handler]));
+                let manager = Arc::new(PlatformWalletManager::new(sdk, host, handler));
                 manager.load_from_persistor().await.expect("load");
                 let wm = manager.wallet_manager.read().await;
                 wm.get_wallet_info(&wallet_id)
@@ -6328,7 +6308,7 @@ mod tests {
         let host = Arc::new(NonAtomicHost(Arc::new(snapshot(true).await)));
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let restarted = Arc::new(PlatformWalletManager::new(sdk, host, vec![handler]));
+        let restarted = Arc::new(PlatformWalletManager::new(sdk, host, handler));
         restarted.load_from_persistor().await.expect("load");
         assert_eq!(
             validations(),
@@ -6430,11 +6410,7 @@ mod tests {
         let manager_over = |host: &Arc<BufferedHost>| {
             let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
             let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-            Arc::new(PlatformWalletManager::new(
-                sdk,
-                Arc::clone(host),
-                vec![handler],
-            ))
+            Arc::new(PlatformWalletManager::new(sdk, Arc::clone(host), handler))
         };
 
         let manager = manager_over(&host);
@@ -6494,11 +6470,7 @@ mod tests {
         let host = Arc::new(snapshot);
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         manager.durable_cursors.lock().await.insert(
             wallet_id,
             crate::changeset::DurableCursor {
@@ -6595,7 +6567,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let entry = crate::changeset::DurableCursor {
             height: 1_000,
@@ -6669,11 +6641,7 @@ mod tests {
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&host),
-            vec![handler],
-        ));
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
         manager.durable_cursors.lock().await.insert(
             wallet_id,
             crate::changeset::DurableCursor {
@@ -10200,7 +10168,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
@@ -10565,7 +10533,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            vec![handler],
+            handler,
         ));
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")

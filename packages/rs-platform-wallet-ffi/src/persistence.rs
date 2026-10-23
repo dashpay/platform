@@ -9098,7 +9098,7 @@ mod tests {
                         .expect("mock sdk"),
                 ),
                 Arc::new(persister),
-                vec![Arc::new(events)],
+                Arc::new(events),
             )
         }
         let create = |manager: &PlatformWalletManager<FFIPersister>| {

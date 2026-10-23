@@ -182,6 +182,106 @@ pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
     fold_same_txid_records(records);
 }
 
+/// Core transaction and wallet fixtures shared by the history tests of this
+/// crate and of `platform-wallet-storage`.
+pub mod core_fixtures {
+    use dashcore::address::Payload;
+    use dashcore::hashes::Hash;
+    use dashcore::{
+        Address, BlockHash, Network, OutPoint, PubkeyHash, Transaction, TxIn, TxOut, Txid,
+    };
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use key_wallet::transaction_checking::{
+        BlockInfo, TransactionCheckResult, TransactionContext, WalletTransactionChecker,
+    };
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::{Utxo, Wallet};
+
+    /// A version-1 transaction spending `inputs` into `outputs`.
+    pub fn spend_of(inputs: &[OutPoint], outputs: Vec<TxOut>) -> Transaction {
+        let input = inputs.iter().map(|&previous_output| TxIn {
+            previous_output,
+            ..Default::default()
+        });
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: input.collect(),
+            output: outputs,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// An output paying `value` to `address`.
+    pub fn pay(value: u64, address: &Address) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        }
+    }
+
+    /// Output 0 of a transaction outside the wallet, named by `byte`.
+    pub fn outside(byte: u8) -> OutPoint {
+        OutPoint::new(Txid::from_byte_array([byte; 32]), 0)
+    }
+
+    /// A testnet P2PKH address no test wallet derives.
+    pub fn foreign_address(marker: u8) -> Address {
+        let hash = PubkeyHash::from_byte_array([marker; 20]);
+        Address::new(Network::Testnet, Payload::PubkeyHash(hash))
+    }
+
+    /// A block at `height`, hashed `[height as u8; 32]`.
+    pub fn block(height: u32) -> TransactionContext {
+        let hash = BlockHash::from_byte_array([height as u8; 32]);
+        TransactionContext::InBlock(BlockInfo::new(height, hash, height))
+    }
+
+    /// Output `vout` of `tx` as a sync stores it: confirmed at height 100.
+    pub fn stored_utxo(tx: &Transaction, vout: u32, address: Address) -> Utxo {
+        let (outpoint, output) = (
+            OutPoint::new(tx.txid(), vout),
+            tx.output[vout as usize].clone(),
+        );
+        let mut utxo = Utxo::new(outpoint, output, address, 100, false);
+        utxo.is_confirmed = true;
+        utxo
+    }
+
+    /// A fresh random testnet wallet and its first BIP44 receive address.
+    pub fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, Address) {
+        let wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
+        let address = account.next_receive_address(Some(&xpub), true).unwrap();
+        (wallet, info, address)
+    }
+
+    /// What the live checker reports for `tx` in `context`, state updated.
+    pub async fn check(
+        info: &mut ManagedWalletInfo,
+        wallet: &mut Wallet,
+        tx: &Transaction,
+        context: TransactionContext,
+    ) -> TransactionCheckResult {
+        info.check_core_transaction(tx, context, wallet, true, true)
+            .await
+    }
+
+    /// The records the live checker produces for `tx` in `context`.
+    pub async fn records_of(
+        info: &mut ManagedWalletInfo,
+        wallet: &mut Wallet,
+        tx: &Transaction,
+        context: TransactionContext,
+    ) -> Vec<TransactionRecord> {
+        check(info, wallet, tx, context).await.new_records
+    }
+}
+
 /// Builds a testnet wallet manager whose `account_type`/index-0 account
 /// holds a single spendable UTXO (10_000_000 duffs) — the whole balance
 /// rides on that one input, so a leaked reservation strands it. Returns
@@ -707,7 +807,7 @@ where
     let manager = Arc::new(crate::PlatformWalletManager::new(
         sdk,
         persister,
-        vec![event_handler],
+        event_handler,
     ));
 
     let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");

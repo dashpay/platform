@@ -155,8 +155,8 @@ parking_lot = "0.12"
 # without the `block_in_place` panic that `tokio::task::block_in_place`
 # triggers on a current-thread runtime.
 dash-async = { path = "../rs-dash-async" }
-# `rt` feature gives us `CancellationToken` for the panic-hook +
-# graceful-shutdown wiring described in the e2e plan.
+# `rt` feature gives us `CancellationToken` for the e2e harness's
+# graceful shutdown of its background tasks.
 tokio-util = { version = "0.7", features = ["rt"] }
 # `TrustedHttpContextProvider` is the e2e harness's current default
 # context provider. It backs `Sdk::set_context_provider` with the

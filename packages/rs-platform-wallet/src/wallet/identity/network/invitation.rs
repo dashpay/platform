@@ -519,7 +519,7 @@ mod tests {
             let manager = Arc::new(crate::PlatformWalletManager::new(
                 sdk,
                 Arc::clone(&persister),
-                vec![handler],
+                handler,
             ));
             let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
             let seed = mnemonic.to_seed("");

@@ -48,8 +48,8 @@ pub use changeset::{
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
 pub use core_bridge::{
-    spawn_wallet_event_adapter, spawn_wallet_event_adapter_with_durable_cursors, DurableCursor,
-    DurableCursorState, DurableCursors, RetiredBarrier,
+    spawn_wallet_event_adapter, spawn_wallet_event_adapter_with_durable_cursors,
+    swept_payment_status, DurableCursor, DurableCursorState, DurableCursors, RetiredBarrier,
 };
 pub use dashpay_backfill::{
     persists_backfill_coverage, DashPayBackfillCoveredContact, DashPayBackfillRecord,

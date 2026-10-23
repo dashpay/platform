@@ -98,9 +98,10 @@ static CTX: OnceCell<E2eContext> = OnceCell::const_new();
 /// 1. After [`spv::start_spv`] succeeds, `build` writes its
 ///    `Arc<SpvRuntime>` here.
 /// 2. If `build` returns `Err` or panics, the value stays put.
-/// 3. The next `init()` retry takes the `Arc` out and awaits `stop()`
-///    (which joins the teardown and releases the lockfile) before it
-///    starts a fresh runtime.
+/// 3. The next `init()` retry takes the `Arc` out and stops it with
+///    [`spv::stop_spv`] (which joins the teardown and releases the
+///    lockfile) before it starts a fresh runtime. A stop that does not
+///    complete re-parks the `Arc` and fails this attempt.
 /// 4. On success, `build` clears this slot so a later retry never stops
 ///    the runtime the returned context owns.
 static IN_FLIGHT_SPV: StdMutex<Option<Arc<SpvRuntime>>> = StdMutex::new(None);
@@ -323,14 +324,10 @@ impl E2eContext {
                 "previous E2eContext::build left an SPV runtime in flight; \
                  awaiting graceful stop before retry"
             );
-            if let Err(e) = spv.stop().await {
-                tracing::warn!(
-                    target: "platform_wallet::e2e::harness",
-                    error = %e,
-                    "orphan SPV stop returned an error; continuing — the \
-                     storage-side lockfile drop happens regardless of this \
-                     result"
-                );
+            if let Err(err) = spv::stop_spv(&spv).await {
+                // Re-park it so the next retry stops it again.
+                *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(spv);
+                return Err(err);
             }
         }
 
@@ -379,7 +376,7 @@ impl E2eContext {
         let wait_hub = Arc::new(WaitEventHub::new());
         let mn_list_observer = Arc::new(spv::MnListErrorObserver::new());
 
-        let manager = Arc::new(PlatformWalletManager::new(
+        let manager = Arc::new(PlatformWalletManager::with_handlers(
             Arc::clone(&sdk),
             Arc::clone(&persister),
             vec![

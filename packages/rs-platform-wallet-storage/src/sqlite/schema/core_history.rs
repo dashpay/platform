@@ -10,7 +10,7 @@ use key_wallet::managed_account::transaction_record::{
 use key_wallet::transaction_checking::TransactionContext;
 use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::accounts::DASHPAY_EXTERNAL_LABEL;
 use super::{blob, core_state, wallets};
@@ -145,20 +145,30 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached(
-        "SELECT value, length(script), script FROM core_utxos \
-         WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
-    )?;
-    let mut rows = stmt.query(params![
-        wallet_id.as_slice(),
-        blob::encode_outpoint(outpoint)?
-    ])?;
-    let Some(row) = rows.next()? else {
+    let encoded = blob::encode_outpoint(outpoint)?;
+    let key = params![wallet_id.as_slice(), encoded];
+    // Gate the script length in its own statement: SQLite evaluates every
+    // result column before a row is returned.
+    let Some((value, len)) = tx
+        .prepare_cached(
+            "SELECT value, length(script) FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })
+        .optional()?
+    else {
         return Ok(None);
     };
-    let value = i64_to_u64("core_utxos.value", row.get(0)?)?;
-    blob::check_size(row.get(1)?)?;
-    let script: Vec<u8> = row.get(2)?;
+    let value = i64_to_u64("core_utxos.value", value)?;
+    blob::check_size(len)?;
+    let script: Vec<u8> = tx
+        .prepare_cached(
+            "SELECT script FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| row.get(0))?;
     if contact_only_script(tx, wallet_id, &script)? {
         return Ok(None);
     }
@@ -172,13 +182,13 @@ pub(crate) fn contact_only_script(
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
-    Ok(conn.query_row(
+    let mut probe = conn.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
          AND NOT EXISTS(SELECT 1 FROM core_address_pool \
              WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
-        params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL],
-        |r| r.get(0),
-    )?)
+    )?;
+    let key = params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL];
+    Ok(probe.query_row(key, |r| r.get(0))?)
 }
 
 fn repair_record(
@@ -278,11 +288,19 @@ fn repair_record(
     // The live projection computes the same accounting, so repair never
     // flips a row it just wrote; only the overflow policy differs.
     let (net, direction) = wallet_accounting(&record);
-    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
-        wallet_id: *wallet_id,
-        txid: *txid,
-        value: net,
-    })?;
+    record.net_amount = match i64::try_from(net) {
+        Ok(net) => net,
+        // Nothing authenticates a mempool transaction: this is peer-supplied data,
+        // not corruption. The row stays as written and load sets it aside.
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
+        Err(_) => {
+            return Err(WalletStorageError::NetAmountOverflow {
+                wallet_id: *wallet_id,
+                txid: *txid,
+                value: net,
+            })
+        }
+    };
     record.direction = direction;
     let repaired = blob::encode(&record)?;
     if repaired != original {
@@ -308,17 +326,34 @@ fn repair_record(
 
 #[cfg(test)]
 mod tests {
-    use dashcore::address::Payload;
-    use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
+    use dashcore::TxOut;
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
-    use key_wallet::transaction_checking::TransactionType;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionType};
     use platform_wallet::changeset::wallet_direction;
+    use platform_wallet::test_support::core_fixtures::{
+        foreign_address as address, outside, pay, spend_of,
+    };
     use platform_wallet::test_support::fold_wallet_records;
 
     use super::*;
+    use crate::sqlite::migrations::oversize_script_db;
 
     const WALLET_ID: WalletId = [0x5Au8; 32];
+
+    #[test]
+    fn should_reject_oversize_owned_output_script_before_reading_it() {
+        const WALLET: WalletId = WALLET_ID;
+        let (mut conn, outpoint) = oversize_script_db(&WALLET);
+        let tx = conn.transaction().unwrap();
+
+        let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
+
+        assert!(
+            matches!(err, WalletStorageError::BlobTooLarge { .. }),
+            "got {err:?}"
+        );
+    }
 
     fn wallet_db(network: &str) -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -335,24 +370,8 @@ mod tests {
     }
 
     fn record(output_values: &[u64], received: &[u64]) -> TransactionRecord {
-        let script = Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([7; 20])),
-        )
-        .script_pubkey();
-        let body = CoreTransaction {
-            version: 1,
-            lock_time: 0,
-            input: Vec::new(),
-            output: output_values
-                .iter()
-                .map(|&value| TxOut {
-                    value,
-                    script_pubkey: script.clone(),
-                })
-                .collect(),
-            special_transaction_payload: None,
-        };
+        let owner = address(7);
+        let body = spend_of(&[], output_values.iter().map(|&v| pay(v, &owner)).collect());
         let details = received
             .iter()
             .enumerate()
@@ -450,10 +469,43 @@ mod tests {
     }
 
     #[test]
-    fn should_report_a_net_amount_that_does_not_fit_i64() {
+    fn should_store_mempool_record_with_unrepresentable_net_without_failing_the_round() {
         let mut conn = wallet_db("testnet");
-        let stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        let value = (1 << 62) + 1;
+        let mut live = record(&[value, value], &[value, value]);
+        // The live projection saturates a net it cannot represent.
+        live.net_amount = i64::MAX;
+        let tx = conn.transaction().unwrap();
+
+        core_state::apply(
+            &tx,
+            &WALLET_ID,
+            &CoreChangeSet {
+                records: vec![live.clone()],
+                ..Default::default()
+            },
+        )
+        .expect("a peer-supplied mempool amount must not fail the round");
+
+        let stored: Vec<u8> = tx
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![&WALLET_ID[..], live.txid.as_byte_array().as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, blob::encode(&live).unwrap());
+    }
+
+    #[test]
+    fn should_report_a_confirmed_net_amount_that_does_not_fit_i64() {
+        let mut conn = wallet_db("testnet");
+        let mut stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        stored.context =
+            TransactionContext::InBlock(BlockInfo::new(101, dashcore::BlockHash::all_zeros(), 7));
         store(&conn, &stored);
+        conn.execute("UPDATE core_transactions SET height = 101", [])
+            .unwrap();
         let tx = conn.transaction().unwrap();
 
         let err =
@@ -501,13 +553,6 @@ mod tests {
     const LOCK_CREDIT: u64 = 60_000_000;
     const LOCK_FEE: u64 = 1_000;
 
-    fn address(byte: u8) -> Address {
-        Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([byte; 20])),
-        )
-    }
-
     fn bip44() -> AccountType {
         AccountType::Standard {
             index: 0,
@@ -522,25 +567,12 @@ mod tests {
         kind: TransactionType,
         outputs: &[(ScriptBuf, u64, OutputRole)],
     ) -> TransactionRecord {
-        let body = CoreTransaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![dashcore::TxIn {
-                previous_output: OutPoint {
-                    txid: Txid::from_byte_array([0x11; 32]),
-                    vout: 0,
-                },
-                ..Default::default()
-            }],
-            output: outputs
-                .iter()
-                .map(|(script, value, _)| TxOut {
-                    value: *value,
-                    script_pubkey: script.clone(),
-                })
-                .collect(),
-            special_transaction_payload: None,
-        };
+        let outputs_of = outputs.iter().map(|(script, value, _)| TxOut {
+            value: *value,
+            script_pubkey: script.clone(),
+        });
+        let mut body = spend_of(&[outside(0x11)], outputs_of.collect());
+        body.version = 3;
         let details: Vec<OutputDetail> = outputs
             .iter()
             .enumerate()

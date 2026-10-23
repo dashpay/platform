@@ -69,8 +69,9 @@ impl ContextProvider for SpvContextProvider {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         // `block_on` requires `Future: Send + 'static`; outer Result
-        // is the bridge error, inner is the SPV's own — both fold
-        // into `InvalidQuorum` for the SDK.
+        // is the bridge error, inner is the SPV's own. The SPV error keeps
+        // the wallet's classification, so an unverified quorum stays
+        // `QuorumSourceUnavailable` and does not ban the node.
         let spv = Arc::clone(&self.spv_runtime);
         let inner = dash_async::block_on(async move {
             spv.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
@@ -82,12 +83,7 @@ impl ContextProvider for SpvContextProvider {
                  height={core_chain_locked_height}): {e}"
             ))
         })?;
-        inner.map_err(|e| {
-            ContextProviderError::InvalidQuorum(format!(
-                "SPV quorum lookup failed (type={quorum_type}, \
-                 height={core_chain_locked_height}): {e}"
-            ))
-        })
+        inner.map_err(|e| e.quorum_lookup_context_error())
     }
 
     /// Defer to the SDK's network fetch (`None` == "not cached").

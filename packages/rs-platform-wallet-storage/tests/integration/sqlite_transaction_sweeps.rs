@@ -16,7 +16,7 @@ use dashcore::hashes::Hash;
 use dashcore::{Address, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
-use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 use key_wallet::Utxo;
 use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::CoreChangeSet;
@@ -64,11 +64,12 @@ fn derive_address(conn: &rusqlite::Connection, w: &WalletId, account_index: u32,
 /// Build a `TransactionRecord` whose `transaction.input`/`.output` are the
 /// real, decodable fields `apply_sweep` reads back for its outpoint math —
 /// as opposed to `input_details`/`output_details`, which only cover the
-/// wallet-relevant subset and are left empty here on purpose.
-fn tx_record(txid: Txid, inputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> TransactionRecord {
+/// wallet-relevant subset and are left empty here on purpose. `nonce` makes
+/// otherwise identical fixture bodies distinct without overriding their hashes.
+fn tx_record(nonce: u32, inputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> TransactionRecord {
     let inner = Transaction {
         version: 3,
-        lock_time: 0,
+        lock_time: nonce,
         input: inputs
             .into_iter()
             .map(|previous_output| TxIn {
@@ -79,7 +80,7 @@ fn tx_record(txid: Txid, inputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> Transact
         output: outputs,
         special_transaction_payload: None,
     };
-    let mut record = TransactionRecord::new(
+    TransactionRecord::new(
         inner,
         AccountType::Standard {
             index: 0,
@@ -91,9 +92,7 @@ fn tx_record(txid: Txid, inputs: Vec<OutPoint>, outputs: Vec<TxOut>) -> Transact
         Vec::new(),
         Vec::new(),
         0,
-    );
-    record.txid = txid;
-    record
+    )
 }
 
 fn unspent(conn: &rusqlite::Connection, w: &WalletId) -> std::collections::BTreeSet<OutPoint> {
@@ -132,15 +131,15 @@ fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x01);
-    let loser_txid = Txid::from_byte_array([0x10; 32]);
     let loser = tx_record(
-        loser_txid,
+        0x10,
         vec![],
         vec![TxOut {
             value: 5_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
     let loser_output = OutPoint::new(loser_txid, 0);
 
     {
@@ -235,26 +234,25 @@ fn the_released_set_frees_exactly_the_inputs_it_names() {
     let shared_input = OutPoint::new(funding_txid, 0);
     let exclusive_input = OutPoint::new(funding_txid, 1);
 
-    let loser_txid = Txid::from_byte_array([0x31; 32]);
-    let winner_txid = Txid::from_byte_array([0x32; 32]);
-
     let loser = tx_record(
-        loser_txid,
+        0x31,
         vec![shared_input, exclusive_input],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
     // The winner only claimed the shared input.
     let winner = tx_record(
-        winner_txid,
+        0x32,
         vec![shared_input],
         vec![TxOut {
             value: 900,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let winner_txid = winner.txid;
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -344,17 +342,16 @@ fn an_absent_winner_still_keeps_its_own_input_spent() {
     let taken_by_winner = OutPoint::new(funding_txid, 0);
     let loser_exclusive = OutPoint::new(funding_txid, 1);
 
-    let loser_txid = Txid::from_byte_array([0x41; 32]);
-    let unrecorded_winner_txid = Txid::from_byte_array([0x42; 32]);
-
     let loser = tx_record(
-        loser_txid,
+        0x41,
         vec![taken_by_winner, loser_exclusive],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
+    let unrecorded_winner_txid = Txid::from_byte_array([0x42; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -431,20 +428,18 @@ fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
     let funding_txid = Txid::from_byte_array([0x50; 32]);
     let freed_coin = OutPoint::new(funding_txid, 1);
 
-    let loser_txid = Txid::from_byte_array([0x51; 32]);
-    let winner_txid = Txid::from_byte_array([0x52; 32]);
-    let reclaimer_txid = Txid::from_byte_array([0x53; 32]);
-
     let loser = tx_record(
-        loser_txid,
+        0x51,
         vec![OutPoint::new(funding_txid, 0), freed_coin],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0x52; 32]);
     let reclaimer = tx_record(
-        reclaimer_txid,
+        0x53,
         vec![freed_coin],
         vec![TxOut {
             value: 400,
@@ -533,36 +528,34 @@ fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
     // Attacker-owned input shared by L and W — never ours, no row.
     let attacker_input = OutPoint::new(Txid::from_byte_array([0x9A; 32]), 0);
 
-    let finalized_txid = Txid::from_byte_array([0x91; 32]);
-    let loser_txid = Txid::from_byte_array([0x92; 32]);
-    let winner_txid = Txid::from_byte_array([0x93; 32]);
-
     // F: chainlocked spender of `settled_coin`. Upstream keeps only its
     // txid from here on; this row keeps everything.
     let mut finalized = tx_record(
-        finalized_txid,
+        0x91,
         vec![settled_coin],
         vec![TxOut {
             value: 400,
             script_pubkey: addr.script_pubkey(),
         }],
     );
-    finalized.context = TransactionContext::InChainLockedBlock(BlockInfo::new(
-        42,
-        dashcore::BlockHash::from_byte_array([0x9B; 32]),
-        1_735_689_600,
-    ));
-
     // L: arrives after F's pruning, pays this wallet, reuses F's input and
     // the attacker's.
     let loser = tx_record(
-        loser_txid,
+        0x92,
         vec![settled_coin, attacker_input, losers_own_coin],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0x93; 32]);
+
+    finalized.context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+        42,
+        dashcore::BlockHash::from_byte_array([0x9B; 32]),
+        1_735_689_600,
+    ));
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -664,21 +657,30 @@ fn a_stale_mempool_claimant_does_not_veto_an_authoritative_release() {
     let funding_txid = Txid::from_byte_array([0xA0; 32]);
     let coin = OutPoint::new(funding_txid, 0);
 
-    let stale_txid = Txid::from_byte_array([0xA1; 32]);
-    let loser_txid = Txid::from_byte_array([0xA2; 32]);
-    let winner_txid = Txid::from_byte_array([0xA3; 32]);
-
     // M: a mempool spend of the coin, marked spent when recorded. It is
     // then evicted from the network's mempool without the wallet ever
     // hearing — its row simply goes stale.
     let stale = tx_record(
-        stale_txid,
+        0xA1,
         vec![coin],
         vec![TxOut {
             value: 400,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    // A fresh loser claims the same coin, and an authoritative sweep later
+    // frees it — upstream's word, computed from the wallet it actually
+    // holds.
+    let loser = tx_record(
+        0xA2,
+        vec![coin],
+        vec![TxOut {
+            value: 300,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0xA3; 32]);
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -707,17 +709,6 @@ fn a_stale_mempool_claimant_does_not_veto_an_authoritative_release() {
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let mut conn = persister.lock_conn_for_test();
 
-    // A fresh loser claims the same coin, and an authoritative sweep later
-    // frees it — upstream's word, computed from the wallet it actually
-    // holds.
-    let loser = tx_record(
-        loser_txid,
-        vec![coin],
-        vec![TxOut {
-            value: 300,
-            script_pubkey: addr.script_pubkey(),
-        }],
-    );
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -762,17 +753,16 @@ fn a_corrupt_stored_claimant_fails_the_sweep_round_closed() {
     let addr = p2pkh(0x0B);
     let funding_txid = Txid::from_byte_array([0xB0; 32]);
     let coin = OutPoint::new(funding_txid, 0);
-    let loser_txid = Txid::from_byte_array([0xB1; 32]);
-    let winner_txid = Txid::from_byte_array([0xB2; 32]);
-
     let loser = tx_record(
-        loser_txid,
+        0xB1,
         vec![coin],
         vec![TxOut {
             value: 300,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0xB2; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -789,7 +779,7 @@ fn a_corrupt_stored_claimant_fails_the_sweep_round_closed() {
 
     // A claimant row whose typed key is not 32 bytes. The blob is a real,
     // decodable record so the failure is attributable to the key alone.
-    let honest = tx_record(Txid::from_byte_array([0xB3; 32]), vec![coin], Vec::new());
+    let honest = tx_record(0xB3, vec![coin], Vec::new());
     let honest_blob = blob::encode(&honest).unwrap();
     conn.execute(
         "INSERT INTO core_transactions \
@@ -877,19 +867,18 @@ fn a_swept_key_disagreeing_with_its_stored_record_fails_the_round_closed() {
     // F's coin — consumed on chain by a settled record, must never come back.
     let settled_coin = OutPoint::new(funding_txid, 0);
 
-    let finalized_txid = Txid::from_byte_array([0xC5; 32]);
-    let loser_txid = Txid::from_byte_array([0xC1; 32]);
-    let winner_txid = Txid::from_byte_array([0xC2; 32]);
-
     // F: chainlocked spender of `settled_coin`.
     let mut finalized = tx_record(
-        finalized_txid,
+        0xC5,
         vec![settled_coin],
         vec![TxOut {
             value: 300,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = Txid::from_byte_array([0xC1; 32]);
+    let winner_txid = Txid::from_byte_array([0xC2; 32]);
+
     finalized.context = TransactionContext::InChainLockedBlock(BlockInfo::new(
         42,
         dashcore::BlockHash::from_byte_array([0xCB; 32]),
@@ -998,15 +987,15 @@ fn sweeping_a_transaction_deletes_its_instant_lock() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x05);
-    let loser_txid = Txid::from_byte_array([0x60; 32]);
     let loser = tx_record(
-        loser_txid,
+        0x60,
         vec![],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -1083,27 +1072,26 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
     let funding_txid = Txid::from_byte_array([0x70; 32]);
     let contested = OutPoint::new(funding_txid, 0);
 
-    let first_loser = Txid::from_byte_array([0x71; 32]);
-    let second_loser = Txid::from_byte_array([0x72; 32]);
-
     let first = tx_record(
-        first_loser,
+        0x71,
         vec![contested],
         vec![TxOut {
             value: 400,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let first_loser = first.txid;
     // The transaction that took the freed coin, and that the second sweep
     // removes. It is a loser too, so it is not a surviving claim.
     let second = tx_record(
-        second_loser,
+        0x72,
         vec![contested],
         vec![TxOut {
             value: 300,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let second_loser = second.txid;
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -1176,17 +1164,16 @@ fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() 
     let funding_txid = Txid::from_byte_array([0x80; 32]);
     let unfunded_input = OutPoint::new(funding_txid, 0);
 
-    let loser_txid = Txid::from_byte_array([0x81; 32]);
-    let winner_txid = Txid::from_byte_array([0x82; 32]);
-
     let loser = tx_record(
-        loser_txid,
+        0x81,
         vec![unfunded_input],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0x82; 32]);
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -1274,26 +1261,25 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
     let unfunded_input = OutPoint::new(funding_txid, 0);
     let funded_input = OutPoint::new(funding_txid, 1);
 
-    let first_loser = Txid::from_byte_array([0x91; 32]); // L
-    let second_loser = Txid::from_byte_array([0x92; 32]); // W
-    let final_winner = Txid::from_byte_array([0x93; 32]); // X
-
     let l = tx_record(
-        first_loser,
+        0x91,
         vec![unfunded_input],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let first_loser = l.txid;
     let w_record = tx_record(
-        second_loser,
+        0x92,
         vec![unfunded_input, funded_input],
         vec![TxOut {
             value: 900,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let second_loser = w_record.txid;
+    let final_winner = Txid::from_byte_array([0x93; 32]); // X
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
@@ -1414,26 +1400,25 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
     let funding_txid = Txid::from_byte_array([0xA0; 32]);
     let unfunded_input = OutPoint::new(funding_txid, 0);
 
-    let first_loser = Txid::from_byte_array([0xA1; 32]); // L
-    let second_loser = Txid::from_byte_array([0xA2; 32]); // W
-    let final_winner = Txid::from_byte_array([0xA3; 32]); // X
-
     let l = tx_record(
-        first_loser,
+        0xA1,
         vec![unfunded_input],
         vec![TxOut {
             value: 1_000,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let first_loser = l.txid;
     let w_record = tx_record(
-        second_loser,
+        0xA2,
         vec![unfunded_input],
         vec![TxOut {
             value: 900,
             script_pubkey: addr.script_pubkey(),
         }],
     );
+    let second_loser = w_record.txid;
+    let final_winner = Txid::from_byte_array([0xA3; 32]); // X
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -1558,8 +1543,10 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
     // observed in either wallet until the very end.
     let p1 = OutPoint::new(funding_txid, 0);
     let p2 = OutPoint::new(funding_txid, 1);
-    let shared_loser = Txid::from_byte_array([0x53; 32]); // L
-    let shared_winner = Txid::from_byte_array([0x54; 32]); // W
+    let shared_loser_record = tx_record(0x53, vec![p1, p2], vec![]);
+    let shared_loser = shared_loser_record.txid;
+    let shared_winner_record = tx_record(0x54, vec![p1, p2], vec![]);
+    let shared_winner = shared_winner_record.txid;
     let final_winner = Txid::from_byte_array([0x55; 32]); // X
 
     // The raw transactions are the same for both wallets — a record is the
@@ -1570,7 +1557,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
         derive_address(&conn, w, 0, if w == &w1 { &addr1 } else { &addr2 });
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(shared_loser, vec![p1, p2], vec![])],
+            records: vec![shared_loser_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, w, &cs).unwrap();
@@ -1601,7 +1588,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(shared_winner, vec![p1, p2], vec![])],
+            records: vec![shared_winner_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, w, &cs).unwrap();
@@ -1734,29 +1721,33 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
 
     let addr1 = p2pkh(0x31);
     let addr2 = p2pkh(0x32);
-    let funding_txid = Txid::from_byte_array([0x30; 32]);
+    let funding = tx_record(
+        0x30,
+        vec![],
+        [&addr1, &addr2]
+            .into_iter()
+            .map(|addr| TxOut {
+                value: 100_000,
+                script_pubkey: addr.script_pubkey(),
+            })
+            .collect(),
+    );
+    let funding_txid = funding.txid;
     // Same txid recorded independently in both wallets' storage — as two
     // wallets sharing one on-chain transaction each would.
-    let loser_txid = Txid::from_byte_array([0x33; 32]);
-    let winner_txid = Txid::from_byte_array([0x34; 32]);
     let coin = OutPoint::new(funding_txid, 0);
+    let second_coin = OutPoint::new(funding_txid, 1);
+    let loser = tx_record(0x33, vec![coin, second_coin], vec![]);
+    let loser_txid = loser.txid;
+    let winner_txid = Txid::from_byte_array([0x34; 32]);
 
-    for (w, addr) in [(&w1, &addr1), (&w2, &addr2)] {
+    for (vout, (w, addr)) in [(&w1, &addr1), (&w2, &addr2)].into_iter().enumerate() {
         let mut conn = persister.lock_conn_for_test();
         derive_address(&conn, w, 0, addr);
         let tx = conn.transaction().unwrap();
-        let funding = tx_record(
-            funding_txid,
-            vec![],
-            vec![TxOut {
-                value: 100_000,
-                script_pubkey: addr.script_pubkey(),
-            }],
-        );
-        let loser = tx_record(loser_txid, vec![coin], vec![]);
         let cs = CoreChangeSet {
-            records: vec![funding, loser],
-            new_utxos: vec![make_utxo(addr, funding_txid, 0, 100_000)],
+            records: vec![funding.clone(), loser.clone()],
+            new_utxos: vec![make_utxo(addr, funding_txid, vout as u32, 100_000)],
             ..Default::default()
         };
         core_state::apply(&tx, w, &cs).unwrap();
@@ -1805,7 +1796,7 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
              untouched by wallet 1's sweep"
         );
         assert!(
-            row_exists(&conn, &w2, &coin),
+            row_exists(&conn, &w2, &second_coin),
             "wallet 2's coin is unaffected — it has not swept yet"
         );
     }
@@ -1842,13 +1833,16 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
     );
 
     assert!(
-        row_exists(&conn, &w2, &coin),
+        row_exists(&conn, &w2, &second_coin),
         "wallet 2 released nothing, so its coin stays held with a row of its own"
     );
     let (spent, spent_in_txid): (i64, Option<Vec<u8>>) = conn
         .query_row(
             "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![w2.as_slice(), &blob::encode_outpoint(&coin).unwrap()[..]],
+            params![
+                w2.as_slice(),
+                &blob::encode_outpoint(&second_coin).unwrap()[..]
+            ],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
@@ -1888,23 +1882,26 @@ fn sweep_deletion_is_durable_even_when_the_other_wallets_callback_never_arrives(
     let addr2 = p2pkh(0x42);
     // Same loser txid recorded independently by both wallets, each with an
     // output of its own — the "phantom money" the blocking finding is about.
-    let loser_txid = Txid::from_byte_array([0x43; 32]);
+    let loser = tx_record(
+        0x43,
+        vec![],
+        [&addr1, &addr2]
+            .into_iter()
+            .map(|addr| TxOut {
+                value: 60_000,
+                script_pubkey: addr.script_pubkey(),
+            })
+            .collect(),
+    );
+    let loser_txid = loser.txid;
     let winner_txid = Txid::from_byte_array([0x44; 32]);
 
     for (w, addr) in [(&w1, &addr1), (&w2, &addr2)] {
         let mut conn = persister.lock_conn_for_test();
         derive_address(&conn, w, 0, addr);
         let tx = conn.transaction().unwrap();
-        let loser = tx_record(
-            loser_txid,
-            vec![],
-            vec![TxOut {
-                value: 60_000,
-                script_pubkey: addr.script_pubkey(),
-            }],
-        );
         let cs = CoreChangeSet {
-            records: vec![loser],
+            records: vec![loser.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, w, &cs).unwrap();
@@ -2000,7 +1997,15 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x51);
-    let txid = Txid::from_byte_array([0x53; 32]);
+    let txid_record = tx_record(
+        0x53,
+        vec![],
+        vec![TxOut {
+            value: 45_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let txid = txid_record.txid;
     let winner_txid = Txid::from_byte_array([0x54; 32]);
     let output = OutPoint::new(txid, 0);
 
@@ -2009,14 +2014,7 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
         let mut conn = persister.lock_conn_for_test();
         derive_address(&conn, &w, 0, &addr);
         let tx = conn.transaction().unwrap();
-        let record = tx_record(
-            txid,
-            vec![],
-            vec![TxOut {
-                value: 45_000,
-                script_pubkey: addr.script_pubkey(),
-            }],
-        );
+        let record = txid_record.clone();
         let cs = CoreChangeSet {
             records: vec![record],
             new_utxos: vec![make_utxo(&addr, txid, 0, 45_000)],
@@ -2070,14 +2068,7 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
     {
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
-        let record = tx_record(
-            txid,
-            vec![],
-            vec![TxOut {
-                value: 45_000,
-                script_pubkey: addr.script_pubkey(),
-            }],
-        );
+        let record = txid_record.clone();
         let cs = CoreChangeSet {
             records: vec![record],
             new_utxos: vec![make_utxo(&addr, txid, 0, 45_000)],
@@ -2135,7 +2126,8 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
     let addr = p2pkh(0x31);
     let funding_txid = Txid::from_byte_array([0x30; 32]);
     let p = OutPoint::new(funding_txid, 0);
-    let loser_txid = Txid::from_byte_array([0x31; 32]); // L
+    let loser_txid_record = tx_record(0x31, vec![p], vec![]);
+    let loser_txid = loser_txid_record.txid;
     let winner_txid = Txid::from_byte_array([0x32; 32]); // W — never recorded
     let final_winner = Txid::from_byte_array([0x33; 32]); // X
 
@@ -2146,7 +2138,7 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
         derive_address(&conn, &w, 0, &addr);
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(loser_txid, vec![p], vec![])],
+            records: vec![loser_txid_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -2237,10 +2229,19 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x41);
-    let parent_txid = Txid::from_byte_array([0x40; 32]); // L
-    let child_txid = Txid::from_byte_array([0x41; 32]); // C
-    let winner_txid = Txid::from_byte_array([0x42; 32]); // W
+    let parent_txid_record = tx_record(
+        0x40,
+        vec![],
+        vec![TxOut {
+            value: 5_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let parent_txid = parent_txid_record.txid;
     let parent_output = OutPoint::new(parent_txid, 0);
+    let child_txid_record = tx_record(0x41, vec![parent_output], vec![]);
+    let child_txid = child_txid_record.txid;
+    let winner_txid = Txid::from_byte_array([0x42; 32]); // W
 
     // L pays us and is funded; C spends L's output.
     {
@@ -2248,17 +2249,7 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
         derive_address(&conn, &w, 0, &addr);
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![
-                tx_record(
-                    parent_txid,
-                    vec![],
-                    vec![TxOut {
-                        value: 5_000,
-                        script_pubkey: addr.script_pubkey(),
-                    }],
-                ),
-                tx_record(child_txid, vec![parent_output], vec![]),
-            ],
+            records: vec![parent_txid_record.clone(), child_txid_record.clone()],
             new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2296,14 +2287,7 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(
-                parent_txid,
-                vec![],
-                vec![TxOut {
-                    value: 5_000,
-                    script_pubkey: addr.script_pubkey(),
-                }],
-            )],
+            records: vec![parent_txid_record.clone()],
             new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2334,10 +2318,19 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x51);
-    let parent_txid = Txid::from_byte_array([0x50; 32]); // P — record lost
-    let child_txid = Txid::from_byte_array([0x51; 32]); // C
-    let winner_txid = Txid::from_byte_array([0x52; 32]); // W
+    let parent_txid_record = tx_record(
+        0x50,
+        vec![],
+        vec![TxOut {
+            value: 5_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let parent_txid = parent_txid_record.txid;
     let parent_output = OutPoint::new(parent_txid, 0);
+    let child_txid_record = tx_record(0x51, vec![parent_output], vec![]);
+    let child_txid = child_txid_record.txid;
+    let winner_txid = Txid::from_byte_array([0x52; 32]); // W
 
     // P's record round was wiped, but its funded output row and C's record
     // both persisted.
@@ -2346,7 +2339,7 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
         derive_address(&conn, &w, 0, &addr);
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(child_txid, vec![parent_output], vec![])],
+            records: vec![child_txid_record.clone()],
             new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2399,14 +2392,7 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(
-                parent_txid,
-                vec![],
-                vec![TxOut {
-                    value: 5_000,
-                    script_pubkey: addr.script_pubkey(),
-                }],
-            )],
+            records: vec![parent_txid_record.clone()],
             new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2437,10 +2423,19 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x61);
-    let parent_txid = Txid::from_byte_array([0x60; 32]); // P — never recorded
-    let child_txid = Txid::from_byte_array([0x61; 32]); // C
-    let winner_txid = Txid::from_byte_array([0x62; 32]); // W
+    let parent_txid_record = tx_record(
+        0x60,
+        vec![],
+        vec![TxOut {
+            value: 5_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let parent_txid = parent_txid_record.txid;
     let parent_output = OutPoint::new(parent_txid, 0);
+    let child_txid_record = tx_record(0x61, vec![parent_output], vec![]);
+    let child_txid = child_txid_record.txid;
+    let winner_txid = Txid::from_byte_array([0x62; 32]); // W
 
     // C arrives in order, spending P:0 — the spent-utxos apply writes the
     // synthetic spent-only row because no funded row exists.
@@ -2449,7 +2444,7 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
         derive_address(&conn, &w, 0, &addr);
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(child_txid, vec![parent_output], vec![])],
+            records: vec![child_txid_record.clone()],
             spent_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2496,14 +2491,7 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(
-                parent_txid,
-                vec![],
-                vec![TxOut {
-                    value: 5_000,
-                    script_pubkey: addr.script_pubkey(),
-                }],
-            )],
+            records: vec![parent_txid_record.clone()],
             new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
             ..Default::default()
         };
@@ -2579,14 +2567,16 @@ fn seed_tombstone(
     conn: &mut rusqlite::Connection,
     w: &WalletId,
     input: OutPoint,
-    loser: Txid,
+    loser_nonce: u32,
     winner: Txid,
     winner_mined_height: Option<u32>,
 ) {
+    let record = tx_record(loser_nonce, vec![input], vec![]);
+    let loser = record.txid;
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(loser, vec![input], vec![])],
+            records: vec![record],
             ..Default::default()
         };
         core_state::apply(&tx, w, &cs).unwrap();
@@ -2620,12 +2610,12 @@ fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x50; 32]), 0);
-    let loser = Txid::from_byte_array([0x51; 32]);
+    let loser_nonce = 0x51;
     let winner = Txid::from_byte_array([0x52; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, Some(WINNER_HEIGHT));
 
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
@@ -2664,11 +2654,11 @@ fn a_block_context_tombstone_outlives_unrelated_advancement_below_its_winners_he
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x62; 32]), 0);
-    let loser = Txid::from_byte_array([0x63; 32]);
+    let loser_nonce = 0x63;
     let winner = Txid::from_byte_array([0x64; 32]);
 
     let mut conn = persister.lock_conn_for_test();
-    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, Some(WINNER_HEIGHT));
 
     // Chainlocks race ahead by thousands of blocks; the filter scan has
     // only reached one block short of the winner.
@@ -2728,9 +2718,9 @@ fn a_mempool_context_sweep_preserves_an_unstamped_tombstone() {
     // held-but-unfunded input.
     for i in 0u8..3 {
         let p = OutPoint::new(Txid::from_byte_array([0x70 + i; 32]), 0);
-        let loser = Txid::from_byte_array([0x80 + i; 32]);
+        let loser_nonce = u32::from(0x80 + i);
         let winner = Txid::from_byte_array([0x90 + i; 32]);
-        seed_tombstone(&mut conn, &w, p, loser, winner, None);
+        seed_tombstone(&mut conn, &w, p, loser_nonce, winner, None);
         assert_eq!(
             utxo_row_state(&conn, &w, &p),
             Some((true, true, None)),
@@ -2771,7 +2761,7 @@ fn a_mempool_context_sweep_still_spend_marks_a_materialised_coin() {
     let addr = p2pkh(0x65);
     let funding_txid = Txid::from_byte_array([0x66; 32]);
     let p = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0x67; 32]);
+    let loser_nonce = 0x67;
     let winner = Txid::from_byte_array([0x68; 32]);
 
     let mut conn = persister.lock_conn_for_test();
@@ -2785,7 +2775,7 @@ fn a_mempool_context_sweep_still_spend_marks_a_materialised_coin() {
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
     }
-    seed_tombstone(&mut conn, &w, p, loser, winner, None);
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, None);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
         Some((true, false, None)),
@@ -2816,13 +2806,13 @@ fn a_funding_output_arriving_after_a_mempool_sweep_and_restart_lands_spent() {
     let addr = p2pkh(0x69);
     let funding_txid = Txid::from_byte_array([0x6A; 32]);
     let p = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0x6B; 32]);
+    let loser_nonce = 0x6B;
     let winner = Txid::from_byte_array([0x6C; 32]);
 
     {
         let mut conn = persister.lock_conn_for_test();
         derive_address(&conn, &w, 0, &addr);
-        seed_tombstone(&mut conn, &w, p, loser, winner, None);
+        seed_tombstone(&mut conn, &w, p, loser_nonce, winner, None);
     }
     // Restart.
     drop(persister);
@@ -2875,7 +2865,7 @@ fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x53; 32]), 0);
-    let loser = Txid::from_byte_array([0x54; 32]);
+    let loser_nonce = 0x54;
     let winner = Txid::from_byte_array([0x55; 32]);
 
     let mut conn = persister.lock_conn_for_test();
@@ -2889,7 +2879,7 @@ fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
     }
-    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, Some(WINNER_HEIGHT));
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -2928,13 +2918,13 @@ fn a_materialised_claim_is_never_collected() {
     let addr = p2pkh(0x61);
     let funding_txid = Txid::from_byte_array([0x56; 32]);
     let p = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0x57; 32]);
+    let loser_nonce = 0x57;
     let winner = Txid::from_byte_array([0x58; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
     apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, Some(WINNER_HEIGHT));
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
         Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
@@ -2991,14 +2981,14 @@ fn a_release_frees_a_materialised_claim_in_place() {
     let addr = p2pkh(0x62);
     let funding_txid = Txid::from_byte_array([0x71; 32]);
     let p = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0x72; 32]);
+    let loser_nonce = 0x72;
     let winner = Txid::from_byte_array([0x73; 32]);
     let final_winner = Txid::from_byte_array([0x74; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
     apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, Some(WINNER_HEIGHT));
 
     // The funding output classifies: real data, stamp cleared, still spent.
     {
@@ -3069,13 +3059,13 @@ fn a_tombstone_without_a_winner_height_is_never_collected() {
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x59; 32]), 0);
-    let loser = Txid::from_byte_array([0x5A; 32]);
+    let loser_nonce = 0x5A;
     let winner = Txid::from_byte_array([0x5B; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     // The real writer: an IS-context sweep of a loser whose funding row
     // never arrived.
-    seed_tombstone(&mut conn, &w, p, loser, winner, None);
+    seed_tombstone(&mut conn, &w, p, loser_nonce, winner, None);
 
     // Two rounds, not one: a back-filling collector (the rejected design)
     // would stamp the row on the first round and collect it on the second.
@@ -3099,8 +3089,9 @@ fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x5C; 32]), 0);
-    let first_loser = Txid::from_byte_array([0x5D; 32]);
-    let second_loser = Txid::from_byte_array([0x5E; 32]);
+    let first_loser_nonce = 0x5D;
+    let second_loser_record = tx_record(0x5E, vec![p], vec![]);
+    let second_loser = second_loser_record.txid;
     let final_winner = Txid::from_byte_array([0x5F; 32]);
 
     let mut conn = persister.lock_conn_for_test();
@@ -3108,7 +3099,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
         &mut conn,
         &w,
         p,
-        first_loser,
+        first_loser_nonce,
         second_loser,
         Some(WINNER_HEIGHT),
     );
@@ -3123,7 +3114,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(second_loser, vec![p], vec![])],
+            records: vec![second_loser_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -3163,8 +3154,9 @@ fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x6D; 32]), 0);
-    let first_loser = Txid::from_byte_array([0x6E; 32]);
-    let second_loser = Txid::from_byte_array([0x6F; 32]);
+    let first_loser_nonce = 0x6E;
+    let second_loser_record = tx_record(0x6F, vec![p], vec![]);
+    let second_loser = second_loser_record.txid;
     let final_winner = Txid::from_byte_array([0x71; 32]);
 
     let mut conn = persister.lock_conn_for_test();
@@ -3172,7 +3164,7 @@ fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
         &mut conn,
         &w,
         p,
-        first_loser,
+        first_loser_nonce,
         second_loser,
         Some(WINNER_HEIGHT),
     );
@@ -3182,7 +3174,7 @@ fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(second_loser, vec![p], vec![])],
+            records: vec![second_loser_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -3231,13 +3223,14 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x72; 32]), 0);
-    let first_loser = Txid::from_byte_array([0x73; 32]);
-    let second_loser = Txid::from_byte_array([0x74; 32]);
+    let first_loser_nonce = 0x73;
+    let second_loser_record = tx_record(0x74, vec![p], vec![]);
+    let second_loser = second_loser_record.txid;
     let final_winner = Txid::from_byte_array([0x75; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     // IS-context sweep: the hold lands unstamped.
-    seed_tombstone(&mut conn, &w, p, first_loser, second_loser, None);
+    seed_tombstone(&mut conn, &w, p, first_loser_nonce, second_loser, None);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
         Some((true, true, None)),
@@ -3249,7 +3242,7 @@ fn an_unstamped_tombstone_restamped_by_a_block_context_sweep_becomes_collectible
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(second_loser, vec![p], vec![])],
+            records: vec![second_loser_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -3299,7 +3292,8 @@ fn a_materialised_coin_the_wallet_re_delivers_unspent_is_released_from_its_hold(
     let addr = p2pkh(0x0A);
     let funding_txid = Txid::from_byte_array([0xA0; 32]);
     let x = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0xA1; 32]);
+    let loser_record = tx_record(0xA1, vec![x], vec![]);
+    let loser = loser_record.txid;
     let winner = Txid::from_byte_array([0xA2; 32]);
 
     let mut conn = persister.lock_conn_for_test();
@@ -3308,7 +3302,7 @@ fn a_materialised_coin_the_wallet_re_delivers_unspent_is_released_from_its_hold(
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![tx_record(loser, vec![x], vec![])],
+            records: vec![loser_record.clone()],
             new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
             ..Default::default()
         };
@@ -3381,8 +3375,10 @@ fn a_placeholder_stays_held_after_the_trigger_nulls_its_link() {
     let funding_txid = Txid::from_byte_array([0xB0; 32]);
     let x = OutPoint::new(funding_txid, 0); // unfunded, held
     let y = OutPoint::new(Txid::from_byte_array([0xB1; 32]), 0); // W and W2 conflict here
-    let loser = Txid::from_byte_array([0xB2; 32]); // L spends X
-    let winner = Txid::from_byte_array([0xB3; 32]); // W spends Y, sweeps L
+    let loser_record = tx_record(0xB2, vec![x], vec![]);
+    let loser = loser_record.txid;
+    let winner_record = tx_record(0xB3, vec![y], vec![]);
+    let winner = winner_record.txid;
     let second_winner = Txid::from_byte_array([0xB4; 32]); // W2 spends Y, sweeps W
 
     let mut conn = persister.lock_conn_for_test();
@@ -3391,10 +3387,7 @@ fn a_placeholder_stays_held_after_the_trigger_nulls_its_link() {
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![
-                tx_record(loser, vec![x], vec![]),
-                tx_record(winner, vec![y], vec![]),
-            ],
+            records: vec![loser_record.clone(), winner_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -3483,18 +3476,17 @@ fn a_placeholder_with_a_nulled_link_is_still_collected_at_its_stamp() {
 
     let x = OutPoint::new(Txid::from_byte_array([0xC0; 32]), 0);
     let y = OutPoint::new(Txid::from_byte_array([0xC1; 32]), 0);
-    let loser = Txid::from_byte_array([0xC2; 32]);
-    let winner = Txid::from_byte_array([0xC3; 32]);
+    let loser_record = tx_record(0xC2, vec![x], vec![]);
+    let loser = loser_record.txid;
+    let winner_record = tx_record(0xC3, vec![y], vec![]);
+    let winner = winner_record.txid;
     let second_winner = Txid::from_byte_array([0xC4; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            records: vec![
-                tx_record(loser, vec![x], vec![]),
-                tx_record(winner, vec![y], vec![]),
-            ],
+            records: vec![loser_record.clone(), winner_record.clone()],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -3538,12 +3530,12 @@ fn a_spent_delivery_materialises_a_held_placeholder_out_of_the_collectors_reach(
     let addr = p2pkh(0x0D);
     let funding_txid = Txid::from_byte_array([0xD0; 32]);
     let x = OutPoint::new(funding_txid, 0);
-    let loser = Txid::from_byte_array([0xD1; 32]);
+    let loser_nonce = 0xD1;
     let winner = Txid::from_byte_array([0xD2; 32]);
 
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
-    seed_tombstone(&mut conn, &w, x, loser, winner, Some(WINNER_HEIGHT));
+    seed_tombstone(&mut conn, &w, x, loser_nonce, winner, Some(WINNER_HEIGHT));
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
         Some((true, true, Some(i64::from(WINNER_HEIGHT)))),
@@ -3663,7 +3655,15 @@ fn a_record_and_its_sweep_in_one_round_end_with_the_transaction_gone() {
     ensure_wallet_meta(&persister, &w);
 
     let addr = p2pkh(0x0F);
-    let loser = Txid::from_byte_array([0xF0; 32]);
+    let loser_record = tx_record(
+        0xF0,
+        vec![],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let loser = loser_record.txid;
     let winner = Txid::from_byte_array([0xF1; 32]);
     let loser_output = OutPoint::new(loser, 0);
 
@@ -3671,14 +3671,7 @@ fn a_record_and_its_sweep_in_one_round_end_with_the_transaction_gone() {
     derive_address(&conn, &w, 0, &addr);
     let tx = conn.transaction().unwrap();
     let cs = CoreChangeSet {
-        records: vec![tx_record(
-            loser,
-            vec![],
-            vec![TxOut {
-                value: 1_000,
-                script_pubkey: addr.script_pubkey(),
-            }],
-        )],
+        records: vec![loser_record.clone()],
         new_utxos: vec![make_utxo(&addr, loser, 0, 1_000)],
         sweeps: vec![SweepBatch {
             txids: vec![loser],
@@ -3719,7 +3712,7 @@ fn should_restore_used_addresses_without_decoding_sweep_placeholders() {
         &mut conn,
         &w,
         input,
-        Txid::from_byte_array([0x92; 32]),
+        0x92,
         Txid::from_byte_array([0x93; 32]),
         None,
     );
@@ -3763,7 +3756,11 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
         params![w.as_slice(), encoded],
     )
     .unwrap();
-    migrations::run(&mut conn).unwrap();
+    // Through V018: V021 drops mined Core history for a rescan, mined holds included.
+    migrations::runner()
+        .set_target(refinery::Target::Version(18))
+        .run(&mut conn)
+        .unwrap();
     assert_eq!(
         utxo_row_state(&conn, &w, &input),
         Some((true, true, Some(400)))
@@ -3771,10 +3768,11 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     assert!(core_state::load_used_addresses(&conn, &w, Network::Testnet)
         .unwrap()
         .is_empty());
-    apply_heights(&mut conn, &w, 399);
-    assert!(row_exists(&conn, &w, &input));
-    apply_heights(&mut conn, &w, 400);
-    assert!(!row_exists(&conn, &w, &input));
+    migrations::run(&mut conn).unwrap();
+    assert!(
+        !row_exists(&conn, &w, &input),
+        "V021 drops a mined winner's hold with the rest of mined Core history"
+    );
 }
 
 #[test]
@@ -3822,4 +3820,116 @@ fn should_remove_a_swept_height_only_transaction_and_its_outputs() {
         )
         .unwrap();
     assert_eq!(count, 0);
+}
+
+/// A held input the winner does not spend belongs to the stored transaction
+/// that still spends it. Its placeholder carries no stamp, so neither the
+/// finality boundary passing the winner's height nor that spender confirming
+/// drops the claim; only removing the spender does.
+#[test]
+fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spender_is_removed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+    let mut conn = persister.lock_conn_for_test();
+    let [shared, extra, other] = [0x61, 0x62, 0x63].map(|b| OutPoint::new(txid(b), 0));
+    let loser_record = tx_record(0x64, vec![shared, extra], vec![]);
+    let survivor_record = tx_record(0x65, vec![extra, other], vec![]);
+    let winner_record = tx_record(0x66, vec![shared], vec![]);
+    let (loser, survivor, winner, later_winner) = (
+        loser_record.txid,
+        survivor_record.txid,
+        winner_record.txid,
+        txid(0x67),
+    );
+    let confirmed = |mut record: TransactionRecord, height| {
+        record.context = TransactionContext::InBlock(BlockInfo::new(
+            height,
+            dashcore::BlockHash::all_zeros(),
+            0,
+        ));
+        record
+    };
+    let round = |conn: &mut rusqlite::Connection, records, sweeps| {
+        let cs = CoreChangeSet {
+            records,
+            sweeps,
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    };
+    let swept = |txid, superseded_by, height, released_outpoints| SweepBatch {
+        txids: vec![txid],
+        superseded_by,
+        winner_mined_height: Some(height),
+        released_outpoints,
+    };
+    // `(spent, is_sweep_placeholder, winner_mined_height, claimant)` of a row.
+    let held = |conn: &rusqlite::Connection, outpoint: &OutPoint| {
+        let claimant: Option<Option<Vec<u8>>> = conn
+            .query_row(
+                "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![w.as_slice(), &blob::encode_outpoint(outpoint).unwrap()[..]],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        utxo_row_state(conn, &w, outpoint)
+            .zip(claimant)
+            .map(|((spent, placeholder, stamp), claimant)| (spent, placeholder, stamp, claimant))
+    };
+    let claimed_by = |txid: Txid| Some(txid.to_byte_array().to_vec());
+
+    let pending = vec![loser_record, survivor_record.clone()];
+    round(&mut conn, pending, vec![]);
+    let won = vec![confirmed(winner_record, WINNER_HEIGHT)];
+    round(
+        &mut conn,
+        won,
+        vec![swept(loser, winner, WINNER_HEIGHT, vec![])],
+    );
+    assert_eq!(
+        held(&conn, &shared),
+        Some((
+            true,
+            true,
+            Some(i64::from(WINNER_HEIGHT)),
+            claimed_by(winner)
+        )),
+        "the winner claims the input it spends, stamped with its height"
+    );
+    let survivors_hold = Some((true, true, None, claimed_by(survivor)));
+    assert_eq!(
+        held(&conn, &extra),
+        survivors_hold,
+        "the extra input belongs to its surviving spender, unstamped"
+    );
+
+    let survived = vec![confirmed(survivor_record, WINNER_HEIGHT + 1)];
+    round(&mut conn, survived, vec![]);
+    apply_heights(&mut conn, &w, WINNER_HEIGHT + 10);
+    assert_eq!(
+        held(&conn, &shared),
+        None,
+        "the winner's own placeholder is collected at finality"
+    );
+    assert_eq!(
+        held(&conn, &extra),
+        survivors_hold,
+        "a claim whose spender still spends the coin outlives finality and that spender confirming"
+    );
+
+    let removed = swept(survivor, later_winner, WINNER_HEIGHT + 20, vec![extra]);
+    round(&mut conn, vec![], vec![removed]);
+    assert_eq!(
+        held(&conn, &extra),
+        None,
+        "removing the surviving spender releases the unfunded claim"
+    );
+}
+
+fn txid(byte: u8) -> Txid {
+    Txid::from_byte_array([byte; 32])
 }

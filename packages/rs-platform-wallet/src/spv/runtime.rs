@@ -1678,24 +1678,12 @@ mod tests {
 
         impl PlatformEventHandler for ErrorObserver {}
 
+        let (runtime, storage) = offline_runtime().await;
         let (sender, error) = tokio::sync::oneshot::channel();
-        // The handler set is fixed at construction, so the observer gets its
-        // back-reference to the runtime through `new_cyclic`.
-        let runtime = Arc::new_cyclic(|runtime| {
-            let observer: Arc<dyn PlatformEventHandler> = Arc::new(ErrorObserver {
-                runtime: runtime.clone(),
-                report: Mutex::new(Some(sender)),
-            });
-            let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
-                Network::Testnet,
-            )));
-            SpvRuntime::new(
-                wallet_manager,
-                Arc::new(PlatformEventManager::new(vec![observer])),
-            )
-        });
-        let storage = tempfile::tempdir().unwrap();
-        runtime.start(offline_config(&storage)).await.unwrap();
+        runtime.event_manager.add_handler(Arc::new(ErrorObserver {
+            runtime: Arc::downgrade(&runtime),
+            report: Mutex::new(Some(sender)),
+        }));
         run_offline(&runtime).await;
         assert!(runtime.is_running());
 

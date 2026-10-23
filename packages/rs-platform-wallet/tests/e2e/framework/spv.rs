@@ -25,7 +25,9 @@ use dash_spv::{ClientConfig, DevnetConfig};
 use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::Network;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
-use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
+use platform_wallet::{
+    changeset::PlatformWalletPersistence, PlatformWalletError, PlatformWalletManager, SpvRuntime,
+};
 use tokio::sync::broadcast;
 
 use super::config::Config;
@@ -53,6 +55,11 @@ const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(30);
 /// won't trip it.
 const MN_LIST_STALL_THRESHOLD: Duration = Duration::from_secs(120);
 
+/// Upper bound on the `stop()` calls [`stop_spv`] makes. Each call waits
+/// up to the runtime's own teardown budget before it reports
+/// `ShutdownIncomplete`.
+const SPV_STOP_ATTEMPTS: u32 = 4;
+
 /// Spawn the SPV client backing the harness's
 /// [`PlatformWalletManager`]. Storage is anchored under
 /// `<workdir>/spv-data` where `workdir` is the slot the harness
@@ -60,7 +67,7 @@ const MN_LIST_STALL_THRESHOLD: Duration = Duration::from_secs(120);
 /// concurrent processes get distinct slots and therefore distinct
 /// SPV stores, so RocksDB never sees cross-process contention.
 /// Returns the same handle as [`PlatformWalletManager::spv_arc`];
-/// shut it down via [`SpvRuntime::stop`].
+/// shut it down via [`stop_spv`].
 ///
 /// `address_list` is the SDK's live DAPI address list (typically
 /// `sdk.address_list()`). P2P peers are seeded from those same
@@ -96,6 +103,27 @@ where
     );
 
     Ok(spv)
+}
+
+/// Stop `spv` under the runtime's stop contract: stop again while its
+/// teardown is still running (`ShutdownIncomplete`), and fail on any other
+/// error — `SpvProcessRestartRequired` leaves SPV unusable in this process.
+pub async fn stop_spv(spv: &SpvRuntime) -> FrameworkResult<()> {
+    for attempt in 1..=SPV_STOP_ATTEMPTS {
+        match spv.stop().await {
+            Ok(()) => return Ok(()),
+            Err(PlatformWalletError::ShutdownIncomplete(reason)) => tracing::warn!(
+                target: "platform_wallet::e2e::spv",
+                attempt,
+                %reason,
+                "SPV teardown still running; stopping SPV again"
+            ),
+            Err(err) => return Err(FrameworkError::Spv(format!("stop SPV runtime: {err}"))),
+        }
+    }
+    Err(FrameworkError::Spv(format!(
+        "SPV teardown did not finish within {SPV_STOP_ATTEMPTS} stop attempts"
+    )))
 }
 
 /// Block until the SPV mn-list manager reports `Synced`, or one of
@@ -306,7 +334,7 @@ const MN_LIST_ERROR_CHANNEL_CAP: usize = 16;
 /// [`SyncEvent::ManagerError`] events scoped to
 /// [`ManagerIdentifier::Masternode`] onto a broadcast channel. Built
 /// once during harness init and threaded into
-/// [`PlatformWalletManager::new`] as one of its `app_handlers`; each
+/// [`PlatformWalletManager::with_handlers`] as one of its `app_handlers`; each
 /// [`wait_for_mn_list_synced`] call [`subscribe`](Self::subscribe)s a
 /// fresh receiver so it escapes the cold-cache floor as soon as
 /// dash-spv signals a fatal manager error during that wait.

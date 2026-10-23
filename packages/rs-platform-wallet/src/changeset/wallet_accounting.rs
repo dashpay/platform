@@ -4,8 +4,7 @@
 //! (`fold_same_txid_records`) and the SQLite repair
 //! (`platform-wallet-storage`'s `core_history`) both call them, so a row
 //! cannot change accounting when storage repairs it; they differ only on
-//! an `i64` overflow (live saturates, repair errors). The frozen V021
-//! migration keeps its own self-contained copy.
+//! an `i64` overflow (live saturates, repair errors).
 //!
 //! Upstream `key-wallet` classifies each matched account on its own, and
 //! its account-local views disagree for an asset lock: the funding
@@ -14,6 +13,8 @@
 //! keys reads it as `Internal`. From the wallet's side an asset lock
 //! moves Core duffs into its own Platform credits, so only the fee
 //! leaves the wallet.
+
+use std::collections::BTreeSet;
 
 use key_wallet::managed_account::transaction_record::{
     OutputRole, TransactionDirection, TransactionRecord,
@@ -30,8 +31,8 @@ use key_wallet::transaction_checking::transaction_router::TransactionType;
 /// An asset lock is `Internal` whenever nothing leaves the wallet, even
 /// with no change output: its OP_RETURN value becomes the wallet's own
 /// Platform credits. The Swift SDK's
-/// `PersistentTransaction.reconciledAccounting` and the frozen V021
-/// migration apply the same rule; keep them in step. The case table
+/// `PersistentTransaction.reconciledAccounting` applies the same rule;
+/// keep them in step. The case table
 /// shared with Swift lives in `platform-wallet-storage`
 /// (`should_classify_repaired_direction_like_the_swift_sdk`).
 pub fn wallet_direction(
@@ -88,18 +89,19 @@ pub fn wallet_accounting(record: &TransactionRecord) -> (i128, TransactionDirect
         .map(|d| i128::from(d.value))
         .sum();
     let has_ours = record.output_details.iter().any(|d| is_owned(d.role));
+    // Indexed once so the per-output check below stays linear.
+    let accounted: BTreeSet<usize> = record
+        .output_details
+        .iter()
+        .filter(|d| is_owned(d.role) || d.role == OutputRole::Unspendable)
+        .map(|d| d.index as usize)
+        .collect();
     let has_external = record
         .transaction
         .output
         .iter()
         .enumerate()
-        .any(|(index, output)| {
-            !output.script_pubkey.is_op_return()
-                && !record.output_details.iter().any(|d| {
-                    d.index as usize == index
-                        && (is_owned(d.role) || d.role == OutputRole::Unspendable)
-                })
-        });
+        .any(|(index, output)| !output.script_pubkey.is_op_return() && !accounted.contains(&index));
     let direction = wallet_direction(
         record.transaction_type,
         !record.input_details.is_empty(),
