@@ -200,8 +200,11 @@ pub(crate) fn repair(
             key,
         )?;
         // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
+        // SQLite plans a DELETE through an expression index only when named
+        // (V020 explains the index); naming it also fails loudly if it goes.
         tx.execute(
-            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            "DELETE FROM core_utxos INDEXED BY idx_core_utxos_funding \
+             WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
             key,
         )?;
     }
@@ -223,7 +226,7 @@ mod tests {
     use key_wallet::transaction_checking::{BlockInfo, TransactionType};
 
     use super::*;
-    use crate::sqlite::migrations::wallet_db;
+    use crate::sqlite::migrations::{self, wallet_db};
 
     fn record(transaction: Transaction, context: TransactionContext) -> TransactionRecord {
         let account = AccountType::Standard {
@@ -306,6 +309,85 @@ mod tests {
         assert!(
             elapsed < Duration::from_secs(2),
             "ownership checks must not scale with inputs times parent outputs: {elapsed:?}"
+        );
+    }
+
+    /// Removing a rejected spend deletes its outputs and, through the cleanup
+    /// trigger, clears its claims. Neither may visit every stored coin once
+    /// per rejected spend, so quadrupling both at once roughly quadruples
+    /// the repair's SQL work; quadratic work would grow sixteenfold. The bound
+    /// sits between, with headroom both ways.
+    #[test]
+    fn should_remove_many_rejected_spends_in_work_linear_in_stored_coins() {
+        let hash = PubkeyHash::from_byte_array([0x32; 20]);
+        let script = Address::new(Network::Testnet, Payload::PubkeyHash(hash)).script_pubkey();
+        let ops = |n: u32| {
+            let wallet_id = [0xC6u8; 32];
+            let mut conn = wallet_db(&wallet_id);
+            let coin_row =
+                |conn: &rusqlite::Connection, outpoint: &OutPoint, claimant: Option<&Txid>| {
+                    conn.execute(
+                        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, \
+                     spent_in_txid) VALUES (?1, ?2, 1000, ?3, ?4, ?5)",
+                        params![
+                            wallet_id.as_slice(),
+                            blob::encode_outpoint(outpoint).unwrap(),
+                            script.as_bytes(),
+                            claimant.is_some(),
+                            claimant.map(|txid| txid.as_byte_array().to_vec())
+                        ],
+                    )
+                    .unwrap();
+                };
+            let mut records = Vec::new();
+            for index in 0..n {
+                let mut funding = [0x41u8; 32];
+                funding[..4].copy_from_slice(&index.to_le_bytes());
+                let coin = OutPoint::new(Txid::from_byte_array(funding), 0);
+                // Unsigned, so the stored coin's script rejects it.
+                let spend = Transaction {
+                    version: 1,
+                    lock_time: 0,
+                    input: vec![TxIn {
+                        previous_output: coin,
+                        ..Default::default()
+                    }],
+                    output: vec![TxOut {
+                        value: 500,
+                        script_pubkey: script.clone(),
+                    }],
+                    special_transaction_payload: None,
+                };
+                let spend = record(spend, TransactionContext::Mempool);
+                conn.execute(
+                    "INSERT INTO core_transactions (wallet_id, txid, finalized) VALUES (?1, ?2, 0)",
+                    params![wallet_id.as_slice(), spend.txid.as_byte_array().as_slice()],
+                )
+                .unwrap();
+                coin_row(&conn, &coin, Some(&spend.txid));
+                coin_row(&conn, &OutPoint::new(spend.txid, 0), None);
+                records.push(spend);
+            }
+            let state = CoreChangeSet {
+                records,
+                ..Default::default()
+            };
+            let tx = conn.transaction().unwrap();
+            let ops = migrations::count_vm_ops(&tx);
+            assert!(repair(&tx, &wallet_id, &state).unwrap());
+            let left: i64 = tx
+                .query_row("SELECT COUNT(*) FROM core_utxos WHERE spent = 0", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(left, i64::from(n), "each released coin stays, no output");
+            ops.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        let (small, large) = (ops(200), ops(800));
+        assert!(
+            large < 8 * small,
+            "repair work must grow linearly, not with stored coins times rejected spends: \
+             {small} VM ops for 200 of each, {large} for 800"
         );
     }
 }

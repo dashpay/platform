@@ -40,7 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -1770,7 +1770,11 @@ async fn build_core_changeset(
                     .cloned(),
             );
             coalesce_account_records(&mut cs.account_records);
-            cs.records = cs.account_records.clone();
+            // The wallet-level row folds every slice the manager holds for
+            // the transaction, not only the ones this block re-emitted (see
+            // `with_held_sibling_slices`).
+            cs.records =
+                with_held_sibling_slices(wallet_manager, wallet_id, &cs.account_records).await;
             fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
@@ -2497,6 +2501,56 @@ async fn wallet_slices_and_verdicts_for_txid(
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
     Some(slices_and_verdicts_for_txid(info, txid))
+}
+
+/// `slices` plus every slice the manager still holds, for the same
+/// transactions, under an account `slices` does not carry.
+///
+/// A block re-emits only the slices key-wallet's re-check still matches. A
+/// no-change spend (an asset lock draining its funding account, the burn as
+/// its only output) leaves the funding account nothing to match: the mempool
+/// check already removed the spent UTXO and no output of the account remains.
+/// The block then carries only the keys account's detail-less marker, and
+/// folded alone that marker becomes the wallet-level row, replacing the
+/// funding accounting the host already stored. The funding slice is still in
+/// the manager (at its earlier context), so folding it back in keeps the
+/// row's details and accounting while the fold takes the block's context
+/// from the marker.
+///
+/// The event's own slices stay authoritative for their accounts; only
+/// accounts it lacks are filled in. Contact watch-only slices stay out, as
+/// everywhere else in the projection. An unknown wallet (removed mid-flight,
+/// or a bare test manager) leaves `slices` as they are.
+async fn with_held_sibling_slices(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    slices: &[TransactionRecord],
+) -> Vec<TransactionRecord> {
+    let mut complete = slices.to_vec();
+    if slices.is_empty() {
+        return complete;
+    }
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return complete;
+    };
+    let carried: HashSet<(Txid, AccountType)> = slices
+        .iter()
+        .map(|record| (record.txid, record.account_type))
+        .collect();
+    let txids: BTreeSet<Txid> = slices.iter().map(|record| record.txid).collect();
+    for account in info.core_wallet.accounts.all_accounts() {
+        for txid in &txids {
+            if let Some(record) = account.transactions().get(txid) {
+                if !is_contact_watch_only(record)
+                    && !carried.contains(&(record.txid, record.account_type))
+                {
+                    complete.push(record.clone());
+                }
+            }
+        }
+    }
+    complete
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
@@ -9689,5 +9743,319 @@ mod utxo_credit_verdict_tests {
             cs.records.iter().all(|r| r.context.block_info().is_some()),
             "the row is rebuilt from the manager's record, not the stale clone"
         );
+    }
+}
+
+#[cfg(test)]
+mod no_change_asset_lock_block_projection_tests {
+    //! A no-change asset lock (the wallet drain's shape: every input of the
+    //! funding account spent, only the OP_RETURN burn as an output) leaves
+    //! the funding account nothing key-wallet can match on a re-check: the
+    //! mempool check already removed the spent UTXO, and no output of the
+    //! account remains. So the block's `updated` list carries only the keys
+    //! account's detail-less marker, and the funding slice keeps its mempool
+    //! context in memory. Drives a real `ManagedWalletInfo` through
+    //! `check_core_transaction` and projects the block event exactly as the
+    //! event adapter does.
+
+    use super::*;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::IdentityManager;
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+    use dashcore::hashes::Hash;
+    use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Wallet, WalletCoreBalance};
+
+    const FUNDING: u64 = 1_750_000;
+    const FEE: u64 = 229;
+    const BLOCK_HEIGHT: u32 = 100_001;
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[1u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    fn spend_of(previous_output: OutPoint) -> TxIn {
+        TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: 0xffffffff,
+            witness: Witness::new(),
+        }
+    }
+
+    /// A no-change asset lock after its mempool and block checks.
+    struct NoChangeLock {
+        managed_wallet: ManagedWalletInfo,
+        wallet: Wallet,
+        txid: Txid,
+        /// What the block check re-emitted (its `updated` records).
+        block_updated: Vec<TransactionRecord>,
+    }
+
+    /// Fund BIP44 with one UTXO, then lock all of it: one input, the burn as
+    /// the only output, the credit paid to the shielded top-up keys account.
+    async fn no_change_lock() -> NoChangeLock {
+        let TestWalletContext {
+            mut managed_wallet,
+            mut wallet,
+            receive_address,
+            ..
+        } = TestWalletContext::new_random();
+        let fund_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![spend_of(OutPoint {
+                txid: Txid::from_slice(&[2u8; 32]).expect("valid txid"),
+                vout: 0,
+            })],
+            output: vec![TxOut {
+                value: FUNDING,
+                script_pubkey: receive_address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        assert!(
+            managed_wallet
+                .check_core_transaction(&fund_tx, in_block(100_000), &mut wallet, true, true)
+                .await
+                .is_relevant
+        );
+
+        let xpub = wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_ref()
+            .map(|account| account.account_xpub)
+            .expect("shielded top-up account xpub");
+        let credit_address = managed_wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_mut()
+            .expect("shielded top-up account")
+            .next_address(Some(&xpub), true)
+            .expect("credit address");
+        let credit = FUNDING - FEE;
+        let lock_tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![spend_of(OutPoint {
+                txid: fund_tx.txid(),
+                vout: 0,
+            })],
+            output: vec![TxOut {
+                value: credit,
+                script_pubkey: ScriptBuf::new_op_return(&[]),
+            }],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(vec![TxOut {
+                    value: credit,
+                    script_pubkey: credit_address.script_pubkey(),
+                }]),
+            )),
+        };
+        assert!(
+            managed_wallet
+                .check_core_transaction(
+                    &lock_tx,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true
+                )
+                .await
+                .is_relevant
+        );
+        let block = managed_wallet
+            .check_core_transaction(&lock_tx, in_block(BLOCK_HEIGHT), &mut wallet, true, true)
+            .await;
+        // Precondition, the shape observed live (AL-002): only the keys
+        // marker is re-emitted for the block.
+        assert!(
+            block.new_records.is_empty()
+                && block.updated_records.len() == 1
+                && block.updated_records[0].input_details.is_empty()
+                && block.updated_records[0].output_details.is_empty(),
+            "precondition: the block re-emits only the detail-less keys marker, got {:?}",
+            block
+                .updated_records
+                .iter()
+                .map(|r| r.account_type)
+                .collect::<Vec<_>>()
+        );
+        NoChangeLock {
+            managed_wallet,
+            wallet,
+            txid: lock_tx.txid(),
+            block_updated: block.updated_records,
+        }
+    }
+
+    /// The held BIP44 slice of `txid`.
+    fn held_funding_slice(managed_wallet: &ManagedWalletInfo, txid: &Txid) -> TransactionRecord {
+        managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 account")
+            .transactions()
+            .get(txid)
+            .cloned()
+            .expect("the funding account still holds the lock's slice")
+    }
+
+    /// An input detail no real slice of the lock carries: if a fold picks up
+    /// a slice holding it, the row shows two inputs.
+    fn foreign_input(template: &TransactionRecord) -> InputDetail {
+        InputDetail {
+            index: 1,
+            ..template.input_details[0].clone()
+        }
+    }
+
+    /// Project the block event over a manager holding `managed_wallet` and
+    /// return the lock's wallet-level row.
+    async fn project_block(
+        managed_wallet: ManagedWalletInfo,
+        wallet: Wallet,
+        txid: &Txid,
+        updated: Vec<TransactionRecord>,
+    ) -> TransactionRecord {
+        let info = PlatformWalletInfo {
+            core_wallet: managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+        let cs = build_core_changeset(
+            &manager,
+            &WalletEvent::BlockProcessed {
+                wallet_id,
+                height: BLOCK_HEIGHT,
+                chain_lock: None,
+                inserted: vec![],
+                updated,
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            },
+        )
+        .await;
+        let rows: Vec<&TransactionRecord> = cs.records.iter().filter(|r| r.txid == *txid).collect();
+        assert_eq!(rows.len(), 1, "one wallet-level row per transaction");
+        rows[0].clone()
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_funding_accounting_when_a_block_updates_only_the_keys_marker() {
+        let lock = no_change_lock().await;
+        let row = project_block(
+            lock.managed_wallet,
+            lock.wallet,
+            &lock.txid,
+            lock.block_updated,
+        )
+        .await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "the wallet-level row must keep the funding input, not degrade to the keys \
+             marker (got {:?}, net {})",
+            row.account_type,
+            row.net_amount
+        );
+        assert_eq!(row.direction, TransactionDirection::Internal);
+        assert_eq!(
+            row.net_amount,
+            -(FUNDING as i64),
+            "a no-change lock costs the whole funding: credit + fee"
+        );
+        assert!(
+            row.context.block_info().is_some(),
+            "the row carries the block confirmation"
+        );
+    }
+
+    /// The event stays authoritative for the accounts it carries: a held
+    /// slice of an account the event already re-emitted is not folded in.
+    #[tokio::test]
+    async fn should_prefer_the_events_slice_over_a_held_slice_of_the_same_account() {
+        let mut lock = no_change_lock().await;
+        let mut from_event = held_funding_slice(&lock.managed_wallet, &lock.txid);
+        from_event.context = in_block(BLOCK_HEIGHT);
+        // Mark the held copy so folding it in would show.
+        let foreign = foreign_input(&from_event);
+        lock.managed_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 account")
+            .transactions_mut()
+            .get_mut(&lock.txid)
+            .expect("held funding slice")
+            .input_details
+            .push(foreign);
+
+        let mut updated = lock.block_updated;
+        updated.push(from_event);
+        let row = project_block(lock.managed_wallet, lock.wallet, &lock.txid, updated).await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "the held slice of an account the event carries must not be folded in"
+        );
+        assert_eq!(row.net_amount, -(FUNDING as i64));
+        assert!(row.context.block_info().is_some());
+    }
+
+    /// A contact's watch-only slice never defines the wallet's row, so a
+    /// held one is not folded in either.
+    #[tokio::test]
+    async fn should_not_fold_a_held_contact_watch_only_slice() {
+        let mut lock = no_change_lock().await;
+        let mut watch_only = held_funding_slice(&lock.managed_wallet, &lock.txid);
+        watch_only.account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [7u8; 32],
+            friend_identity_id: [8u8; 32],
+        };
+        let foreign = foreign_input(&watch_only);
+        watch_only.input_details.push(foreign);
+        assert!(is_contact_watch_only(&watch_only));
+        lock.managed_wallet
+            .first_coinjoin_managed_account_mut()
+            .expect("default wallet has CoinJoin account 0")
+            .transactions_mut()
+            .insert(lock.txid, watch_only);
+
+        let row = project_block(
+            lock.managed_wallet,
+            lock.wallet,
+            &lock.txid,
+            lock.block_updated,
+        )
+        .await;
+
+        assert_eq!(
+            row.input_details.len(),
+            1,
+            "a held contact watch-only slice must stay out of the row"
+        );
+        assert_eq!(row.net_amount, -(FUNDING as i64));
     }
 }

@@ -228,6 +228,11 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
+///   An entry owned by a keys-only account of `wallet_info` (identity,
+///   asset-lock, provider) is skipped: no funds account can derive it, and
+///   the SQLite loader has already restored it on its own pool through
+///   `core_pool::restore_pools`. A caller that has not leaves that pool as
+///   it was; routing the entry to a funds account never marked it there.
 /// - **InstantSend locks**: every `instant_locks_for_non_final_records`
 ///   entry is replayed through `mark_instant_send_utxos` after the UTXO
 ///   restore, so instant-locked funds come back instant-locked instead of
@@ -334,6 +339,18 @@ pub fn apply_persisted_core_state(
         .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
 
+    // Owners of the keys-only accounts this wallet rebuilt. A used address of
+    // theirs is already back on its own pool, and no funds account can derive
+    // it. An owner missing from the wallet is not here, so it still takes the
+    // orphan path below.
+    let keys_owners: Vec<OwningAccount> = wallet_info
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .filter_map(|account| account.as_keys())
+        .map(|account| owning_account_for(&account.managed_account_type().to_account_type()))
+        .collect();
+
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();
     if !unspent.is_empty() && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
@@ -370,18 +387,22 @@ pub fn apply_persisted_core_state(
         // one absent from this wallet, falls back to the first account. An
         // empty map marks only the unspent-UTXO addresses.
         for (addr, owner) in used_pool_addresses {
+            if owner
+                .as_ref()
+                .is_some_and(|owner| keys_owners.contains(owner))
+            {
+                continue;
+            }
             let target =
                 route_to_funds_account(&account_keys, owner.as_ref(), &mut orphaned_owners);
             per_account_addrs[target].push(addr.clone());
         }
 
-        // Degraded in BOTH policies, never fatal. An owner absent from the
-        // funds accounts is not necessarily corruption: provider accounts are
-        // first-class in the schema yet sit on a non-secp256k1 curve, so they
-        // are not `ManagedCoreFundsAccount` and a used provider-owned address
-        // has no funds account to route to. Telling that apart needs an
-        // upstream `key-wallet` enumerator over every account kind; until then,
-        // failing here would brick a masternode-operator wallet.
+        // Degraded in BOTH policies, never fatal. Used addresses of the
+        // keys-only accounts this wallet rebuilt were skipped above, so an
+        // owner left here is one the wallet did not rebuild, or a UTXO whose
+        // pool row names a keys-only account. Neither costs funds: the wallet
+        // total is exact, and the per-account view re-warms on the next sync.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
@@ -878,7 +899,8 @@ fn plan_replay_sweeps(
 
 /// Restore set-aside records without the checker, so the conflict sweep still
 /// finds what they spend: it reads inputs and contexts, never amounts. Every
-/// account a record touches holds a copy, with the wallet-level amounts.
+/// account a record touches holds a copy, with the wallet-level amounts, and
+/// so does every account the load parked one of its outputs in.
 ///
 /// The only arithmetic upstream runs over a stored record is the signed net of
 /// its owned outputs and attributed inputs, when a late funding is attributed
@@ -894,6 +916,13 @@ fn restore_unreplayed_records(
     safe_inputs: &HashMap<Txid, bool>,
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    // Where the load actually parked each record's outputs. An output no
+    // address pool row routes lands in the first account, which need not be
+    // one the record names or derives an address for.
+    let holding: Vec<HashSet<Txid>> = accounts
+        .iter()
+        .map(|account| account.utxos.keys().map(|outpoint| outpoint.txid).collect())
+        .collect();
     for mut record in records {
         let outputs = record.output_details.iter().map(|d| d.address.clone());
         let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
@@ -907,15 +936,20 @@ fn restore_unreplayed_records(
         }
         // The upstream sweep drops a loser's coins and descendants only in an
         // account that records it, so the record goes wherever the checker
-        // would have put it: each account owning one of its addresses.
-        let touches = |account: &ManagedCoreFundsAccount| {
+        // would have put it, each account owning one of its addresses, and
+        // wherever one of its coins actually sits.
+        let touches = |index: usize, account: &ManagedCoreFundsAccount| {
             funds_account_type(account) == record.account_type
+                || holding[index].contains(&record.txid)
                 || addresses.iter().any(|a| account.contains_address(a))
         };
         // Any funding account will do as a fallback: the sweep searches them all.
-        let fallback = !accounts.iter().any(|account| touches(account));
+        let fallback = !accounts
+            .iter()
+            .enumerate()
+            .any(|(index, account)| touches(index, account));
         for (index, account) in accounts.iter_mut().enumerate() {
-            if touches(account) || (fallback && index == 0) {
+            if touches(index, account) || (fallback && index == 0) {
                 let copy = record.clone();
                 account.transactions_mut().insert(copy.txid, copy);
             }
@@ -1132,11 +1166,16 @@ fn route_to_funds_account(
 /// all carry index 0 and differ only by the identity pair).
 fn owning_account_of(account: &ManagedCoreFundsAccount) -> OwningAccount {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    let at = account.managed_account_type().to_account_type();
-    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(&at);
+    owning_account_for(&account.managed_account_type().to_account_type())
+}
+
+/// Owning-account identity of any account type, on the discriminators
+/// [`owning_account_of`] describes.
+fn owning_account_for(at: &AccountType) -> OwningAccount {
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(at);
     OwningAccount {
-        account_type: accounts::account_type_db_label(&at).to_string(),
-        account_index: accounts::account_index(&at),
+        account_type: accounts::account_type_db_label(at).to_string(),
+        account_index: accounts::account_index(at),
         user_identity_id,
         friend_identity_id,
     }
@@ -2160,10 +2199,9 @@ mod tests {
         }
     }
 
-    /// A used address whose owning account is not one of this wallet's funds
-    /// accounts — what a masternode-operator wallet looks like, since provider
-    /// accounts sit on a non-secp256k1 curve and are not funds accounts at all.
-    /// Degraded in every policy, fatal in none (dashpay/platform#3968).
+    /// A used address whose owning account this wallet did not rebuild at
+    /// all — its registration is gone while its pool row stayed. Degraded in
+    /// every policy, fatal in none (dashpay/platform#3968).
     #[test]
     fn rehydration_orphaned_used_address_owner_is_degraded_not_fatal() {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2179,13 +2217,13 @@ mod tests {
         let manifest = manifest_for(&wallet);
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
 
-        // An owner this wallet has no funds account for.
+        // An owner this wallet has no account of any kind for.
         let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
         used.insert(
             first_external_address(&wallet_info, &manifest),
             Some(OwningAccount {
-                account_type: "provider_platform".to_string(),
-                account_index: 0,
+                account_type: "identity_topup".to_string(),
+                account_index: 7,
                 user_identity_id: [0u8; 32],
                 friend_identity_id: [0u8; 32],
             }),
@@ -2217,6 +2255,78 @@ mod tests {
         );
     }
 
+    /// A used address of a keys-only account the wallet did rebuild — a
+    /// masternode operator's provider platform key — is back on its own pool
+    /// already and no funds account can derive it, so it is neither routed
+    /// to one nor reported.
+    #[test]
+    fn rehydration_used_address_of_a_rebuilt_keys_account_is_not_reported() {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [15u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        assert!(
+            wallet_info.accounts.provider_platform_keys.is_some(),
+            "precondition: the wallet rebuilds a provider platform key account"
+        );
+        let address = first_external_address(&wallet_info, &manifest);
+
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        used.insert(
+            address.clone(),
+            Some(OwningAccount {
+                account_type: "provider_platform".to_string(),
+                account_index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            }),
+        );
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let ctx = LoadCtx::strict();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+            &ctx,
+        )
+        .unwrap();
+
+        assert!(
+            !ctx.degradation().degraded,
+            "a rebuilt owner is not an orphan: {:?}",
+            ctx.degradation().by_site
+        );
+        let funds = wallet_info.accounts.all_funding_accounts();
+        assert!(
+            funds.iter().all(
+                |account| account
+                    .managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .all(|pool| !pool
+                        .address_index
+                        .get(&address)
+                        .is_some_and(|index| pool.used_indices.contains(index)))
+            ),
+            "the keys account's address must not be marked used on a funds account"
+        );
+    }
+
     /// Two unroutable owners are two incidents. Every existing test at this
     /// site seeds exactly one address, which cannot tell "count the rows"
     /// apart from "count the times the reader decided to tolerate them" —
@@ -2237,8 +2347,8 @@ mod tests {
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
 
         let orphan_owner = OwningAccount {
-            account_type: "provider_platform".to_string(),
-            account_index: 0,
+            account_type: "identity_topup".to_string(),
+            account_index: 7,
             user_identity_id: [0u8; 32],
             friend_identity_id: [0u8; 32],
         };

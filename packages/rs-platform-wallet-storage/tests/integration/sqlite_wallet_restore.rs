@@ -1860,6 +1860,41 @@ fn should_load_intact_one_time_funding_key_rows_and_hand_out_the_next_key() {
     }
 }
 
+/// A burned one-time key is restored on its own pool, so an intact store
+/// loads clean: its used address is not also routed to a funds account it
+/// does not belong to, where it would be counted as an orphaned owner and an
+/// address that account's key cannot derive.
+#[test]
+fn should_load_burned_one_time_funding_keys_without_reporting_degradation() {
+    use platform_wallet_storage::LoadPolicy;
+
+    for (account_type, label) in one_time_funding_accounts() {
+        let (persister, _tmp, path) = common::fresh_persister();
+        let wallet = wallet_with_funding_account(account_type);
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        burn_two_funding_keys(&mut info, account_type, false);
+        persister
+            .store(wallet.wallet_id, registration(&wallet, &info))
+            .unwrap();
+        drop(persister);
+
+        for policy in [LoadPolicy::Strict, LoadPolicy::Recovery] {
+            let persister =
+                SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
+                    .unwrap();
+            persister
+                .load()
+                .unwrap_or_else(|error| panic!("{label}, {policy:?}: {error}"));
+            let degradation = persister.last_load_degradation();
+            assert!(
+                !degradation.degraded,
+                "{label}, {policy:?}: an intact store reported {:?}",
+                degradation.by_site
+            );
+        }
+    }
+}
+
 /// The limit of that guarantee. The row is the only record that a key was
 /// burned: once the row itself is gone nothing in the store says so, the
 /// wallet loads, and the key is handed out again.
