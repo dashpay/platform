@@ -11,7 +11,6 @@ use crate::sqlite::error::WalletStorageError;
 use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
-mod record_v019;
 mod v020;
 
 // Generates a `migrations` module with `runner()`; path is relative to

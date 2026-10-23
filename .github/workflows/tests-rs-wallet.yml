@@ -218,7 +218,6 @@ jobs:
           cargo clippy \
             --package platform-wallet \
             --package platform-wallet-storage \
-            --package platform-wallet-storage-v019-codec \
             --package platform-wallet-ffi \
             --package rs-unified-sdk-ffi \
             --package rs-unified-sdk-jni \
@@ -242,7 +241,6 @@ jobs:
           cargo nextest run \
             --package platform-wallet \
             --package platform-wallet-storage \
-            --package platform-wallet-storage-v019-codec \
             --package platform-wallet-ffi \
             --all-features \
             --locked \
@@ -262,7 +260,6 @@ jobs:
           cargo test --doc \
             --package platform-wallet \
             --package platform-wallet-storage \
-            --package platform-wallet-storage-v019-codec \
             --package platform-wallet-ffi \
             --all-features \
             --locked

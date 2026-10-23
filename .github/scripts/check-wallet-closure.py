@@ -19,10 +19,7 @@ import json
 import subprocess
 import sys
 
-WALLET_CRATES = {
-    "platform-wallet", "platform-wallet-ffi", "platform-wallet-storage",
-    "platform-wallet-storage-v019-codec",
-}
+WALLET_CRATES = {"platform-wallet", "platform-wallet-ffi", "platform-wallet-storage"}
 EXPECTED_DEPENDENTS = {"rs-unified-sdk-ffi", "rs-unified-sdk-jni"}
 
 

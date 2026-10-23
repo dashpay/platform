@@ -179,13 +179,6 @@ pub enum WalletStorageError {
         source: bincode::error::EncodeError,
     },
 
-    /// A historical V019 record failed its independently pinned decoder.
-    #[error("cannot decode historical V019 record: {source}")]
-    V019RecordDecode {
-        #[from]
-        source: v019_codec::Error,
-    },
-
     /// bincode-serde refused to decode a payload.
     #[error("bincode decode error")]
     BincodeDecode {
@@ -774,7 +767,6 @@ impl WalletStorageError {
             | Self::ConfigInvalid { .. }
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
-            | Self::V019RecordDecode { .. }
             | Self::BlobDecode { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
@@ -890,7 +882,6 @@ impl WalletStorageError {
             | Self::ConfigInvalid { .. }
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
-            | Self::V019RecordDecode { .. }
             | Self::BlobDecode { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
@@ -970,7 +961,6 @@ impl WalletStorageError {
             Self::ConfigInvalid { .. } => "config_invalid",
             Self::BincodeEncode { .. } => "bincode_encode",
             Self::BincodeDecode { .. } => "bincode_decode",
-            Self::V019RecordDecode { .. } => "v019_record_decode",
             Self::BlobDecode { .. } => "blob_decode",
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
