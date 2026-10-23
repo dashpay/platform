@@ -521,6 +521,26 @@ mod tests {
     use super::*;
     use rusqlite::{params, Connection};
 
+    /// Refinery orders migrations by integer version and, with the default
+    /// `abort_missing`, refuses to open a database whose history already
+    /// holds a higher version than an unapplied embedded one. CI only
+    /// migrates fresh databases, so neither a reused number nor a migration
+    /// slotted below an already-shipped one fails there. Requiring the
+    /// versions to be exactly `1..=N` forces every new migration to take
+    /// "highest on the base branch + 1", which turns both mistakes into a
+    /// failure as soon as the branch is merged with its base.
+    #[test]
+    fn embedded_migration_versions_are_unique_and_contiguous() {
+        let mut versions: Vec<i32> = embedded_migrations().into_iter().map(|(v, _)| v).collect();
+        versions.sort_unstable();
+        let expected: Vec<i32> = (1..=versions.len() as i32).collect();
+        assert_eq!(
+            versions, expected,
+            "migration versions must be unique and contiguous from V001; \
+             renumber the new migration to the highest version on the base branch + 1"
+        );
+    }
+
     #[test]
     fn schema_history_guard_rejects_timestamps_refinery_rejects() {
         for applied_on in ["2024-01-01T00:00:00−00:00", "2024-01-01T00:00:60Z"] {
