@@ -1072,3 +1072,6 @@ mod memo_roundtrip_tests;
 
 #[cfg(test)]
 mod concurrent_sync_tests;
+
+#[cfg(test)]
+mod tree_consistency_tests;
