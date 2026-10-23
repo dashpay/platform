@@ -1,6 +1,7 @@
 //! Identity related types and functions
 
 use crate::delegate_enum;
+use crate::sdk::ProofResponseMetadata;
 use crate::{
     platform::{proto, Query},
     Error,
@@ -36,6 +37,17 @@ delegate_enum! {
     (GetIdentityByNonUniquePublicKeyHash, proto::GetIdentityByNonUniquePublicKeyHashRequest, proto::GetIdentityByNonUniquePublicKeyHashResponse)
 }
 
+impl ProofResponseMetadata for IdentityResponse {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        match self {
+            Self::GetIdentity(response) => response.response_metadata(),
+            Self::GetIdentityByPublicKeyHash(response) => response.response_metadata(),
+            Self::GetIdentityByNonUniquePublicKeyHash(response) => response.response_metadata(),
+            Self::Unknown => Err(drive_proof_verifier::Error::EmptyVersion),
+        }
+    }
+}
+
 impl Query<IdentityRequest> for dpp::prelude::Identifier {
     fn query(
         &self,
@@ -43,7 +55,9 @@ impl Query<IdentityRequest> for dpp::prelude::Identifier {
     ) -> Result<IdentityRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let id = self.to_vec();
         Ok(IdentityRequest::GetIdentity(GetIdentityRequest {
@@ -69,7 +83,9 @@ impl Query<IdentityRequest> for PublicKeyHash {
     ) -> Result<IdentityRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let request: GetIdentityByPublicKeyHashRequest = GetIdentityByPublicKeyHashRequest {
             version: Some(get_identity_by_public_key_hash_request::Version::V0(
@@ -98,7 +114,9 @@ impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
     ) -> Result<IdentityRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request = proto::GetIdentityByNonUniquePublicKeyHashRequest {
@@ -125,7 +143,9 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
     ) -> Result<GetIdentityBalanceRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let id = self.to_vec();
 
@@ -146,7 +166,9 @@ impl Query<GetIdentityNonceRequest> for dpp::prelude::Identifier {
     ) -> Result<GetIdentityNonceRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
 
         let request: GetIdentityNonceRequest = GetIdentityNonceRequest {
@@ -171,7 +193,9 @@ impl Query<GetIdentityContractNonceRequest>
     ) -> Result<GetIdentityContractNonceRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let (identity_id, contract_id) = self;
 
@@ -196,7 +220,9 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
     ) -> Result<GetIdentityBalanceAndRevisionRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let id = self.to_vec();
         let request: GetIdentityBalanceAndRevisionRequest = GetIdentityBalanceAndRevisionRequest {
@@ -216,7 +242,9 @@ impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
     ) -> Result<GetIdentitiesBalancesRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         let ids = self.iter().map(|a| a.to_vec()).collect();
 

@@ -1,4 +1,4 @@
-use super::{insert_notes, update_balance};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -38,6 +38,11 @@ impl DriveHighLevelOperationConverter for ShieldFromIdentityTransitionAction {
                             balance_to_remove: v0.shield_amount,
                         }),
                     ];
+
+                    // Record the nullifier each action reveals, as the spends do. Edited in
+                    // place: `ShieldFromIdentity` is refused by `is_allowed` before protocol
+                    // version 14, so no earlier version reaches this generation.
+                    insert_nullifiers(&mut ops, &v0.notes);
 
                     insert_notes(&mut ops, &v0.notes);
 
@@ -102,10 +107,11 @@ mod tests {
     }
 
     #[test]
-    fn test_nonce_then_balance_removal_then_notes_then_pool_total() {
+    fn test_nonce_then_balance_removal_then_nullifiers_then_notes_then_pool_total() {
         let ops = ops(make_action(2));
-        // UpdateIdentityNonce + RemoveFromIdentityBalance + 2 InsertNote + UpdateTotalBalance
-        assert_eq!(ops.len(), 5);
+        // UpdateIdentityNonce + RemoveFromIdentityBalance + InsertNullifiers + 2 InsertNote
+        // + UpdateTotalBalance
+        assert_eq!(ops.len(), 6);
         assert!(matches!(
             &ops[0],
             IdentityOperation(IdentityOperationType::UpdateIdentityNonce { nonce: 7, .. })
@@ -119,6 +125,12 @@ mod tests {
         ));
         assert!(matches!(
             &ops[2],
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNullifiers {
+                nullifiers
+            }) if nullifiers.len() == 2
+        ));
+        assert!(matches!(
+            &ops[3],
             DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNote { .. })
         ));
         assert!(matches!(

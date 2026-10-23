@@ -26,7 +26,7 @@ struct DashPayProfileView: View {
            !name.isEmpty {
             return name
         }
-        if let dpns = identity.mainDpnsName ?? identity.dpnsName {
+        if let dpns = identity.ownedMainDpnsName ?? identity.dpnsName {
             return dpns
         }
         return String(identity.identityIdBase58.prefix(12)) + "…"
@@ -45,7 +45,7 @@ struct DashPayProfileView: View {
                         Text(displayName)
                             .font(.title2)
                             .fontWeight(.semibold)
-                        if let dpns = identity.mainDpnsName ?? identity.dpnsName {
+                        if let dpns = identity.ownedMainDpnsName ?? identity.dpnsName {
                             Text(dpns)
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
@@ -158,7 +158,7 @@ struct DashPayProfileView: View {
         // on-chain when the cache is empty (imported/restored identities carry
         // the name on-chain but not in the local field). If no name is
         // registered at all, the Rust call surfaces a clear error.
-        let username = (identity.mainDpnsName ?? identity.dpnsName)?
+        let username = (identity.ownedMainDpnsName ?? identity.dpnsName)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         do {
             let uri = try await wallet.buildAutoAcceptQR(

@@ -61,6 +61,12 @@ pub struct DocumentTypeV2 {
     /// replace writes, with the stored one read through `$old.`. None is also
     /// in `immutable_fields`.
     pub(in crate::data_contract) immutable_field_conditions: BTreeMap<String, PropertyConstraint>,
+    /// The `retractedWhen` condition (protocol version 14): a replace whose
+    /// written document meets it is a retraction, which a banned or suspended
+    /// owner may still make. Judged as an `immutable` condition is, on the
+    /// document the replace writes with the stored one under `$old.`. `None`
+    /// on a type that declares none.
+    pub(in crate::data_contract) retracted_when: Option<PropertyConstraint>,
     /// The dotted paths of the properties that declare `distinctFrom`
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
@@ -89,6 +95,11 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?
     pub(in crate::data_contract) documents_can_be_deleted: bool,
+    /// Whether the documents of this type leave state only when a `refersTo` with
+    /// `consume` deletes them (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14).
+    /// Only ever `true` beside a `false` `documents_can_be_deleted`: the owner can not
+    /// delete one, a create consuming it can. False on every pre-PV14 contract.
+    pub(in crate::data_contract) documents_deleted_only_when_consumed: bool,
     /// Can documents be transferred without a trade?
     pub(in crate::data_contract) documents_transferable: Transferable,
     /// How are these documents traded?
@@ -229,6 +240,16 @@ pub struct DocumentTypeV2 {
     /// height a rule reads to be one the type records, and every property a
     /// rule reads to be neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
+    /// The rules the stored document must meet for its owner to delete it, by
+    /// name, in the order they are checked (`deleteConstraints` keyword,
+    /// protocol version 14), in the grammar of `property_constraints`: a rule
+    /// reads the stored document, and a `countOf` or `sumOf` total as it will
+    /// be once the document is gone. Empty on document types that declare
+    /// none. The parser (`apply_delete_constraints_v0`) admits them only on a type
+    /// whose owner may delete its documents, holds what they read to what a
+    /// `propertyConstraints` rule may read, and refuses a `refersTo` with
+    /// `consume` at such a type, since a consume would delete without them.
+    pub(in crate::data_contract) delete_constraints: BTreeMap<String, PropertyConstraint>,
     /// How many seconds after its creation (`$createdAt`) the platform deletes each
     /// document of the type (`ttl` keyword, protocol version 14), `None` when the
     /// documents live until someone deletes them. The parser (`apply_documents_ttl`)
@@ -325,6 +346,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_field_conditions: BTreeMap::new(),
+            retracted_when: None,
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -334,6 +356,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
             creation_restriction_mode: value.creation_restriction_mode,
@@ -362,6 +385,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
         }
@@ -385,6 +409,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_field_conditions: BTreeMap::new(),
+            retracted_when: None,
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -394,6 +419,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_keep_pricing_history: value.documents_keep_pricing_history,
             documents_mutable: value.documents_mutable,
             documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_deleted_only_when_consumed: false,
             documents_transferable: value.documents_transferable,
             trade_mode: value.trade_mode,
             creation_restriction_mode: value.creation_restriction_mode,
@@ -422,6 +448,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
         }

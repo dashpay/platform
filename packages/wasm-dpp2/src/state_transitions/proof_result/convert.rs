@@ -23,13 +23,16 @@ use super::shielded::{
     VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
+    VerifiedTokenGroupActionWithShieldedNullifiersWasm,
 };
 use super::token::{
     VerifiedTokenActionWithDocumentWasm, VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceWasm,
-    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithTokenBalanceWasm,
+    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm, VerifiedTokenIdentitiesBalancesWasm,
-    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm, VerifiedTokenStatusWasm,
+    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm,
+    VerifiedTokenShieldedPoolBalanceWasm, VerifiedTokenStatusWasm,
 };
 use super::voting::{VerifiedMasternodeVoteWasm, VerifiedNextDistributionWasm};
 use crate::IdentifierWasm;
@@ -72,12 +75,15 @@ export type StateTransitionProofResultType =
   | VerifiedAssetLockConsumed
   | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
+  | VerifiedTokenShieldedPoolBalance
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
   | VerifiedContractDocumentRemoval
+  | VerifiedTokenGroupActionWithShieldedPoolBalance
+  | VerifiedTokenGroupActionWithShieldedNullifiers
   | VerifiedContractTeamActionSignature;
 "#;
 
@@ -291,6 +297,36 @@ pub fn convert_proof_result(
         StateTransitionProofResult::VerifiedShieldedNullifiers(nullifiers) => {
             VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
         }
+
+        StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, amount) => {
+            VerifiedTokenShieldedPoolBalanceWasm {
+                token_id: id.into(),
+                balance: amount,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            power,
+            status,
+            maybe_balance,
+        ) => VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+            group_power: power,
+            action_status: action_status_to_string(status),
+            balance: maybe_balance,
+        }
+        .into(),
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            power,
+            status,
+            nullifiers,
+        ) => VerifiedTokenGroupActionWithShieldedNullifiersWasm::new(
+            power,
+            action_status_to_string(status),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
 
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
             nullifiers,

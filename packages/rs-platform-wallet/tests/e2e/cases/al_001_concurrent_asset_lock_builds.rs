@@ -99,7 +99,6 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use key_wallet::dashcore::secp256k1::Secp256k1;
 use key_wallet::{AccountType, Network};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::AssetLockFunding;
@@ -573,16 +572,15 @@ async fn add_identity_topup_account(
     registration_index: u32,
 ) -> Result<(), PlatformWalletError> {
     let account_type = AccountType::IdentityTopUp { registration_index };
-    let secp = Secp256k1::new();
     let master = ExtendedPrivKey::new_master(network, seed_bytes)
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
     let derivation_path = account_type
         .derivation_path(network)
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
     let account_xpriv = master
-        .derive_priv(&secp, &derivation_path)
+        .derive_priv(&derivation_path)
         .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
-    let account_xpub = ExtendedPubKey::from_priv(&secp, &account_xpriv);
+    let account_xpub = ExtendedPubKey::from_priv(&account_xpriv);
 
     let wallet_id = wallet.wallet_id();
     let mut wm = wallet.wallet_manager().write().await;

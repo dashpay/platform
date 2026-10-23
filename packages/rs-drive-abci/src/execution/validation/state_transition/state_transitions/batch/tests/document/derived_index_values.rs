@@ -3,6 +3,7 @@
 //! create action carries to Drive, so the new document is keyed without a second read.
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
 use crate::platform_types::platform::PlatformStateRef;
 use crate::test::helpers::setup::TestPlatformBuilder;
@@ -119,6 +120,7 @@ fn should_record_the_derived_values_the_reference_validation_read() {
         document_type_name: "reply".to_string(),
         data_contract: contract_fetch_info.expect("the contract is in state"),
         token_cost: None,
+        shielded_token_payment: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
@@ -140,12 +142,14 @@ fn should_record_the_derived_values_the_reference_validation_read() {
             &data,
             replier,
             Some(replier),
+            &DocumentSystemValues::default(),
             None,
             None,
             &platform_ref,
             &BlockInfo::default(),
             &mut Vec::new(),
             Some(&mut derived_index_values),
+            &mut BTreeMap::new(),
             None,
             &mut execution_context,
             platform_version,

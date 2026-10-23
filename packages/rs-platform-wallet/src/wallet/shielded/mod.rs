@@ -31,6 +31,8 @@
 //! `BTreeMap<u32, OrchardKeySet>` (with the spend authority);
 //! `PlatformWallet` doesn't need a wrapper struct around it.
 
+pub mod wallet_drain;
+pub use wallet_drain::{WalletDrainPreview, WalletDrainPreviewStatus};
 pub mod activity;
 pub mod activity_recorder;
 pub mod balance;
@@ -48,6 +50,8 @@ pub mod store;
 pub mod sync;
 #[cfg(test)]
 mod viewing_key_bind_tests;
+#[cfg(test)]
+mod wallet_drain_tests;
 
 pub use activity::{
     compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,

@@ -21,6 +21,8 @@
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 
 use super::conditions::WhereClause;
+use super::drive_document_sum_query::{DriveDocumentSumQuery, SumEntry};
+use crate::error::Error;
 
 // Re-exports for the submodules and the `tests` module's
 // `use super::*;`. `WhereOperator` is used by every submodule that
@@ -126,6 +128,63 @@ pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
 /// `crate::config::DEFAULT_QUERY_LIMIT`).
 pub const MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT: u16 = 10;
 
+impl DriveDocumentCountQuery<'_> {
+    /// The `SizedQuery` limit a carrier-aggregate count proof walks with,
+    /// given the request's `limit`. The server's dispatcher and the SDK's
+    /// verifier both take it from here, so they build the same path query:
+    ///
+    /// - Range-outer carrier (two range clauses): `None` means
+    ///   [`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]; `Some(n)` is taken for
+    ///   `1 <= n <= MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` and refused
+    ///   otherwise.
+    /// - `In`-outer carrier: the `In` array bounds the walk, so the limit is
+    ///   `None`, and a request carrying one is refused.
+    pub fn carrier_aggregate_count_limit(
+        where_clauses: &[WhereClause],
+        limit: Option<u32>,
+    ) -> Result<Option<u16>, Error> {
+        let has_outer_range = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .count()
+            == 2;
+        if !has_outer_range {
+            return match limit {
+                Some(n) => Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                    "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
+                     [...] AND inner_acor_field > Y` with `group_by = \
+                     [outer_in_field]`) don't accept `limit` — the In array's \
+                     length already bounds the result. Got limit = {n}.",
+                )))),
+                None => Ok(None),
+            };
+        }
+        match limit {
+            None => Ok(Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)),
+            Some(n) if n > MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 => {
+                Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                    "carrier-aggregate range-outer queries (e.g. \
+                     `outer_range_field > X AND inner_acor_field > \
+                     Y` with `group_by = [outer_range_field]`) cap \
+                     the outer walk at {} entries (compile-time \
+                     constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
+                     got limit = {}. Pass a value ≤ {} or omit \
+                     `limit` to use the default.",
+                    MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                    n,
+                    MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                ))))
+            }
+            Some(0) => Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                "carrier-aggregate range-outer queries require limit \
+                 ≥ 1; got limit = 0"
+                    .to_string(),
+            ))),
+            Some(n) => Ok(Some(n as u16)),
+        }
+    }
+}
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests;
@@ -154,12 +213,12 @@ pub struct DriveDocumentCountQuery<'a> {
 /// `path[base_path_len]` when the walk descended past the base path (the
 /// `In` + trailing `Equal`s shape) and IS the key otherwise (the
 /// `In`-on-terminator shape); `Equal`-only shapes have no per-key
-/// dimension. The element's own count is the per-branch document count
-/// (every countable terminator value tree is a CountTree); an absent
-/// element becomes `count: None`. ONE decoder for every reader of that
-/// layout — the proof verifier, the no-proof executor and composite
-/// queries — so the layout has one owner.
+/// dimension. The element's document count ([`document_count_of_element`])
+/// is the per-branch count; an absent element becomes `count: None`. ONE
+/// decoder for every reader of that layout — the proof verifier, the
+/// no-proof executor and composite queries — so the layout has one owner.
 pub fn point_lookup_count_entries(
+    index: &Index,
     base_path_len: usize,
     has_in_clause: bool,
     elements: impl IntoIterator<Item = (Vec<Vec<u8>>, Vec<u8>, Option<grovedb::Element>)>,
@@ -176,13 +235,143 @@ pub fn point_lookup_count_entries(
             } else {
                 Vec::new()
             };
+            // A proof returns a tree element as stored, wrapper included,
+            // while the unproven read unwraps it: a prefix-to-last read's
+            // tree sits wrapped to contribute nothing under an aggregating
+            // value tree, so the decode looks through the wrapper. Before
+            // protocol version 14 the only wrapper a count read can reach is
+            // `NotSummed` (a summing index ending at the pinned level, the
+            // read's tree continuing below it), whose count grovedb passes
+            // through, so those decode as before
+            // (`should_count_through_a_wrapped_tree_unchanged_at_protocol_version_13`).
             SplitCountEntry {
                 in_key: None,
                 key,
-                count: element.map(|element| element.count_value_or_default()),
+                count: element
+                    .map(|element| document_count_of_element(index, element.underlying())),
             }
         })
         .collect()
+}
+
+/// The number of documents an element a count read of `index` reaches
+/// stands for: its count, or, on a `summableOffCountIndex` index, its sum.
+/// Such an index keeps one counter per group, which counts one in its count
+/// trees and adds its group's documents to their sums, and its registration
+/// rules make each counter equal its source group's entries, so its sums are
+/// the document counts.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain count only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub fn document_count_of_element(index: &Index, element: &grovedb::Element) -> u64 {
+    if index.is_summable_off_count_index() {
+        counter_sum_as_document_count(element.sum_value_or_default())
+    } else {
+        element.count_value_or_default()
+    }
+}
+
+/// A `summableOffCountIndex` index's sum read as a document count. A
+/// counter is never negative: it counts entries.
+pub fn counter_sum_as_document_count(sum: i64) -> u64 {
+    u64::try_from(sum).unwrap_or_default()
+}
+
+/// A sum entry read through [`DriveDocumentCountQuery::counter_sums_query`],
+/// as the count entry it stands for.
+pub fn counter_sum_entry_as_count_entry(entry: SumEntry) -> SplitCountEntry {
+    SplitCountEntry {
+        in_key: entry.in_key,
+        key: entry.key,
+        count: entry.sum.map(counter_sum_as_document_count),
+    }
+}
+
+impl<'a> DriveDocumentCountQuery<'a> {
+    /// The sum query a range count over a `summableOffCountIndex` index
+    /// reads in its place. Its counters each count one group in its count
+    /// trees, so a range count over them would count groups, while their
+    /// sums are its document counts: the sum of the source index's entries
+    /// (the summed value the index names) over the same index and clauses.
+    /// The count's range forms (aggregate, per value, per `In` branch) and
+    /// their proofs are then the sum surface's, read back as counts. `None`
+    /// on any other index.
+    ///
+    /// Unversioned, so every protocol version reaches it: it is `Some` only
+    /// on a `summableOffCountIndex` index, which only meta-schema v3
+    /// (protocol version 14) admits.
+    pub fn counter_sums_query(&self) -> Option<DriveDocumentSumQuery<'a>> {
+        let source = self.index.summable_off_count_index.as_ref()?;
+        Some(DriveDocumentSumQuery {
+            document_type: self.document_type,
+            contract_id: self.contract_id,
+            document_type_name: self.document_type_name.clone(),
+            index: self.index,
+            where_clauses: self.where_clauses.clone(),
+            sum_property: source.clone(),
+        })
+    }
+}
+
+/// The position of the shallowest level of `index` whose value trees a
+/// count read may stop at, taking the subtree's document count: the count
+/// chain's ([`Index::shallowest_count_chain_position`]), or on a
+/// `summableOffCountIndex` index the sum chain's, whose sums are its document
+/// counts. `None` without such a chain.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain count chain only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub fn document_count_chain_position(index: &Index) -> Option<usize> {
+    if index.is_summable_off_count_index() {
+        index.shallowest_sum_chain_position()
+    } else {
+        index.shallowest_count_chain_position()
+    }
+}
+
+/// Whether a point count read of `index` yields document counts: a countable
+/// index's count trees count its documents, and so do a
+/// `summableOffCountIndex` index's sums, which the read takes instead
+/// ([`document_count_of_element`]). The picker and the path builder both ask
+/// this, so they agree on the element read.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `countable` test only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub(crate) fn point_count_reads_documents(index: &Index) -> bool {
+    index.countable.is_countable() || index.is_summable_off_count_index()
+}
+
+/// Whether a count read of `index` may stop at its last property's tree,
+/// reading that tree's own element as the whole prefix's document count: the
+/// tree is count-bearing (`rangeCountable`, which implies `countable`), or
+/// sum-bearing on a `summableOffCountIndex` index, and not ranked. A ranked
+/// axis makes it an INDEXED tree, which grovedb's query dispatch refuses to
+/// return as a result element ("path_queries can not refer to trees"). The
+/// picker and the path builder both ask this, so they agree on the form.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `rangeCountable` test only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+pub(crate) fn prefix_to_last_count_reads_documents(index: &Index) -> bool {
+    terminal_reads_documents(index) && !index.ranks_its_last_property()
+}
+
+/// Whether the tree of `index`'s last property reads documents: a
+/// `rangeCountable` index's counts them (it implies `countable`; grovedb's
+/// `AggregateCountOnRange` for a range), and a `summableOffCountIndex`
+/// index's sums do (such an index is always `rangeSummable`; read through
+/// [`DriveDocumentCountQuery::counter_sums_query`] for a range, since its
+/// count trees count groups). The range picker and the prefix-to-last form
+/// both ask this.
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain `rangeCountable` test only on a `summableOffCountIndex` index, which
+/// only meta-schema v3 (protocol version 14) admits.
+pub(crate) fn terminal_reads_documents(index: &Index) -> bool {
+    (index.range_countable && index.countable.is_countable()) || index.is_summable_off_count_index()
 }
 
 /// An entry in a split count result, containing the serialized
@@ -218,9 +407,13 @@ pub struct SplitCountEntry {
     /// - `Some(0)` — caller queried this branch and the executor
     ///   confirmed zero matching documents. Emitted by the no-proof
     ///   point-lookup path's aggregated total wrapper (a single
-    ///   summed entry whose value can be 0) and by the no-proof range
-    ///   executors when their walk returns nothing. Not emitted
-    ///   per-In-branch under the current shape — see `None` below.
+    ///   summed entry whose value can be 0), by the no-proof range
+    ///   executors when their walk returns nothing, by the per-`In`
+    ///   no-proof fan-out for a branch matching nothing, and, on an
+    ///   index that can hold an empty group (see
+    ///   `index_keeps_empty_groups`), for each empty group a range
+    ///   walk or a point lookup reads, proved or not, per `In` branch
+    ///   included.
     /// - `None` — reserved for a future absence-proof variant. The
     ///   current `point_lookup_count_path_query` doesn't set
     ///   `absence_proofs_for_non_existing_searched_keys: true`, so
@@ -231,9 +424,9 @@ pub struct SplitCountEntry {
     ///   against the returned entries by key. The variant exists in
     ///   the type signature so a future path-query change that flips
     ///   the flag surfaces absences via `count: None` without a
-    ///   breaking struct change — distinguishable from `Some(0)`
-    ///   (which a zero-count CountTree could never produce on its own
-    ///   since zero-count CountTrees aren't materialized in merk).
+    ///   breaking struct change — distinguishable from `Some(0)`,
+    ///   which only a materialized empty group (a preallocation's) or a
+    ///   zero total produces.
     pub count: Option<u64>,
 }
 
@@ -290,8 +483,10 @@ pub enum CountMode {
     ///   `RangeAggregateCarrierProof` on the prove path
     ///   (grovedb #663 carrier-ACOR — one verified `u64` per
     ///   In branch, range collapsed) and `RangeNoProof` on the
-    ///   no-prove path (per-In-branch range walk). Both produce
-    ///   entries that line up with the caller's GROUP BY shape.
+    ///   no-prove path, which runs the per-In-branch fan-out and
+    ///   folds the branches into ONE entry (`in_key: None`, the
+    ///   total), as the sum and average dispatchers do: only the
+    ///   proved answer carries one entry per `In` value.
     ///
     /// `limit` is rejected upstream when set. The In array is
     /// already capped at 100 entries by `WhereClause::in_values()`,

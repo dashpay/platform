@@ -109,6 +109,24 @@ pub(super) fn assert_grovedb_is_consistent(drive: &Drive) {
     );
 }
 
+/// The live grovedb root hash, which a verified proof must reconstruct.
+pub(super) fn live_root_hash(drive: &Drive) -> [u8; 32] {
+    drive
+        .grove
+        .root_hash(None, &platform_version().drive.grove_version)
+        .unwrap()
+        .expect("root hash must be readable")
+}
+
+/// A verified proof's root hash must be the live grovedb root.
+pub(super) fn assert_live_root_hash(drive: &Drive, root_hash: [u8; 32]) {
+    assert_eq!(
+        root_hash,
+        live_root_hash(drive),
+        "the proof must reconstruct the live grovedb root hash"
+    );
+}
+
 /// A like on `post` under `hashtag` by `owner`.
 pub(super) fn build_like(
     contract: &DataContract,
@@ -2940,6 +2958,60 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
     );
 }
 
+/// A beat requires `$createdAt`, which `byHashtag` does not hold, so no beat it
+/// synthesizes can be serialized: a read without a proof through it is
+/// refused before reading, whether or not a beat matches, rather than
+/// answering an empty page and refusing once one exists.
+#[test]
+fn beat_read_without_a_proof_through_an_index_lacking_created_at_is_refused() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let by_hashtag = || DriveDocumentQuery {
+        contract: &contract,
+        document_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let assert_refused = |drive: &Drive| {
+        let error = by_hashtag()
+            .execute_raw_results_no_proof(drive, None, None, platform_version())
+            .expect_err("a beat without its $createdAt cannot be serialized");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::Unsupported(message))
+                    if message.contains("does not cover every required property")
+            ),
+            "expected the required-property refusal, got: {error}"
+        );
+    };
+    assert_refused(&drive);
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+    assert_refused(&drive);
+}
+
 /// Delete-by-values removes every bucket entry (the carried `$createdAt`
 /// reproduces the exact bucket set), drained groups prune, and a falsified
 /// timestamp addressing the same buckets dies on the commitment probe.
@@ -3662,6 +3734,55 @@ fn empty_byte_array_trigger_takes_the_value_lane_not_the_skip_lane() {
         "the empty-lane entry must be gone"
     );
     delete_pin(&drive, &contract, absent_tag, true).expect("delete absent-tag pin");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// An empty byte array given as an empty list, as a client may send it, is the
+/// same present-but-empty value: the walkers enter it under the empty key, as
+/// the delete probes and the row commitment read it, and a delete in either
+/// form removes the entry an insert in either form wrote.
+#[test]
+fn should_take_an_empty_list_byte_array_trigger_as_the_empty_value() {
+    let (drive, contract) = setup_likes();
+    let pin_path = sibling_doctype_path(&contract, "pin");
+    let empty_lane = |x: &str, y: &str| {
+        let mut lane = pin_path.clone();
+        lane.extend([
+            b"tag".to_vec(),
+            Vec::new(),
+            b"x".to_vec(),
+            x.as_bytes().to_vec(),
+            b"y".to_vec(),
+            y.as_bytes().to_vec(),
+            vec![0],
+        ]);
+        lane
+    };
+    let as_list = |mut pin: Document| {
+        pin.set("tag", Value::Array(vec![]));
+        pin
+    };
+
+    let listed = as_list(build_pin(&contract, Some(&[]), "x1", "y1", OWNER_1, 1));
+    insert_pin(&drive, &contract, &listed, true).expect("insert an empty-list tag pin");
+    assert!(
+        matches!(
+            read_grove_element(&drive, &empty_lane("x1", "y1"), &OWNER_1),
+            Some(Element::Item(..))
+        ),
+        "the empty list is entered under the empty key"
+    );
+    delete_pin(&drive, &contract, listed, true).expect("delete it as an empty list");
+    assert!(read_grove_element(&drive, &empty_lane("x1", "y1"), &OWNER_1).is_none());
+
+    let bytes = build_pin(&contract, Some(&[]), "x2", "y2", OWNER_1, 2);
+    insert_pin(&drive, &contract, &bytes, true).expect("insert an empty-bytes tag pin");
+    delete_pin(&drive, &contract, as_list(bytes), true).expect("delete it as an empty list");
+    assert!(
+        read_grove_element(&drive, &empty_lane("x2", "y2"), &OWNER_1).is_none(),
+        "a delete in the other form leaves no entry behind"
+    );
 
     assert_grovedb_is_consistent(&drive);
 }

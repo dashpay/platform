@@ -2,7 +2,6 @@
 
 use std::ffi::CString;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dip9::{
@@ -78,7 +77,7 @@ pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'st
 ///
 /// The returned master's inner secp256k1 scalar is **not** wiped here —
 /// `ExtendedPrivKey` has no `Drop` / `Zeroize`, so the caller must
-/// `master.private_key.non_secure_erase()` once it's done deriving.
+/// `master.private_key.zeroize()` once it's done deriving.
 /// Mirrors the hygiene in
 /// [`crate::sign_with_mnemonic_resolver::dash_sdk_sign_with_mnemonic_resolver_and_path`].
 ///
@@ -319,7 +318,6 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
-    let secp = Secp256k1::new();
 
     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
@@ -347,7 +345,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let derived = match master.derive_priv(&secp, &path) {
+        let derived = match master.derive_priv(&path) {
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
@@ -360,7 +358,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
                 );
             }
         };
-        let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+        let extended_pub = ExtendedPubKey::from_priv(&derived);
         let public_key = extended_pub.public_key;
 
         let path_cstring = match CString::new(path.to_string()) {
@@ -374,7 +372,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let pub_bytes: [u8; 33] = public_key.serialize();
+        let pub_bytes: [u8; 33] = public_key.to_compressed();
         let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
         let pub_ptr = pub_box.as_mut_ptr();
         let pub_len = pub_box.len();
@@ -383,7 +381,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
         let dash_private = DashPrivateKey {
             compressed: true,
             network: kw_network,
-            inner: derived.private_key,
+            inner: derived.private_key.clone(),
         };
         let wif_cstring = match CString::new(dash_private.to_wif()) {
             Ok(s) => s,
@@ -404,7 +402,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             public_key: pub_ptr,
             public_key_len: pub_len,
             private_key_wif: wif_cstring.into_raw(),
-            private_key_bytes: derived.private_key.secret_bytes(),
+            private_key_bytes: *derived.private_key.to_bytes(),
         });
     }
 

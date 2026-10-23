@@ -36,7 +36,6 @@
 
 use std::time::Duration;
 
-use dashcore::secp256k1::PublicKey as SecpPublicKey;
 use dashcore::{Address, Network, PublicKey};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
@@ -256,8 +255,8 @@ fn derive_auth_address(
     let derived =
         derive_ecdsa_identity_auth_keypair_from_master(&master, network, identity_index, key_index)
             .map_err(|err| format!("derive ({identity_index}, {key_index}): {err}"))?;
-    let secp_pubkey = SecpPublicKey::from_slice(&derived.public_key).map_err(|err| {
+    let pubkey = PublicKey::from_slice(&derived.public_key).map_err(|err| {
         format!("public_key bytes from derive are not a valid secp256k1 pubkey: {err}")
     })?;
-    Ok(Address::p2pkh(&PublicKey::new(secp_pubkey), network))
+    Ok(Address::p2pkh(&pubkey, network))
 }

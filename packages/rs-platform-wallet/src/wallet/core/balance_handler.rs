@@ -70,6 +70,11 @@ impl EventHandler for BalanceUpdateHandler {
             // balance-bearing event happened to arrive.
             | WalletEvent::TransactionsSwept {
                 wallet_id, balance, ..
+            }
+            // A truncation drops what a replaced branch recorded, so it can
+            // lower or raise the balance; its snapshot is post-truncation.
+            | WalletEvent::ChainTruncated {
+                wallet_id, balance, ..
             } => (wallet_id, balance),
             // No balance on SyncHeightAdvanced — checkpoint advance only.
             WalletEvent::SyncHeightAdvanced { .. } => return,

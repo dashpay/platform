@@ -1,4 +1,5 @@
 import lodash from 'lodash';
+import tenderdashSeeds from './tenderdashSeeds.js';
 import Config from '../../src/config/Config.js';
 import {
   NETWORK_TESTNET,
@@ -113,23 +114,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
           },
           tenderdash: {
             p2p: {
-              seeds: [
-                {
-                  id: '74907790a03b51ac062c8a1453dafd72a08668a3',
-                  host: '35.166.35.250',
-                  port: 36656,
-                },
-                {
-                  id: '2006632eb20e670923d13d4f53abc24468eaad4d',
-                  host: '35.92.64.72',
-                  port: 36656,
-                },
-                {
-                  id: 'de3a73fc78e5c828151454156b492e4a2d985849',
-                  host: 'seed-1.pshenmic.dev',
-                  port: 36656,
-                },
-              ],
+              seeds: tenderdashSeeds.testnet.seeds,
               port: 36656,
             },
             mempool: {

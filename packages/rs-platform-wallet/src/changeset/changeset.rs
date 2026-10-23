@@ -34,6 +34,7 @@ use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
+use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
 use crate::changeset::wallet_accounting::apply_wallet_accounting;
 use crate::wallet::platform_wallet::WalletId;
@@ -92,7 +93,8 @@ pub struct CoreChangeSet {
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
-    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
+    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed;
+    /// `TransactionInstantLocked` — the locked record as the wallet holds it),
     /// and coinbase records that crossed the maturity threshold
     /// (`BlockProcessed.matured`). The event bridge folds a
     /// transaction's per-account slices into a single record whose
@@ -145,9 +147,10 @@ pub struct CoreChangeSet {
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
     /// is excluded since chain-lock finality already supersedes IS).
     ///
-    /// Populated from `WalletEvent::TransactionInstantLocked`. The
-    /// persister applies these by looking up the matching record and
-    /// updating its `context` to `TransactionContext::InstantSend(..)`.
+    /// Populated from `WalletEvent::TransactionInstantLocked`. A persister
+    /// that keeps locks stores them from here; the record's own context
+    /// reaches it through the record the same event re-emits in `records`
+    /// when the wallet still holds one.
     /// Chain-locked records skip this map entirely — by the time a
     /// transaction is chain-locked it's final, and IS-lock state is
     /// no longer informative.
@@ -161,6 +164,22 @@ pub struct CoreChangeSet {
     /// durable filter-batch sync checkpoint to this value. Monotonic-max
     /// on merge.
     pub synced_height: Option<u32>,
+
+    /// Whether [`synced_height`](Self::synced_height) is a REWIND rather than
+    /// an advance. The DashPay rescan reconcile lowers the durable cursor
+    /// deliberately and stores the lowered value with the backfill record
+    /// that vouches for it; that value must replace whatever the round is
+    /// merged behind instead of losing to the ordinary monotonic max.
+    ///
+    /// Merge is an ordered reset/advance composition — `advance(a)·advance(b)
+    /// = advance(max)`, `x·rewind(b) = rewind(b)`, `rewind(a)·advance(b) =
+    /// rewind(max(a, b))` — which is associative, so how a backend groups
+    /// rounds into accumulations never changes the result. Meaningless while
+    /// `synced_height` is `None`. Hosts that write the cursor they are handed
+    /// honour it directly; the SQLite backend keeps its monotonic max and
+    /// does not store the backfill record, so it neither needs nor sees it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub synced_height_is_rewind: bool,
 
     /// Addresses freshly derived as a side effect of processing the
     /// records in this batch — i.e. `WalletEvent::TransactionDetected.
@@ -359,16 +378,17 @@ pub struct SweepBatch {
     /// placeholder's lifetime. `Some` stamps the winner's own block height
     /// — the projection of upstream's `observed_spent_outpoints` — and the
     /// placeholder is collectible once `min(chainlock_height,
-    /// synced_height)` reaches it, exactly upstream's
-    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
-    /// winner, unmined) leaves the placeholder UNSTAMPED and never
-    /// collectible: under DIP-10 the lock alone settles the input —
-    /// upstream retains it in the account's `spent_outpoints`, a hold with
-    /// no height that no record survives to rebuild — and an IS-locked
-    /// winner has no mining deadline, so no watermark can ever prove the
-    /// funding output delivered-or-never. An unstamped placeholder
-    /// resolves only through proof: funding materialisation, a later
-    /// block-context sweep's re-stamp, or a release.
+    /// synced_height)` reaches it, upstream's
+    /// `prune_finalized_observed_spends` boundary counting applied
+    /// chainlocks only. `None` (IS-locked winner, unmined) leaves the
+    /// placeholder UNSTAMPED and never collectible: under DIP-10 the lock
+    /// alone settles the input — upstream retains it in the account's
+    /// `spent_outpoints`, a hold with no height that no record survives to
+    /// rebuild — and an IS-locked winner has no mining deadline, so no
+    /// watermark can ever prove the funding output delivered-or-never. An
+    /// unstamped placeholder resolves only through proof: funding
+    /// materialisation, a later block-context sweep's re-stamp, or a
+    /// release.
     ///
     /// `serde(default)`: a journaled payload written before this field
     /// existed reads back as `None` — the conservative reading (no new
@@ -767,7 +787,21 @@ impl Merge for CoreChangeSet {
             );
         }
         if let Some(h) = other.synced_height {
-            self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
+            if other.synced_height_is_rewind {
+                // A rewind replaces whatever it is merged behind.
+                self.synced_height = Some(h);
+                self.synced_height_is_rewind = true;
+            } else {
+                // An advance composes by max, and keeps a rewind a rewind:
+                // `rewind(a)·advance(b)` still has to replace anything an
+                // outer accumulation merges this result behind. A flag with
+                // no height beside it is meaningless, so it must not turn
+                // this advance into a rewind.
+                if self.synced_height.is_none() {
+                    self.synced_height_is_rewind = false;
+                }
+                self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
+            }
         }
 
         // Derived-address dedup. Within a single `WalletEvent` the
@@ -1451,6 +1485,9 @@ pub struct AssetLockChangeSet {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetLockEntry {
+    /// Stable host operation identifier; legacy rows have no identifier.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_id: Option<[u8; 16]>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1477,6 +1514,30 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+impl AssetLockEntry {
+    /// Preserve the immutable operation association when folding or replaying
+    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
+    /// caller must discard the whole snapshot so its lifecycle cannot be
+    /// attached to a different operation.
+    #[must_use = "a conflicting operation snapshot must not be applied"]
+    pub(crate) fn preserve_recovery_metadata(
+        &mut self,
+        previous_operation_id: Option<[u8; 16]>,
+    ) -> bool {
+        if let Some(previous_id) = previous_operation_id {
+            if self
+                .operation_id
+                .is_some_and(|incoming| incoming != previous_id)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting operation ID");
+                return false;
+            }
+            self.operation_id = Some(previous_id);
+        }
+        true
+    }
+}
+
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
         // Last write wins, with ONE lifecycle exception: `Consumed` is
@@ -1492,12 +1553,18 @@ impl Merge for AssetLockChangeSet {
         // durable stores apply the same rule (sqlite upsert guard,
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
-        for (out_point, entry) in other.asset_locks {
-            if entry.status != AssetLockStatus::Consumed {
-                if let Some(existing) = self.asset_locks.get(&out_point) {
-                    if existing.status == AssetLockStatus::Consumed {
-                        continue;
-                    }
+        for (out_point, mut entry) in other.asset_locks {
+            if let Some(existing) = self.asset_locks.get_mut(&out_point) {
+                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                    continue;
+                }
+                if existing.status == AssetLockStatus::DrainCompleted
+                    || (existing.status.is_consumed() && !entry.status.is_consumed())
+                {
+                    // Terminality guards lifecycle state, never the operation
+                    // association carried by a delayed snapshot.
+                    existing.operation_id = entry.operation_id;
+                    continue;
                 }
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
@@ -1531,7 +1598,7 @@ impl Merge for AssetLockChangeSet {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
-                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+                .is_some_and(|entry| entry.status.is_consumed());
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2174,6 +2241,22 @@ pub struct PlatformWalletChangeSet {
     /// scan is retried inside its own launch — but honouring the verdict
     /// across launches needs the host slot.
     pub identity_scan_state: Option<IdentityScanStateEntry>,
+    /// Durable record of the DashPay coreHeight backfill — which receival
+    /// contacts the historical rescan covers, from which height each, and
+    /// the extent of the rescan. Written by `reconcile_dashpay_rescan` on the
+    /// same round as the lowered `core.synced_height` it belongs with, and
+    /// read back through
+    /// [`ClientWalletStartState::dashpay_backfill`](crate::changeset::ClientWalletStartState::dashpay_backfill)
+    /// so a fresh process does not rewind for a contact the previous one
+    /// already rewound for (dashpay/platform#4302). Every write carries the
+    /// whole record, so merge is last-write-wins. The lowered cursor it
+    /// travels with is marked [`CoreChangeSet::synced_height_is_rewind`], so
+    /// it survives any accumulation. See [`DashPayBackfillRecord`].
+    ///
+    /// Durability caveat, the same one `identity_scan_state` carries: a host
+    /// that has not adopted the slot keeps today's behaviour — the backfill
+    /// re-fires on every launch — which is slow but never lossy.
+    pub dashpay_backfill: Option<DashPayBackfillRecord>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
@@ -2325,6 +2408,11 @@ impl Merge for PlatformWalletChangeSet {
                 None => scan,
             });
         }
+        // Backfill record: every write is a whole snapshot, so the later
+        // one wins outright.
+        if let Some(record) = other.dashpay_backfill {
+            self.dashpay_backfill = Some(record);
+        }
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration
         // round emits each key once; snapshots are whole-pool, so
@@ -2361,6 +2449,7 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.identity_scan_state.is_none()
+            && self.dashpay_backfill.is_none()
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()
@@ -2541,6 +2630,7 @@ mod tests {
             vout: 0,
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
+            operation_id: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2562,6 +2652,19 @@ mod tests {
             cs
         };
 
+        let mut certified = cs_with(AssetLockStatus::Consumed);
+        certified.merge(cs_with(AssetLockStatus::DrainCompleted));
+        certified.merge(cs_with(AssetLockStatus::Consumed));
+        certified.merge(cs_with(AssetLockStatus::Broadcast));
+        let mut removal = AssetLockChangeSet::default();
+        removal.removed.insert(outpoint);
+        certified.merge(removal);
+        assert_eq!(
+            certified.asset_locks[&outpoint].status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert!(!certified.removed.contains(&outpoint));
+
         // Stale recovery snapshot folded AFTER the consumption write.
         let mut folded = cs_with(AssetLockStatus::Consumed);
         folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
@@ -2570,6 +2673,23 @@ mod tests {
             AssetLockStatus::Consumed,
             "a non-Consumed snapshot must not replace the Consumed terminal"
         );
+
+        // A conflicting operation cannot replace the lifecycle.
+        let mut original = cs_with(AssetLockStatus::Broadcast);
+        original
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([42; 16]);
+        let mut conflicting = cs_with(AssetLockStatus::Consumed);
+        conflicting
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([43; 16]);
+        let expected = original.clone();
+        original.merge(conflicting);
+        assert_eq!(original.asset_locks, expected.asset_locks);
 
         // The legitimate direction still lands.
         let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
@@ -3225,6 +3345,7 @@ mod tests {
                     m.insert(
                         OutPoint::default(),
                         AssetLockEntry {
+                            operation_id: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
@@ -3354,6 +3475,119 @@ mod tests {
             ..CoreChangeSet::default()
         });
         assert_eq!(cs.addresses_marked_used.len(), 3);
+    }
+
+    /// The rewind marker composes associatively: however a backend groups
+    /// rounds into accumulations, a rewind replaces what precedes it, an
+    /// advance after a rewind raises it and keeps it a rewind, and a round
+    /// that carries only a backfill record changes no cursor. The earlier
+    /// version inferred "rewind" from a record and a cursor riding one round,
+    /// which grouping could manufacture (dashpay/platform#4302 review).
+    #[test]
+    fn the_rewind_marker_composes_associatively() {
+        use crate::changeset::DashPayBackfillRecord;
+
+        fn advance(h: u32) -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    synced_height: Some(h),
+                    ..CoreChangeSet::default()
+                }),
+                ..PlatformWalletChangeSet::default()
+            }
+        }
+        fn rewind(h: u32) -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    synced_height: Some(h),
+                    synced_height_is_rewind: true,
+                    ..CoreChangeSet::default()
+                }),
+                dashpay_backfill: Some(DashPayBackfillRecord::default()),
+                ..PlatformWalletChangeSet::default()
+            }
+        }
+        // A changeset carrying the flag but no height, as an external
+        // constructor could build one: the flag is meaningless there.
+        fn heightless(flag: bool) -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    synced_height: None,
+                    synced_height_is_rewind: flag,
+                    ..CoreChangeSet::default()
+                }),
+                ..PlatformWalletChangeSet::default()
+            }
+        }
+        fn record_only() -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                dashpay_backfill: Some(DashPayBackfillRecord::default()),
+                ..PlatformWalletChangeSet::default()
+            }
+        }
+        fn fold(parts: Vec<PlatformWalletChangeSet>) -> PlatformWalletChangeSet {
+            let mut acc = PlatformWalletChangeSet::default();
+            for part in parts {
+                acc.merge(part);
+            }
+            acc
+        }
+        fn cursor(cs: &PlatformWalletChangeSet) -> (Option<u32>, bool) {
+            cs.core.as_ref().map_or((None, false), |core| {
+                (core.synced_height, core.synced_height_is_rewind)
+            })
+        }
+        // Both parenthesizations of every triple.
+        type Case = (
+            &'static str,
+            fn() -> Vec<PlatformWalletChangeSet>,
+            (Option<u32>, bool),
+        );
+        let cases: Vec<Case> = vec![
+            (
+                "advance, lower advance, record-only",
+                || vec![advance(1_000), advance(100), record_only()],
+                (Some(1_000), false),
+            ),
+            (
+                "advance, rewind, later advance",
+                || vec![advance(1_000), rewind(100), advance(150)],
+                (Some(150), true),
+            ),
+            (
+                "rewind, advance, rewind",
+                || vec![rewind(500), advance(900), rewind(200)],
+                (Some(200), true),
+            ),
+            (
+                "advance, advance, rewind",
+                || vec![advance(1_000), advance(1_200), rewind(100)],
+                (Some(100), true),
+            ),
+            (
+                "advance, heightless flagged, lower advance",
+                || vec![advance(1_000), heightless(true), advance(100)],
+                (Some(1_000), false),
+            ),
+            (
+                "advance, heightless unflagged, lower advance",
+                || vec![advance(1_000), heightless(false), advance(100)],
+                (Some(1_000), false),
+            ),
+            (
+                "rewind, heightless flagged, advance",
+                || vec![rewind(500), heightless(true), advance(900)],
+                (Some(900), true),
+            ),
+        ];
+        for (name, parts, expected) in cases {
+            let [a, b, c]: [PlatformWalletChangeSet; 3] = parts().try_into().ok().unwrap();
+            let left = fold(vec![fold(vec![a, b]), c]);
+            let [a, b, c]: [PlatformWalletChangeSet; 3] = parts().try_into().ok().unwrap();
+            let right = fold(vec![a, fold(vec![b, c])]);
+            assert_eq!(cursor(&left), expected, "{name}: (A·B)·C");
+            assert_eq!(cursor(&right), expected, "{name}: A·(B·C)");
+        }
     }
 
     /// Highest-used watermarks merge monotonic-max per account per

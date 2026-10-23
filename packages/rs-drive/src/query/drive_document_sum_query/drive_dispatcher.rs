@@ -20,8 +20,8 @@ use crate::query::drive_document_sum_query::{
     SumMode,
 };
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
-    OrderClause, WhereClause,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes, OrderClause, WhereClause,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -65,6 +65,14 @@ impl Drive {
         // shared step in [`crate::query::canonicalize`]), so callers can
         // pass either the bounded pair form (`[f > A, f < B]`) or the
         // pre-merged `between*` form and get equivalent mode detection.
+        // A typed array's elements are keyed first: several only when the
+        // request answers per element (see [`key_array_element_clauses`]).
+        request.where_clauses = key_array_element_clauses(
+            std::mem::take(&mut request.where_clauses),
+            request.document_type,
+            matches!(request.mode, SumMode::GroupByIn),
+            platform_version,
+        )?;
         request.where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
         // Same provenance-vs-shape contract as the count and joint

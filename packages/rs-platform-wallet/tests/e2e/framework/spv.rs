@@ -79,15 +79,16 @@ where
     let spv = manager.spv_arc();
     let client_config = build_client_config(config, workdir, address_list)?;
 
-    // Apply the devnet genesis override before spawn so the runtime's
-    // pre-seed (which sidesteps dash-spv's missing devnet genesis) uses
-    // it. Empty override = the `dashcore` built-in; the runtime ignores
-    // it entirely on non-devnet networks.
-    if config.network == Network::Devnet && !config.devnet_genesis.is_empty() {
-        spv.set_devnet_genesis_override(config.devnet_genesis.clone());
+    let owner = Arc::clone(&spv);
+    let published = spv
+        .start_and_spawn(client_config, move || !owner.owner_released())
+        .await
+        .map_err(|err| FrameworkError::Spv(format!("start SPV runtime: {err}")))?;
+    if !published {
+        return Err(FrameworkError::Spv(
+            "SPV runtime owner was released during startup; run loop not spawned".to_string(),
+        ));
     }
-
-    spv.spawn_in_background(client_config);
     tracing::info!(
         target: "platform_wallet::e2e::spv",
         network = ?config.network,

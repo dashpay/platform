@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v10;
+pub mod v11;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -103,6 +104,26 @@ pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
     pub verify_chain_lock_through_core: FeatureVersion,
     pub make_sure_core_is_synced_to_chain_lock: FeatureVersion,
     pub recent_block_count_amount: u32, //what constitutes a recent block, for v0 it's 2.
+    /// Dash Core's DKG mining schedule (`llmq/params.h`) of each non-rotating chain lock quorum
+    /// type, read by `verify_chain_lock_locally` 1 to find the first core height at which the
+    /// quorums Platform holds can change. A quorum type missing from it can change its quorums at
+    /// any later height. `None` for the protocol versions that select `verify_chain_lock_locally`
+    /// 0, which does not read it.
+    pub dkg_mining_schedules: Option<&'static [DkgMiningSchedule]>,
+}
+
+/// When Dash Core can mine a commitment of a non-rotating quorum type: at the core heights whose
+/// offset in the DKG interval is within the mining window, both ends included.
+#[derive(Clone, Copy, Debug)]
+pub struct DkgMiningSchedule {
+    /// The LLMQ type, as Dash Core numbers it (`llmq_test` is 100)
+    pub quorum_type: u8,
+    /// The length of the DKG interval in blocks; intervals start at multiples of it
+    pub interval: u32,
+    /// The first offset in the interval at which a commitment can be mined
+    pub mining_window_start: u32,
+    /// The last offset in the interval at which a commitment can be mined
+    pub mining_window_end: u32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -142,6 +163,9 @@ pub struct DriveAbciBlockEndMethodVersions {
     /// Deletes documents whose type declares a `ttl` once it has passed, after the block's
     /// state transitions. `None` before protocol version 14, where the keyword does not parse.
     pub expire_documents: OptionalFeatureVersion,
+    /// Records the anchor of every token shielded pool a block touched and prunes that
+    /// pool's anchors older than the retention window. `None` before token pools exist.
+    pub record_token_shielded_pool_anchors: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -171,6 +195,14 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     /// limit's daily maximum; exists from protocol version 14.
     pub record_credit_inflows_for_withdrawals: OptionalFeatureVersion,
     pub record_total_credits_history_for_withdrawals: OptionalFeatureVersion,
+    /// Reads the Core blocks the chain lock height advanced over and records each one's credit
+    /// pool balance. Feeds the Core-anchored withdrawal limit; called by
+    /// `pool_withdrawals_into_transactions_queue` 2; exists from protocol version 14.
+    pub scan_core_blocks_for_withdrawals: OptionalFeatureVersion,
+    /// How much more Core's credit pool may give up to withdrawals pooled now: a stricter copy
+    /// of Core's own unlock limit, less what is queued or broadcast and not completed yet.
+    /// Exists from protocol version 14.
+    pub calculate_core_anchored_withdrawal_limit: OptionalFeatureVersion,
     /// Whether the next block has withdrawal work waiting (queued transactions to sign or expired
     /// documents to re-queue); drives the `propose_next_block_immediately` hint to Tenderdash.
     /// Not consensus: it never touches the state or the app hash.

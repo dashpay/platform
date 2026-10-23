@@ -45,8 +45,9 @@ pub struct ResolvedContractGroupMemberships {
 /// The contract owner a batch asks to pay its gas, with the balance the batch transformer read
 /// for them. Resolved from protocol version 14, and only when the contract owner is not the
 /// batch's own signer: fee validation checks the fee against this balance, and execution charges
-/// this identity instead of the signer when it covers the fee. A batch that failed validation
-/// is never sponsored, whatever it asked for: its signer pays for the work that ran.
+/// this identity instead of the signer when it covers the fee. The user fee increase is never
+/// theirs: the signer chose it and pays it. A batch that failed validation is never sponsored,
+/// whatever it asked for: its signer pays for the work that ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedGasSponsor {
     /// The contract owner

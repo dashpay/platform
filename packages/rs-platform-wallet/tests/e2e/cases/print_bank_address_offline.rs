@@ -65,7 +65,7 @@ async fn print_bank_address_offline() {
     let platform_pubkey = wallet
         .derive_public_key(&platform_leaf)
         .expect("derive platform pubkey");
-    let pkh = ripemd160_sha256(&platform_pubkey.serialize());
+    let pkh = ripemd160_sha256(&platform_pubkey.to_compressed());
     let platform_addr = PlatformAddress::P2pkh(pkh);
     let platform_bech32m = platform_addr.to_bech32m_string(network);
 

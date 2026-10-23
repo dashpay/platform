@@ -207,6 +207,7 @@ CF_EXTERN_C_BEGIN
 @class GetGroupActionsRequest_StartAtActionId;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_ContractUpdateEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent;
@@ -218,6 +219,7 @@ CF_EXTERN_C_BEGIN
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActions;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent;
@@ -260,7 +262,6 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0;
-@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
@@ -515,9 +516,9 @@ BOOL GetContractTeamActionSignersRequest_ActionStatus_IsValidValue(int32_t value
  *
  * `BETWEEN*` operators expect the right-hand operand to be a
  * 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
- * `IN` expects a `list` of candidate values; all other operators
- * expect a scalar `DocumentFieldValue` matching the indexed
- * field's type.
+ * `IN` and `CONTAINS_ANY` expect a `list` of candidate values; all
+ * other operators expect a scalar `DocumentFieldValue` matching the
+ * indexed field's type (for `CONTAINS`, the type of one element).
  **/
 typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   /**
@@ -564,6 +565,28 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
    * `drive::query::resolve_integer_range_bucket_clause`.
    **/
   GetDocumentsRequest_WhereOperator_InIntegerRange = 12,
+
+  /**
+   * An element of a typed array equals the operand (v1 only; protocol
+   * version 14). `field` names a typed array an index keys by its
+   * elements: the index holds a document once per distinct element,
+   * so the clause is an equality on one element's key and may page
+   * with a cursor whose document holds the element. No other
+   * operator may name a typed array. See "Indexes on typed arrays"
+   * in the book's indexes chapter.
+   **/
+  GetDocumentsRequest_WhereOperator_Contains = 13,
+
+  /**
+   * An element of a typed array is one of the operands (v1 only;
+   * protocol version 14): an `IN` over the elements. A document
+   * holding several of them is under each, and a documents page
+   * returns it once, where it first appears; the limit counts every
+   * entry the walk passes. Takes an `ORDER BY` on the array (the
+   * order the elements are walked in) and no cursor. Counts, sums and
+   * averages read several elements only grouped by them.
+   **/
+  GetDocumentsRequest_WhereOperator_ContainsAny = 14,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
@@ -7370,14 +7393,14 @@ void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdenti
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity = 1,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 2,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Metadata = 3,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 4,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Identity = 1,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 2,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 4,
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 : GPBMessage
@@ -7386,7 +7409,7 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNo
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *proof;
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
@@ -7411,26 +7434,6 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNo
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 /** Test to see if @c identity has been set. */
 @property(nonatomic, readwrite) BOOL hasIdentity;
-
-@end
-
-#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
-
-typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber) {
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof = 1,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes = 2,
-};
-
-GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) Proof *grovedbIdentityPublicKeyHashProof;
-/** Test to see if @c grovedbIdentityPublicKeyHashProof has been set. */
-@property(nonatomic, readwrite) BOOL hasGrovedbIdentityPublicKeyHashProof;
-
-/** A hack, we return 2 proofs */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *identityProofBytes;
-/** Test to see if @c identityProofBytes has been set. */
-@property(nonatomic, readwrite) BOOL hasIdentityProofBytes;
 
 @end
 
@@ -12298,6 +12301,58 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDir
 
 @end
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_Amount = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_ActionsDigest = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_PublicNote = 3,
+};
+
+/**
+ * Mint straight into the token's shielded pool (protocol version 14+)
+ **/
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent : GPBMessage
+
+/** Amount minted into the pool */
+@property(nonatomic, readwrite) uint64_t amount;
+
+/** Digest of the Orchard actions every signer commits to */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *actionsDigest;
+
+/** Public note */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;
+/** Test to see if @c publicNote has been set. */
+@property(nonatomic, readwrite) BOOL hasPublicNote;
+
+@end
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_Amount = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_ActionsDigest = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_PublicNote = 3,
+};
+
+/**
+ * Burn of notes held in the token's shielded pool (protocol version 14+)
+ **/
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent : GPBMessage
+
+/** Amount destroyed */
+@property(nonatomic, readwrite) uint64_t amount;
+
+/** Digest of the Orchard actions every signer commits to */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *actionsDigest;
+
+/** Public note */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;
+/** Test to see if @c publicNote has been set. */
+@property(nonatomic, readwrite) BOOL hasPublicNote;
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent_FieldNumber) {
@@ -12419,6 +12474,8 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Fi
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate = 7,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_UpdatePrice = 8,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_MintToPool = 9,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_BurnFromPool = 10,
 };
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase) {
@@ -12431,6 +12488,8 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Ty
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_TokenConfigUpdate = 7,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_UpdatePrice = 8,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_MintToPool = 9,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_BurnFromPool = 10,
 };
 
 /**
@@ -12463,6 +12522,12 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEven
 
 /** Updating the token direct selling price */
 @property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *updatePrice;
+
+/** Mint into the token shielded pool */
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent *mintToPool;
+
+/** Burn from the token shielded pool */
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent *burnFromPool;
 
 @end
 
@@ -13424,6 +13489,11 @@ typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_Version_OneOfCase) {
   GetShieldedEncryptedNotesRequest_Version_OneOfCase_V0 = 1,
 };
 
+/**
+ * Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
+ * in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
+ * token id). Responses have the same shape for both pools.
+ **/
 GPB_FINAL @interface GetShieldedEncryptedNotesRequest : GPBMessage
 
 @property(nonatomic, readonly) GetShieldedEncryptedNotesRequest_Version_OneOfCase versionOneOfCase;
@@ -13443,6 +13513,7 @@ typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesReque
   GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_StartIndex = 1,
   GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Count = 2,
   GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Prove = 3,
+  GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_TokenId = 4,
 };
 
 GPB_FINAL @interface GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0 : GPBMessage
@@ -13452,6 +13523,11 @@ GPB_FINAL @interface GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesR
 @property(nonatomic, readwrite) uint32_t count;
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 
@@ -13579,11 +13655,17 @@ void GetShieldedAnchorsRequest_ClearVersionOneOfCase(GetShieldedAnchorsRequest *
 
 typedef GPB_ENUM(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber) {
   GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_Prove = 1,
+  GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_TokenId = 2,
 };
 
 GPB_FINAL @interface GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 
@@ -13686,11 +13768,17 @@ void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShiel
 
 typedef GPB_ENUM(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber) {
   GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_Prove = 1,
+  GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_TokenId = 2,
 };
 
 GPB_FINAL @interface GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 
@@ -13779,11 +13867,17 @@ void GetShieldedPoolStateRequest_ClearVersionOneOfCase(GetShieldedPoolStateReque
 
 typedef GPB_ENUM(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber) {
   GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_Prove = 1,
+  GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_TokenId = 2,
 };
 
 GPB_FINAL @interface GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 
@@ -13881,11 +13975,17 @@ void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountReq
 
 typedef GPB_ENUM(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber) {
   GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_Prove = 1,
+  GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_TokenId = 2,
 };
 
 GPB_FINAL @interface GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 
@@ -13975,6 +14075,7 @@ void GetShieldedNullifiersRequest_ClearVersionOneOfCase(GetShieldedNullifiersReq
 typedef GPB_ENUM(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber) {
   GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_NullifiersArray = 1,
   GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_Prove = 2,
+  GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_TokenId = 3,
 };
 
 GPB_FINAL @interface GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0 : GPBMessage
@@ -13984,6 +14085,11 @@ GPB_FINAL @interface GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0
 @property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
 
 @property(nonatomic, readwrite) BOOL prove;
+
+/** target a token's shielded pool instead of the credit pool */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+/** Test to see if @c tokenId has been set. */
+@property(nonatomic, readwrite) BOOL hasTokenId;
 
 @end
 

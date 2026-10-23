@@ -134,17 +134,14 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   unset CI_KEYCHAIN_PASSWORD STORED_SMOKE_VALUE KEYCHAIN_SMOKE_VALUE
 fi
 
-# Pick a concrete iOS Simulator for the `xcodebuild test` run. A name
-# can be pinned via `SIM_NAME`; otherwise grab the first available
-SIM_NAME="${SIM_NAME:-}"
-if [ -z "$SIM_NAME" ]; then
-  SIM_NAME="$(xcrun simctl list devices available \
-    | grep -oE 'iPhone [0-9][^(]*' | head -1 | sed 's/ *$//')"
-fi
-if [ -z "$SIM_NAME" ]; then
-  echo "No available iPhone simulator found for the simulator test run" >&2
-  exit 1
-fi
+# Resolve a concrete device ID: a name-only destination implicitly uses the
+# latest OS, which may not contain the named device. SIM_NAME matches exactly;
+# SIM_UDID pins a specific available iOS device (both must match if supplied).
+# Otherwise select an available iPhone on the newest installed iOS runtime,
+# breaking ties by name, then UDID. No simulator state is changed here.
+SIM_UDID="$(xcrun simctl list devices available --json \
+  | python3 "$SCRIPT_DIR/scripts/select_simulator.py" \
+      --name="${SIM_NAME:-}" --udid="${SIM_UDID:-}")"
 
 bash build_ios.sh --target tests --profile dev
 
@@ -154,4 +151,4 @@ xcodebuild test \
   -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
   -scheme SwiftExampleApp \
   -skip-testing:SwiftExampleAppUITests \
-  -destination "platform=iOS Simulator,name=$SIM_NAME"
+  -destination "platform=iOS Simulator,id=$SIM_UDID"

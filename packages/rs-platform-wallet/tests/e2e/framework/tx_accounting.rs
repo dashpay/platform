@@ -221,7 +221,6 @@ pub async fn assert_tracked_lock_accounting(
 
 #[cfg(test)]
 mod tests {
-    use dashcore::secp256k1::Secp256k1;
     use dashcore::{Address, Network, PrivateKey, PublicKey, Transaction};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::managed_account::transaction_record::{
@@ -238,9 +237,8 @@ mod tests {
 
     /// A no-change asset lock's funding record with the given accounting.
     fn lock_record(direction: TransactionDirection, net_amount: i64) -> TransactionRecord {
-        let secp = Secp256k1::new();
         let key = PrivateKey::from_byte_array(&[7u8; 32], Network::Testnet).expect("key");
-        let address = Address::p2pkh(&PublicKey::from_private_key(&secp, &key), Network::Testnet);
+        let address = Address::p2pkh(&PublicKey::from_private_key(&key), Network::Testnet);
         TransactionRecord::new(
             Transaction::dummy(&address, 0..1, &[LOCK]),
             AccountType::Standard {

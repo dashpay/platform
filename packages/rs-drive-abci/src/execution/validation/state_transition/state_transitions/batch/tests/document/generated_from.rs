@@ -876,6 +876,7 @@ mod generated_from_tests {
                     document_type_name: "handle".to_string(),
                     data_contract: contract_fetch_info.clone(),
                     token_cost: None,
+                    shielded_token_payment: None,
                     gas_fees_paid_by: GasFeesPaidBy::default(),
                     contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                     declared_action_fee: None,
@@ -900,7 +901,7 @@ mod generated_from_tests {
                 creator_id: None,
                 moderated_at: None,
                 moderated_by: None,
-                property_constraint_aggregates: Default::default(),
+                property_constraint_reads: Default::default(),
             })
         };
 

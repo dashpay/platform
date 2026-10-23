@@ -39,6 +39,11 @@ use grovedb::{PathQuery, Query};
 #[cfg(feature = "fixtures-and-mocks")]
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::platform_value::Value as PlatformValue;
+
 #[cfg(test)]
 use ciborium::value::Value;
 
@@ -280,4 +285,55 @@ pub fn cbor_inner_map_value<'a>(
         return Some(map_value);
     }
     None
+}
+
+#[cfg(feature = "fixtures-and-mocks")]
+/// The yappr-likes `contract` with its `like` type read whole through
+/// `byLiker`: without a proof, a chained read is refused when its inner index
+/// lacks a property, as a documents query through that index is, and
+/// `byLiker` lacks the like's optional hashtag; so the like keeps only what
+/// `byLiker` holds (no hashtag, no `byHashtagPost`, no `where` on `postId`,
+/// which takes the first position). Shared by Drive's and drive-abci's chained
+/// query tests.
+pub fn with_likes_read_whole_through_by_liker(
+    mut contract: DataContract,
+    platform_version: &PlatformVersion,
+) -> DataContract {
+    let mut schemas: BTreeMap<String, PlatformValue> = contract
+        .document_schemas()
+        .into_iter()
+        .map(|(name, schema)| (name, schema.clone()))
+        .collect();
+    let like = schemas.get_mut("like").expect("a like type");
+    {
+        let properties = like
+            .get_mut("properties")
+            .expect("like properties readable")
+            .expect("like properties");
+        properties.remove("hashtag").expect("a like hashtag");
+        let post_id = properties
+            .get_mut("postId")
+            .expect("like postId readable")
+            .expect("like postId");
+        post_id
+            .set_value("position", PlatformValue::U64(0))
+            .expect("postId position set");
+        post_id
+            .get_mut("refersTo")
+            .expect("postId refersTo readable")
+            .expect("postId refersTo")
+            .remove("where")
+            .expect("postId where");
+    }
+    like.get_mut("indices")
+        .expect("like indices readable")
+        .expect("like indices")
+        .as_array_mut()
+        .expect("like indices are an array")
+        .retain(|index| index.get_optional_str("name").ok().flatten() != Some("byHashtagPost"));
+    let defs = contract.schema_defs().cloned();
+    contract
+        .set_document_schemas(schemas, defs, true, &mut vec![], platform_version)
+        .expect("expected the like read whole through byLiker to parse");
+    contract
 }

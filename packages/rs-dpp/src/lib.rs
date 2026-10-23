@@ -14,6 +14,8 @@
 extern crate core;
 
 pub use dashcore;
+/// Low-level ECDSA primitives used by Platform signature validation.
+pub use secp256k1;
 
 #[cfg(feature = "core_key_wallet")]
 pub use key_wallet;
@@ -48,7 +50,7 @@ pub mod validation;
 #[cfg(feature = "client")]
 pub mod dash_platform_protocol;
 
-mod bls;
+pub mod bls;
 
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
@@ -86,7 +88,9 @@ pub mod withdrawal;
 
 pub use async_trait;
 
-pub use bls::*;
+#[cfg(feature = "bls-signatures")]
+pub use bls::native_bls;
+pub use bls::BlsModule;
 
 pub mod prelude {
 
@@ -141,12 +145,10 @@ pub mod prelude {
 
 pub use bincode;
 pub use bincode::enc::Encode;
-#[cfg(feature = "bls-signatures")]
-pub use dashcore::blsful as bls_signatures;
-#[cfg(feature = "ed25519-dalek")]
-pub use dashcore::ed25519_dalek;
 #[cfg(feature = "data-contracts")]
 pub use data_contracts;
+#[cfg(feature = "ed25519-dalek")]
+pub use ed25519_dalek;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;

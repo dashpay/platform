@@ -138,8 +138,8 @@ const TEST_MNEMONIC: &str =
     "example tackle fashion marine blind focus bamboo flight gauge word duck say";
 
 /// Last testnet block of Sunday 2026-06-07 UTC. Both wallets sync only
-/// up to here (via [`platform_wallet::SpvRuntime::set_terminal_height`])
-/// so the comparison is taken BEFORE any later transfers move funds.
+/// up to here (each capped pass stops its SPV runtime once filters commit
+/// this height) so the comparison is taken BEFORE any later transfers move funds.
 const SYNC_CUTOFF_HEIGHT: u32 = 1_491_827;
 
 /// Pre-derivation depth for Wallet B, generated before sync so the
@@ -174,8 +174,9 @@ const SPV_BACKWARD_RESCAN_BLOCKS: u32 = 0;
 /// 600 s; this gives headroom over that for the capped historical walk.
 const SYNC_TIMEOUT: Duration = Duration::from_secs(1200);
 
-/// Poll cadence while waiting for the capped sync to land.
-const POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// Poll cadence while waiting for the capped sync to land. Also bounds how
+/// far past [`SYNC_CUTOFF_HEIGHT`] the sync runs before the pass stops it.
+const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// No-op persister — the reproduction reads balances from the live
 /// in-memory wallet state, not from disk.
@@ -638,8 +639,15 @@ async fn sync_capped(
     seed_p2p_peers(&mut config, sdk.address_list(), 19999);
 
     let spv = manager.spv_arc();
-    spv.set_terminal_height(Some(SYNC_CUTOFF_HEIGHT));
-    spv.spawn_in_background(config);
+    let owner = Arc::clone(&spv);
+    let published = spv
+        .start_and_spawn(config, move || !owner.owner_released())
+        .await
+        .expect("start capped SPV pass");
+    assert!(
+        published,
+        "wallet {label}: SPV runtime released during startup"
+    );
 
     let start = std::time::Instant::now();
     let mut last_committed = 0u32;
@@ -671,21 +679,20 @@ async fn sync_capped(
             }
         }
 
-        // The runtime self-stops at the cap; once it has, `is_started`
-        // flips false and we're done regardless of the last poll value.
-        if !spv.is_started() && start.elapsed() > Duration::from_secs(10) {
-            break;
+        if !spv.is_running() {
+            let _ = spv.stop().await;
+            panic!(
+                "wallet {label}: SPV sync stopped before reaching cutoff {SYNC_CUTOFF_HEIGHT} \
+                 (last committed filter height {last_committed})"
+            );
         }
 
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 
-    // Ensure the runtime is fully stopped before the next pass reuses
-    // the shared SDK / spawns its own runtime.
+    // Stop at the cutoff, and fully before the next pass reuses the
+    // shared SDK / spawns its own runtime.
     let _ = spv.stop().await;
-    // Clear the cap so a hypothetical re-run of this manager wouldn't
-    // inherit it (defence-in-depth; the manager is dropped after).
-    spv.set_terminal_height(None);
 }
 
 /// Seed `config` with P2P peers extracted from the SDK's live testnet

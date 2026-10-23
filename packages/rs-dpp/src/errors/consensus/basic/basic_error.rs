@@ -37,12 +37,13 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
+    NonContiguousContractTokenPositionsError, NonTransferableTokenPaymentMustBurnError,
+    NonTransferableTokenShieldedPoolError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -850,6 +851,19 @@ pub enum BasicError {
     // (protocol version 14).
     #[error(transparent)]
     DocumentReferencePreimageInvalidError(DocumentReferencePreimageInvalidError),
+
+    // A token opting into a shielded pool keeps no freeze rules (protocol version 14).
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
+
+    // A non-transferable token cannot have a shielded pool (protocol version 14).
+    #[error(transparent)]
+    NonTransferableTokenShieldedPoolError(NonTransferableTokenShieldedPoolError),
+
+    // A document type pays its contract's own non-transferable token to the contract owner
+    // instead of burning it (protocol version 14).
+    #[error(transparent)]
+    NonTransferableTokenPaymentMustBurnError(NonTransferableTokenPaymentMustBurnError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1024,7 +1038,7 @@ mod tests {
             201
         );
         // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
-        // (protocol version 14): the tail of the enum.
+        // (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::DocumentReferencePreimageInvalidError(
                 DocumentReferencePreimageInvalidError::new(
@@ -1035,6 +1049,28 @@ mod tests {
                 )
             )),
             202
+        );
+        // A token opting into a shielded pool keeps no freeze rules (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
+            )),
+            203
+        );
+        // A non-transferable token with a shielded pool (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenShieldedPoolError(
+                NonTransferableTokenShieldedPoolError::new(0)
+            )),
+            204
+        );
+        // A document type paying its own non-transferable token to the contract owner
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenPaymentMustBurnError(
+                NonTransferableTokenPaymentMustBurnError::new(0, "create".to_string())
+            )),
+            205
         );
     }
 

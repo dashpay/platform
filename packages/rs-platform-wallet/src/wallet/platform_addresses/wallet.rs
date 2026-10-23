@@ -975,6 +975,8 @@ mod found_026_tests {
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(Network::Testnet)));
         let wallet_id = wallet_manager

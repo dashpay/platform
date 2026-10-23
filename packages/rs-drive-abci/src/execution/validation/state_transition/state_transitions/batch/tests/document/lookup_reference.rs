@@ -18,6 +18,7 @@
 use super::*;
 
 mod lookup_reference_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::*;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
@@ -659,6 +660,7 @@ mod lookup_reference_tests {
             document_type_name: "charter".to_string(),
             data_contract: contract_fetch_info.expect("the contract is in state"),
             token_cost: None,
+            shielded_token_payment: None,
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,
@@ -679,6 +681,7 @@ mod lookup_reference_tests {
                     founder,
                     // The charter type records no creator ids
                     None,
+                    &DocumentSystemValues::default(),
                     None,
                     // A create: there is no stored document
                     None,
@@ -686,6 +689,7 @@ mod lookup_reference_tests {
                     &BlockInfo::default(),
                     &mut Vec::new(),
                     None,
+                    &mut BTreeMap::new(),
                     None,
                     &mut execution_context,
                     platform_version,

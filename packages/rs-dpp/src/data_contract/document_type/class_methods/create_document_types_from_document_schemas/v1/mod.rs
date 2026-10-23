@@ -6,11 +6,12 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
-    validate_property_constraint_aggregates,
+    validate_property_constraint_aggregates, validate_property_constraint_referenced_reads,
+    validate_summable_off_count_indexes_lossless,
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentType,
+    DocumentType, ReferenceHolder,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
@@ -113,6 +114,12 @@ impl DocumentType {
         // of the referenced document, a type a document type's parse can not see. Inert
         // before 14: only parser generation 3 admits `preallocated` and `moderatedDocument`.
         validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
+        // A summableOffCountIndex index is lossless only if the referenced values fixing its groups
+        // never change, and stay on record through a moderator's removal: judged with the
+        // referenced types, which a document type's parse can not see. Inert before 14: only
+        // parser generation 3 admits `summableOffCountIndex`, so earlier types have no such index
+        // and the check visits nothing.
+        validate_summable_off_count_indexes_lossless(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
@@ -236,7 +243,13 @@ impl DocumentType {
                     if kind != referenced.document_reference_kind() {
                         continue;
                     }
-                    if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
+                    let reference_property = match holder {
+                        ReferenceHolder::Property(path) => Some(path),
+                        ReferenceHolder::Owner | ReferenceHolder::Creator => None,
+                    };
+                    if let Some(reason) =
+                        lookup.referenced_side_error(declaring, reference_property, referenced)
+                    {
                         let at = if leaf_path.is_empty() {
                             String::new()
                         } else {
@@ -310,10 +323,28 @@ impl DocumentType {
         }
 
         // What a `countOf` or `sumOf` totals is another document type of the contract, so it
-        // is checked once all are parsed. Inert for every protocol version before 14: only
-        // the tables carrying `parse_property_constraints: Some(_)` parse a rule at all.
-        validate_property_constraint_aggregates(&contract_document_types, schema_defs)
-            .map_err(consensus_or_protocol_data_contract_error)?;
+        // is checked once all are parsed, by the version of `parse_property_constraints` that
+        // parsed the rules. Inert for every protocol version before 14: only the tables
+        // carrying `parse_property_constraints: Some(_)` parse a rule at all.
+        validate_property_constraint_aggregates(
+            &contract_document_types,
+            schema_defs,
+            platform_version,
+        )
+        .map_err(consensus_or_protocol_data_contract_error)?;
+
+        // What a rule reads of a document a reference points at, when that document's type
+        // is another of this contract; the referenced types of other contracts are read at
+        // registration. Inert before protocol version 14 for the same reason: no rule parses
+        // there.
+        validate_property_constraint_referenced_reads(
+            &contract_document_types,
+            data_contract_id,
+            data_contract_system_version,
+            contract_config_version,
+            schema_defs,
+            platform_version,
+        )?;
 
         Ok(contract_document_types)
     }

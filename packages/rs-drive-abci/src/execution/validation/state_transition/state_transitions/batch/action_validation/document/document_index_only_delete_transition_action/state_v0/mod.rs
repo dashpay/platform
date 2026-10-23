@@ -105,7 +105,8 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
         let mut missing_entry = false;
         // A delete leaves the entries of an index that outlives it, and
         // carries no value only such an index is keyed by: it neither
-        // checks nor clears them.
+        // checks nor clears them. A summableOffCountIndex index keeps no entry to
+        // check: it yields no paths.
         for index in document_type
             .indexes()
             .values()

@@ -75,12 +75,18 @@ internal object QueriesNative {
     /**
      * The `propertyConstraints` rules (protocol version 14) of [documentType]
      * as a JSON array in name order, each
-     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsTotals"}`:
-     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`
-     * or `elements`, `readsSystem` names the system times and heights the
-     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...), and
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsStored", "readsTotals", "readsReferenced"}`:
+     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`,
+     * `elements` or `bytes`, a property of the stored version listed under
+     * its `$old.` path, `readsSystem` names the system values the rule reads
+     * (`$createdAt`, `$updatedAtBlockHeight`, `$revision`, `$old.$updatedAt`,
+     * ...), `readsStored` says whether it reads the stored version through
+     * `$old.` (missing from a library built before it),
      * `readsTotals` lists its `countOf` and `sumOf` totals as
-     * `{"kind", "documentType", "property" (a sumOf only), "filter"}`.
+     * `{"kind", "documentType", "property" (a sumOf only), "filter"}`, and
+     * `readsReferenced` the values it reads of the documents the type's
+     * references point at as `{"reference", "path", "kind"}` (`kind` as in
+     * `reads`, which leaves them out).
      * [serializedContract] is the contract's platform serialization (what
      * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
      * protocol version; no network call. Throws on error (unknown document
@@ -97,13 +103,18 @@ internal object QueriesNative {
      * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
      * meets every rule. [propertiesJson] is what the create would send and
      * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
-     * for [dataContractGetPropertyConstraints]. The device clock stands in for
-     * the block time the create records (`$createdAt`, `$updatedAt`,
-     * `$transferredAt`), and a rule reading a block height is not judged, the
-     * height being unknown until the block, nor is one reading a `countOf` or
-     * `sumOf` total, which only the platform reads from state. No network call. Throws on
-     * error (as above, plus an owner id that is not 32 bytes or properties
-     * that are not a JSON object).
+     * for [dataContractGetPropertyConstraints]. A create has no stored
+     * version, so every `$old.` read is absent (a stored time, height or
+     * revision reads 0) and `$revision` reads 1, as consensus reads them on a
+     * create. The device clock stands in for the block time the create
+     * records (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule
+     * reading a block height the create records (without `$old.`) is not
+     * judged, the height being unknown until the block, nor is one reading a
+     * `countOf` or `sumOf` total, which only the platform reads from state, or
+     * a value of a referenced document, which the platform reads when it
+     * checks the reference. No network call. Throws on error (as above, plus
+     * an owner id that is not 32 bytes or properties that are not a JSON
+     * object).
      */
     external fun dataContractCheckPropertyConstraints(
         sdk: Long,
@@ -112,6 +123,17 @@ internal object QueriesNative {
         propertiesJson: String,
         ownerId: ByteArray,
     ): String?
+
+    /**
+     * [contractJson] (a contract as [dataContractFetchJson] returns it) with
+     * its property type shorthands (protocol version 14) written in full:
+     * `"type": "identifier"` and `"type": "bytes", "size": n` become the byte
+     * array they stand for, in every document type schema and in
+     * `schemaDefs`; everything else comes back as given. Takes no SDK handle;
+     * no network call. Throws on error (null input, text that is not a JSON
+     * object).
+     */
+    external fun dataContractJsonExpandPropertyTypeShorthands(contractJson: String): String?
 
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(

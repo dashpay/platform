@@ -83,6 +83,7 @@ extension PersistentAssetLock {
         // Core finality proven, Platform-side consumption unknown.
         // Rendered as "Unknown(5)" before this case existed.
         case 5: return "RecoveredFromChain"
+        case 6: return "DrainCompleted"
         default: return "Unknown(\(statusRaw))"
         }
     }

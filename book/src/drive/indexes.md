@@ -90,6 +90,8 @@ The flag only affects the all-null case. A document with *some* null values gets
 
 From protocol version 14 an index may skip documents that omit a property of its **skip set** (`skipIfAbsent`: `true` for every optional property of the index, or an array naming them). A skipped document gets no reference in the index and builds none of the index's own trees, wherever the skip property sits in the property list. The other optional properties of a stored type's skip index keep the null layout below. `skip_if_absent_properties` holds the resolved set, so `true` and the array of the same properties parse to equal indexes; the level info at the index's end carries it too, since the walkers only see merged levels. See [Null Handling](#null-handling) for how the walkers apply it, and [Conditional participation](index-only-document-types.md#conditional-participation-skipifabsent) for the indexOnly rules.
 
+An index naming a typed array (protocol version 14) has the array in its skip set whether or not the keyword is declared: a document whose list is empty or absent has no element to be entered under. `skip_if_absent` keeps what the contract declared, and `indexed_array` names the array, so only the declared skip properties follow the keyword's rules and query gate: an index naming an array is read only with its elements bound (`contains` or `containsAny`, any element, an empty string included), and a declared skip property beside it still only by a value no missing one can meet.
+
 ### `contested_index: Option<ContestedIndexInformation>`
 
 When set, this index identifies a **scarce, contested resource** (the canonical example is a DPNS name like `dash`). Documents trying to register the same value under a contested index don't auto-fail with a uniqueness error — they enter a masternode-vote resolution where each contender's claim is held until voting concludes. Contested indexes must also be `unique: true`; the parser rejects the combination otherwise.
@@ -162,6 +164,8 @@ flowchart TD
 The `ownerId` level is shared between both indexes. The `docType` and `status` levels each set `has_index_with_type` on themselves with their own `unique` / `countable` / `null_searchable` flags. A third index that *also* started with `ownerId` would attach further sub-levels under `ownerId` instead of duplicating it.
 
 This trie shape directly mirrors the GroveDB path shape used at insert / query time.
+
+A level reached through a typed array property (protocol version 14) is stamped with the array's `maxItems` (`IndexLevel::stamp_indexed_arrays`, called by the document type parser, which alone knows the property types). The walkers fan the document out there: one value tree per distinct element, each with every level below it, as a `timeRange` or `integerRange` level fans it out over its windows. Under a window, an array level multiplies the fan-out (`windows × elements` entries for the index).
 
 ## GroveDB Layout
 
@@ -755,11 +759,15 @@ Putting it together, when Drive inserts a document into a contract `C` of type `
 2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, derives the sub-level's `any_fields_null` (OR) and `all_fields_null` (AND) from its parent's flags and its own value, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
 3. **`add_reference_for_index_level_for_contract_operations`** — the terminal call. Decides between unique and non-unique-style storage using the matrix above; for the non-unique-style path it picks a `NormalTree` / `CountTree` / `ProvableCountTree` based on `countable`; finally inserts the document reference (or sub-tree containing it).
 
+At a level stamped as a typed array, steps 1 and 2 push one value per distinct element of the document (`get_raw_array_elements_for_document_type`) and recurse under each. A replace of a document is a set diff for every index naming an array, or bucketing its first property: the entries of the old and the new document (one per combination of window and element) are compared, new entries are inserted and common ones refreshed first, and old ones deleted last, so the upward prune of a removed entry sees the inserts of the same batch and stops below any tree still in use.
+
 Deletion mirrors the same walk in reverse — see [`packages/rs-drive/src/drive/document/delete/`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/delete/).
 
 ## Query Traversal
 
 When a query arrives at drive-abci, the document-query construction path picks one of the document type's indexes that "covers" the query — i.e., whose property prefix matches the query's equality clauses, in order. The picker is in [`packages/rs-drive/src/query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/mod.rs) (look for `fn construct_path_query` and the index-selection helpers it calls). For count queries specifically there's a separate, count-tree-aware picker ([`drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)) — see [Document Count Trees](document-count-trees.md) for that path.
+
+An index naming a typed array is admissible only to a query binding the array with `contains` (an equality on one element's key) or `containsAny` (an `in` over several). A `containsAny` page drops the repeats of a document reached under more than one element, on the server and in proof verification alike, and a `contains` cursor is placed by the element the query reads, which the cursor document must hold.
 
 Once an index is picked, the query-engine builds a `PathQuery` whose path is exactly the prefix shape the insert code produced: `[DataContractDocuments, contract_id, 1, doc_type, prop, value, prop, value, …]`. GroveDB then walks the path in O(log n per level), reading the terminal sub-tree (or single reference) and returning matching documents.
 

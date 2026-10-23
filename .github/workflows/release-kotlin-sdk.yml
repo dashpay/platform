@@ -193,11 +193,42 @@ jobs:
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
-      # Job-local only: the host destroys HOME and this cache with the runner.
+      # No actions/cache here: the persistent runner keeps ~/.cargo between
+      # runs, and the release target cache below lives outside the workspace.
+      #
+      # Inline copy of .github/actions/release-cargo-target-cache; keep the
+      # two in sync. It cannot be a `uses: ./` step: GitHub loads a local
+      # action from the checked-out tree, and a dispatch from the dev branch
+      # for a tag older than v4.2.0-beta.5 checks out a tree that lacks it.
       - name: Prepare release Cargo target cache
-        uses: ./.github/actions/release-cargo-target-cache
-        with:
-          name: release-kotlin-sdk-target
+        # Quoted: a self-hosted runner's temp directory can contain spaces.
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
+        env:
+          CACHE_NAME: release-kotlin-sdk-target
+          MAX_GIB: "60"
+          MIN_FREE_GIB: "40"
+        run: |
+          set -euo pipefail
+          case "$CACHE_NAME" in
+            ''|*/*|.*)
+              echo "::error::Invalid release target cache name '$CACHE_NAME'."
+              exit 1
+              ;;
+          esac
+          RELEASE_TARGET_DIR="$HOME/.cache/dash-platform/$CACHE_NAME"
+          MAX_CACHE_KIB=$((MAX_GIB * 1024 * 1024))
+          MIN_FREE_KIB=$((MIN_FREE_GIB * 1024 * 1024))
+          mkdir -p "$RELEASE_TARGET_DIR"
+          USED_KIB=$(du -sk "$RELEASE_TARGET_DIR" | cut -f1)
+          FREE_KIB=$(df -Pk "$RELEASE_TARGET_DIR" | awk 'NR == 2 { print $4 }')
+          if [ "$USED_KIB" -gt "$MAX_CACHE_KIB" ] || [ "$FREE_KIB" -lt "$MIN_FREE_KIB" ]; then
+            echo "::notice::Resetting the release target cache (${USED_KIB} KiB used, ${FREE_KIB} KiB free on the volume)."
+            rm -rf "${RELEASE_TARGET_DIR:?}"
+            mkdir -p "$RELEASE_TARGET_DIR"
+          fi
+          du -sh "$RELEASE_TARGET_DIR"
+          df -h "$RELEASE_TARGET_DIR"
+          echo "CARGO_TARGET_DIR=$RELEASE_TARGET_DIR" >> "$GITHUB_ENV"
 
       # Always reinstalled, never trusted from an earlier job: a binary left in
       # ~/.cargo/bin can print the pinned version and still be something else.

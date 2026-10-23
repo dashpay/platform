@@ -54,7 +54,7 @@ pub fn verify_upgrade_vote_status(
     };
 
     let (root_hash, vote_status_map) = Drive::verify_upgrade_vote_status(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         start_protx_hash_array,
         count,
         platform_version,

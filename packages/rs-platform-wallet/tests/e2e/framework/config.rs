@@ -14,7 +14,6 @@ use std::time::Duration;
 
 use dashcore::Network;
 use dpp::fee::Credits;
-use platform_wallet::spv::DevnetGenesisOverride;
 
 use super::{FrameworkError, FrameworkResult};
 
@@ -67,26 +66,6 @@ pub mod vars {
     /// the porter devnet's `port=`); regtest has no default and
     /// requires this var.
     pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
-    /// Devnet genesis-header field overrides for the SPV pre-seed (see
-    /// the "Devnet genesis pre-seed" section of the e2e README). All
-    /// unset → the `dashcore` built-in devnet genesis (the standard /
-    /// porter block 0); set only for a non-standard devnet. Hex fields
-    /// are in Core RPC display form (big-endian), as printed by
-    /// `dash-cli getblockheader <hash> true`. `BITS` is the compact
-    /// `nBits` in hex (e.g. `207fffff`).
-    pub const DEVNET_GENESIS_HASH: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_HASH";
-    /// See [`DEVNET_GENESIS_HASH`]. Block version (decimal).
-    pub const DEVNET_GENESIS_VERSION: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_VERSION";
-    /// See [`DEVNET_GENESIS_HASH`]. Previous block hash (RPC display hex).
-    pub const DEVNET_GENESIS_PREV: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_PREV";
-    /// See [`DEVNET_GENESIS_HASH`]. Merkle root (RPC display hex).
-    pub const DEVNET_GENESIS_MERKLEROOT: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_MERKLEROOT";
-    /// See [`DEVNET_GENESIS_HASH`]. Block time (unix seconds).
-    pub const DEVNET_GENESIS_TIME: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_TIME";
-    /// See [`DEVNET_GENESIS_HASH`]. Compact target `nBits` (hex).
-    pub const DEVNET_GENESIS_BITS: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_BITS";
-    /// See [`DEVNET_GENESIS_HASH`]. Block nonce (decimal).
-    pub const DEVNET_GENESIS_NONCE: &str = "PLATFORM_WALLET_E2E_DEVNET_GENESIS_NONCE";
     /// Optional 32-byte hex identifier of a pre-registered bank
     /// identity used as the transient mid-run sink for the
     /// Platform→Core refill chain in [`super::bank_rebalance`].
@@ -283,11 +262,6 @@ pub struct Config {
     /// Target (duffs) for the harness Platform→Core refill fallback.
     /// Resolved from [`vars::CORE_REFILL_TARGET_DUFF`] or the default.
     pub core_refill_target_duff: u64,
-    /// Devnet genesis-header overrides for the SPV pre-seed. Empty
-    /// (default) uses the `dashcore` built-in devnet genesis; the
-    /// harness only applies this on devnet. See the `DEVNET_GENESIS_*`
-    /// vars and [`parse_devnet_genesis_override`].
-    pub devnet_genesis: DevnetGenesisOverride,
     /// Devnet name (porter `devnet=<name>`). Empty on non-devnet networks;
     /// required (non-empty) when `network == Devnet`. Wired into the SPV
     /// `DevnetConfig` and the `devnet.devnet-<name>` user-agent handshake.
@@ -393,7 +367,6 @@ impl std::fmt::Debug for Config {
                 &self.core_refill_threshold_duff,
             )
             .field("core_refill_target_duff", &self.core_refill_target_duff)
-            .field("devnet_genesis", &self.devnet_genesis)
             .field("devnet_name", &self.devnet_name)
             .field("devnet_llmq_size", &self.devnet_llmq_size)
             .field("devnet_llmq_threshold", &self.devnet_llmq_threshold)
@@ -422,7 +395,6 @@ impl Default for Config {
             identity_sync_interval: DEFAULT_IDENTITY_SYNC_INTERVAL,
             core_refill_threshold_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_THRESHOLD_DUFF,
             core_refill_target_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF,
-            devnet_genesis: DevnetGenesisOverride::default(),
             devnet_name: String::new(),
             devnet_llmq_size: 0,
             devnet_llmq_threshold: 0,
@@ -604,8 +576,6 @@ impl Config {
             super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF,
         );
 
-        let devnet_genesis = parse_devnet_genesis_override()?;
-
         let devnet_name = opt_trimmed_env(vars::DEVNET_NAME).unwrap_or_default();
         if network == Network::Devnet && devnet_name.is_empty() {
             return Err(FrameworkError::Config(format!(
@@ -635,7 +605,6 @@ impl Config {
             identity_sync_interval,
             core_refill_threshold_duff,
             core_refill_target_duff,
-            devnet_genesis,
             devnet_name,
             devnet_llmq_size,
             devnet_llmq_threshold,
@@ -681,56 +650,6 @@ fn opt_trimmed_env(var: &str) -> Option<String> {
         .ok()
         .map(|raw| raw.trim().to_string())
         .filter(|s| !s.is_empty())
-}
-
-/// Build the [`DevnetGenesisOverride`] from the `DEVNET_GENESIS_*`
-/// vars. All-unset yields an empty override (the `dashcore` built-in
-/// devnet genesis). Hash/prev/merkleroot stay as RPC display hex
-/// strings — parsing/endianness is handled inside
-/// [`DevnetGenesisOverride`]; only the numeric fields are parsed here
-/// (decimal for version/time/nonce, hex for `bits`).
-fn parse_devnet_genesis_override() -> FrameworkResult<DevnetGenesisOverride> {
-    let parse_u32 = |var: &str| -> FrameworkResult<Option<u32>> {
-        opt_trimmed_env(var)
-            .map(|raw| {
-                raw.parse::<u32>().map_err(|err| {
-                    FrameworkError::Config(format!("{var} = {raw:?} is not a valid u32: {err}"))
-                })
-            })
-            .transpose()
-    };
-    let version = opt_trimmed_env(vars::DEVNET_GENESIS_VERSION)
-        .map(|raw| {
-            raw.parse::<i32>().map_err(|err| {
-                FrameworkError::Config(format!(
-                    "{} = {raw:?} is not a valid i32 version: {err}",
-                    vars::DEVNET_GENESIS_VERSION
-                ))
-            })
-        })
-        .transpose()?;
-
-    let bits = opt_trimmed_env(vars::DEVNET_GENESIS_BITS)
-        .map(|raw| {
-            let hex = raw.strip_prefix("0x").unwrap_or(&raw);
-            u32::from_str_radix(hex, 16).map_err(|err| {
-                FrameworkError::Config(format!(
-                    "{} = {raw:?} is not a valid hex nBits: {err}",
-                    vars::DEVNET_GENESIS_BITS
-                ))
-            })
-        })
-        .transpose()?;
-
-    Ok(DevnetGenesisOverride {
-        hash: opt_trimmed_env(vars::DEVNET_GENESIS_HASH),
-        version,
-        prev_blockhash: opt_trimmed_env(vars::DEVNET_GENESIS_PREV),
-        merkle_root: opt_trimmed_env(vars::DEVNET_GENESIS_MERKLEROOT),
-        time: parse_u32(vars::DEVNET_GENESIS_TIME)?,
-        bits,
-        nonce: parse_u32(vars::DEVNET_GENESIS_NONCE)?,
-    })
 }
 
 /// Resolve the bank Core funding gate timeout from the env-var raw

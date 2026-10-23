@@ -554,7 +554,7 @@ fn surviving_stored_input_claims(
 /// a block to the height of the block that spent it — and
 /// `collect_finalized_tombstones` evicts the row once the chainlock
 /// finality boundary reaches that height, key-wallet's
-/// `prune_finalized_observed_spends` condition verbatim. A
+/// `prune_finalized_observed_spends` condition over applied chainlocks. A
 /// MEMPOOL-CONTEXT sweep (IS-locked winner, unmined) writes the same row
 /// UNSTAMPED (`winner_mined_height` NULL), and the collector never takes
 /// an unstamped row. The in-memory model an unstamped row mirrors is not
@@ -1196,22 +1196,21 @@ fn read_sync_heights(
 
 /// Evict never-materialised sweep tombstones once the chainlock finality
 /// boundary reaches their winner's mined height — the storage-side mirror
-/// of key-wallet's `prune_finalized_observed_spends`, same condition
-/// verbatim: an entry whose spend height is at or below
-/// `min(chainlock_height, synced_height)` is safe to forget, because the
-/// spend at that height is chain-locked and every BIP158 filter below the
-/// boundary has been matched with no false negatives, so the funding
-/// transaction of the outpoint it guards — necessarily mined at or below
-/// the spend's own height — has either been delivered (materialising the
-/// row) or provably never will be. No observation-age margin: the stamp IS
-/// the winner's height, carried on the sweep event itself, so nothing here
-/// guesses when the winner mined. Rows with no stamp are never collected:
-/// a mempool-context sweep (IS-locked winner, unmined) deliberately
-/// writes its placeholder unstamped, because such a winner has no mining
-/// deadline and no watermark can prove its inputs' funding "delivered or
-/// never will be" — an unstamped row is a live hold, resolved only by the
-/// funding upsert materialising it, a later block-context sweep stamping
-/// it, or a release deleting it (see `apply_sweep`).
+/// of key-wallet's `prune_finalized_observed_spends`: an entry whose spend
+/// height is at or below `min(chainlock_height, synced_height)` is safe to
+/// forget, because the spend at that height is chain-locked and every BIP158
+/// filter below the boundary has been matched with no false negatives, so
+/// the funding transaction of the outpoint it guards — necessarily mined at
+/// or below the spend's own height — has either been delivered
+/// (materialising the row) or provably never will be. No observation-age
+/// margin: the stamp IS the winner's height, carried on the sweep event
+/// itself, so nothing here guesses when the winner mined. Rows with no stamp
+/// are never collected: a mempool-context sweep (IS-locked winner, unmined)
+/// deliberately writes its placeholder unstamped, because such a winner has
+/// no mining deadline and no watermark can prove its inputs' funding
+/// "delivered or never will be" — an unstamped row is a live hold, resolved
+/// only by the funding upsert materialising it, a later block-context sweep
+/// stamping it, or a release deleting it (see `apply_sweep`).
 ///
 /// One pass, narrowed to `is_sweep_placeholder = 1` (only the tombstone insert
 /// sets the placeholder flag, so the set is exactly the never-materialised
@@ -1222,8 +1221,14 @@ fn read_sync_heights(
 /// `spent = 0` on a placeholder is always followed by that pass in the
 /// same transaction.
 ///
-/// Like upstream, a no-op until a chainlock height has been persisted —
-/// without a finality boundary nothing can be proven final.
+/// `chainlock_height` holds applied chainlocks only. key-wallet also prunes
+/// up to the heights of the chainlocks dash-spv holds back during the
+/// initial sync, which are never persisted, so this boundary's chainlock
+/// half can trail key-wallet's: a tombstone can outlive the matching
+/// in-memory entry, which only holds the coin spent for longer.
+///
+/// A no-op until a chainlock height has been persisted — without a
+/// finality boundary nothing can be proven final.
 fn collect_finalized_tombstones(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -1367,7 +1372,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite::migrations::{self, rewind_to_v018};
+    use crate::sqlite::migrations::{self, rewind_v021};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1602,7 +1607,7 @@ mod tests {
         tx.execute_batch(
             "DROP TABLE IF EXISTS core_transaction_inputs; \
              DROP TABLE IF EXISTS core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 19;",
+             DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
         .unwrap();
         tx.commit().unwrap();
@@ -1645,15 +1650,15 @@ mod tests {
         assert_eq!(
             original,
             blob::encode(&spending).unwrap(),
-            "V019 keeps the record it rewrote"
+            "V021 keeps the record it rewrote"
         );
     }
 
-    /// A V018 database whose wallet 0xAD has one corrupt record at `height`.
-    fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
+    /// A pre-V021 database whose wallet 0xAD has one corrupt record at `height`.
+    fn pre_v021_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
         let mut conn = Connection::open_in_memory().unwrap();
         migrations::run(&mut conn).unwrap();
-        rewind_to_v018(&conn);
+        rewind_v021(&conn);
         let wallet_id = [0xADu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 100)",
@@ -1677,7 +1682,7 @@ mod tests {
 
     #[test]
     fn should_fail_history_migration_on_corrupt_unconfirmed_record() {
-        let (mut conn, _) = v018_with_corrupt_record(None);
+        let (mut conn, _) = pre_v021_with_corrupt_record(None);
         assert!(
             migrations::run(&mut conn).is_err(),
             "a resync cannot restore an unconfirmed record, so it must not be dropped"
@@ -1697,12 +1702,12 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, 18);
+        assert_eq!(version, 19);
     }
 
     #[test]
     fn should_drop_corrupt_confirmed_record_and_rescan_its_wallet() {
-        let (mut conn, wallet_id) = v018_with_corrupt_record(Some(150));
+        let (mut conn, wallet_id) = pre_v021_with_corrupt_record(Some(150));
         let kept = transaction_record(
             Txid::from_byte_array([0x11; 32]),
             TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1)),
@@ -1987,7 +1992,7 @@ mod tests {
         migrations::run(&mut conn).unwrap();
         let wallet_id = [0xB2u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
-        rewind_to_v018(&conn);
+        rewind_v021(&conn);
         migrations::run(&mut conn).unwrap();
         let unspent_rows = |outpoint: &OutPoint| -> i64 {
             conn.query_row(
@@ -2001,7 +2006,7 @@ mod tests {
         assert_eq!(
             unspent_rows(&contact),
             1,
-            "V019 must not destroy stored rows"
+            "V021 must not destroy stored rows"
         );
         assert_eq!(unspent_rows(&own), 1);
         let (cs, _) = load_state(

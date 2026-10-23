@@ -121,10 +121,7 @@ pub fn verify_document_proof(
     };
 
     let (root_hash, documents) = query
-        .verify_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
-            platform_version,
-        )
+        .verify_proof(supported_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| format_result_error(ErrorCategory::VerificationError, e))?;
 
     // Convert documents to JS array
@@ -280,6 +277,8 @@ fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "In" => WhereOperator::In,
         "StartsWith" => WhereOperator::StartsWith,
+        "Contains" => WhereOperator::Contains,
+        "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(format_error_with_context(
                 ErrorCategory::InvalidInput,

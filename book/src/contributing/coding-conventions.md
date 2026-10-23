@@ -43,6 +43,7 @@ crate that has what the change needs, and no lower.
 | A validation step that reads platform state, block execution, an ABCI handler | `packages/rs-drive-abci/src/execution/` | Handlers under `abci/` stay thin and delegate. |
 | A gRPC query handler | `packages/rs-drive-abci/src/query/<name>/` plus the proto in `packages/dapi-grpc` | Request version dispatch mirrors method version dispatch. |
 | A version number, a limit, a fee rate | `packages/rs-platform-version` | Never a literal in a method body. |
+| Core transaction construction | `dashpay/rust-dashcore/key-wallet` | `packages/rs-dpp` validates Platform rules; `packages/rs-platform-wallet` orchestrates. |
 | Client-side proof composition (`FromProof`, Tenderdash signature check) | `packages/rs-drive-proof-verifier` | Calls into `drive::verify`, never into GroveDB directly. |
 | A client API | `packages/rs-sdk` | Follow the query checklist in `packages/rs-sdk/README.md`. |
 | A JavaScript binding | `packages/wasm-dpp2`, `packages/wasm-sdk` | Mirror the Rust shape; never validate. See `packages/wasm-dpp2/CONVENTIONS.md`. |
@@ -154,8 +155,8 @@ behaviour-preserving. Add the next `SYSTEM_LIMITS_V{n+1}` for the unreleased
 protocol version with the new value. Keep a real method version only where the
 logic differs: in `packages/rs-dpp/src/withdrawal/daily_withdrawal_limit/`,
 `v0` computes a tiered percentage of total credits and `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`; that is a logic change and earns its own version. Raising the
+`daily_withdrawal_limit_percent` from `SystemLimits`; that is a logic change
+and earns its own version. Raising the
 percentage later would be a table edit, not a `v3`.
 
 Why: reviewers look for limits in the tables. A constant hidden in a method

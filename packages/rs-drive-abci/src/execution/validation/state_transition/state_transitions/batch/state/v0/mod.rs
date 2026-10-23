@@ -15,6 +15,7 @@ use drive::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_shielded_token_payment::validate_document_shielded_token_payment;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
@@ -33,7 +34,15 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shield_transition_action::TokenShieldTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_unshield_transition_action::TokenUnshieldTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_mint_to_pool_transition_action::TokenMintToPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
+use crate::execution::validation::state_transition::batch::state::v0::accepted_token_pool_nullifiers::{AcceptedTokenPoolNullifiers, TokenPoolNullifiers};
 use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
 use crate::execution::validation::state_transition::batch::state::v0::consumed_documents::ConsumedDocuments;
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
@@ -46,6 +55,7 @@ use crate::execution::validation::state_transition::state_transitions::batch::tr
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
+mod accepted_token_pool_nullifiers;
 mod added_moderator_cap;
 mod consumed_documents;
 pub mod fetch_contender;
@@ -56,12 +66,14 @@ mod seated_charter_reads;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v0(
         &self,
         action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -82,6 +94,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        validation_mode: ValidationMode,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -90,6 +103,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         let owner_id = state_transition_action.owner_id();
 
         let mut validated_transitions = vec![];
+        let mut accepted_token_pool_nullifiers = AcceptedTokenPoolNullifiers::default();
 
         let data_trigger_bindings = if platform.config.execution.use_document_triggers {
             data_trigger_bindings_list(platform_version)?
@@ -132,7 +146,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
             // Borrowed mutably so a contested create's validation can settle the fund it pays
             // (document create state validation 2, protocol version 14); earlier versions of
             // every validation below read the action only
-            let transition_validation_result = match &mut transition {
+            let mut transition_validation_result = match &mut transition {
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(
@@ -304,6 +318,88 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         transaction,
                         platform_version,
                     )?,
+                    // Every protocol version selects this generation, so the token shielded pool
+                    // arms below have to be unreachable on the released ones, 1 through 13, and
+                    // they are: a batch carrying any of these pool transition kinds is refused,
+                    // unpaid, at the batch's `is_allowed` gate below the version that admits
+                    // token pools, and that gate is the first check a state transition meets,
+                    // well before this stage runs. From that version on the arms are the live
+                    // path.
+                    TokenTransitionAction::ShieldAction(shield_action) => shield_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::UnshieldAction(unshield_action) => unshield_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
+                        shielded_transfer_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::MintToPoolAction(mint_to_pool_action) => {
+                        mint_to_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::BurnFromPoolAction(burn_from_pool_action) => {
+                        burn_from_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::ClaimToPoolAction(claim_to_pool_action) => {
+                        claim_to_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::DirectPurchaseToPoolAction(
+                        direct_purchase_to_pool_action,
+                    ) => direct_purchase_to_pool_action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        validation_mode,
+                        transaction,
+                        platform_version,
+                    )?,
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -311,6 +407,46 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                     )));
                 }
             };
+
+            // A document whose token cost is paid out of the token's shielded pool: the pool
+            // side and the bundle are validated once the document action itself is valid.
+            //
+            // Unreachable on protocol versions 1 through 13, which select this generation along
+            // with every later one: only a `TokenPaymentInfo::V1` carries a shielded payment, and
+            // the same `is_allowed` gate refuses a batch holding a document whose payment info
+            // carries one. Note that nothing narrows the batch's `active_version_range` for it --
+            // that narrows on the document base's own feature version -- so the `is_allowed`
+            // gate is the whole of the argument here.
+            if transition_validation_result.is_valid() {
+                if let BatchedTransitionAction::DocumentAction(document_action) = &transition {
+                    if let Some(payment) = document_action.base().shielded_token_payment() {
+                        transition_validation_result = validate_document_shielded_token_payment(
+                            document_action.base(),
+                            payment,
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?;
+                    }
+                }
+            }
+
+            // Every production version selecting this generation caps batches at one before
+            // block state validation. Comparing only with earlier accepted writers therefore
+            // sees an empty set there and adds no action, error or billed operation.
+            let pool_nullifiers = transition_validation_result
+                .is_valid()
+                .then(|| TokenPoolNullifiers::for_transition(&transition))
+                .flatten();
+            if let Some(candidate) = &pool_nullifiers {
+                if let Some(error) = accepted_token_pool_nullifiers.check(candidate) {
+                    transition_validation_result.add_error(error);
+                }
+            }
 
             if !transition_validation_result.is_valid() {
                 // If a state transition isn't valid we still need to bump the identity data contract nonce
@@ -499,6 +635,9 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 platform_version,
             )?;
 
+            if let Some(candidate) = pool_nullifiers {
+                accepted_token_pool_nullifiers.record(candidate);
+            }
             validated_transitions.push(transition);
         }
 

@@ -20,7 +20,7 @@ impl Drive {
     /// Returns proof bytes that the client verifies via
     /// `GroveDb::verify_aggregate_count_query`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_proof(
+    pub(crate) fn execute_document_count_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
@@ -37,7 +37,7 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "range count requires a `range_countable: true` index whose last \
+                "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                      property matches the range field"
                     .to_string(),
             ))

@@ -6,6 +6,8 @@ use crate::version::system_limits::SystemLimits;
 /// from 190,000 credits (190 duffs) to 1,000,000 credits (1000 duffs): the previous floor was
 /// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
 pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
+    credit_pool_nullifier_backfill_page_size: 0,
+    credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
@@ -25,7 +27,10 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
-    max_daily_withdrawal_amount: None,
+    core_credit_pool_unlock_limit_percent: None,
+    core_credit_pool_unlock_limit_floor: None,
+    core_credit_pool_window_blocks: None,
+    regtest_core_credit_pool_window_blocks: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
     max_core_fee_per_byte: None,
@@ -57,6 +62,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,
@@ -64,5 +70,11 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_ttl_seconds: None,
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
-    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_indexed_array_items: None,
+    max_windowed_indexed_array_items: None,
+    max_index_entries_per_document: None,
+    max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
+    max_rekey_batch_moves: None,        // read only by the protocol version 14 upgrade
 };

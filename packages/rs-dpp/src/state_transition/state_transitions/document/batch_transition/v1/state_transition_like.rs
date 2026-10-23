@@ -11,6 +11,8 @@ use platform_value::{BinaryData, Identifier};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use crate::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 
 impl From<BatchTransitionV1> for StateTransition {
     fn from(value: BatchTransitionV1) -> Self {
@@ -42,8 +44,25 @@ impl StateTransitionLike for BatchTransitionV1 {
     }
 
     /// We create a list of unique identifiers for the batch
+    ///
+    /// Each transition contributes the owner, contract and nonce that replay-protect it. A batch
+    /// that spends notes from a token's shielded pool contributes each spent nullifier as well,
+    /// because two independent batches naming one nullifier cannot both execute — whichever lands
+    /// records it and the other is refused on it — and their nonces need not be alike, so without
+    /// the nullifier nothing about them collides. The credit pool's shielded transitions identify
+    /// themselves by their nullifiers alone; these are the same values in the same encoding.
+    ///
+    /// Sharing a nullifier does not always mean mutual exclusion, so a consumer must not read it
+    /// that way: a group action's proposer and its confirmers carry the same bundle, and are meant
+    /// to. The values are also not namespaced by token, so two pools' nullifiers are compared as
+    /// if they were one pool's. Neither matters while only the first identifier is used, and both
+    /// have to be settled before any consumer looks past it.
+    ///
+    /// The nonce keys stay in front. Only the first identifier reaches the mempool today, and
+    /// that one has to remain the key that stops a second batch replaying a nonce.
     fn unique_identifiers(&self) -> Vec<String> {
-        self.transitions
+        let mut identifiers: Vec<String> = self
+            .transitions
             .iter()
             .map(|transition| match transition {
                 BatchedTransition::Document(document_transition) => {
@@ -63,7 +82,29 @@ impl StateTransitionLike for BatchTransitionV1 {
                     )
                 }
             })
-            .collect()
+            .collect();
+
+        identifiers.extend(self.transitions.iter().flat_map(|transition| {
+            let actions = match transition {
+                BatchedTransition::Token(token_transition) => {
+                    token_transition.shielded_pool_actions()
+                }
+                // A document whose token cost is paid out of the token's shielded pool spends
+                // pool notes exactly as an unshield does.
+                BatchedTransition::Document(document_transition) => document_transition
+                    .base()
+                    .token_payment_info_ref()
+                    .as_ref()
+                    .and_then(|info| info.shielded_payment())
+                    .map(|payment| payment.actions.as_slice()),
+            };
+            actions
+                .unwrap_or_default()
+                .iter()
+                .map(|action| hex::encode(action.nullifier))
+        }));
+
+        identifiers
     }
 }
 

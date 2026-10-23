@@ -47,7 +47,7 @@ count/ranked trees exactly as References do.
 The member key is the terminal value's **tree-key encoding**, produced by
 the same functions the prefix levels use (the walkers and probes through
 `get_raw_for_document_type`, queries and executed proofs through
-`serialize_value_for_key`, synthesis through `decode_value_for_tree_keys`),
+`serialize_value_for_key`, synthesis through `deserialize_value_for_key`),
 so nothing about it is specific to a 32-byte identifier: a 33-byte public
 key, a short string or an integer keys the `0` bucket exactly as it would
 key a prefix level, and fee estimation sizes the member key by the
@@ -139,6 +139,32 @@ with guidance — the bucket level carries bucket-start granularity, not
 the document's timestamp, and the raw entries are served by the type's
 non-bucketed indexes.
 
+**Typed arrays** compose as well: an index naming a typed array writes
+one commitment entry per distinct element of the document's list (times
+its windows when it also buckets), and none for an empty, `null` or absent
+list, through the same `level_keys` the stored types' walkers use;
+`index_only_entry_paths_and_key` fans the probe paths out the same way
+(`get_raw_array_elements_for_document_type`), so the delete probe, the
+batch entry tracker and the fee estimates see every element. The create's
+state probe skips such an index: the covering index below is probed and
+refuses any collision first. Such an index is no uniqueness rule of its own: registration
+wants another index that keeps one entry per document to have its whole
+key inside the array index's key without the array, so two documents could
+only share an element's entry by sharing that index's entry first. Its
+array declares `uniqueItems`, and it is never the proof index or a
+`summableOffCountIndex` source. It is `preallocated` or a
+`summableOffCountIndex` index only when a `where` equality binds the array
+to a typed array of the referenced document (see
+[Preallocated index paths](#preallocated-index-paths) and
+[Counters](#counters-summableoffcountindex)); a counter index keeps no
+entries, so it needs no other index to keep its documents apart.
+Each entry's commitment is a double-SHA256 the insert bills by its
+preimage (`Sha256_2` function operation; the dry run bills the widest
+preimage the type allows, `index_only_row_commitment_max_preimage_size`),
+so the list's length and the fan-out are paid for.
+Synthesis rebuilds an entry under an element as a document listing that
+element alone.
+
 The **sum axes** compose the same way: a `summable: "<prop>"` index
 stores `ItemWithSumItem(<row commitment>, <amount>)` terminals — the same
 commitment payload, plus the summed property's value — so entries
@@ -154,7 +180,13 @@ amount is one of the committed properties.
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
 the member key, `$ownerId` and `$createdAt` wherever an index carries them.
-There is no document beyond that.
+There is no document beyond that. One kind of property may sit in no
+entry-keeping index: one a `summableOffCountIndex` index's source fixes
+through a reference's `where` (a like's `postAuthor`, kept only by
+`byAuthorPost`'s counters). Such a property, when no entry-keeping index
+holds it, is lacking from a document read back, and its value is the
+referenced document's, so a client rebuilding the row for a delete reads it
+from there.
 
 ## The row commitment
 
@@ -178,6 +210,13 @@ present-but-empty (`name ‖ 00000000`) hash differently, and the variable
 present-set stays unambiguous because property names never contain a
 zero byte while every length prefix starts with one.
 
+A typed array's raw bytes are its whole list in the document's order,
+`(u32 length ‖ element key)*`, each element keyed as its entries are, so
+a delete carrying the list reordered, shortened or changed fails every
+probe, the probes of indexes not naming the array included. An empty,
+`null` and absent list write the same entries (none under the array's
+indexes) and are committed alike, as absent.
+
 ## Constraint matrix (parse-time, `apply_index_only`)
 
 The on-disk layout depends on every one of these, so they run regardless
@@ -188,9 +227,10 @@ aggregate keywords follow:
 |---|---|
 | every property in `required` — except a skip property of a `skipIfAbsent` index; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
 | every index holding an optional property skips on it (its skip set is all of its optional properties) | an absent value that did not skip would need the null layout this mode has no equivalent of |
-| every required property appears in ≥ 1 **non-skip** index (prefix or terminal); every optional property appears in a skip index whose skip set is that property alone | only indexed values exist, and a skip index carries no value for a document it skips — covered only there, a property would be validated and committed yet written nowhere |
+| every required property appears in ≥ 1 **non-skip** index (prefix or terminal) naming no typed array but, for a required array, itself; every optional property appears in a skip index whose skip set is that property alone | only indexed values exist, and a skip index (or an array index, for an empty list) carries no value for a document it skips: covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
-| ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
+| ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` AND names no typed array: the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
+| an index naming a typed array: another index keeping one entry per document (no `$createdAt`, skip, `outlivesDelete` or typed array) has its whole key inside this index's key without the array (not asked of a `summableOffCountIndex` index, which keeps no entries); the array declares `uniqueItems`; a `preallocated` or `summableOffCountIndex` index has the array bound by a `where` equality with a typed array of the referenced document | the array index writes an entry per element and is no uniqueness rule of its own: the other index keeps two documents from ever sharing one of its entries, and each element has an entry of its own; only an equality puts every document referencing one document under the same elements (`index_only_array_index_error`) |
 | every terminal component is `$ownerId` or a schema property passing the indexed-shape limits (no arrays or objects; byte arrays ≤ 255 bytes, strings ≤ 63 characters); every component but the last is fixed width; the whole key ≤ 255 bytes | the member key is the components' tree-key encodings concatenated, derived by the same functions the prefix levels use; a leading component must be splittable back and rangeable; grovedb caps keys at 255 bytes; other system properties are refused because the `$createdAt` rules walk the prefix properties |
 | no index declares `integerRange` | an entry is keyed by the index's values and terminal, and a bucketed level holds window starts: rows differing only in the bucketed integer would claim the same entry in every window they share |
 | a flat index (no `properties`) admits no countable / summable / ranked / `timeRange` / `integerRange` / `skipIfAbsent` / `preallocated` keyword | there is no prefix level for them to apply to |
@@ -200,6 +240,7 @@ aggregate keywords follow:
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
 | a skip property is an optional, top-level schema property; no ranking sits above the index's deepest skip property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a `summableOffCountIndex` index sums a source holding every document once, holds every source property, and fixes its other properties through unchanging `where` values | see [Counters (summableOffCountIndex)](#counters-summableoffcountindex) |
 
 `indexOnly` and the index set (terminals included, `preallocated` and
 `skipIfAbsent` flags included) are immutable across contract updates — a
@@ -416,6 +457,24 @@ Three things change, all bit-compatible with the fallback layout:
   hand the first entry the old price, and their trees — created by the
   fallback — are retained on delete exactly like preallocated ones.
 
+A typed array is bound too when the reference's `where` makes it equal to
+a typed array of the referenced document (`"tags": "tags"`, key source
+`PreallocatedKeySource::ReferencedDocumentListElements`): every entry
+referencing the document holds that list, and the index enters it under
+each element, so the level takes one key per distinct element of the
+referenced list, keyed as the referring type keys its elements
+(`referenced_list_tree_keys_for_referring_property`). The walk continues
+under each element's value tree, every tree queued once, and a list no
+referring document can hold preallocates nothing: empty, absent or no list
+at all, longer than the referring array's `maxItems` or shorter than its
+`minItems`, repeating an element where it declares `uniqueItems`, or holding
+an element keyed as empty or wider than the referring elements can be. The
+estimate walks `maxItems` distinct worst-case elements. `contains` and
+`containsAll` fix no element and bind nothing. A plain tree under one the
+same walk created is inserted without an existence read, and the dry run of
+a change of the referenced document preallocates nothing, since an applied
+change never does.
+
 `preallocated` composes with `skipIfAbsent`: every bound key is resolved
 before any operation is emitted, and an absent bound value (an untagged
 post's hashtag, under the absence-aware agreement) bails without emitting
@@ -433,7 +492,7 @@ absent tree.
 An entry's proved `(path, key)` position IS the document, so queries and
 proofs **synthesize** documents through one shared builder
 (`query/index_only_synthesis.rs`, compiled for server and verify): prefix
-properties decoded from the path via `decode_value_for_tree_keys` (the
+properties decoded from the path via `deserialize_value_for_key` (the
 inverse of the write path's key encoding), the terminal from the member
 key. A query through a subset index yields a documented *projection*. The
 synthesized `$id` is deterministic over the proved position (a
@@ -484,6 +543,80 @@ Not supported on the read surface: by-`$id` fetches (no primary tree —
 rejected with guidance) and `startAt` cursors (rejected with the keyset
 guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
+
+## Counters (summableOffCountIndex)
+
+A `summableOffCountIndex` index keeps no entry per document. At the value
+position of its last property, where another index grows a value tree, a
+`0` bucket and one entry per document, it keeps one `Element::SumItem`
+holding the number of entries its source index keeps for that group:
+
+```text
+before: byAuthorPost → postAuthor → <author> → postId → <post> → 0 → <liker> = Item(commitment)
+after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem(likes)
+```
+
+The tree of the last property is a count-and-sum tree (`rangeSummable`,
+plus `rangeCountable` for the group count an average divides by), so each
+counter counts one group and adds its value to the sum. A level a `{ "at": ... }` ranking
+names, and every level between it and the counters, carries those totals
+up: its value trees are `CountSumTree`s from the shallowest average
+ranking down and `SumTree`s above it (a `rankedCountable` on such an index
+is its sum ranking, so no count-only chain arises). The property-name tree
+of a level a ranking names is the indexed tree for the axes ranked at it,
+`ProvableCountProvableSumIndexedTree` for `[Sum, Avg]`; a level between two
+ranked levels keeps a plain count-and-sum or sum tree. Grovedb admits a bare
+`SumItem` under that indexed tree from grove version 4.
+
+The write path (`add_summable_off_count_counter_operations`):
+
+- **Create**: reads the counter and writes it back one higher, or inserts
+  it at one for the first document of the group. The create is refused
+  before it gets here when the source already holds the entry, so the
+  counter equals the source group's entry count.
+- **Delete**: writes it back one lower once the entries of the indexes
+  that keep them matched the row commitment. A preallocated index keeps
+  the counter at zero; any other removes it with its last document and
+  prunes the trees it leaves empty, up to the document type.
+- **Once per batch**: a counter is written at most once per batch, because
+  a documents batch carries one transition. A source keyed by more than its
+  owner (a terminal such as `["$ownerId", "emoji"]`) holds several entries
+  of one owner in one group, and each document is converted on its own, so
+  raising that cap needs the counter moves folded across documents first.
+  A second write within one conversion is refused as corrupted code
+  execution.
+- **Storage**: a `SumItem` is charged a fixed 11 bytes plus flags whatever
+  its value, so a rewrite stores nothing new, and it keeps the flags of the
+  first document that paid for it.
+- **Preallocation**: creating the referenced document creates the counter
+  at zero, in place of the value tree and its empty `0` bucket.
+- **Per element**: a typed array the source fixes through a `where`
+  equality with a referenced typed array (`byTagPost`, `[tags, postId]`)
+  puts every document of a source group under the same elements, so each
+  element's group holds the whole source group. The walkers fan the levels
+  of the array out per element, so a create or delete moves one counter
+  per element, a preallocation creates one per element of the referenced
+  list, and a counter level that is the array itself (`[postId, tags]`)
+  keeps one counter per element side by side.
+
+The state probes and the duplicate check skip the index (it decides
+nothing about a create), it is never the proof index, and document
+queries never read it. The count, sum, average and ranked queries do: a
+sum query names the source index (`sum(byPost)`), a count query takes a
+counter's sum (its group's documents) where another index's read takes a
+count (a ranked or `HAVING` count walks the Sum secondaries, and its
+entries come back as counts), and a point query may stop at a level
+carrying the sums, reading that value tree's element. A range count reads
+the range sums (`DriveDocumentCountQuery::counter_sums_query`): every range
+count executor and verifier hands the same index and clauses to the sum
+surface's counterpart, summing the source index, and reads the sums back as
+counts, since grovedb's range count over the counters would count them, one
+per group. A range total over an index whose path passes through a ranked
+level (its own, or one another index ranks at a shared level) is refused with
+a hint to group by the last property, as everywhere: a ranked level's tree is
+indexed, and grovedb neither totals a range over an indexed tree nor proves a
+range total through one, so the unproven read refuses it too and the two
+agree.
 
 ## What it costs and what it saves
 

@@ -489,6 +489,22 @@ describe('DocumentsFacade', () => {
 
       expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
     });
+
+    it('should accept a contains pin on a typed array element', async () => {
+      // Typed so the spec stops compiling if `DocumentsIndexPin` drops `contains`.
+      const query: wasmSDKPackage.DocumentsRankedQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'like',
+        groupBy: 'postId',
+        aggregate: { type: 'count' },
+        where: [['tags', 'contains', 'dash']],
+        limit: 10,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
   });
 
   describe('rankedWithProof()', () => {

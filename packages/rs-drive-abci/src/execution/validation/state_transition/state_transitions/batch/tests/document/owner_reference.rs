@@ -24,6 +24,7 @@
 use super::*;
 
 mod owner_reference_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::*;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
@@ -341,6 +342,7 @@ mod owner_reference_tests {
                 document_type_name: type_name.to_string(),
                 data_contract: contract_fetch_info.expect("the contract is in state"),
                 token_cost: None,
+                shielded_token_payment: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
@@ -359,12 +361,14 @@ mod owner_reference_tests {
                     &data,
                     self.id(who),
                     creator.map(|creator| self.id(creator)),
+                    &DocumentSystemValues::default(),
                     changed_fields.as_ref(),
                     None,
                     &platform_ref,
                     &BlockInfo::default(),
                     &mut Vec::new(),
                     None,
+                    &mut BTreeMap::new(),
                     None,
                     &mut execution_context,
                     platform_version,

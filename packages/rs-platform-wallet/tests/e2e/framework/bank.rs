@@ -1152,7 +1152,7 @@ fn derive_platform_address_at_index(
         .map_err(|err| {
             FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
         })?;
-    let pkh = ripemd160_sha256(&pubkey.serialize());
+    let pkh = ripemd160_sha256(&pubkey.to_compressed());
     Ok(PlatformAddress::P2pkh(pkh))
 }
 

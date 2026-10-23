@@ -6,7 +6,7 @@ use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
 use anyhow::anyhow;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
+use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
@@ -106,11 +106,12 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
 }
 
 pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], ProtocolError> {
-    let sk = RawSecretKey::from_slice(private_key)
+    let sk = <[u8; 32]>::try_from(private_key)
+        .map_err(|_| secp256k1::Error::InvalidSecretKey)
+        .and_then(RawSecretKey::from_secret_bytes)
         .map_err(|e| anyhow!("Invalid ECDSA private key: {}", e))?;
 
-    let secp = dashcore::secp256k1::Secp256k1::new();
-    let public_key_compressed = RawPublicKey::from_secret_key(&secp, &sk).serialize();
+    let public_key_compressed = RawPublicKey::from_secret_key(&sk).serialize();
     Ok(public_key_compressed)
 }
 
@@ -259,8 +260,8 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 //     }
 //
 //     fn get_test_keys() -> Keys {
-//         let secp = dashcore::secp256k1::Secp256k1::new();
-//         let mut rng = dashcore::secp256k1::rand::thread_rng();
+//         let secp = secp256k1::Secp256k1::new();
+//         let mut rng = secp256k1::rand::thread_rng();
 //         let mut std_rng = StdRng::seed_from_u64(99999);
 //         let (private_key, public_key) = secp.generate_keypair(&mut rng);
 //
@@ -409,8 +410,8 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 //         let mut st = get_mock_state_transition();
 //         let mut keys = get_test_keys();
 //
-//         let secp = dashcore::secp256k1::Secp256k1::new();
-//         let mut rng = dashcore::secp256k1::rand::thread_rng();
+//         let secp = secp256k1::Secp256k1::new();
+//         let mut rng = secp256k1::rand::thread_rng();
 //         let (_, public_key) = secp.generate_keypair(&mut rng);
 //
 //         keys.identity_public_key.data = BinaryData::new(public_key.serialize().to_vec());

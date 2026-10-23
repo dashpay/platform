@@ -10,6 +10,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
@@ -74,12 +75,19 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod delete_constraints;
 mod deletion_options;
 mod derived_index_properties;
+mod duplicate_keys;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;
+mod referenced_rules;
+mod restore_constraints;
+mod retraction;
 mod seated_team;
+mod typed_array_counters;
+mod typed_array_where;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -1518,6 +1526,18 @@ async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
+    let owner_balance = setup.balance(setup.owner.id(), Some(&transaction));
+    let owner_nonce = setup
+        .platform
+        .drive
+        .fetch_identity_contract_nonce(
+            setup.owner.id().to_buffer(),
+            setup.contract.id().to_buffer(),
+            true,
+            Some(&transaction),
+            platform_version,
+        )
+        .unwrap();
     // A team action's proposal and approval among them: the shipped prover and verifier v0
     // have their arms, which no transition of an earlier protocol version reaches.
     for action in [
@@ -1530,6 +1550,7 @@ async fn should_not_be_active_before_protocol_version_14() {
         ContractUserModerationAction::ApproveTeamAction {
             action_id: Identifier::new([0x67; 32]),
         },
+        restore_action(POST, vec![0]),
     ] {
         let moderation = setup.moderate(&setup.owner, action).await;
         let execution = setup.process(&moderation, &transaction);
@@ -1538,10 +1559,53 @@ async fn should_not_be_active_before_protocol_version_14() {
         assert!(
             matches!(
                 &execution,
-                StateTransitionExecutionResult::InternalError(message)
-                    if message.contains("ContractUserModeration") && message.contains("not active")
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
+                    if error.state_transition_type().starts_with("ContractUserModeration")
             ),
             "expected the transition to be inactive before protocol version 14, got {execution:?}"
+        );
+        let admission = {
+            let state = setup.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &setup.platform.drive,
+                state: &state,
+                config: &setup.platform.config,
+                core_rpc: &setup.platform.core_rpc,
+            };
+            setup.platform.check_tx(
+                &moderation.serialize_to_bytes().unwrap(),
+                FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+        };
+        let admission = admission.expect("check_tx returns the refusal as a consensus error");
+        assert!(
+            matches!(
+                admission.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                    if error.state_transition_type().starts_with("ContractUserModeration")
+                        && error.current_protocol_version() == 13
+            ),
+            "expected check_tx to refuse the inactive transition, got {admission:?}"
+        );
+        assert_eq!(
+            setup.balance(setup.owner.id(), Some(&transaction)),
+            owner_balance
+        );
+        assert_eq!(
+            setup
+                .platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    setup.owner.id().to_buffer(),
+                    setup.contract.id().to_buffer(),
+                    true,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap(),
+            owner_nonce
         );
     }
 }
@@ -1559,8 +1623,8 @@ async fn should_not_admit_a_moderated_contract_before_protocol_version_14() {
         assert!(
             matches!(
                 &execution,
-                StateTransitionExecutionResult::InternalError(message)
-                    if message.contains(name) && message.contains("not active")
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))
+                    if error.state_transition_type().starts_with(name)
             ),
             "expected {name} to be inactive before protocol version 14, got {execution:?}"
         );
@@ -2244,6 +2308,49 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         "additionalProperties": false,
         "moderatorAbilities": { "delete": deletable_by_moderators },
     })
+}
+
+/// A creation by `actor` of a document of `document_type_name` holding exactly
+/// `properties`
+async fn create_with(
+    setup: &Setup,
+    actor: &Actor,
+    document_type_name: &str,
+    properties: Vec<(&str, Value)>,
+) -> (Document, StateTransition) {
+    setup
+        .create_document_of_type_with(actor, document_type_name, |document| {
+            document.properties_mut().clear();
+            for (property, value) in properties {
+                document.set(property, value);
+            }
+        })
+        .await
+}
+
+/// The replacement of `document` by `actor`, its owner, its revision bumped
+async fn replacement(
+    actor: &Actor,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &mut Document,
+) -> StateTransition {
+    document.increment_revision().expect("revision increments");
+    BatchTransition::new_document_replacement_transition_from_document(
+        document.clone(),
+        contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type"),
+        &actor.key,
+        actor.contract_nonce(),
+        0,
+        None,
+        &actor.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the replacement")
 }
 
 fn add_document_type(contract: &mut DataContract, name: &str, schema: Value) {

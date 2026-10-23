@@ -225,7 +225,6 @@ mod tests {
 
     use super::{derive_fresh_unused_addresses, GapLimitError};
     use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
-    use key_wallet::dashcore::secp256k1::Secp256k1;
     use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::{KeySource, Network};
@@ -237,15 +236,12 @@ mod tests {
         .expect("mnemonic parses");
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xprv");
-        let secp = Secp256k1::new();
         let path = DerivationPath::from(vec![
             ChildNumber::from_hardened_idx(44).unwrap(),
             ChildNumber::from_hardened_idx(1).unwrap(),
             ChildNumber::from_hardened_idx(0).unwrap(),
         ]);
-        let account_key = master
-            .derive_priv(&secp, &path)
-            .expect("account derivation");
+        let account_key = master.derive_priv(&path).expect("account derivation");
         KeySource::Private(account_key)
     }
 

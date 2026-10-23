@@ -4,7 +4,7 @@
 //! (`fold_same_txid_records`) and the SQLite repair
 //! (`platform-wallet-storage`'s `core_history`) both call them, so a row
 //! cannot change accounting when storage repairs it; they differ only on
-//! an `i64` overflow (live saturates, repair errors). The frozen V019
+//! an `i64` overflow (live saturates, repair errors). The frozen V021
 //! migration keeps its own self-contained copy.
 //!
 //! Upstream `key-wallet` classifies each matched account on its own, and
@@ -30,7 +30,7 @@ use key_wallet::transaction_checking::transaction_router::TransactionType;
 /// An asset lock is `Internal` whenever nothing leaves the wallet, even
 /// with no change output: its OP_RETURN value becomes the wallet's own
 /// Platform credits. The Swift SDK's
-/// `PersistentTransaction.reconciledAccounting` and the frozen V019
+/// `PersistentTransaction.reconciledAccounting` and the frozen V021
 /// migration apply the same rule; keep them in step. The case table
 /// shared with Swift lives in `platform-wallet-storage`
 /// (`should_classify_repaired_direction_like_the_swift_sdk`).

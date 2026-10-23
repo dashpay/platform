@@ -1,0 +1,61 @@
+{
+  "baseHeight": 1250,
+  "blockHeight": 1260,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0": {
+        "version": 3,
+        "service": "192.0.2.40:9999",
+        "payouts": [
+          {
+            "address": "yX4Ve7Q8Y4jscV4LZJD8HVCHKyePzR3MhA",
+            "script": "76a91475d57974b6e29a4a70df57a3b11195ce0a0dc81788ac",
+            "reward": 10000
+          }
+        ],
+        "platformP2PPort": 36656,
+        "platformHTTPPort": 1443,
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.40:9999"
+          ],
+          "platform_p2p": [
+            "192.0.2.40:36656"
+          ],
+          "platform_https": [
+            "192.0.2.40:1443"
+          ]
+        }
+      }
+    },
+    {
+      "27978dd892b7c876c238be1a6141461c2824f3497dd0058e160979bc8f0a0bef": {
+        "payouts": [
+          {
+            "address": "yezL36AmNQFAYq2oFGhUUeva22UccZnF8F",
+            "script": "76a914cccccccccccccccccccccccccccccccccccccccc88ac",
+            "reward": 2500
+          },
+          {
+            "address": "ygYZyATPHQwd8vaGeZndSfQgvj6Qro5WbT",
+            "script": "76a914dddddddddddddddddddddddddddddddddddddddd88ac",
+            "reward": 7500
+          }
+        ]
+      }
+    },
+    {
+      "813a7c3f28817988a8e6ce66e07e43e261e78398373bfbaae94c898645111d6b": {
+        "payouts": [
+          {
+            "address": "yiNjY5GEMnEWtSyeegFATjPepVU48ATT7E",
+            "script": "76a914f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f188ac",
+            "reward": 10000
+          }
+        ]
+      }
+    }
+  ]
+}

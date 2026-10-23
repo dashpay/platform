@@ -266,11 +266,10 @@ pub(super) async fn queue_shielded_activity<S: ShieldedStore>(
 /// Each shielded variant's `actions()` comes from its own accessor /
 /// methods trait, so the relevant traits are imported locally.
 fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
-    // `actions()` is on the per-type accessor trait for the spend-based
-    // transitions; Shield / ShieldFromAssetLock expose `actions` as a
-    // public field on their V0 struct (no accessor trait), so match down
-    // to the V0 variant for those two.
-    use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+    // `actions()` is on each type's accessor trait; Shield exposes `actions`
+    // only as a public field on its V0 struct, so match down to that
+    // variant for it.
+    use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
@@ -283,7 +282,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
         StateTransition::ShieldedTransfer(t) => t.actions(),
         StateTransition::Unshield(t) => t.actions(),
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => &v0.actions,
+        StateTransition::ShieldFromAssetLock(t) => t.actions(),
         StateTransition::ShieldedWithdrawal(t) => t.actions(),
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
         StateTransition::ShieldFromIdentity(t) => t.actions(),
@@ -4940,7 +4939,6 @@ pub mod test_utils {
         network: dashcore::Network,
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<[u8; 32], PlatformWalletError> {
-        use key_wallet::dashcore::secp256k1::Secp256k1;
         use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
 
         let root_priv = RootExtendedPrivKey::new_master(seed).map_err(|e| {
@@ -4949,12 +4947,11 @@ pub mod test_utils {
             ))
         })?;
         let master = root_priv.to_extended_priv_key(network);
-        let secp = Secp256k1::new();
-        let derived = master.derive_priv(&secp, path).map_err(|e| {
+        let derived = master.derive_priv(path).map_err(|e| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "derive_asset_lock_private_key: derive_priv: {e}"
             ))
         })?;
-        Ok(derived.private_key.secret_bytes())
+        Ok(*derived.private_key.to_bytes())
     }
 }

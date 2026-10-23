@@ -3,18 +3,20 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
-use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+use dpp::bls;
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
+use dpp::secp256k1::rand::SeedableRng;
+use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
-use dpp::{bls_signatures, dashcore, ed25519_dalek, ProtocolError};
+use dpp::{ed25519_dalek, ProtocolError};
+use rand::RngCore;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -123,14 +125,14 @@ impl SimpleSigner {
     ///
     /// This is only for tests.
     pub fn add_random_address_key<R: RngCore + ?Sized>(&mut self, rng: &mut R) -> PlatformAddress {
-        let secp = Secp256k1::new();
-
         // Generate a valid secp256k1 secret key from random bytes
-        let mut ecdsa_rng = dashcore::secp256k1::rand::rngs::StdRng::from_rng(rng).unwrap();
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        let mut ecdsa_rng = dpp::secp256k1::rand::rngs::StdRng::from_seed(seed);
         let secret_key = SecretKey::new(&mut ecdsa_rng);
 
         // Derive compressed public key
-        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+        let public_key = PublicKey::from_secret_key(&secret_key);
         let pubkey_ser = public_key.serialize(); // 33-byte compressed
 
         let address_hash = ripemd160_sha256(&pubkey_ser);
@@ -138,7 +140,7 @@ impl SimpleSigner {
         // Store private key so this signer can later sign for this address
         // (use *_in_creation to mirror your identity key behavior)
         self.address_private_keys_in_creation
-            .insert(address_hash, secret_key.secret_bytes());
+            .insert(address_hash, secret_key.to_secret_bytes());
 
         PlatformAddress::P2pkh(address_hash)
     }
@@ -190,7 +192,6 @@ impl SimpleSigner {
             .derivation_path(network)
             .map_err(|err| SimpleSignerError::DerivationPath(err.to_string()))?;
 
-        let secp = Secp256k1::new();
         let mut signer = Self::default();
         for index in indices {
             let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
@@ -201,18 +202,16 @@ impl SimpleSigner {
             })?;
             // `extend` returns a fresh path; account_path is reused.
             let leaf_path = account_path.extend([leaf]);
-            let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
+            let xpriv = root_xpriv.derive_priv(&leaf_path).map_err(|err| {
                 SimpleSignerError::DerivePriv {
                     index,
                     message: err.to_string(),
                 }
             })?;
-            let secret: SecretKey = xpriv.private_key;
-            let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
-            let pkh = ripemd160_sha256(&pubkey.serialize());
+            let pkh = ripemd160_sha256(&xpriv.private_key.public_key().to_compressed());
             signer
                 .address_private_keys
-                .insert(pkh, secret.secret_bytes());
+                .insert(pkh, *xpriv.private_key.to_bytes());
         }
         Ok(signer)
     }
@@ -238,7 +237,6 @@ impl SimpleSigner {
             .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
         let root_xpriv = root_priv.to_extended_priv_key(network);
 
-        let secp = Secp256k1::new();
         let mut signer = Self::default();
         for key_index in 0..gap_limit {
             let leaf_path = DerivationPath::identity_authentication_path(
@@ -247,18 +245,16 @@ impl SimpleSigner {
                 identity_index,
                 key_index,
             );
-            let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
+            let xpriv = root_xpriv.derive_priv(&leaf_path).map_err(|err| {
                 SimpleSignerError::DerivePriv {
                     index: key_index,
                     message: err.to_string(),
                 }
             })?;
-            let secret: SecretKey = xpriv.private_key;
-            let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
-            let pkh = ripemd160_sha256(&pubkey.serialize());
+            let pkh = ripemd160_sha256(&xpriv.private_key.public_key().to_compressed());
             signer
                 .address_private_keys
-                .insert(pkh, secret.secret_bytes());
+                .insert(pkh, *xpriv.private_key.to_bytes());
         }
         Ok(signer)
     }
@@ -285,15 +281,13 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key)
-                    .into_option()
-                    .ok_or(ProtocolError::Generic(
-                        "bls private key from bytes isn't correct".to_string(),
-                    ))?;
+                let pk = bls::SecretKey::from_be_bytes(private_key).ok_or(
+                    ProtocolError::Generic("bls private key from bytes isn't correct".to_string()),
+                )?;
                 let signature = pk
-                    .sign(SignatureSchemes::Basic, data)
+                    .sign(data)
                     .map_err(|e| ProtocolError::Generic(format!("BLS signing failed {}", e)))?;
-                Ok(signature.as_raw_value().to_compressed().to_vec().into())
+                Ok(signature.to_bytes().to_vec().into())
             }
             KeyType::EDDSA_25519_HASH160 => {
                 #[allow(clippy::unnecessary_fallible_conversions)]

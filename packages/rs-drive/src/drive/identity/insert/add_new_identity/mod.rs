@@ -176,9 +176,12 @@ mod tests {
     #[test]
     fn test_insert_identity_estimated_costs_latest_version() {
         let platform_version = PlatformVersion::latest();
+        // Grove version 4 sizes the replaced root key of the balances sum
+        // tree as a sum tree, 9 replaced bytes (3_600 credits) above the
+        // first version's plain-tree sizing.
         let expected_fee_result = FeeResult {
             storage_fee: 128871000,
-            processing_fee: 11764980,
+            processing_fee: 11768580,
             ..Default::default()
         };
 

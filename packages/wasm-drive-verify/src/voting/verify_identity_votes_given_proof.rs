@@ -97,7 +97,7 @@ pub fn verify_identity_votes_given_proof_vec(
 
     let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
         .verify_identity_votes_given_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &*contract_lookup_fn,
             platform_version,
         )
@@ -150,7 +150,7 @@ pub fn verify_identity_votes_given_proof_map(
 
     let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
         .verify_identity_votes_given_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &*contract_lookup_fn,
             platform_version,
         )

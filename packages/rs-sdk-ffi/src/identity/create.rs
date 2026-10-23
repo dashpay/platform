@@ -22,7 +22,7 @@ pub unsafe extern "C" fn dash_sdk_identity_create(sdk_handle: *mut SDKHandle) ->
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     let result: Result<Identity, FFIError> = wrapper.runtime.block_on(async {
         // For now, create a random identity

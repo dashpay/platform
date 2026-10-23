@@ -23,14 +23,12 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-#[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::{
-    parse_derived_index_property_name, DerivedIndexPropertyName,
-};
-use crate::data_contract::document_type::index::{
-    Index, IndexGrammarAdmissions, IntegerRangeKeyType,
+    reads_through_reference, Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
 use crate::data_contract::document_type::index_level::IndexLevel;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::array::TypedArrayProperty;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
@@ -38,17 +36,18 @@ use crate::data_contract::document_type::property::{
     KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, SystemProperty, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, PropertyConstraint, SystemProperty,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES,
-    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -86,7 +85,8 @@ use super::{insert_values, insert_values_nested};
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
-    InvalidDocumentTypeNameError, RedundantDocumentPaidForByTokenWithContractId,
+    InvalidDocumentTypeNameError, NonTransferableTokenPaymentMustBurnError,
+    RedundantDocumentPaidForByTokenWithContractId,
     TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
 };
 #[cfg(feature = "validation")]
@@ -104,6 +104,8 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
+#[cfg(feature = "validation")]
+use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
@@ -140,8 +142,19 @@ use crate::consensus::basic::data_contract::{
 ///
 /// This type and its no-op exist only for generation 3; without it there is no
 /// per-property hook in the core at all.
-pub(super) type RankedIndexKeyLengthCheck =
-    fn(&str, &Index, &str, &DocumentPropertyType, &PlatformVersion) -> Result<(), ProtocolError>;
+///
+/// Its arguments: the document type's name, the index, the index property whose
+/// level the check reads, the name a refusal reports the bound under (the
+/// property itself, or `<array>.items` for the elements of a typed array), the
+/// type of the keyed value and the platform version.
+pub(super) type RankedIndexKeyLengthCheck = fn(
+    &str,
+    &Index,
+    &str,
+    &str,
+    &DocumentPropertyType,
+    &PlatformVersion,
+) -> Result<(), ProtocolError>;
 
 /// The [`RankedIndexKeyLengthCheck`] for a generation that has no ranking axes
 /// to constrain — i.e. every generation whose index grammar rejects the
@@ -150,6 +163,7 @@ pub(super) fn no_ranked_index_key_length_check(
     _document_type_name: &str,
     _index: &Index,
     _index_property_name: &str,
+    _reported_property_name: &str,
     _property_type: &DocumentPropertyType,
     _platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -251,6 +265,10 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether the index grammar admits the `summableOffCountIndex` keyword (summableOffCountIndex
+    /// indexOnly indexes). Forwarded to [`Index::try_from_value_map`] exactly
+    /// like the admissions above.
+    pub admit_index_summable_off_count_index: bool,
     /// Whether `rangeCountable: true` promotes an omitted `countable` to
     /// `"countable"` (generation 3 and later), as the doctype-level
     /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
@@ -271,6 +289,12 @@ pub(super) struct ParserGeneration {
     /// `apply_derived_index_properties` then judges the reference and the index, and the
     /// contract's parse the referenced field.
     pub admit_derived_index_properties: bool,
+    /// Whether an index may name a typed array property, keying the document once by each
+    /// of its distinct elements. Admitted at generation 3; `validate_index_properties`,
+    /// `validate_indexed_array_index`, `validate_indexed_array_element` and
+    /// `validate_index_entries_per_document` judge the array and the index. Earlier
+    /// generations refuse the array as an index property type, as they always have.
+    pub admit_indexed_arrays: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -455,6 +479,13 @@ struct CoreParseContext<'a> {
     /// generation admitting the keyword can ever pass `true` (the caller
     /// reads it off the schema); generations 1 and 2 always pass `false`.
     index_only: bool,
+    /// Whether the document type being parsed declared `canBeDeleted: "onlyWhenConsumed"`,
+    /// which [`parse_document_type_flags`] reads as `false` for the owner's delete instead of
+    /// reading `canBeDeleted` as a boolean. Only a generation admitting the value can ever pass
+    /// `true` (the caller reads it off the schema with
+    /// [`parse_can_be_deleted_only_when_consumed_keyword`]); generations 1 and 2 always pass
+    /// `false`.
+    deleted_only_when_consumed: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
 }
@@ -515,6 +546,7 @@ pub(super) fn parse_document_type_core(
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
     index_only: bool,
+    deleted_only_when_consumed: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
@@ -528,6 +560,7 @@ pub(super) fn parse_document_type_core(
         data_contact_config,
         full_validation,
         index_only,
+        deleted_only_when_consumed,
         generation,
         platform_version,
     };
@@ -705,14 +738,18 @@ fn parse_document_type_flags(
         .map_err(consensus_or_protocol_value_error)?
         .unwrap_or(ctx.data_contact_config.documents_mutable_contract_default());
 
-    // Can documents of this type be deleted? (Overrides contract value)
-    let documents_can_be_deleted: bool =
+    // Can documents of this type be deleted by their owners? (Overrides contract value)
+    // `"onlyWhenConsumed"` says they can not: only a `refersTo` with `consume` deletes them
+    let documents_can_be_deleted: bool = if ctx.deleted_only_when_consumed {
+        false
+    } else {
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
             .map_err(consensus_or_protocol_value_error)?
             .unwrap_or(
                 ctx.data_contact_config
                     .documents_can_be_deleted_contract_default(),
-            );
+            )
+    };
 
     // Are documents of this type transferable?
     let documents_transferable_u8: u8 =
@@ -839,6 +876,7 @@ fn parse_document_properties(
             property_key,
             property_value,
             root_schema,
+            &mut Vec::new(),
             ctx.data_contact_config,
             ctx.platform_version,
         )
@@ -924,6 +962,9 @@ fn parse_indices(
                             preallocated: ctx.generation.admit_index_preallocated,
                             outlives_delete: ctx.generation.admit_index_outlives_delete,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            summable_off_count_index: ctx
+                                .generation
+                                .admit_index_summable_off_count_index,
                             range_countable_implies_countable: ctx
                                 .generation
                                 .admit_range_countable_implies_countable,
@@ -964,6 +1005,9 @@ fn parse_indices(
                     // parse (validating or not), before the index structure is
                     // built from it. System properties are never in a skip set;
                     // `apply_index_only` refuses the index when none remains.
+                    // Nor is a value read through a reference: whether it can
+                    // be absent depends on the referenced type, which this
+                    // parse does not see, so only the array form skips on one.
                     if index.skip_if_absent && index.skip_if_absent_properties.is_empty() {
                         index.skip_if_absent_properties = index
                             .properties
@@ -971,6 +1015,39 @@ fn parse_indices(
                             .filter(|property| {
                                 !property.name.starts_with('$')
                                     && !required_fields.contains(&property.name)
+                                    && !reads_through_reference(
+                                        &property.name,
+                                        flattened_document_properties,
+                                    )
+                            })
+                            .map(|property| property.name.clone())
+                            .collect();
+                    }
+
+                    // INDEXED ARRAYS: a typed array in an index keys the document once by
+                    // each of its distinct elements, so a document holding none writes nothing
+                    // into the index: the array is always in the index's skip set, in
+                    // index-property order with the declared skip properties. Resolved here, on
+                    // every parse (validating or not), because the write walkers read the skip
+                    // set. `skip_if_absent` keeps what the contract declared, so the keyword's
+                    // query rules do not apply: an indexed array is read through `contains`.
+                    // `indexed_array` says which member of the set the array is, for the query
+                    // gate (a second array is refused below, under full validation).
+                    if ctx.generation.admit_indexed_arrays {
+                        let indexed_array = index
+                            .typed_arrays(flattened_document_properties)
+                            .next()
+                            .map(|(_, name, _)| name.to_string());
+                        index.indexed_array = indexed_array;
+                    }
+                    if index.indexed_array.is_some() {
+                        let declared = std::mem::take(&mut index.skip_if_absent_properties);
+                        index.skip_if_absent_properties = index
+                            .properties
+                            .iter()
+                            .filter(|property| {
+                                declared.contains(&property.name)
+                                    || index.indexed_array.as_ref() == Some(&property.name)
                             })
                             .map(|property| property.name.clone())
                             .collect();
@@ -1300,6 +1377,14 @@ fn parse_indices(
                             flags,
                             flattened_document_properties,
                         )?;
+
+                        if ctx.generation.admit_indexed_arrays {
+                            validate_indexed_array_index(
+                                ctx,
+                                &index,
+                                flattened_document_properties,
+                            )?;
+                        }
                     }
 
                     Ok((index.name.clone(), index))
@@ -1317,11 +1402,13 @@ fn parse_indices(
     // query planner, the update-immutability comparison) reading one
     // canonical spelling: both spellings of the same index parse to equal
     // `Index` values. `apply_index_only` then validates the normalized set.
+    // A `summableOffCountIndex` index keeps no entries and so has no member
+    // key: it stays without a terminal.
     let mut indices = indices;
     if ctx.index_only {
         use crate::document::property_names::OWNER_ID;
         for index in indices.values_mut() {
-            if index.terminal.is_none() {
+            if index.terminal.is_none() && !index.is_summable_off_count_index() {
                 index.terminal = Some(vec![OWNER_ID.to_string()]);
             }
         }
@@ -1382,10 +1469,218 @@ fn parse_indices(
         }
     }
 
-    let index_structure =
+    // INDEXED ARRAYS: one document writes an entry per window and distinct element of each
+    // index, so a type with an indexed array is held to a total across its indexes.
+    #[cfg(feature = "validation")]
+    if ctx.full_validation && ctx.generation.admit_indexed_arrays {
+        validate_index_entries_per_document(ctx, &indices, flattened_document_properties)?;
+    }
+
+    let mut index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;
 
+    // INDEXED ARRAYS: the levels named after a typed array fan the document out over its
+    // elements in every walker. An array property is only ever a typed array, so its name
+    // marks its level wherever indexes reach it.
+    if ctx.generation.admit_indexed_arrays {
+        let indexed_arrays: BTreeMap<String, u16> = indices
+            .values()
+            .filter_map(|index| {
+                let array = index.indexed_array.as_ref()?;
+                index
+                    .indexed_array_fan_out(flattened_document_properties)
+                    .map(|(_, max_items)| (array.clone(), max_items))
+            })
+            .collect();
+        if !indexed_arrays.is_empty() {
+            index_structure.stamp_indexed_arrays(&indexed_arrays);
+        }
+    }
+
     Ok((indices, index_structure))
+}
+
+/// The rules an index naming a typed array must follow beyond its element's key limits
+/// (checked by `validate_index_properties`). Every document is entered once per distinct
+/// element, so:
+///
+/// - the array is a top-level property, and the index's only array;
+/// - the index is not unique or contested: an element shared by two documents is no
+///   conflict, and a contest is over one value;
+/// - it keeps `nullSearchable` at `true`: a document without elements is never entered, so
+///   `false` would say nothing;
+/// - no ranking sits at a level above the array, where a document would count once per
+///   element;
+/// - the array holds at most `max_indexed_array_items` elements, or
+///   `max_windowed_indexed_array_items` when the index also groups by a window.
+///
+/// An indexOnly type's index of a typed array also follows the rules
+/// `apply_index_only` checks on every parse (`index_only_array_index_error`).
+#[cfg(feature = "validation")]
+fn validate_indexed_array_index(
+    ctx: &CoreParseContext<'_>,
+    index: &Index,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<(), ProtocolError> {
+    let arrays: Vec<(usize, &str, &TypedArrayProperty)> =
+        index.typed_arrays(flattened_document_properties).collect();
+    let Some(&(position, array_name, typed_array)) = arrays.first() else {
+        return Ok(());
+    };
+    let refused = |reason: String| {
+        Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "index \"{}\" of document type \"{}\" names the typed array \"{}\": {}",
+                index.name, ctx.name, array_name, reason
+            )),
+        ))
+    };
+    if let Some((_, second, _)) = arrays.get(1) {
+        return refused(format!(
+            "an index keys by the elements of one typed array, and it also names \"{second}\""
+        ));
+    }
+    if array_name.contains('.') {
+        return refused(
+            "an indexed typed array must be a top-level property of the document type, not \
+             a property inside an object"
+                .to_string(),
+        );
+    }
+    if index.contested_index.is_some() {
+        return refused(
+            "a contested index is over one value, and a typed array holds many".to_string(),
+        );
+    }
+    if index.unique {
+        return refused(
+            "a unique index can not key by the elements of a typed array: two documents \
+             sharing an element are no conflict"
+                .to_string(),
+        );
+    }
+    if !index.null_searchable {
+        return refused(
+            "nullSearchable must stay true: a document without elements is never entered in \
+             the index"
+                .to_string(),
+        );
+    }
+    let ranked_above = index
+        .at_level_positions(index.ranked_at_levels())
+        .find(|ranked_position| *ranked_position < position)
+        .map(|ranked_position| &index.properties[ranked_position].name);
+    if let Some(ranked) = ranked_above {
+        return refused(format!(
+            "a ranking at \"{ranked}\", above the array, would count a document once per \
+             element"
+        ));
+    }
+    let windowed = index.bucketing().is_some();
+    let limit = if windowed {
+        ctx.platform_version
+            .system_limits
+            .max_windowed_indexed_array_items
+    } else {
+        ctx.platform_version.system_limits.max_indexed_array_items
+    };
+    if let Some(limit) = limit {
+        if typed_array.max_items > limit {
+            let reason = if windowed {
+                format!(
+                    "should be less or equal {limit} on an index that also has a timeRange or \
+                     integerRange window: the document is entered once per window and element"
+                )
+            } else {
+                format!(
+                    "should be less or equal {limit} on an indexed typed array: the document is \
+                     entered once per element"
+                )
+            };
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    ctx.name.to_owned(),
+                    index.name.to_owned(),
+                    array_name.to_owned(),
+                    "maxItems".to_string(),
+                    reason,
+                )
+                .into(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The element rules of an indexed typed array, beyond the key limits of its element type:
+/// a byte array element declares `minItems` of at least 1, since an empty byte array is keyed
+/// like a missing value.
+#[cfg(feature = "validation")]
+fn validate_indexed_array_element(
+    document_type_name: &str,
+    index_name: &str,
+    array_name: &str,
+    typed_array: &TypedArrayProperty,
+) -> Result<(), ProtocolError> {
+    if let DocumentPropertyType::ByteArray(sizes) = typed_array.item_type.as_ref() {
+        if sizes.min_size.is_none_or(|min_size| min_size < 1) {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    format!("{array_name}.items"),
+                    "minItems".to_string(),
+                    "should be at least 1 on the byte array elements of an indexed typed \
+                     array: an empty byte array is keyed like a missing value"
+                        .to_string(),
+                )
+                .into(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The cap on the index entries one document of a type with an indexed typed array writes:
+/// each index counts 1, times its windows, times its array's `maxItems`.
+#[cfg(feature = "validation")]
+fn validate_index_entries_per_document(
+    ctx: &CoreParseContext<'_>,
+    indices: &BTreeMap<String, Index>,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = ctx
+        .platform_version
+        .system_limits
+        .max_index_entries_per_document
+    else {
+        return Ok(());
+    };
+    let mut has_indexed_array = false;
+    let mut entries: u64 = 0;
+    for index in indices.values() {
+        let elements = index
+            .indexed_array_fan_out(flattened_document_properties)
+            .map(|(_, max_items)| u64::from(max_items));
+        has_indexed_array |= elements.is_some();
+        entries = entries.saturating_add(
+            index
+                .windows_per_document()
+                .saturating_mul(elements.unwrap_or(1).max(1)),
+        );
+    }
+    if has_indexed_array && entries > u64::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "a document of type \"{}\" can write {} index entries across its indexes \
+                 (each index once per window and per element of its typed array), over the \
+                 maximum of {}: lower an indexed array's maxItems, a window's overlap or the \
+                 number of indexes",
+                ctx.name, entries, limit
+            )),
+        ));
+    }
+    Ok(())
 }
 
 /// The per-property half of index validation: an already-indexed system
@@ -1424,14 +1719,7 @@ fn validate_index_properties(
         // the index and the referenced field are judged once the whole type, and then the
         // whole contract, is parsed
         if ctx.generation.admit_derived_index_properties
-            && !matches!(
-                parse_derived_index_property_name(
-                    &index_property.name,
-                    flattened_document_properties,
-                    ctx.data_contract_id,
-                ),
-                DerivedIndexPropertyName::NotDerived
-            )
+            && reads_through_reference(&index_property.name, flattened_document_properties)
         {
             return Ok(());
         }
@@ -1458,6 +1746,38 @@ fn validate_index_properties(
                     ))
                 })?;
 
+            // INDEXED ARRAYS: a typed array is keyed by each of its elements, so the key
+            // limits judge the element type
+            if ctx.generation.admit_indexed_arrays {
+                if let DocumentPropertyType::TypedArray(typed_array) =
+                    &property_definition.property_type
+                {
+                    // Both checks report an element bound under the `items` schema that
+                    // declares it; the ranked one reads the array's own level
+                    let elements = format!("{}.items", index_property.name);
+                    (ctx.generation.ranked_index_key_length_check)(
+                        ctx.name,
+                        index,
+                        index_property.name.as_str(),
+                        &elements,
+                        &typed_array.item_type,
+                        ctx.platform_version,
+                    )?;
+                    check_indexable_property_shape(
+                        ctx.name,
+                        &index.name,
+                        &elements,
+                        &typed_array.item_type,
+                    )?;
+                    return validate_indexed_array_element(
+                        ctx.name,
+                        &index.name,
+                        &index_property.name,
+                        typed_array,
+                    );
+                }
+            }
+
             // RANKED: a ranking axis tightens the generic key
             // limits below: the property's encoded value
             // becomes the item key of a grovedb indexed
@@ -1473,6 +1793,7 @@ fn validate_index_properties(
             (ctx.generation.ranked_index_key_length_check)(
                 ctx.name,
                 index,
+                index_property.name.as_str(),
                 index_property.name.as_str(),
                 &property_definition.property_type,
                 ctx.platform_version,
@@ -1505,9 +1826,12 @@ pub(super) fn check_indexable_property_shape(
     property_type: &DocumentPropertyType,
 ) -> Result<(), ProtocolError> {
     match property_type {
-        // Array and objects aren't supported for indexing yet. A typed array
-        // is stored inline in the document, with no index entry per element
-        // and no query operator (see Drive's `allowed_ops_for_type`).
+        // Arrays and objects are no index keys. From generation 3 an index
+        // position naming a typed array is judged by its element type (the
+        // typed-array branch of `validate_index_properties`), so a typed array
+        // reaches this arm only where no index keys it by its elements: under
+        // an earlier generation, as an indexOnly terminal, or as the field a
+        // derived index property reads.
         DocumentPropertyType::Array(_)
         | DocumentPropertyType::Object(_)
         | DocumentPropertyType::VariableTypeArray(_)
@@ -1658,6 +1982,31 @@ fn parse_token_costs(
                                         InvalidTokenPositionError::new(
                                             ctx.token_configurations.last_key_value().map(|(position, _)| *position),
                                             token_contract_position,
+                                        ),
+                                    ),
+                                )
+                                    .into(),
+                            ));
+                        }
+
+                        // A non-transferable token pays only by burning: paying the contract
+                        // owner would move it to another identity. Only a format 1 token
+                        // configuration can be non-transferable, and the pre-activation gate
+                        // refuses that format before protocol version 14, so no earlier version
+                        // reaches this refusal.
+                        if target_contract_id.is_none()
+                            && effect == DocumentActionTokenEffect::TransferTokenToContractOwner
+                            && ctx
+                                .token_configurations
+                                .get(&token_contract_position)
+                                .is_some_and(|configuration| !configuration.is_transferable())
+                        {
+                            return Err(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(
+                                    BasicError::NonTransferableTokenPaymentMustBurnError(
+                                        NonTransferableTokenPaymentMustBurnError::new(
+                                            token_contract_position,
+                                            key.to_string(),
                                         ),
                                     ),
                                 )
@@ -2253,7 +2602,8 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
 /// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
-/// only `leader`, a boolean, and `approvals`, a u16, at least one of them),
+/// only `leader` and `approversPredateDocument`, booleans, and `approvals`, a u16,
+/// at least one of them),
 /// `deleteKeepsFields` (a non-empty list of property paths) and `changeFields`
 /// (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
@@ -2317,24 +2667,31 @@ pub(super) fn parse_moderator_abilities_keyword(
                 )));
             };
             if let Some(unknown) = settled_map.iter().find_map(|(key, _)| match key.as_text() {
-                Some(delete_settled::LEADER | delete_settled::APPROVALS) => None,
+                Some(
+                    delete_settled::LEADER
+                    | delete_settled::APPROVALS
+                    | delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                ) => None,
                 Some(other) => Some(other.to_string()),
                 None => Some(key.to_string()),
             }) {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` has no \
-                     key \"{unknown}\", only `{}` and `{}`",
+                     key \"{unknown}\", only `{}`, `{}` and `{}`",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             if settled_map.is_empty() {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` is empty: \
                      say whether the team's leader must approve (`{}`), how many must (`{}`), \
-                     or both",
+                     whether members the leader added after a document approve its deletion \
+                     (`{}`), or any of them",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             let leader = Value::inner_optional_bool_value(settled_map, delete_settled::LEADER)
@@ -2344,7 +2701,19 @@ pub(super) fn parse_moderator_abilities_keyword(
                 Value::inner_optional_integer_value::<u16>(settled_map, delete_settled::APPROVALS)
                     .map_err(consensus_or_protocol_value_error)?
                     .unwrap_or(1);
-            Some(SettledDeletionRule { leader, approvals })
+            let approvers_predate_document = Value::inner_optional_bool_value(
+                settled_map,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+            )
+            .map_err(consensus_or_protocol_value_error)?
+            // On by default only where it protects something: a rule one approval meets, the
+            // leader meets alone, so the members it adds give it nothing.
+            .unwrap_or(approvals > 1);
+            Some(SettledDeletionRule {
+                leader,
+                approvals,
+                approvers_predate_document,
+            })
         }
     };
     let delete_keeps_fields = match Value::get_optional_from_map(abilities_map, DELETE_KEEPS_FIELDS)
@@ -2455,7 +2824,14 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - `approvals` is at least 1 and, under full validation, at most the members
 ///   the declared team can hold: its leader,
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
-///   the declaration's `maxAddedModerators`.
+///   the declaration's `maxAddedModerators`;
+/// - while `approversPredateDocument` is on (the default when `approvals` is
+///   above 1), the type must list `$createdAt` in `required` under full
+///   validation: a member the leader added approves only the deletion of
+///   documents created after its addition, and a document without `$createdAt`
+///   says nothing of when it was. A registration rule, as the bound on
+///   `approvals` is: a stored type is read back without it, and a document of it
+///   without `$createdAt` admits no added member.
 ///
 /// `deleteKeepsFields` names what of a deleted document its removal record
 /// keeps, copied from the document as it was deleted: what stays public once
@@ -2690,6 +3066,19 @@ pub(super) fn apply_moderator_abilities(
                 rule.approvals,
             )));
         }
+        if full_validation
+            && rule.approvers_predate_document
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, whose \
+                 approvers the leader added must have been added before the document was created \
+                 (`{}`, on by default when more than one approval is needed), which is read from \
+                 `$createdAt`: list `$createdAt` in `required`, or set `{}: false`",
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+            )));
+        }
         document_type.moderator_settled_deletion = Some(rule);
     }
 
@@ -2850,7 +3239,7 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included) and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2872,57 +3261,40 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             continue;
         };
         for leaf in target.leaves() {
-            let agreement = match leaf {
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::ModeratedDocument {
-                    property_agreement, ..
-                } => Some(property_agreement),
-                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                } => {
-                    read.extend(lookup.referring_properties().map(top_level_property));
-                    // A computed key's params: the key is judged on the create only, so a
-                    // change would leave the document no longer hashing to what it revealed
-                    if let Some((_, key)) = lookup.hash_key() {
-                        read.extend(key.properties_read().map(top_level_property));
-                    }
-                    Some(property_agreement)
-                }
-                DocumentPropertyReferenceTarget::ListElement(list_element) => {
-                    Some(&list_element.property_agreement)
-                }
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property, ..
-                } => {
-                    read.insert(top_level_property(key_id_property));
-                    None
-                }
-                DocumentPropertyReferenceTarget::Identity
-                | DocumentPropertyReferenceTarget::Contract { .. }
-                | DocumentPropertyReferenceTarget::Token
-                | DocumentPropertyReferenceTarget::AnyOf(_)
-                | DocumentPropertyReferenceTarget::AllOf(_) => None,
-            };
-            if let Some(agreement) = agreement {
-                read.extend(
-                    agreement
-                        .keys()
-                        .filter(|property| !property.starts_with('$'))
-                        .map(|property| top_level_property(property)),
-                );
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = leaf
+            {
+                read.insert(top_level_property(key_id_property));
             }
+            let Some(declaration) = leaf.as_any_document_reference() else {
+                continue;
+            };
+            if let Some(lookup) = declaration.lookup {
+                read.extend(lookup.referring_properties().map(top_level_property));
+                // A computed key's params: the key is judged on the create only, so a
+                // change would leave the document no longer hashing to what it revealed
+                if let Some((_, key)) = lookup.hash_key() {
+                    read.extend(key.properties_read().map(top_level_property));
+                }
+                // The `chooseFirst` `validWhen` function's params, for the same reason
+                if let Some(choose_first) = &lookup.choose_first {
+                    read.extend(
+                        choose_first
+                            .valid_when
+                            .properties_read()
+                            .map(top_level_property),
+                    );
+                }
+            }
+            // The `where` of a list element names the property holding its
+            // document's `$id` too
+            read.extend(
+                declaration
+                    .where_referring_properties()
+                    .filter(|property| !property.starts_with('$'))
+                    .map(top_level_property),
+            );
         }
     }
     read
@@ -3032,6 +3404,58 @@ pub(super) fn apply_documents_ttl(
     }
 
     document_type.documents_ttl_seconds = Some(seconds);
+    Ok(())
+}
+
+/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the
+/// core parser consumes `schema`, through the map accessor every doctype keyword is read with
+/// (the first entry under the key), same shape as [`parse_index_only_keyword`]. Only the
+/// generation-3 driver calls this: it passes the answer to the core parse, which then reads
+/// the owner's delete as `false`, and records it on the parsed type
+/// ([`apply_deleted_only_when_consumed`]). Any other value is left to the core parse, which
+/// reads `canBeDeleted` as a boolean.
+pub(super) fn parse_can_be_deleted_only_when_consumed_keyword(schema: &Value) -> bool {
+    schema.to_map().ok().is_some_and(|schema_map| {
+        Value::get_optional_from_map(schema_map, CAN_BE_DELETED).and_then(Value::as_text)
+            == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
+    })
+}
+
+/// Records `canBeDeleted: "onlyWhenConsumed"` on a generation-3 type: its owner can not delete
+/// a document (the core parse read `documents_can_be_deleted` as `false`), and a create whose
+/// `refersTo` declares `consume` can. Its documents can then leave state, so the type is a
+/// `deletableDocument` target. Runs after `apply_index_only`, and refuses, on every parse as
+/// `ttl` does, a type whose documents nothing could consume: one that keeps history, which
+/// the storage layer never deletes from, and an indexOnly one, which has no stored row a
+/// reference finds.
+pub(super) fn apply_deleted_only_when_consumed(
+    document_type: &mut DocumentTypeV2,
+    deleted_only_when_consumed: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !deleted_only_when_consumed {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeleted: \"onlyWhenConsumed\"`, but the storage layer refuses to delete a \
+             document whose type keeps history, so nothing could consume one: set \
+             `canBeDeleted` to false",
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{name}\" must not set `canBeDeleted: \"onlyWhenConsumed\"`: \
+             there is no stored row a reference could find and consume",
+        )));
+    }
+    document_type.documents_deleted_only_when_consumed = true;
     Ok(())
 }
 
@@ -3198,14 +3622,11 @@ pub(super) fn parse_immutable_keyword(
 /// the properties frozen at creation, and the others with their parsed
 /// conditions. Runs after the core parse, whose properties it reads.
 ///
-/// A condition takes the grammar of a `propertyConstraints` rule, and what it
-/// reads is checked as a rule's reads are
-/// ([`super::validate_property_constraint_reads`]), on every parse: a stored
-/// condition reading a property the type does not declare, or a transient one,
-/// could only ever read it as absent. Beyond a rule, a condition may read the
-/// stored document through `$old.`, as a replace judges it on the document it
-/// writes, and may read no `countOf` or `sumOf`: it reads the document alone,
-/// so a replace judges it without reading state.
+/// A condition is parsed by [`parse_replace_condition`]: the grammar of a
+/// `propertyConstraints` rule, its reads checked as a rule's are on every
+/// parse (a stored condition reading a property the type does not declare, or
+/// a transient one, could only ever read it as absent), the stored document
+/// read through `$old.`, and no `countOf` or `sumOf`.
 ///
 /// Under full validation, for contracts entering the chain, the lints: the
 /// type's documents must be mutable; every listed property is a declared
@@ -3237,57 +3658,16 @@ pub(super) fn apply_immutable_fields(
 
     let mut conditions = BTreeMap::new();
     for (property, when) in conditional {
-        let subject = format!("condition of \"{property}\"");
-        let condition_error = |message: String| {
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{name}\" immutable {message}"
-            ))
-        };
-        let property_kind = |path: &str| {
-            super::property_equality_kind(
-                &document_type.flattened_properties,
-                path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
-            )
-        };
-        let condition = parse_property_constraint_condition(&when, name, &property_kind).map_err(
-            |message| {
-                consensus_or_protocol_data_contract_error(condition_error(format!(
-                    "{subject} {message}"
-                )))
-            },
-        )?;
-        super::validate_property_constraint_reads(
+        let condition = parse_replace_condition(
             document_type,
+            &when,
             schema_defs,
-            &subject,
-            &condition,
-            true,
-            &condition_error,
-        )
-        .map_err(consensus_or_protocol_data_contract_error)?;
-        if !condition.aggregate_reads().is_empty() {
-            return Err(structure_error(format!(
-                "document type \"{name}\" immutable {subject} reads a countOf or sumOf total: \
-                 a condition reads the document alone, so a replace judges it without reading \
-                 state"
-            )));
-        }
-        if full_validation {
-            let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
-            let nodes = condition.node_count();
-            if nodes > usize::from(max_nodes) {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} has {nodes} nodes, above the \
-                     maximum of {max_nodes}"
-                )));
-            }
-            if let Some((repeat, earlier)) = condition.repeated_condition() {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} at {repeat} repeats the \
-                     condition at {earlier}"
-                )));
-            }
-        }
+            name,
+            property_names::IMMUTABLE,
+            &format!("condition of \"{property}\""),
+            full_validation,
+            platform_version,
+        )?;
         conditions.insert(property, condition);
     }
 
@@ -3339,15 +3719,406 @@ pub(super) fn apply_immutable_fields(
     Ok(())
 }
 
+/// The `summableOffCountIndex` rules an indexOnly document type checks, for one summableOffCountIndex
+/// index: the reason it is refused, or `None`.
+///
+/// - The source is another index of the type that holds every document
+///   exactly once: it keeps entries (it is not a summableOffCountIndex index itself), skips no
+///   document, outlives no delete and involves no `$createdAt` (no window
+///   fans a document out).
+/// - Every source property is a property of the summableOffCountIndex index, so a group
+///   here never merges several source groups.
+/// - Every other property is fixed by the source: a referring value of a
+///   `where` on a same-contract `permanentDocument` or `moderatedDocument`
+///   reference a source property holds ([`Index::count_index_derivations`]), so
+///   a source group never spreads over several groups here.
+/// - No other index continues below the summableOffCountIndex index's last property:
+///   that value position holds the group's counter, not a tree.
+fn summable_off_count_index_error(
+    index_name: &str,
+    index: &Index,
+    source_name: &str,
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Option<String> {
+    let prefix = format!(
+        "summableOffCountIndex index \"{index_name}\" on indexOnly document type \"{document_type_name}\""
+    );
+    let Some(source) = document_type.indices.get(source_name) else {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is not an index of the \
+             document type"
+        ));
+    };
+    if source.is_summable_off_count_index() {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is a summableOffCountIndex index itself and \
+             keeps no entries"
+        ));
+    }
+    // One summed value per document type, as for property sums: sum queries
+    // name it, and they name this one by the source index. (A property sum
+    // named like the source is refused below, the source sharing a
+    // property's name.)
+    if let Some((other_name, other_value)) =
+        document_type
+            .indices
+            .iter()
+            .find_map(|(other_name, other)| {
+                other
+                    .summed_value_name()
+                    .filter(|other_value| *other_value != source_name)
+                    .map(|other_value| (other_name, other_value))
+            })
+    {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", but index \"{other_name}\" sums \
+             \"{other_value}\": a document type keeps one summed value, which sum queries name"
+        ));
+    }
+    if document_type.flattened_properties.contains_key(source_name) {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is also a property of the \
+             document type: sum queries name the source index for the summed value, so it must \
+             not share its name with a property"
+        ));
+    }
+    if !source.keys_each_live_document_by_its_values() {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which must hold every document \
+             exactly once: it may not skip documents (skipIfAbsent), keep the entries of deleted \
+             ones (outlivesDelete), involve $createdAt or name a typed array"
+        ));
+    }
+    if let Some(missing) = source.properties.iter().find(|source_property| {
+        !index
+            .properties
+            .iter()
+            .any(|property| property.name == source_property.name)
+    }) {
+        return Some(format!(
+            "{prefix} lacks \"{}\", a property of its source \"{source_name}\": every source \
+             property must be a property of the summableOffCountIndex index, or one of its groups would \
+             count several source groups",
+            missing.name
+        ));
+    }
+    if let Err(property) = index.count_index_derivations(
+        source,
+        &document_type.flattened_properties,
+        document_type.data_contract_id,
+    ) {
+        let hint = if index.indexed_array.as_deref() == Some(property) {
+            list_binding_hint(
+                index,
+                "a counter's group is one element, and only an equality enters every \
+                 document of a source group under the same elements",
+            )
+        } else {
+            String::new()
+        };
+        return Some(format!(
+            "{prefix} has \"{property}\", which is neither a property of its source \
+             \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
+             same-contract permanentDocument or moderatedDocument reference by id (no findBy or \
+             inList) held by a property of \"{source_name}\", or one source group would spread \
+             over several groups{hint}"
+        ));
+    }
+    let depth = index.properties.len();
+    if let Some((other_name, _)) = document_type.indices.iter().find(|(_, other)| {
+        other.properties.len() > depth && index.shares_leading_levels(other, depth)
+    }) {
+        return Some(format!(
+            "{prefix} is continued by index \"{other_name}\", which lists its properties first: \
+             the value position of a summableOffCountIndex index's last property holds the group's \
+             counter, so no other index can continue below it"
+        ));
+    }
+    None
+}
+
+/// The names an indexOnly index keys its entries by: its properties, then its
+/// terminal components.
+fn index_key_names(index: &Index) -> impl Iterator<Item = &str> {
+    index
+        .properties
+        .iter()
+        .map(|property| property.name.as_str())
+        .chain(index.terminal_components().iter().map(String::as_str))
+}
+
+/// Whether one of `indices` keeps exactly one entry for every live document
+/// ([`Index::keys_each_live_document_by_its_values`]) and has its whole key
+/// ([`index_key_names`]) inside `key`: two documents in state can then never
+/// share an entry keyed by `key`, since they would share that index's entry,
+/// which a create probes as a duplicate.
+fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&str>) -> bool {
+    indices.values().any(|other| {
+        other.keys_each_live_document_by_its_values()
+            && index_key_names(other).all(|name| key.contains(name))
+    })
+}
+
+/// For an index naming a typed array, the sentence a `preallocated` or
+/// `summableOffCountIndex` refusal adds: the array is fixed only by a `where` making it
+/// equal to a typed array of the referenced document, because `why`. Empty for every
+/// other index.
+fn list_binding_hint(index: &Index, why: &str) -> String {
+    match index.indexed_array.as_deref() {
+        Some(array_name) => format!(
+            ". The typed array \"{array_name}\" is fixed only by a `where` making it equal to \
+             a typed array of the referenced document (as `\"{array_name}\": \"{array_name}\"`), \
+             not by `contains` or `containsAll`: {why}"
+        ),
+        None => String::new(),
+    }
+}
+
+/// The rules an indexOnly document type checks for one index naming a typed array
+/// (protocol version 14), beyond those every indexed array follows
+/// (`validate_indexed_array_index`): the reason it is refused, or `None`.
+///
+/// Such an index enters a document once per element, while every other index of an
+/// indexOnly type keeps one entry per document and refuses a create whose entry is
+/// already there. So:
+///
+/// - Another index of the type keeps exactly one entry for every live document
+///   ([`Index::keys_each_live_document_by_its_values`]), and its whole key (its
+///   properties and terminal) is part of this index's key without the array. Two live
+///   documents sharing an entry here would share that index's entry, which their create
+///   refuses: the array index is no uniqueness rule of its own, and no entry of it ever
+///   stands for two documents.
+/// - The array declares `uniqueItems`, so every element of a list has an entry of its own.
+/// - It names one array, a top-level property: the rules every indexed array follows
+///   run under full validation only, and these are what the entry probes and the row
+///   commitment rely on, so an indexOnly type checks them on every parse too.
+///
+/// A `summableOffCountIndex` index keeps one counter per group and no entries, so the
+/// first rule has nothing to keep apart there. Whether the index may be `preallocated` or
+/// a `summableOffCountIndex` index is those keywords' own rules to judge
+/// (`Index::preallocation_bindings`, `summable_off_count_index_error`): they bind the
+/// array only through a `where` equality with a typed array of the referenced document,
+/// and their refusals say so for an index naming one.
+fn index_only_array_index_error(
+    index_name: &str,
+    index: &Index,
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Option<String> {
+    let array_name = index.indexed_array.as_deref()?;
+    let prefix = format!(
+        "index \"{index_name}\" on indexOnly document type \"{document_type_name}\" names the \
+         typed array \"{array_name}\""
+    );
+    if let Some((_, second, _)) = index
+        .typed_arrays(&document_type.flattened_properties)
+        .nth(1)
+    {
+        return Some(format!(
+            "{prefix} and also \"{second}\": an index keys by the elements of one typed array"
+        ));
+    }
+    if array_name.contains('.') {
+        return Some(format!(
+            "{prefix}, which is inside an object: an indexed typed array is a top-level \
+             property of the document type"
+        ));
+    }
+    let unique_items = index
+        .typed_arrays(&document_type.flattened_properties)
+        .next()
+        .is_some_and(|(_, _, typed_array)| typed_array.unique_items);
+    if !unique_items {
+        return Some(format!(
+            "{prefix}, which must declare `uniqueItems: true`: the index keeps an entry for \
+             every element of a list, and a list repeating an element would hold fewer \
+             entries than elements"
+        ));
+    }
+    if index.is_summable_off_count_index() {
+        return None;
+    }
+    let key: BTreeSet<&str> = index_key_names(index)
+        .filter(|name| *name != array_name)
+        .collect();
+    if !keyed_by_a_document_index(&document_type.indices, &key) {
+        return Some(format!(
+            "{prefix}, but its key without the array (its other properties and its terminal) \
+             holds the whole key of no index that keeps one entry for every document (an \
+             index that sets neither skipIfAbsent nor outlivesDelete, involves no $createdAt \
+             and names no typed array): every index of an indexOnly type refuses a create \
+             whose entry is already there, so without one two documents sharing an element \
+             would collide here. Add such an index, or the properties of one to this index"
+        ));
+    }
+    None
+}
+
+/// Parses a condition a replace is judged by, the `when` of an `immutable`
+/// entry or a type's `retractedWhen`. It takes the grammar of a
+/// `propertyConstraints` rule, and what it reads is checked as a rule's reads
+/// are ([`super::validate_property_constraint_reads`]), on every parse: the
+/// stored document through `$old.` included, as a replace judges it on the
+/// document it writes. Unlike a rule, it may read no `countOf` or `sumOf`: it
+/// reads the document alone, so a replace judges it without reading state.
+/// Under full validation it stays within the node limit of a rule and lists no
+/// condition twice. Every message reads `document type "{name}" {keyword}
+/// {subject} ...`.
+#[allow(clippy::too_many_arguments)]
+fn parse_replace_condition(
+    document_type: &DocumentTypeV2,
+    when: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    keyword: &str,
+    subject: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<PropertyConstraint, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let condition_error = |message: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{name}\" {keyword} {message}"
+        ))
+    };
+    // The parse reads a path through `$old.` as the path after it
+    let property_kind =
+        |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
+    let condition =
+        parse_property_constraint_condition(when, name, &property_kind, platform_version).map_err(
+            |message| {
+                consensus_or_protocol_data_contract_error(condition_error(format!(
+                    "{subject} {message}"
+                )))
+            },
+        )?;
+    super::validate_property_constraint_reads(
+        document_type,
+        schema_defs,
+        subject,
+        &condition,
+        true,
+        false,
+        &condition_error,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    if !condition.aggregate_reads().is_empty() {
+        return Err(structure_error(format!(
+            "document type \"{name}\" {keyword} {subject} reads a countOf or sumOf total: a \
+             condition reads the document alone, so a replace judges it without reading state"
+        )));
+    }
+    if full_validation {
+        let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
+        let nodes = condition.node_count();
+        if nodes > usize::from(max_nodes) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} has {nodes} nodes, above the \
+                 maximum of {max_nodes}"
+            )));
+        }
+        if let Some((repeat, earlier)) = condition.repeated_condition() {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} at {repeat} repeats the \
+                 condition at {earlier}"
+            )));
+        }
+    }
+    Ok(condition)
+}
+
+/// Reads the doctype-level `retractedWhen` keyword (protocol version 14) onto
+/// the parsed document type: the condition under which a replace writes a
+/// retracted document. On a moderated contract a banned or suspended owner can
+/// write nothing new, but the batch transformer lets it make this one replace,
+/// refusing each of its replaces whose written document does not meet the
+/// condition. So an author whose documents can not be deleted (`canBeDeleted:
+/// false`) can still take back what it wrote. The condition is parsed as an
+/// `immutable` entry's `when` ([`parse_replace_condition`]) and judged as one,
+/// on the document the replace writes with the stored one under `$old.`.
+///
+/// What a retracted document holds is the type's own rules to say: a
+/// `propertyConstraints` rule that it carries no content, and an `immutable`
+/// entry that keeps it retracted. The condition only picks the replaces a
+/// barred owner may make; every other rule of the type still judges them.
+///
+/// The type's documents must be mutable, or there is no replace, and the
+/// contract must keep a banlist or a suspension list, or no owner is ever
+/// barred. The keyword and the moderation config both arrive with protocol
+/// version 14, so no stored contract breaks either rule and both are checked
+/// on every parse. Runs after the core parse, whose properties it reads.
+pub(super) fn apply_retracted_when(
+    document_type: &mut DocumentTypeV2,
+    data_contract_config: &DataContractConfig,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let keyword = property_names::RETRACTED_WHEN;
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let Some(when) = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| Value::get_optional_from_map(schema_map, keyword))
+        .cloned()
+    else {
+        return Ok(());
+    };
+    if !document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, but its documents are not mutable \
+             (documentsMutable: false), so there is no replace to retract with"
+        )));
+    }
+    let bars_anyone = data_contract_config
+        .moderation()
+        .is_some_and(|moderation| moderation.barring_lists().next().is_some());
+    if !bars_anyone {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, which names the replace a banned or \
+             suspended owner may still make, but the contract keeps neither a banlist nor a \
+             suspension list, so no owner is ever barred (moderation can only be declared when \
+             the contract is created)"
+        )));
+    }
+    let condition = parse_replace_condition(
+        document_type,
+        &when,
+        schema_defs,
+        name,
+        keyword,
+        "condition",
+        full_validation,
+        platform_version,
+    )?;
+    document_type.retracted_when = Some(condition);
+    Ok(())
+}
+
 /// The `skipIfAbsent` rules every document type shares, for one index that
 /// declares the keyword: the reason it is refused, or `None`.
 ///
 /// - The skip set is non-empty: an index none of whose properties is optional
 ///   could never skip.
 /// - Every skip property is a top-level (non-dotted) schema property that is
-///   not a system property and not listed in `required`. Its presence is then
-///   a single lookup, the same for every walker, and it can actually be
-///   absent.
+///   not a system property and not listed in `required`, or a derived index
+///   property, which reads through a reference of the type. Its presence is
+///   then a single lookup, the same for every walker: Drive puts a derived
+///   value into the document's properties under the derived name before it
+///   keys the document. Whether a schema property can actually be absent is
+///   judged here; a derived one is judged where the referenced type is in
+///   hand (`resolve_derived_index_properties`).
 /// - No ranking level sits above the index's deepest skip property. Such a
 ///   level would count only the documents carrying the deeper property, but a
 ///   query may only read a skip index when it binds every skip property, so
@@ -3357,17 +4128,41 @@ fn skip_if_absent_index_error(
     index: &Index,
     document_type_name: &str,
     required_fields: &BTreeSet<String>,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
 ) -> Option<String> {
-    if index.skip_if_absent_properties.is_empty() {
+    // The skip set the keyword declares: an indexed typed array is in every skip set of an
+    // index naming it whether the keyword is declared or not, and an empty list is absent
+    // whether the array is required or not, so the rules on declared skip properties do
+    // not judge it. The ranking rule at the end still reads the whole skip set, the array
+    // included: a ranking above the array is refused there too, as
+    // `validate_indexed_array_index` refuses it under full validation.
+    let declared_skip_properties: Vec<&String> = index
+        .skip_if_absent_properties
+        .iter()
+        .filter(|property| index.indexed_array.as_ref() != Some(*property))
+        .collect();
+    if declared_skip_properties.is_empty() {
+        // The array alone: the index skips a document without elements whether the keyword
+        // is declared or not, so the keyword adds nothing.
+        if let Some(array) = &index.indexed_array {
+            return Some(format!(
+                "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but its only \
+                 skip property is the typed array \"{}\", which every index naming it skips \
+                 on already: a document whose list is empty or absent is never entered. \
+                 Remove the flag, or name another optional property of the index",
+                index_name, document_type_name, array,
+            ));
+        }
         return Some(format!(
             "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but none of its \
              properties is optional: a required or system property can never be absent, so \
              the index could never skip — remove the flag, or remove a property from \
-             `required`",
+             `required` (`true` leaves out a value read through a reference: name one in \
+             the array form to skip on it)",
             index_name, document_type_name,
         ));
     }
-    for skip_property in index.skip_if_absent_properties.iter() {
+    for skip_property in declared_skip_properties {
         if skip_property.starts_with('$') {
             return Some(format!(
                 "index \"{}\" on document type \"{}\" skips on system property \"{}\": a skip \
@@ -3376,7 +4171,9 @@ fn skip_if_absent_index_error(
                 index_name, document_type_name, skip_property,
             ));
         }
-        if skip_property.contains('.') {
+        if skip_property.contains('.')
+            && !reads_through_reference(skip_property, flattened_properties)
+        {
             return Some(format!(
                 "index \"{}\" on document type \"{}\" skips on nested property \"{}\": a skip \
                  property must be a top-level property, so that presence is a single lookup \
@@ -3401,13 +4198,9 @@ fn skip_if_absent_index_error(
         .rev()
         .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
     if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
-        for ranked_at in index.ranked_countable_at.iter() {
-            let above = index
-                .properties
-                .iter()
-                .position(|property| property.name == *ranked_at)
-                .is_some_and(|position| position < deepest_skip_position);
-            if above {
+        for position in index.at_level_positions(index.ranked_at_levels()) {
+            if position < deepest_skip_position {
+                let ranked_at = &index.properties[position].name;
                 return Some(format!(
                     "index \"{}\" on document type \"{}\" ranks at \"{}\", above its skip \
                      property \"{}\": that ranking would count only documents carrying \"{}\", \
@@ -3516,6 +4309,20 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // And for `summableOffCountIndex`: a stored type's index entries are references to
+        // stored rows, whose count its own count trees already keep.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.is_summable_off_count_index())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `summableOffCountIndex`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the keyword)",
+                index_name, name,
+            )));
+        }
         // And for `outlivesDelete`: a stored document is deleted by id, its
         // stored row saying where each of its entries is, so a delete never
         // lacks a value to find one by.
@@ -3538,9 +4345,13 @@ pub(super) fn apply_index_only(
             if !index.skip_if_absent {
                 continue;
             }
-            if let Some(message) =
-                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
-            {
+            if let Some(message) = skip_if_absent_index_error(
+                index_name,
+                index,
+                name,
+                &document_type.required_fields,
+                &document_type.flattened_properties,
+            ) {
                 return Err(structure_error(message));
             }
             // A contest is decided over the document's full value tuple; a
@@ -3585,27 +4396,18 @@ pub(super) fn apply_index_only(
                 })
             {
                 let last = position + 1 == index.properties.len();
-                let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
-                    || (last
-                        && (index.ranked_countable
-                            || index.ranked_summable
-                            || index.ranked_averageable));
+                let ranks_here = index.ranked_at_levels().any(|at| *at == skip_property.name)
+                    || (last && index.ranks_its_last_property());
                 if !ranks_here {
                     continue;
                 }
-                let prefix: Vec<String> = (0..=position)
-                    .map(|at| index.level_key(at, &index.properties[at].name))
-                    .collect();
                 if let Some((other_name, _)) =
                     document_type.indices.iter().find(|(other_name, other)| {
                         *other_name != index_name
                             && !other
                                 .skip_if_absent_properties
                                 .contains(&skip_property.name)
-                            && other.properties.len() > position
-                            && (0..=position).all(|at| {
-                                other.level_key(at, &other.properties[at].name) == prefix[at]
-                            })
+                            && index.shares_leading_levels(other, position + 1)
                     })
                 {
                     return Err(structure_error(format!(
@@ -3817,10 +4619,7 @@ pub(super) fn apply_index_only(
                 || index.range_countable
                 || index.summable.is_some()
                 || index.range_summable
-                || index.ranked_countable
-                || !index.ranked_countable_at.is_empty()
-                || index.ranked_summable
-                || index.ranked_averageable
+                || index.declares_any_ranking()
                 || index.is_bucketed()
                 || index.skip_if_absent
                 || index.preallocated
@@ -3862,15 +4661,28 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // An index of a typed array (protocol version 14) enters a document once
+        // per element: see `index_only_array_index_error` for when another index
+        // must keep each document's entries apart (not for a counter index,
+        // which keeps none). Whether it may be `preallocated` or a
+        // `summableOffCountIndex` index is judged by those keywords' rules below.
+        if let Some(message) = index_only_array_index_error(index_name, index, document_type, name)
+        {
+            return Err(structure_error(message));
+        }
         // `skipIfAbsent`: the skip set's members, and the levels an
         // aggregate may sit at, follow the rules every document type shares.
         // What only an indexOnly type needs (every optional property of an
         // index is in its skip set, and each has a skip index of its own) is
         // checked with coverage below.
         if index.skip_if_absent {
-            if let Some(message) =
-                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
-            {
+            if let Some(message) = skip_if_absent_index_error(
+                index_name,
+                index,
+                name,
+                &document_type.required_fields,
+                &document_type.flattened_properties,
+            ) {
                 return Err(structure_error(message));
             }
         }
@@ -3914,11 +4726,13 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
-        // `parse_indices` gives every index of an indexOnly type a terminal,
-        // and the index parser refuses an empty one, so a contract cannot get
-        // here: this is the parser failing, not the contract.
+        // `parse_indices` gives every index of an indexOnly type but a
+        // summableOffCountIndex one a terminal, and the index parser refuses an empty
+        // one, so a contract cannot get here: this is the parser failing, not
+        // the contract. A summableOffCountIndex index keeps no entries, so it has no
+        // member key to check.
         let components = index.terminal_components();
-        if components.is_empty() {
+        if components.is_empty() && !index.is_summable_off_count_index() {
             return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
@@ -3948,7 +4762,7 @@ pub(super) fn apply_index_only(
         // key through the same tree-key encoding the prefix levels use (the
         // walkers and probes via `get_raw_for_document_type`, queries and
         // executed proofs via `serialize_value_for_key`, synthesis via
-        // `decode_value_for_tree_keys`), so a component needs no particular
+        // `deserialize_value_for_key`), so a component needs no particular
         // width or meaning — only the shape limits every indexed value
         // carries. Structural uniqueness spans the whole key: one entry per
         // (prefix values, terminal values).
@@ -4085,13 +4899,10 @@ pub(super) fn apply_index_only(
         // documents — its own owner-bearing row and a victim's owner-less
         // row — and remove an entry it never created; binding every entry
         // to its owner closes that, at the cost of the (unneeded) global-
-        // uniqueness-without-owner shape.
-        if !index.terminal_contains(OWNER_ID)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == OWNER_ID)
-        {
+        // uniqueness-without-owner shape. A summableOffCountIndex index keeps no
+        // entries: a delete takes its count back only once the entries of
+        // the indexes that keep them, its source among them, matched.
+        if !index.is_summable_off_count_index() && !index.involves(OWNER_ID) {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" must include $ownerId (as \
                  a property or as the terminal): every entry must be bound to its owner so \
@@ -4185,24 +4996,12 @@ pub(super) fn apply_index_only(
             // document, whose entry the create probes as a duplicate. The
             // entry then stands for no other live document than the one
             // writing it.
-            let key: BTreeSet<&str> = index
-                .properties
-                .iter()
-                .map(|property| property.name.as_str())
-                .chain(index.terminal_components().iter().map(String::as_str))
+            let key: BTreeSet<&str> = index_key_names(index)
                 .filter(|name| *name != CREATED_AT)
                 .collect();
-            let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
-                !other.outlives_delete
-                    && !other.skip_if_absent
-                    && other
-                        .properties
-                        .iter()
-                        .map(|property| property.name.as_str())
-                        .chain(other.terminal_components().iter().map(String::as_str))
-                        .all(|name| key.contains(name))
-            });
-            if !keyed_by_a_cleared_index {
+            // (An index involving `$createdAt` never fits that key, so the
+            // shared predicate's `$createdAt` term changes nothing here.)
+            if !keyed_by_a_document_index(&document_type.indices, &key) {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" declares \
                      `outlivesDelete`, but its key (its properties but $createdAt, and its \
@@ -4242,9 +5041,29 @@ pub(super) fn apply_index_only(
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \
                  referenced document, so a preallocated index may carry $ownerId only as \
-                 its terminal",
-                index_name, name,
+                 its terminal{}",
+                index_name,
+                name,
+                list_binding_hint(
+                    index,
+                    "the preallocated path is fixed by one referenced \
+                    document, and only an equality fixes the elements every list referencing \
+                    it holds"
+                ),
             )));
+        }
+        // `summableOffCountIndex`: a summableOffCountIndex index keeps, per group, the number of its
+        // source's entries in that group. The count is lossless when the
+        // source holds every document exactly once and a group here holds
+        // exactly the documents of one source group. That the values fixing
+        // a group never change is judged with the referenced types, by the
+        // parse of the whole contract (`validate_summable_off_count_indexes_lossless`).
+        if let Some(source_name) = &index.summable_off_count_index {
+            if let Some(message) =
+                summable_off_count_index_error(index_name, index, source_name, document_type, name)
+            {
+                return Err(structure_error(message));
+            }
         }
     }
 
@@ -4258,16 +5077,13 @@ pub(super) fn apply_index_only(
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
     // index qualifies as the proof index.) Nor may it outlive deletes: a
-    // delete's proof shows the entry gone, which such an index keeps.
-    let has_proof_index = document_type.indices.values().any(|index| {
-        !index.skip_if_absent
-            && !index.outlives_delete
-            && !index.terminal_contains(CREATED_AT)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == CREATED_AT)
-    });
+    // delete's proof shows the entry gone, which such an index keeps, nor
+    // name a typed array, whose index has no entry for an empty list (the
+    // array rule above already wants such an index beside every array index).
+    let has_proof_index = document_type
+        .indices
+        .values()
+        .any(Index::keys_each_live_document_by_its_values);
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \
@@ -4301,6 +5117,28 @@ pub(super) fn apply_index_only(
         .flat_map(|index| index.skip_if_absent_properties.iter())
         .map(String::as_str)
         .collect();
+    // A summableOffCountIndex index keeps no value per document, so it covers nothing.
+    // The properties of one that its source lacks are fixed by the source's
+    // references (checked above): a client that lost them reads them back
+    // from the referenced document, so they need no index of their own.
+    let fixed_by_a_source: BTreeSet<&str> = document_type
+        .indices
+        .values()
+        .filter_map(|index| {
+            let source = document_type
+                .indices
+                .get(index.summable_off_count_index.as_deref()?)?;
+            index
+                .count_index_derivations(
+                    source,
+                    &document_type.flattened_properties,
+                    document_type.data_contract_id,
+                )
+                .ok()
+        })
+        .flatten()
+        .map(|derivation| derivation.property)
+        .collect();
     for (property_name, property) in document_type.flattened_properties.iter() {
         if matches!(property.property_type, DocumentPropertyType::Object(_)) {
             // Containers are covered through their flattened leaves.
@@ -4321,14 +5159,12 @@ pub(super) fn apply_index_only(
                 property_name, name,
             )));
         }
-        let holds_property = |index: &Index| {
-            index.terminal_contains(property_name)
-                || index
-                    .properties
-                    .iter()
-                    .any(|index_property| index_property.name == *property_name)
-        };
-        if optional {
+        let holds_property =
+            |index: &Index| !index.is_summable_off_count_index() && index.involves(property_name);
+        if fixed_by_a_source.contains(property_name.as_str()) {
+            // Covered by its source's reference; the rules every index
+            // holding an optional property follows still apply below.
+        } else if optional {
             // A time-windowed index keeps a value only in its windows, which
             // document queries do not read and a `ttl` drains, so it cannot be
             // where an optional value is kept.
@@ -4348,21 +5184,29 @@ pub(super) fn apply_index_only(
                     property_name, name, property_name,
                 )));
             }
-        } else if !document_type
-            .indices
-            .values()
-            .any(|index| !index.skip_if_absent && !index.outlives_delete && holds_property(index))
-        {
+        } else if !document_type.indices.values().any(|index| {
+            !index.skip_if_absent
+                && !index.outlives_delete
+                && holds_property(index)
+                // An index of a typed array (protocol version 14) has no entry
+                // for a list without elements, so it keeps no other property of
+                // such a document: it holds only the array itself for sure
+                && index
+                    .indexed_array
+                    .as_deref()
+                    .is_none_or(|array| array == property_name)
+        }) {
             // Nor may an outlivesDelete index be the only one holding it: a
             // delete carries every schema property, and could not be checked
             // against entries it leaves
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
-                 index that neither sets skipIfAbsent nor outlivesDelete (as a property or \
-                 terminal): on an indexOnly type only indexed values exist and are \
-                 recoverable, a skipIfAbsent index holds no value at all for documents it \
-                 skips, and an outlivesDelete index is not checked by a delete, so the \
-                 property would be silently dropped",
+                 index that neither sets skipIfAbsent nor outlivesDelete, nor names a typed \
+                 array other than the property (as a property or terminal): on an indexOnly \
+                 type only indexed values exist and are recoverable, a skipIfAbsent index \
+                 holds no value at all for documents it skips, an index of a typed array none \
+                 for a document whose list is empty, and an outlivesDelete index is not \
+                 checked by a delete, so the property would be silently dropped",
                 property_name, name,
             )));
         }

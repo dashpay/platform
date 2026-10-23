@@ -515,8 +515,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
-        use dashcore::secp256k1::rand::{thread_rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::secp256k1::rand::{rng, RngCore};
 
         // Build the decrypted-payload struct once: it is both the local
         // metadata applied to the contact AND (on publish) the plaintext the
@@ -700,7 +700,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             write_root_id,
         )?;
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
         let sealed = crypto
             .contact_info_seal(
                 &root_path,
@@ -760,7 +760,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })?
             .to_owned_document_type();
 
-        self.sdk_writer
+        let (_document, owner_balance, metadata) = self
+            .sdk_writer
             .put_document(super::sdk_writer::PutDocumentParams {
                 document,
                 document_type,
@@ -768,6 +769,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
             .await?;
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
 
         tracing::info!(
             identity = %identity_id,
