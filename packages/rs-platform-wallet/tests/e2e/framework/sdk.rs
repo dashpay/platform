@@ -19,6 +19,7 @@
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_sdk::dapi_client::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
@@ -47,6 +48,12 @@ const INITIAL_PROTOCOL_VERSION: dpp::util::deserializer::ProtocolVersion = 10;
 
 /// LRU quorum-cache size for [`TrustedHttpContextProvider`].
 const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
+
+/// Base ban period for DAPI nodes in the e2e SDK (production default: 60 s,
+/// growing exponentially per repeated ban). Nodes one block behind are
+/// banned by the SDK's freshness checks; on a small testnet node pool a
+/// 60 s base ban shrinks the pool for the rest of a concurrent case run.
+const E2E_BASE_BAN_PERIOD: Duration = Duration::from_secs(5);
 
 /// Build a fresh `Sdk` with [`TrustedHttpContextProvider`] wired
 /// (network-builtin URL, or [`Config::trusted_context_url`] override).
@@ -98,14 +105,22 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<(Arc<Sdk>, Arc<TrustedHttpC
     // `TrustedHttpContextProvider: Clone` and its caches are `Arc<Mutex<...>>`,
     // so the clone passed into the SDK shares the `known_contracts` /
     // `known_token_configurations` maps with the `Arc` we hand back.
-    let sdk = builder
+    // The seed list for mainnet/testnet is only reachable through a built
+    // `Sdk`, and `AddressList`'s ban period is fixed at construction, so
+    // build once to resolve the addresses, then rebuild on a short-ban list.
+    let seed_sdk = builder
+        .with_context_provider(context_provider.clone())
+        .build()
+        .map_err(sdk_build_error)?;
+    let addresses = with_short_bans(seed_sdk.address_list());
+    drop(seed_sdk);
+
+    let sdk = SdkBuilder::new(addresses)
+        .with_network(network)
         .with_initial_version(initial_pv)
         .with_context_provider(context_provider.clone())
         .build()
-        .map_err(|e| {
-            tracing::error!(target: "platform_wallet::e2e::sdk", "SdkBuilder::build failed: {e}");
-            FrameworkError::Sdk(format!("SdkBuilder::build failed: {e}"))
-        })?;
+        .map_err(sdk_build_error)?;
 
     Ok((Arc::new(sdk), Arc::new(context_provider)))
 }
@@ -216,6 +231,20 @@ fn build_sdk_builder(config: &Config, network: Network) -> FrameworkResult<SdkBu
             )))
         }
     }
+}
+
+/// Copy `addresses` into a list that bans for [`E2E_BASE_BAN_PERIOD`].
+fn with_short_bans(addresses: &AddressList) -> AddressList {
+    let mut short = AddressList::with_settings(E2E_BASE_BAN_PERIOD);
+    for address in addresses.get_live_addresses() {
+        short.add(address);
+    }
+    short
+}
+
+fn sdk_build_error(e: dash_sdk::Error) -> FrameworkError {
+    tracing::error!(target: "platform_wallet::e2e::sdk", "SdkBuilder::build failed: {e}");
+    FrameworkError::Sdk(format!("SdkBuilder::build failed: {e}"))
 }
 
 fn parse_addresses<'a, I>(iter: I) -> FrameworkResult<AddressList>
