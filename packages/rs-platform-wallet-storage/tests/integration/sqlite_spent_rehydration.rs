@@ -1932,6 +1932,9 @@ async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_
 struct TwoAccountShape {
     /// Value of each of the two owned outputs.
     value: u64,
+    /// Pays only the second account, so the stored record names and details
+    /// that account alone.
+    second_only: bool,
     /// Adds a foreign output no chain could hold.
     foreign_output: bool,
     /// The wallet-level record names the first account, not the second.
@@ -1971,25 +1974,37 @@ impl TwoAccountReceipt {
             inputs.push(OutPoint::new(funding.txid(), 0));
         }
         let mut outputs = vec![pay(shape.value, &first), pay(shape.value, &second)];
+        if shape.second_only {
+            outputs.remove(0);
+        }
         if shape.foreign_output {
             outputs.push(pay(i64::MAX as u64, &foreign_address(98)));
         }
         let receipt = authorize(&wallet, &info, &first, spend_of(&inputs, outputs));
         let winner = spend_of(&[shared], vec![pay(1_000, &first)]);
         let mut records = records_of(&mut info, &mut wallet, &receipt, MEMPOOL).await;
-        assert_eq!(records.len(), 2, "the checker records it in both accounts");
-        // One wallet-level record per transaction, as a sync folds the
-        // per-account slices: it names one account and details both.
-        if !shape.recorded_under_first {
-            records.reverse();
-        }
-        let other = records.pop().unwrap();
-        records[0].output_details.extend(other.output_details);
-        records[0].output_details.sort_by_key(|detail| detail.index);
-        let mut new_utxos = vec![
-            stored_utxo(&receipt, 0, first.clone()),
-            stored_utxo(&receipt, 1, second.clone()),
-        ];
+        let mut new_utxos = if shape.second_only {
+            assert_eq!(
+                records.len(),
+                1,
+                "the checker records it in the second account"
+            );
+            vec![stored_utxo(&receipt, 0, second.clone())]
+        } else {
+            assert_eq!(records.len(), 2, "the checker records it in both accounts");
+            // One wallet-level record per transaction, as a sync folds the
+            // per-account slices: it names one account and details both.
+            if !shape.recorded_under_first {
+                records.reverse();
+            }
+            let other = records.pop().unwrap();
+            records[0].output_details.extend(other.output_details);
+            records[0].output_details.sort_by_key(|detail| detail.index);
+            vec![
+                stored_utxo(&receipt, 0, first.clone()),
+                stored_utxo(&receipt, 1, second.clone()),
+            ]
+        };
         let mut spent_utxos = Vec::new();
         let child = shape.child.then(|| {
             authorize(
@@ -2075,6 +2090,14 @@ async fn should_settle_two_account_mempool_receipt_against_final_winner_after_re
         TwoAccountShape {
             unrouted: true,
             ..unrepresentable
+        },
+        // Load parks the coin in the first account, which the record never
+        // names: settlement must still find it there.
+        TwoAccountShape {
+            second_only: true,
+            foreign_output: true,
+            unrouted: true,
+            ..shape(7_000)
         },
     ] {
         let _case = Case(format!("{shape:?}"));
