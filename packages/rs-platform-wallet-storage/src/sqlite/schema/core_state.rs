@@ -735,8 +735,11 @@ fn apply_sweep(
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
+        // SQLite plans a DELETE through an expression index only when named
+        // (V020 explains the index); naming it also fails loudly if it goes.
         tx.execute(
-            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            "DELETE FROM core_utxos INDEXED BY idx_core_utxos_funding \
+             WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         return Ok(());
@@ -1482,7 +1485,9 @@ pub fn get_tx_record(
 }
 
 /// Reject internally inconsistent bodies before they can drive replay or sweeps.
-fn decode_transaction_record(payload: &[u8]) -> Result<TransactionRecord, WalletStorageError> {
+pub(crate) fn decode_transaction_record(
+    payload: &[u8],
+) -> Result<TransactionRecord, WalletStorageError> {
     let record: TransactionRecord = blob::decode(payload)?;
     if record.txid != record.transaction.txid() {
         return Err(WalletStorageError::blob_decode(
@@ -1560,6 +1565,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sqlite::config::LoadPolicy;
     use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
@@ -1951,6 +1957,186 @@ mod tests {
         assert!(utxos.is_empty(), "no kept row is spendable");
         assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
         assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
+    }
+
+    /// A store at V019 holding one kept pending record whose body no longer
+    /// decodes.
+    fn v019_store_with_undecodable_kept_record(wallet_id: &[u8; 32]) -> rusqlite::Connection {
+        let mut conn = wallet_db(wallet_id);
+        let funding = sample_utxo(Txid::from_byte_array([0x81; 32]), 150, true);
+        let pending = spend(&[funding.outpoint], TransactionContext::Mempool);
+        let coins = vec![funding];
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            wallet_id,
+            &CoreChangeSet {
+                spent_utxos: coins.clone(),
+                ..round(vec![pending.clone()], coins)
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        rewind_v020(&conn);
+        conn.execute(
+            "UPDATE core_transactions SET record_blob = x'00' WHERE txid = ?1",
+            [pending.txid.as_byte_array().to_vec()],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn schema_version(conn: &rusqlite::Connection) -> i64 {
+        conn.query_row(
+            "SELECT max(version) FROM refinery_schema_history",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    /// Under `Strict`, a kept pending record V020 cannot decode fails the
+    /// upgrade instead of being skipped: a skipped body leaves its inputs
+    /// unindexed with no signal, so a record-codec regression would only
+    /// show up as coins stuck later. The failed upgrade rolls back to V019.
+    #[test]
+    fn should_fail_v020_under_strict_on_a_kept_record_it_cannot_decode() {
+        let mut conn = v019_store_with_undecodable_kept_record(&[0xB8u8; 32]);
+
+        migrations::run_for_open(&mut conn, LoadPolicy::Strict)
+            .expect_err("an undecodable kept record must fail V020 under Strict");
+
+        assert_eq!(
+            schema_version(&conn),
+            19,
+            "the failed upgrade must roll back"
+        );
+    }
+
+    /// Under `Recovery`, V020 skips a kept record it cannot read and the
+    /// upgrade completes; that wallet degrades at load instead.
+    #[test]
+    fn should_skip_an_undecodable_kept_record_in_v020_under_recovery() {
+        let mut conn = v019_store_with_undecodable_kept_record(&[0xB9u8; 32]);
+
+        migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
+            .expect("Recovery must complete V020 past an undecodable kept record");
+
+        assert_eq!(schema_version(&conn), 20);
+    }
+
+    /// V020 indexes every input of a kept pending record, not only the coin
+    /// the record holds the claim on. A sweep that withholds an input still
+    /// spent by a kept survivor must hand that survivor the claim, so
+    /// removing the survivor can release the coin; a claim handed to the
+    /// winner would outlive the survivor's defeat. No pending record is
+    /// delivered again between the migration and the sweep.
+    #[test]
+    fn should_hand_a_withheld_input_to_its_kept_survivor_after_migrating_to_v020() {
+        let wallet_id = [0xB7u8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
+        let (first, second, shared) = (coin(0x71), coin(0x72), coin(0x73));
+        // The shared coin is claimed by the first record listing it: `loser`.
+        let loser = spend(
+            &[first.outpoint, shared.outpoint],
+            TransactionContext::Mempool,
+        );
+        let survivor = spend(
+            &[second.outpoint, shared.outpoint],
+            TransactionContext::Mempool,
+        );
+        let coins = vec![first.clone(), second.clone(), shared.clone()];
+        let pending = CoreChangeSet {
+            spent_utxos: coins.clone(),
+            ..round(vec![loser.clone(), survivor.clone()], coins)
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &pending).unwrap();
+        tx.commit().unwrap();
+        let claimant = |txid: &Txid| (true, Some(txid.as_byte_array().to_vec()));
+        assert_eq!(
+            spend_claim(&conn, &wallet_id, &shared.outpoint),
+            claimant(&loser.txid)
+        );
+        rewind_v020(&conn);
+        migrations::run(&mut conn).unwrap();
+
+        let block = BlockInfo::new(160, BlockHash::all_zeros(), 1);
+        let winner = spend(&[first.outpoint], TransactionContext::InBlock(block));
+        let settled = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser.txid],
+                superseded_by: winner.txid,
+                winner_mined_height: Some(160),
+                released_outpoints: vec![],
+            }],
+            ..round(vec![winner], vec![])
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &settled).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(
+            spend_claim(&conn, &wallet_id, &shared.outpoint),
+            claimant(&survivor.txid),
+            "the kept survivor, not the winner, holds the withheld input"
+        );
+    }
+
+    /// A txid unique to `(tag, index)`.
+    fn indexed_txid(tag: u8, index: u32) -> Txid {
+        let mut bytes = [tag; 32];
+        bytes[..4].copy_from_slice(&index.to_le_bytes());
+        Txid::from_byte_array(bytes)
+    }
+
+    /// Kept coins are cheap for a peer to add: an unmined receipt paying the
+    /// wallet is enough. Dropping the mined history must not visit every kept
+    /// coin once per dropped record, neither to find a dropped record's
+    /// outputs nor in the cleanup trigger clearing its claims, so quadrupling
+    /// both at once roughly quadruples the migration's work; quadratic work
+    /// would grow sixteenfold. The bound sits between, with headroom both ways.
+    #[test]
+    fn should_migrate_to_v020_in_work_linear_in_kept_coins_and_dropped_history() {
+        let ops = |n: u32| {
+            let wallet_id = [0xB8u8; 32];
+            let mut conn = wallet_db(&wallet_id);
+            for index in 0..n {
+                let (receipt, mined) = (indexed_txid(1, index), indexed_txid(2, index));
+                for (txid, height) in [(receipt, None), (mined, Some(200))] {
+                    conn.execute(
+                        "INSERT INTO core_transactions (wallet_id, txid, height, finalized) \
+                         VALUES (?1, ?2, ?3, 0)",
+                        params![&wallet_id[..], txid.as_byte_array().as_slice(), height],
+                    )
+                    .unwrap();
+                }
+                conn.execute(
+                    "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+                     VALUES (?1, ?2, 1, X'51', 0)",
+                    params![
+                        &wallet_id[..],
+                        blob::encode_outpoint(&OutPoint::new(receipt, 0)).unwrap()
+                    ],
+                )
+                .unwrap();
+            }
+            rewind_v020(&conn);
+            let ops = migrations::count_vm_ops(&conn);
+            migrations::run(&mut conn).unwrap();
+            let kept: i64 = conn
+                .query_row("SELECT COUNT(*) FROM core_transactions", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(kept, i64::from(n), "only the unmined receipts stay");
+            ops.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        let (small, large) = (ops(200), ops(800));
+        assert!(
+            large < 8 * small,
+            "V020 work must grow linearly, not with kept coins times dropped records: \
+             {small} VM ops for 200 of each, {large} for 800"
+        );
     }
 
     #[test]

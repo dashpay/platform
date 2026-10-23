@@ -899,7 +899,8 @@ fn plan_replay_sweeps(
 
 /// Restore set-aside records without the checker, so the conflict sweep still
 /// finds what they spend: it reads inputs and contexts, never amounts. Every
-/// account a record touches holds a copy, with the wallet-level amounts.
+/// account a record touches holds a copy, with the wallet-level amounts, and
+/// so does every account the load parked one of its outputs in.
 ///
 /// The only arithmetic upstream runs over a stored record is the signed net of
 /// its owned outputs and attributed inputs, when a late funding is attributed
@@ -915,6 +916,13 @@ fn restore_unreplayed_records(
     safe_inputs: &HashMap<Txid, bool>,
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    // Where the load actually parked each record's outputs. An output no
+    // address pool row routes lands in the first account, which need not be
+    // one the record names or derives an address for.
+    let holding: Vec<HashSet<Txid>> = accounts
+        .iter()
+        .map(|account| account.utxos.keys().map(|outpoint| outpoint.txid).collect())
+        .collect();
     for mut record in records {
         let outputs = record.output_details.iter().map(|d| d.address.clone());
         let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
@@ -928,15 +936,20 @@ fn restore_unreplayed_records(
         }
         // The upstream sweep drops a loser's coins and descendants only in an
         // account that records it, so the record goes wherever the checker
-        // would have put it: each account owning one of its addresses.
-        let touches = |account: &ManagedCoreFundsAccount| {
+        // would have put it, each account owning one of its addresses, and
+        // wherever one of its coins actually sits.
+        let touches = |index: usize, account: &ManagedCoreFundsAccount| {
             funds_account_type(account) == record.account_type
+                || holding[index].contains(&record.txid)
                 || addresses.iter().any(|a| account.contains_address(a))
         };
         // Any funding account will do as a fallback: the sweep searches them all.
-        let fallback = !accounts.iter().any(|account| touches(account));
+        let fallback = !accounts
+            .iter()
+            .enumerate()
+            .any(|(index, account)| touches(index, account));
         for (index, account) in accounts.iter_mut().enumerate() {
-            if touches(account) || (fallback && index == 0) {
+            if touches(index, account) || (fallback && index == 0) {
                 let copy = record.clone();
                 account.transactions_mut().insert(copy.txid, copy);
             }
