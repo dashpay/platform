@@ -1055,6 +1055,88 @@ async fn should_fill_a_unit_that_leaves_the_running_total_unchanged() {
     market.assert_supply_balanced();
 }
 
+/// A listing of more base units than a signed 8-byte value holds is refused by the transition's
+/// structure, by check_tx and in a block, before anything is charged, and nothing moves.
+#[tokio::test]
+async fn should_refuse_a_listing_amount_above_i64_max() {
+    let mut market = tradeable_market();
+    let seller_credits = market.credit_balance(market.seller.id());
+    let (place, order_id) = market.place_ask(i64::MAX as u64 + 1, 1, 1, None).await;
+    assert_matches!(
+        market.check_tx(&place).as_slice(),
+        [ConsensusError::BasicError(
+            BasicError::InvalidTokenAmountError(_)
+        )]
+    );
+    assert_matches!(
+        market.process(&place).execution_results().as_slice(),
+        [StateTransitionExecutionResult::UnpaidConsensusError(
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+        )]
+    );
+    assert_eq!(market.credit_balance(market.seller.id()), seller_credits);
+    assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+    assert_eq!(market.listing(order_id), None);
+}
+
+/// Every integer of an order is a signed 8-byte value, but its `$revision` is stored as a
+/// varint: the partial fill that takes a listing from revision 127 to 128 grows the `ask` by a
+/// byte, which that fill's buyer pays for. The fills before it, and the ones after, add no
+/// storage. The listing stays its seller's: when it closes, its storage is refunded to the
+/// seller alone.
+#[tokio::test]
+async fn should_charge_the_fill_that_widens_a_listings_revision() {
+    let mut market = tradeable_market();
+    let (place, order_id) = market.place_ask(200, PRICE, 1, None).await;
+    market.assert_executes(&place, &BlockInfo::default());
+
+    let mut fills_adding_storage = vec![];
+    for fill_number in 1..=130u64 {
+        let fill = market.fill_ask(order_id, 1, 1, 10).await;
+        let processing_result = market.process(&fill);
+        let [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =
+            processing_result.execution_results().as_slice()
+        else {
+            panic!(
+                "expected fill {fill_number} to execute: {:?}",
+                processing_result.execution_results()
+            );
+        };
+        // The first fill also creates the buyer's token balance.
+        if fill_number > 1 && fee_result.storage_fee > 0 {
+            fills_adding_storage.push(fill_number);
+        }
+    }
+    // The listing was created at revision 1, so fill 127 takes it to 128.
+    assert_eq!(fills_adding_storage, vec![127]);
+    assert_eq!(
+        market.listing(order_id).map(|listing| listing.remaining),
+        Some(70)
+    );
+
+    let cancel = market.cancel(order_id, false).await;
+    let processing_result = market.process(&cancel);
+    let [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =
+        processing_result.execution_results().as_slice()
+    else {
+        panic!("expected the cancel to execute");
+    };
+    assert!(
+        fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(market.seller.id())
+            .is_some_and(|refund| refund > 0),
+        "the seller gets the listing's storage back"
+    );
+    assert_eq!(
+        fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(market.buyer.id()),
+        None,
+        "the buyer who paid for the wider revision is not refunded: the listing is the seller's"
+    );
+}
+
 #[tokio::test]
 async fn should_return_the_tokens_of_a_cancelled_listing() {
     let mut market = tradeable_market();
