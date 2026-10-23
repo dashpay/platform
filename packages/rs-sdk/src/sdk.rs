@@ -412,6 +412,11 @@ impl Sdk {
     /// respective tolerance will be None regardless of method, to allow disabling staleness checks globally.
     fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
         match method_name {
+            // A one-block-old address nonce can cause the next signed spend to fail.
+            "get_addresses_infos" | "get_address_info" => (
+                self.metadata_height_tolerance.map(|_| 0),
+                self.metadata_time_tolerance_ms,
+            ),
             "get_addresses_trunk_state" | "get_addresses_branch_state" => (
                 // Address synchronization checkpoints can lag the latest
                 // Platform height. Prefer their signed time when available,
@@ -1536,15 +1541,99 @@ pub fn prettify_proof(proof: &Proof) -> String {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use std::future::ready;
     use std::sync::Arc;
 
+    use crate::sync::retry;
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
     use rs_dapi_client::transport::TransportRequest;
+    use rs_dapi_client::{AddressList, ExecutionError, ExecutionResponse, RequestSettings};
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
 
     use super::{min_protocol_version, Network};
+
+    #[test_matrix(["get_addresses_infos", "get_address_info"], [Some(1), Some(20)])]
+    #[tokio::test]
+    async fn should_retry_one_block_stale_address_nonce_read_on_fresh_node(
+        method: &str,
+        tolerance: Option<u64>,
+    ) {
+        let sdk = SdkBuilder::new_mock()
+            .with_height_tolerance(tolerance)
+            .with_trusted_initial_height(100)
+            .build()
+            .unwrap();
+        let addresses: AddressList = "http://127.0.0.1:3001,http://127.0.0.1:3002"
+            .parse()
+            .unwrap();
+        let nodes = addresses.get_live_addresses();
+        let lagging = &nodes[0];
+        let fresh = &nodes[1];
+        let mut sends = 0;
+        // Proof verification is mocked; use the same metadata validation and retry
+        // machinery as Fetch/FetchMany after verifying each response's proof.
+        let response = retry(
+            &addresses,
+            RequestSettings {
+                retries: Some(1),
+                ban_failed_address: Some(true),
+                ..Default::default()
+            },
+            |_| {
+                sends += 1;
+                let (node, height, nonce) = if sends == 1 {
+                    (lagging, 99, 0)
+                } else {
+                    assert_eq!(addresses.get_live_address(), Some(fresh.clone()));
+                    (fresh, 100, 1)
+                };
+                ready(
+                    sdk.verify_response_metadata(
+                        method,
+                        &ResponseMetadata {
+                            height,
+                            ..Default::default()
+                        },
+                    )
+                    .map(|()| ExecutionResponse {
+                        inner: nonce,
+                        retries: 0,
+                        address: node.clone(),
+                    })
+                    .map_err(|inner| ExecutionError {
+                        inner,
+                        retries: 0,
+                        address: Some(node.clone()),
+                    }),
+                )
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sends, 2);
+        assert_eq!(response.inner, 1);
+        assert_eq!(response.address, *fresh);
+        assert!(addresses.is_banned(lagging));
+    }
+
+    #[test_matrix(["get_addresses_infos", "get_address_info", "get_identity"])]
+    fn should_preserve_disabled_height_checks_for_address_info(method: &str) {
+        let sdk = SdkBuilder::new_mock()
+            .with_height_tolerance(None)
+            .with_trusted_initial_height(100)
+            .build()
+            .unwrap();
+        sdk.verify_response_metadata(
+            method,
+            &ResponseMetadata {
+                height: 99,
+                ..Default::default()
+            },
+        )
+        .expect("height checks remain disabled");
+    }
 
     /// Mainnet Evo masternodes expose the Platform HTTP endpoint on 443.
     const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;

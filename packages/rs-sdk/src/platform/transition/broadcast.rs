@@ -12,6 +12,7 @@ use dapi_grpc::platform::v0::{
 };
 use dash_context_provider::ContextProviderError;
 use dpp::consensus::signature::SignatureError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -351,9 +352,23 @@ where
         }
     };
     retry_with_additional_error(addresses, settings, factory, |error| {
-        is_dpns_registration && is_missing_transition_owner(transition, error)
+        (is_dpns_registration && is_missing_transition_owner(transition, error))
+            || is_address_nonce_ahead(transition, error)
     })
     .await
+}
+
+fn is_address_nonce_ahead(transition: &StateTransition, error: &Error) -> bool {
+    let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
+        return false;
+    };
+    // A lagging node may reject the signed input; replay/concurrent-spend errors stay terminal.
+    matches!(consensus.as_ref(),
+        ConsensusError::StateError(StateError::AddressInvalidNonceError(nonce_error))
+            if nonce_error.provided_nonce() > nonce_error.expected_nonce()
+                && transition.inputs().and_then(|inputs| inputs.get(nonce_error.address()))
+                    .is_some_and(|(nonce, _)| *nonce == nonce_error.provided_nonce())
+    )
 }
 
 fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str> {

@@ -38,20 +38,7 @@ async fn should_retry_sequential_address_funded_transition_on_caught_up_node() {
     // Two sequential calls use nonce snapshots 0 and 1. After the first
     // inclusion, only the caught-up node has committed the nonce-1 block.
     for fetched_nonce in [0, 1] {
-        let transition = StateTransition::Shield(
-            ShieldTransitionV0 {
-                inputs: BTreeMap::from([(address, (fetched_nonce + 1, 1_000_000_000))]),
-                actions: vec![],
-                amount: 200_000_000,
-                anchor: [0; 32],
-                proof: vec![],
-                binding_signature: [0; 64],
-                fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-                user_fee_increase: 0,
-                input_witnesses: vec![],
-            }
-            .into(),
-        );
+        let transition = shield(address, fetched_nonce + 1);
         let expected_request = transition.broadcast_request_for_state_transition().unwrap();
         let mut requests = Vec::new();
         let mut used_nodes = Vec::new();
@@ -94,20 +81,86 @@ async fn should_retry_sequential_address_funded_transition_on_caught_up_node() {
                 .unwrap();
             sdk.verify_response_metadata("get_addresses_infos", &committed)
                 .unwrap();
-            // Even if queried, the lagging node passes the production freshness
-            // checks. Broadcasting itself has no response height to check.
-            sdk.verify_response_metadata(
-                "get_addresses_infos",
-                &ResponseMetadata {
-                    height: 99,
-                    time_ms: now - 3_000,
-                    ..committed
-                },
-            )
-            .expect("one-block lag with a recent timestamp is within tolerance");
         } else {
             assert_eq!(requests, vec![expected_request.clone(), expected_request]);
             assert_eq!(used_nodes, vec![lagging.clone(), caught_up.clone()]);
+            assert!(addresses.is_banned(&lagging));
+            assert!(!addresses.is_banned(&caught_up));
+            let banned_until = addresses
+                .ban_info()
+                .into_iter()
+                .find(|info| info.uri == lagging.uri().to_string())
+                .and_then(|info| info.banned_until)
+                .expect("lagging node should have a short ban");
+            assert!(banned_until <= chrono::Utc::now() + chrono::Duration::seconds(2));
         }
     }
+}
+
+fn shield(address: PlatformAddress, nonce: u32) -> StateTransition {
+    StateTransition::Shield(
+        ShieldTransitionV0 {
+            inputs: BTreeMap::from([(address, (nonce, 1_000_000_000))]),
+            actions: vec![],
+            amount: 200_000_000,
+            anchor: [0; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 0,
+            input_witnesses: vec![],
+        }
+        .into(),
+    )
+}
+
+#[test_case::test_case(2, 2, true; "equal nonce")]
+#[test_case::test_case(2, 3, true; "behind nonce")]
+#[test_case::test_case(3, 1, true; "different submitted nonce")]
+#[test_case::test_case(2, 1, false; "different address")]
+#[tokio::test]
+async fn should_keep_non_skew_nonce_rejections_terminal(
+    provided: u32,
+    expected: u32,
+    same_address: bool,
+) {
+    let addresses: AddressList = "http://127.0.0.1:3001,http://127.0.0.1:3002"
+        .parse()
+        .unwrap();
+    let input = PlatformAddress::P2pkh([0x24; 20]);
+    let error_address = if same_address {
+        input
+    } else {
+        PlatformAddress::P2pkh([0x25; 20])
+    };
+    let transition = shield(input, 2);
+    let request = transition.broadcast_request_for_state_transition().unwrap();
+    let mut sends = 0;
+    let result = broadcast_with_retries(
+        &transition,
+        &addresses,
+        RequestSettings {
+            retries: Some(3),
+            ban_failed_address: Some(true),
+            ..Default::default()
+        },
+        |sent, _| {
+            assert_eq!(sent, request);
+            sends += 1;
+            ready(Err(ExecutionError {
+                inner: ConsensusError::from(AddressInvalidNonceError::new(
+                    error_address,
+                    provided,
+                    expected,
+                ))
+                .into(),
+                address: Some(addresses.get_live_address().unwrap()),
+                retries: 0,
+            }))
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    assert_eq!(sends, 1);
+    assert_eq!(addresses.get_live_addresses().len(), 2);
 }
