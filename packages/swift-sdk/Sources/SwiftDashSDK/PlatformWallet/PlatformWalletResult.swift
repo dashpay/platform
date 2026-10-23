@@ -46,12 +46,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// shielded sync reach a confirmed state and try again. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedNoRecordedAnchor = 19
-    /// A core transaction broadcast (send, DashPay payment, or asset-lock
-    /// funding) failed with an ambiguous outcome — the transaction may
-    /// already be on the network. The wallet keeps the spent inputs' UTXO
-    /// reservation, so an immediate retry fails at input selection instead
-    /// of double-spending; the reservation TTL or a sync reconciles the
-    /// outcome. Do NOT auto-retry.
+    /// A Core transaction or address-funded identity top-up may have executed
+    /// but its outcome could not be confirmed. Reconcile the original operation
+    /// before another submission. Core input protections do not apply to
+    /// Platform address top-ups. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
     /// A masternode (evonode) identity credit withdrawal was broadcast and
     /// accepted, but its execution result could not be confirmed — it may
@@ -611,11 +609,11 @@ public enum PlatformWalletError: LocalizedError {
     /// retained public Swift/FFI name, this is not a shielded-pool balance
     /// failure.
     case shieldedInsufficientBalance(String)
-    /// A core transaction broadcast was submitted but its outcome is
-    /// unknown — the transaction may already be on the network. The wallet
-    /// keeps the spent inputs reserved so a retry cannot double-spend; the
-    /// reservation TTL or a later sync reconciles the outcome. Do NOT
-    /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
+    /// A Core transaction or address-funded identity top-up may have executed,
+    /// but its outcome is unknown. Sync and reconcile the original operation
+    /// before another submission. Core transactions retain their input
+    /// protections; Platform address top-ups have no Core UTXO reservation.
+    /// Do NOT auto-retry. Sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
     /// A masternode (evonode) credit withdrawal was broadcast and accepted
     /// but its result could not be confirmed. It may already have executed
