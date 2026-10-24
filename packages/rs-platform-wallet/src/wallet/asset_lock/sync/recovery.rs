@@ -1745,12 +1745,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             .await?
                     }
                     None => {
-                        let proof = self
-                            .wait_for_resumed_proof(
-                                out_point,
-                                timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT)),
-                            )
-                            .await?;
+                        let bound = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
+                        // Chain-only: the status asserts a ChainLock proof, so
+                        // an InstantSend record does not settle it. It comes
+                        // straight from the record, so the ChainLock wait
+                        // still has the whole bound.
+                        let proof = match self.wait_for_resumed_proof(out_point, bound).await? {
+                            dpp::prelude::AssetLockProof::Instant(_) => {
+                                self.upgrade_to_chain_lock_proof(out_point, bound).await?
+                            }
+                            chain => chain,
+                        };
                         self.validate_or_upgrade_proof(proof, account_index, out_point)
                             .await?
                     }

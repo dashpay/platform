@@ -3642,6 +3642,39 @@ mod chain_lock_wait_tests {
         assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
     }
 
+    /// A cleared `RecoveredFromChain` row whose record is InstantSend resumes
+    /// with a ChainLock proof only, from the lookup.
+    #[tokio::test(start_paused = true)]
+    async fn should_resume_a_cleared_recovered_row_with_an_instant_send_record_on_a_chain_proof() {
+        let locator = ScriptedLocator::new(vec![mined(140)]);
+        let ctx = ok_ctx(
+            instant_send_context(),
+            AssetLockStatus::RecoveredFromChain,
+            None,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_ok_wallet_chain_lock(&ctx, 150).await;
+        let rejected = recovered_chain_proof(&ctx, 100).await;
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &rejected, &height_rejection())
+            .await;
+        assert!(ok_tracked_row(&ctx).await.proof.is_none());
+
+        let (proof, _path) = tokio::time::timeout(
+            Duration::from_secs(900),
+            ctx.manager.resume_asset_lock(&ctx.out_point, None),
+        )
+        .await
+        .expect("the lookup settles the resume")
+        .expect("the lookup places the transaction");
+        assert_eq!(chain_proof_height(proof), 140);
+
+        let row = ok_tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
+    }
+
     /// A row whose rejected ChainLock proof the invalidator cleared, with no
     /// funding record anywhere: evicted from memory, and a persister that
     /// keeps none answers `Ok(None)`. The wallet's ChainLock is at 150.
