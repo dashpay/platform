@@ -440,12 +440,8 @@ impl ManagedIdentity {
         let mut keys = if taken {
             self.identity = fetched.clone();
             self.identity.set_balance(balance);
-            if self
-                .last_synced_keys_block_time
-                .is_none_or(|synced| synced.height < block_time.height)
-            {
-                self.last_synced_keys_block_time = Some(block_time);
-            }
+            self.last_synced_keys_block_time =
+                BlockTime::later_watermark(self.last_synced_keys_block_time, Some(block_time));
             fetched.public_keys().clone()
         } else {
             cached.clone()

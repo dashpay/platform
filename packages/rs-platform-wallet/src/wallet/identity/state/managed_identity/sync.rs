@@ -178,17 +178,19 @@ impl ManagedIdentity {
         }
     }
 
-    /// Set the key watermark (`last_synced_keys_block_time`) to
-    /// `block_time`, as is, and persist the scalar snapshot. A fetch at the
-    /// cached revision then takes its key states only from that block or a
-    /// later one (see `take_fetched_identity`), so set it only from a block
-    /// whose key states the cache holds.
+    /// Raise the key watermark (`last_synced_keys_block_time`) to
+    /// `block_time`, unless it is already at or above it, and persist the
+    /// scalar snapshot. A fetch at the cached revision then takes its key
+    /// states only from that block or a later one (see
+    /// `take_fetched_identity`), so raise it only from a block whose key
+    /// states the cache holds.
     pub fn update_keys_sync_block_time(
         &mut self,
         block_time: BlockTime,
         persister: &WalletPersister,
     ) {
-        self.last_synced_keys_block_time = Some(block_time);
+        self.last_synced_keys_block_time =
+            BlockTime::later_watermark(self.last_synced_keys_block_time, Some(block_time));
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);

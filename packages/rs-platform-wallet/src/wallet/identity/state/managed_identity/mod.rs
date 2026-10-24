@@ -266,6 +266,9 @@ mod tests {
             managed.last_synced_keys_block_time.unwrap().timestamp,
             9876543210
         );
+
+        managed.update_keys_sync_block_time(BlockTime::new(40000, 440000, 9876500000), &p);
+        assert_eq!(managed.last_synced_keys_block_time, Some(block_time));
     }
 
     #[test]
