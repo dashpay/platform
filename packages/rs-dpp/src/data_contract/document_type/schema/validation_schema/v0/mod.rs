@@ -268,13 +268,18 @@ fn refuse_identifiers_that_are_not_plain_names(value: &Value) -> Result<(), Data
 /// entry and takes the value of its last.
 fn last_wins(map: &[(Value, Value)]) -> Result<Vec<(&str, &Value)>, DataContractError> {
     let mut entries: Vec<(&str, &Value)> = Vec::with_capacity(map.len());
+    // Where each key's first entry sits, so a repeated key keeps that place
+    let mut positions: BTreeMap<&str, usize> = BTreeMap::new();
     for (key, value) in map {
         let key = key
             .as_text()
             .ok_or_else(|| structure_error("schema keys must be strings".to_string()))?;
-        match entries.iter_mut().find(|(seen, _)| *seen == key) {
+        match positions.get(key).and_then(|&index| entries.get_mut(index)) {
             Some(entry) => entry.1 = value,
-            None => entries.push((key, value)),
+            None => {
+                positions.insert(key, entries.len());
+                entries.push((key, value));
+            }
         }
     }
     Ok(entries)
