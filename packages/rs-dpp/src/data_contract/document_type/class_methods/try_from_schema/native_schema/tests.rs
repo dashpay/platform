@@ -1514,3 +1514,30 @@ fn should_compare_numbers_exactly_across_their_readings() {
     assert!(super::equal_json(&json!(1_u64), &json!(1.0)));
     assert!(super::equal_json(&json!(-3_i64), &json!(-3.0)));
 }
+
+/// A `contains` that is not a schema, `"contains": 1`: the document meta-schema check does
+/// not constrain `contains`, so the native checks admit it too. Registration still refuses
+/// it under either check: when the JSON Schema validator compiles the schema, or when the
+/// type's validation schema is built.
+#[test]
+fn should_admit_a_contains_that_is_no_schema_as_the_meta_schema_check_does() {
+    let mut case = written_cases()
+        .into_iter()
+        .find(|case| case.name == "profile")
+        .expect("expected the profile case");
+    let position = case.schema["properties"]
+        .as_object()
+        .map_or(0, |properties| properties.len());
+    case.schema["properties"]["tags"] = json!({
+        "type": "array",
+        "position": position,
+        "maxItems": 2,
+        "items": { "type": "integer" },
+        "contains": 1,
+    });
+    let mut tally = Tally::default();
+    let differences = compare(&case, &mut tally);
+    assert!(differences.is_empty(), "{}", differences.join("\n"));
+    assert_eq!(tally.both_accept, 1, "{tally:?}");
+    assert_eq!(tally.parse_refusals, 1, "{tally:?}");
+}
