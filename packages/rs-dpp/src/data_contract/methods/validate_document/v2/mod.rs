@@ -93,7 +93,27 @@ impl DataContract {
         document_type: &'v DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
-        let slot = document_type.json_schema_validator_ref().native();
+        // The slot of the builder generation this version selects
+        let generation = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .validation_schema
+            .ok_or_else(|| {
+                ProtocolError::NotSupported(format!(
+                    "protocol version {} checks no document against a validation schema",
+                    platform_version.protocol_version
+                ))
+            })?;
+        let slot = document_type
+            .json_schema_validator_ref()
+            .native(generation)
+            .ok_or_else(|| ProtocolError::UnknownVersionMismatch {
+                method: "DataContract::native_validator".to_string(),
+                known_versions: vec![0],
+                received: generation,
+            })?;
         let built = match slot.get() {
             Some(built) => built,
             None => {
