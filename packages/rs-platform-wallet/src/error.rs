@@ -13,8 +13,8 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::Network;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
-    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed,
-    is_instant_lock_proof_invalid,
+    as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
+    is_asset_lock_already_consumed, is_instant_lock_proof_invalid,
 };
 
 /// Errors that can occur in platform wallet operations

@@ -161,7 +161,8 @@ fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
 /// spending the same outpoint may confirm the instant afterwards, and
 /// from then on no proof for this transaction can arrive. The wait
 /// cannot see that happen — it wakes on lock events and re-reads the
-/// tracked funding transaction only — so an unbounded wait is a
+/// tracked funding transaction, and looks up where it was mined when the
+/// record cannot prove it — so an unbounded wait is a
 /// `Notify` loop with no terminating event, which under the
 /// `runtime().block_on(...)` below pins the calling host thread
 /// permanently rather than merely delaying an answer.
