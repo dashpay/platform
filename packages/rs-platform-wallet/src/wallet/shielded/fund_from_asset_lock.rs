@@ -384,7 +384,7 @@ impl PlatformWallet {
                 );
                 // Persists the rebuilt proof before resuming, so a later
                 // resume of this lock does not fall back into the
-                // record-only proof wait that just timed out.
+                // proof wait that just timed out.
                 let (chain_proof, path) = self
                     .asset_locks
                     .resolve_chain_proof_after_is_timeout(&out_point, cl_wait)

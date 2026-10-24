@@ -452,11 +452,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// caller needs to sign.
     ///
     /// The persist is the point. Without it the row stays `Broadcast` with no
-    /// proof, and the next resume of the same lock re-enters the record-only
-    /// [`wait_for_proof`](Self::wait_for_proof) that timed out in the first
-    /// place: with `cl_wait = None` that wait runs its full bound and the
-    /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
-    /// the proof this call already established.
+    /// proof, and the next resume of the same lock re-enters the proof wait
+    /// that timed out in the first place: with `cl_wait = None` that wait can
+    /// run its full bound and the operation end in
+    /// `TransactionBroadcastUnconfirmed` instead of using the proof this call
+    /// already established.
     ///
     /// The upgrade and the row update are the IS→CL fallback's own
     /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof));
@@ -638,10 +638,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         actual_identity_index,
                     )?;
                 }
-                // 300s is an InstantSend-preference window, not a finality
-                // timeout: on expiry the caller falls back to an unbounded
-                // ChainLock wait, so a resumed broadcast lock never fails
-                // just because IS was slow.
+                // 300s is a window for the record or a mined-height lookup to
+                // prove the lock, not a finality timeout: on expiry the caller
+                // falls back to an unbounded ChainLock wait, so a resumed
+                // broadcast lock never fails just because IS was slow.
                 match self
                     .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
                     .await
