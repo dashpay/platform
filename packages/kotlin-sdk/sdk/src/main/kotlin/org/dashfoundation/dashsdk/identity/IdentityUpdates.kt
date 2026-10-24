@@ -187,24 +187,28 @@ class IdentityUpdates internal constructor(
 
     /**
      * Add a single public key to [identityId], signed via [signerHandle].
-     * Convenience over [update] for the single-key `AddIdentityKeyView` flow.
+     * Convenience over [update] for the single-key `AddIdentityKeyView` flow;
+     * [revision] is passed to [update].
      */
     suspend fun addKey(
         walletHandle: Long,
         identityId: ByteArray,
         key: IdentityPubkey,
         signerHandle: Long,
-    ) = update(walletHandle, identityId, listOf(key), emptyList(), signerHandle)
+        revision: Long? = null,
+    ) = update(walletHandle, identityId, listOf(key), emptyList(), signerHandle, revision)
 
     /**
-     * Disable existing key ids on [identityId], signed via [signerHandle].
+     * Disable existing key ids on [identityId], signed via [signerHandle];
+     * [revision] is passed to [update].
      */
     suspend fun disableKeys(
         walletHandle: Long,
         identityId: ByteArray,
         keyIds: List<Int>,
         signerHandle: Long,
-    ) = update(walletHandle, identityId, emptyList(), keyIds, signerHandle)
+        revision: Long? = null,
+    ) = update(walletHandle, identityId, emptyList(), keyIds, signerHandle, revision)
 
     /**
      * Add [addPublicKeys] and/or disable [disablePublicKeyIds] on
