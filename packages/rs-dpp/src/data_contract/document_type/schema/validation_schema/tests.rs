@@ -80,7 +80,10 @@ fn text_value(text: &str) -> Value {
 /// Whether the existing validator, compiling `schema` as the document validator compiles a
 /// document schema, accepts `document`.
 #[cfg(feature = "validation")]
-fn existing_validator_accepts(schema: &serde_json::Value, document: &serde_json::Value) -> bool {
+pub(super) fn existing_validator_accepts(
+    schema: &serde_json::Value,
+    document: &serde_json::Value,
+) -> bool {
     JsonSchemaValidator::new()
         .compile_and_validate(schema, document, PlatformVersion::latest())
         .expect("expected the schema to compile")
@@ -177,7 +180,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     assert_eq!(string(name).max_length, Some(63));
     assert_eq!(string(name).max_bytes, Some(126));
     assert_eq!(string(name).pattern.as_deref(), Some("^[a-z]+$"));
-    assert_eq!(format(name).format.as_deref(), Some("uri"));
+    assert_eq!(format(name).format, Some(ValidatorFormat::Uri));
     assert_eq!(
         name.enum_values,
         Some(vec![Value::Text("a".into()), Value::Text("b".into())])
@@ -712,8 +715,9 @@ fn registered(properties: Value, defs: Value) -> DataContract {
     contract
 }
 
-/// Whether document validation, the JSON Schema validation and the `maxBytes` check that
-/// follows it, accepts `properties` as an `item`.
+/// Whether document validation through the JSON Schema validator, and the `maxBytes` check
+/// that follows it, accepts `properties` as an `item`: generation 1, which protocol version
+/// 14 runs and the validation schema models.
 #[cfg(feature = "validation")]
 fn accepts(contract: &DataContract, properties: Value) -> bool {
     contract
@@ -721,7 +725,7 @@ fn accepts(contract: &DataContract, properties: Value) -> bool {
             "item",
             properties,
             &DocumentSystemValues::default(),
-            PlatformVersion::latest(),
+            PlatformVersion::get(14).expect("expected protocol version 14"),
         )
         .expect("expected document validation to run")
         .is_valid()
@@ -869,8 +873,8 @@ fn should_refuse_a_format_the_validator_does_not_know() {
         platform_value!({ "type": "string", "maxLength": 64, "format": "date-time" }),
     ));
     assert_eq!(
-        format(property(&schema.root, "value")).format.as_deref(),
-        Some("date-time")
+        format(property(&schema.root, "value")).format,
+        Some(ValidatorFormat::DateTime)
     );
 
     for root in [
@@ -1191,7 +1195,7 @@ fn should_match_the_existing_validator_on_patterns() {
         "\\u0041",
     ] {
         assert_eq!(
-            compiles_as_validator_pattern(pattern),
+            validator_regex(pattern).is_some(),
             compiles(pattern),
             "{pattern}"
         );
@@ -1245,8 +1249,30 @@ fn should_skip_keys_the_validator_ignores_in_any_reference_target() {
 }
 
 #[test]
-fn should_refuse_a_protocol_version_before_14_and_accept_14() {
-    let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+fn should_build_only_at_a_protocol_version_selecting_the_builder() {
+    for protocol_version in [13, 14] {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected the version");
+        let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let name = contract
+            .document_types()
+            .keys()
+            .next()
+            .expect("expected a document type")
+            .clone();
+        let error = contract
+            .document_type_validation_schema(&name, platform_version)
+            .expect_err("expected the protocol version to be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("checks no document against a validation schema"),
+            "{error}"
+        );
+    }
+
+    let platform_version = PlatformVersion::latest();
     let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
         .data_contract_owned();
     let name = contract
@@ -1255,19 +1281,9 @@ fn should_refuse_a_protocol_version_before_14_and_accept_14() {
         .next()
         .expect("expected a document type")
         .clone();
-    let error = contract
+    contract
         .document_type_validation_schema(&name, platform_version)
-        .expect_err("expected protocol version 13 to be refused");
-    assert!(
-        error.to_string().contains("protocol version 14 and later"),
-        "{error}"
-    );
-
-    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-    get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-        .data_contract_owned()
-        .document_type_validation_schema(&name, platform_version)
-        .expect("expected protocol version 14 to be accepted");
+        .expect("expected the latest protocol version to be accepted");
 }
 
 #[test]
@@ -1279,8 +1295,8 @@ fn should_name_every_json_type_and_read_it_back() {
     assert_eq!(JsonType::from_name("Integer"), None);
 }
 
-/// Ties [`VALIDATOR_FORMATS`] and [`VALIDATOR_KEYWORDS`] to the existing validator: it
-/// compiles exactly the formats the table holds, and ignores the draft 2020-12 keywords the
+/// Ties [`ValidatorFormat`] and [`VALIDATOR_KEYWORDS`] to the existing validator: it
+/// compiles exactly the formats the enum holds, and ignores the draft 2020-12 keywords the
 /// table leaves out.
 #[cfg(feature = "validation")]
 #[test]
@@ -1311,7 +1327,7 @@ fn should_hold_the_formats_and_keywords_the_existing_validator_compiles() {
         );
         assert_eq!(
             compiles,
-            VALIDATOR_FORMATS.contains(&format_name),
+            format_name.parse::<ValidatorFormat>().is_ok(),
             "{format_name}"
         );
     }
@@ -2091,66 +2107,19 @@ fn should_name_the_reference_that_reached_a_refused_schema() {
     );
 }
 
-/// What the comparisons the documentation of [`SchemaNode::constant`],
-/// [`SchemaNode::enum_values`], [`ArrayConstraints::unique_items`] and
-/// [`NumberConstraints::multiple_of`] describes rest on.
+/// What the comparison the documentation of [`SchemaNode::enum_values`] describes rests on:
+/// objects compare key by key in the order the keys are written. The other comparisons the
+/// documentation describes are checked against both validators in the native validator's
+/// tests.
 #[cfg(feature = "validation")]
 #[test]
-fn should_match_the_existing_validator_on_the_comparisons_the_documentation_describes() {
+fn should_match_the_existing_validator_on_the_order_enum_compares_keys_in() {
     let accepts = |schema: serde_json::Value, value: serde_json::Value| {
         existing_validator_accepts(
             &serde_json::json!({ "type": "object", "properties": { "value": schema } }),
             &serde_json::json!({ "value": value }),
         )
     };
-
-    // A number `const` matches within an absolute f64::EPSILON
-    assert!(accepts(
-        serde_json::json!({ "const": 9007199254740993u64 }),
-        serde_json::json!(9007199254740992u64)
-    ));
-    assert!(accepts(
-        serde_json::json!({ "const": 0 }),
-        serde_json::json!(1e-300)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "const": 0 }),
-        serde_json::json!(1e-10)
-    ));
-
-    // A fractional `multipleOf` passes every negative quotient, and decides exactly when the
-    // quotient overflows
-    assert!(accepts(
-        serde_json::json!({ "multipleOf": 0.5 }),
-        serde_json::json!(-0.3)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "multipleOf": 0.5 }),
-        serde_json::json!(0.3)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "multipleOf": 0.3 }),
-        serde_json::json!(-8.98846567431158e307) // -2^1023
-    ));
-    assert!(accepts(
-        serde_json::json!({ "multipleOf": 0.1 }),
-        serde_json::json!(1.5e308)
-    ));
-
-    // `uniqueItems` compares up to 15 elements by value and more by their JSON form
-    let elements = |count: u64| {
-        let mut elements = vec![serde_json::json!(1), serde_json::json!(1.0)];
-        elements.extend((2..count).map(|element| serde_json::json!(element)));
-        serde_json::Value::Array(elements)
-    };
-    assert!(!accepts(
-        serde_json::json!({ "uniqueItems": true }),
-        elements(15)
-    ));
-    assert!(accepts(
-        serde_json::json!({ "uniqueItems": true }),
-        elements(16)
-    ));
 
     // `enum` compares objects key by key in the order the keys are written
     let enumerated = |member: Value| {
@@ -2352,10 +2321,6 @@ fn should_refuse_an_id_that_may_move_a_reference() {
             platform_value!({ "type": "string", "examples": [{ "$id": "#/$defs/label" }] }),
         ),
         (
-            "an opaque URL in `const` data",
-            platform_value!({ "type": "object", "const": { "x": { "$id": "json-schema:opaque" } } }),
-        ),
-        (
             "a path",
             platform_value!({ "$id": "sub/", "type": "string" }),
         ),
@@ -2370,6 +2335,59 @@ fn should_refuse_an_id_that_may_move_a_reference() {
     ] {
         let message = refusal(with_value(value));
         assert!(message.contains("is not a plain name"), "{case}: {message}");
+    }
+}
+
+/// JSON keeps the last entry of a repeated key, so only the last of a repeated `$id` is read.
+#[test]
+fn should_read_only_the_last_of_a_repeated_id() {
+    let property = |first: &str, last: &str| {
+        Value::Map(vec![
+            (text_value("type"), text_value("string")),
+            (text_value("$id"), text_value(first)),
+            (text_value("$id"), text_value(last)),
+        ])
+    };
+    // A non-plain `$id` the plain one after it shadows
+    let root = with_value(property("https://example.com/a", "plain"));
+    assert!(
+        ValidationSchema::try_from_root(&root).is_ok(),
+        "expected the schema to build"
+    );
+    #[cfg(feature = "validation")]
+    assert!(
+        existing_validator_compiles(&validating_json(&root)),
+        "expected the existing validator to compile it"
+    );
+    // A plain `$id` a non-plain one after it shadows
+    let message = refusal(with_value(property("plain", "https://example.com/a")));
+    assert!(message.contains("is not a plain name"), "{message}");
+}
+
+/// The values of `enum` and `const` are instance data, which the JSON Schema validator's
+/// resolver skips: an `$id` there is no scope, so the builder reads none.
+#[test]
+fn should_read_no_id_in_enum_or_const_data() {
+    for (case, value) in [
+        (
+            "an opaque URL in `const` data",
+            platform_value!({ "type": "object", "const": { "x": { "$id": "json-schema:opaque" } } }),
+        ),
+        (
+            "a fragment in an `enum` member",
+            platform_value!({ "enum": [{ "$id": "#/$defs/label" }, 1] }),
+        ),
+    ] {
+        let root = with_value(value);
+        assert!(
+            ValidationSchema::try_from_root(&root).is_ok(),
+            "{case}: expected the schema to build"
+        );
+        #[cfg(feature = "validation")]
+        assert!(
+            existing_validator_compiles(&validating_json(&root)),
+            "{case}: expected the existing validator to compile it"
+        );
     }
 }
 
@@ -2443,7 +2461,7 @@ fn should_match_the_existing_validator_on_references_below_plain_name_ids() {
 
 /// A small deterministic generator, so that the generated cases are the same on every run.
 #[cfg(feature = "validation")]
-struct Cases(u64);
+pub(super) struct Cases(pub(super) u64);
 
 #[cfg(feature = "validation")]
 impl Cases {
@@ -2455,7 +2473,7 @@ impl Cases {
         self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
 
-    fn below(&mut self, bound: usize) -> usize {
+    pub(super) fn below(&mut self, bound: usize) -> usize {
         (self.next() % bound as u64) as usize
     }
 
@@ -2470,7 +2488,7 @@ impl Cases {
 
 /// The values the generated schemas compare with and the generated documents carry.
 #[cfg(feature = "validation")]
-fn generated_values() -> Vec<serde_json::Value> {
+pub(super) fn generated_values() -> Vec<serde_json::Value> {
     use serde_json::json;
     vec![
         json!(null),
@@ -2513,7 +2531,7 @@ fn generated_values() -> Vec<serde_json::Value> {
 /// them, `depth` levels deep, whose `$ref`s reach the first `definitions` of the generated
 /// definitions.
 #[cfg(feature = "validation")]
-fn generated_schema(
+pub(super) fn generated_schema(
     cases: &mut Cases,
     values: &[serde_json::Value],
     depth: usize,
