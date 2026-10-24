@@ -62,7 +62,7 @@ console.log('Current epoch:', epoch.index);
 | `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
 | `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
-| `version` | `number` | latest | Platform protocol version. |
+| `version` | `number` | — | Pins the platform protocol version. When unset, the SDK follows the network's protocol version. |
 | `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
 | `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
 
