@@ -50,9 +50,11 @@
 //!
 //! From protocol version 15, document validation checks every document against its type's
 //! validation schema (`validate_document` 2), and refuses the documents of a type whose
-//! schema has none. It is built with the `validation-schema` feature, which `validation` enables, and does not need the JSON Schema validator it
-//! mirrors. It models the document validation of protocol version 14 and later, whose parser
-//! reads `maxBytes` and `encryptedFor`, and refuses an earlier protocol version.
+//! schema has none. It is built with the `validation-schema` feature, which `validation`
+//! enables, and does not need the JSON Schema validator it mirrors. Its builder is
+//! generation 0 of `validation_schema`, which protocol version 15 selects: it models the
+//! document validation of protocol version 14, whose parser reads `maxBytes` and
+//! `encryptedFor`, and refuses a protocol version that selects no generation.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -88,7 +90,7 @@ pub use keyword::{
 /// Registration's native schema checks read list uniqueness as the document validator does.
 #[cfg(feature = "validation")]
 pub(crate) use validate::is_unique;
-pub use validate::{DocumentSchemaValidator, SchemaViolation};
+pub use validate::DocumentSchemaValidator;
 
 /// A JSON Schema simple type.
 #[derive(
@@ -122,6 +124,51 @@ impl JsonType {
 
     fn from_name(name: &str) -> Option<Self> {
         name.parse().ok()
+    }
+}
+
+/// A format the JSON Schema validator knows under draft 2020-12, the pinned fork's. It
+/// compiles no schema naming another (it does not ignore unknown formats), so a `$ref`
+/// reaching one refuses every value.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    strum::EnumIter,
+    strum::EnumString,
+    strum::IntoStaticStr,
+)]
+pub enum ValidatorFormat {
+    #[strum(serialize = "date")]
+    Date,
+    #[strum(serialize = "date-time")]
+    DateTime,
+    #[strum(serialize = "email")]
+    Email,
+    #[strum(serialize = "hostname")]
+    Hostname,
+    #[strum(serialize = "idn-email")]
+    IdnEmail,
+    #[strum(serialize = "ipv4")]
+    Ipv4,
+    #[strum(serialize = "ipv6")]
+    Ipv6,
+    #[strum(serialize = "regex")]
+    Regex,
+    #[strum(serialize = "time")]
+    Time,
+    #[strum(serialize = "uri")]
+    Uri,
+}
+
+impl ValidatorFormat {
+    /// The format's name as a schema writes it.
+    pub fn name(self) -> &'static str {
+        self.into()
     }
 }
 
@@ -266,7 +313,7 @@ pub struct NumberConstraints {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FormatConstraints {
     /// `format`.
-    pub format: Option<String>,
+    pub format: Option<ValidatorFormat>,
     /// `encryptedFor`, held only on a schema the document type parser reads as a property.
     pub encrypted_for: Option<EncryptedFor>,
 }
@@ -303,6 +350,14 @@ impl ValidationSchema {
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
+        Self::try_from_root_with_patterns(root).map(|(schema, _)| schema)
+    }
+
+    /// [`Self::try_from_root`], with every `pattern` the schema holds compiled as the
+    /// builder compiled it to check it, for the native validator to reuse.
+    pub(crate) fn try_from_root_with_patterns(
+        root: &Value,
+    ) -> Result<(Self, BTreeMap<String, regex::Regex>), DataContractError> {
         // The document validator converts the whole schema before it compiles it, so a value
         // JSON cannot hold anywhere, even one the validator would then ignore or drop as a
         // shadowed entry of a repeated key, leaves it nothing to compile
@@ -341,10 +396,13 @@ impl ValidationSchema {
                     .or_insert_with(|| Arc::clone(node));
             }
         }
-        Ok(Self {
-            root: root_node,
-            references,
-        })
+        Ok((
+            Self {
+                root: root_node,
+                references,
+            },
+            reached.patterns,
+        ))
     }
 }
 
@@ -360,37 +418,91 @@ fn reached_through(error: DataContractError, reference: &str) -> DataContractErr
 
 impl DataContract {
     /// The validation schema of one of the contract's document types, built from the
-    /// schema the document validator compiles for it. Refuses a protocol version before 14,
-    /// whose document validation checks neither `maxBytes` nor `encryptedFor`, which the
-    /// validation schema holds where the parser of protocol version 14 reads them.
+    /// schema the document validator compiles for it by the builder `platform_version`
+    /// selects. Refuses a protocol version that selects none (`validation_schema`).
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
-        if platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .methods
-            .validate_max_bytes
-            .is_none()
-        {
-            return Err(ProtocolError::NotSupported(format!(
-                "the validation schema models the document validation of protocol version 14 \
-                 and later, not of protocol version {}",
-                platform_version.protocol_version
-            )));
-        }
+        check_builder_generation(
+            platform_version,
+            "DataContract::document_type_validation_schema",
+        )?;
+        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
+        Ok(ValidationSchema::try_from_root(&root)?)
+    }
+
+    /// The native validator of one of the contract's document types: its validation schema
+    /// ([`Self::document_type_validation_schema`]) with the patterns the builder compiled.
+    pub(crate) fn document_type_native_validator(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentSchemaValidator, ProtocolError> {
+        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
+        DocumentSchemaValidator::try_from_root(&root, platform_version)
+    }
+
+    /// The schema the document validator compiles for one of the contract's document types:
+    /// its own schema with the contract's `$defs` and the base schema added and its property
+    /// type shorthands expanded.
+    fn document_type_validated_schema(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         let document_type = self.document_type_for_name(document_type_name)?;
         let root = DocumentType::enrich_with_base_schema(
             document_type.schema().clone(),
             self.schema_defs().map(|defs| Value::from(defs.clone())),
             platform_version,
         )?;
-        let root = DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
-            .unwrap_or(root);
-        Ok(ValidationSchema::try_from_root(&root)?)
+        Ok(
+            DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
+                .unwrap_or(root),
+        )
+    }
+}
+
+impl DocumentSchemaValidator {
+    /// The native validator of the document schema `root`, as the document validator of
+    /// `platform_version` compiles it, built by the builder that version selects
+    /// (`validation_schema`). Refuses a protocol version that selects none.
+    pub(crate) fn try_from_root(
+        root: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        check_builder_generation(platform_version, "DocumentSchemaValidator::try_from_root")?;
+        let (schema, patterns) = ValidationSchema::try_from_root_with_patterns(root)?;
+        Ok(Self::with_patterns(schema, patterns)?)
+    }
+}
+
+/// Checks that `platform_version` selects generation 0 of `validation_schema`, the builder
+/// this module holds: refuses a protocol version that selects none, whose document
+/// validation reads no validation schema, and a generation the module does not know.
+fn check_builder_generation(
+    platform_version: &PlatformVersion,
+    method: &str,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .validation_schema
+    {
+        Some(0) => Ok(()),
+        None => Err(ProtocolError::NotSupported(format!(
+            "protocol version {} checks no document against a validation schema",
+            platform_version.protocol_version
+        ))),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: method.to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
     }
 }
 
@@ -495,7 +607,9 @@ impl SchemaNode {
             SchemaKeyword::Format(keyword) => {
                 let format = self.format.as_deref()?;
                 match keyword {
-                    FormatKeyword::Format => format.format.clone().map(Value::Text),
+                    FormatKeyword::Format => format
+                        .format
+                        .map(|format| Value::Text(format.name().to_string())),
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for.as_ref().map(encrypted_for_value)
                     }
@@ -587,22 +701,6 @@ const VALIDATOR_KEYWORDS: [&str; 40] = [
     "uniqueItems",
 ];
 
-/// The formats the JSON Schema validator knows under draft 2020-12, the pinned fork's. It
-/// compiles no schema naming another (it does not ignore unknown formats), so a `$ref`
-/// reaching one refuses every value.
-const VALIDATOR_FORMATS: [&str; 10] = [
-    "date",
-    "date-time",
-    "email",
-    "hostname",
-    "idn-email",
-    "ipv4",
-    "ipv6",
-    "regex",
-    "time",
-    "uri",
-];
-
 /// A plain-name anchor, as the draft 2020-12 meta-schema's `anchorString` admits one.
 static ANCHOR: Lazy<regex::Regex> = Lazy::new(|| {
     regex::Regex::new(r"^[A-Za-z_][-A-Za-z0-9._]*$").expect("a literal pattern compiles")
@@ -618,21 +716,15 @@ static URI_REFERENCE: Lazy<regex::Regex> = Lazy::new(|| {
 static CONTROL_ESCAPE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\\c[A-Za-z]").expect("a literal pattern compiles"));
 
-/// Whether the JSON Schema validator compiles `pattern`, as the pinned fork's
-/// `convert_regex` does: it replaces each ECMA control escape `\cX` with its control
-/// character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit ones,
-/// and compiles the result with the `regex` crate, which refuses look-around and
+/// `pattern` compiled as the JSON Schema validator compiles it, `None` when it does not
+/// compile. The pinned fork's `convert_regex` replaces each ECMA control escape `\cX` with its
+/// control character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit
+/// ones, and compiles the result with the `regex` crate, which refuses look-around and
 /// backreferences. The size limit is the crate's default: the document validator compiles
 /// a contract it loaded from state with default `regex` options, and every node validates
 /// documents against a contract so loaded. Registration compiles the schema under a smaller
 /// limit, so every pattern the document schema reaches directly also compiles here; one a
 /// `$ref` target holds is compiled only when a document reaches it, under the default.
-fn compiles_as_validator_pattern(pattern: &str) -> bool {
-    validator_regex(pattern).is_some()
-}
-
-/// `pattern` compiled as the JSON Schema validator compiles it (see
-/// [`compiles_as_validator_pattern`]), `None` when it does not compile.
 fn validator_regex(pattern: &str) -> Option<regex::Regex> {
     validator_regex_within(pattern, None)
 }
@@ -690,6 +782,24 @@ pub(crate) fn validator_regex_within(
 struct Reached {
     /// Every `$ref` met, with the reading of the schema it reaches, to build.
     pending: VecDeque<(String, Reading)>,
+    /// Every `pattern` met, compiled ([`validator_regex`]).
+    patterns: BTreeMap<String, regex::Regex>,
+}
+
+impl Reached {
+    /// Whether the JSON Schema validator compiles `pattern`, keeping it compiled.
+    fn compile_pattern(&mut self, pattern: &str) -> bool {
+        if self.patterns.contains_key(pattern) {
+            return true;
+        }
+        match validator_regex(pattern) {
+            Some(regex) => {
+                self.patterns.insert(pattern.to_string(), regex);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// How consensus reads a schema node, for the three keywords the module documentation says
@@ -1302,7 +1412,7 @@ fn build_node(
                     StringKeyword::MaxBytes => string.max_bytes = Some(count(value, name)?),
                     StringKeyword::Pattern => {
                         let pattern = text(value, name)?;
-                        if !compiles_as_validator_pattern(pattern) {
+                        if !reached.compile_pattern(pattern) {
                             return Err(structure_error(format!(
                                 "the JSON Schema validator compiles no `{name}` `{pattern}`, so \
                                  it refuses every value reaching it"
@@ -1328,13 +1438,13 @@ fn build_node(
                 match keyword {
                     FormatKeyword::Format => {
                         let format_name = text(value, name)?;
-                        if !VALIDATOR_FORMATS.contains(&format_name) {
+                        let Ok(validator_format) = format_name.parse::<ValidatorFormat>() else {
                             return Err(structure_error(format!(
                                 "the JSON Schema validator knows no format `{format_name}` and \
                                  compiles no schema that names it"
                             )));
-                        }
-                        format.format = Some(format_name.to_string())
+                        };
+                        format.format = Some(validator_format)
                     }
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for = Some(

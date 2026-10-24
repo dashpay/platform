@@ -171,6 +171,12 @@ pub struct DocumentTypeSchemaVersions {
     /// documents a `countOf` or `sumOf` totals by integer, string or
     /// identifier keys; 1 (protocol version 15) by byte array keys too.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Builds a document type's typed validation schema and its native validator
+    /// (`document_type::schema::validation_schema`), which `validate_document` 2 checks
+    /// documents against. `None` on versions whose document validation does not read one;
+    /// 0 (protocol version 15) builds what the document validator of protocol version 14
+    /// compiles.
+    pub validation_schema: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
