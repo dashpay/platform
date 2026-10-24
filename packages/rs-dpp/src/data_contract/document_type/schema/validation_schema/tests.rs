@@ -2338,6 +2338,32 @@ fn should_refuse_an_id_that_may_move_a_reference() {
     }
 }
 
+/// JSON keeps the last entry of a repeated key, so only the last of a repeated `$id` is read.
+#[test]
+fn should_read_only_the_last_of_a_repeated_id() {
+    let property = |first: &str, last: &str| {
+        Value::Map(vec![
+            (text_value("type"), text_value("string")),
+            (text_value("$id"), text_value(first)),
+            (text_value("$id"), text_value(last)),
+        ])
+    };
+    // A non-plain `$id` the plain one after it shadows
+    let root = with_value(property("https://example.com/a", "plain"));
+    assert!(
+        ValidationSchema::try_from_root(&root).is_ok(),
+        "expected the schema to build"
+    );
+    #[cfg(feature = "validation")]
+    assert!(
+        existing_validator_compiles(&validating_json(&root)),
+        "expected the existing validator to compile it"
+    );
+    // A plain `$id` a non-plain one after it shadows
+    let message = refusal(with_value(property("plain", "https://example.com/a")));
+    assert!(message.contains("is not a plain name"), "{message}");
+}
+
 /// The values of `enum` and `const` are instance data, which the JSON Schema validator's
 /// resolver skips: an `$id` there is no scope, so the builder reads none.
 #[test]

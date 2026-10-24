@@ -212,14 +212,16 @@ fn refuse_a_property_reference_the_parser_resolves_elsewhere(
 /// in the data of Platform keywords the validator's resolver walks as it walks a schema,
 /// such as a `refersTo` `findBy`, so any other `$id` is refused wherever it is written.
 fn refuse_identifiers_that_may_move_a_reference(root: &Value) -> Result<(), DataContractError> {
-    if let Some(id) = root
-        .as_map()
-        .and_then(|map| {
-            map.iter()
-                .find(|(key, value)| key.as_text() == Some("$id") && value.is_text())
-        })
-        .and_then(|(_, id)| id.as_text())
-    {
+    // The validator reads the schema converted to JSON, where a repeated key keeps its last
+    // entry
+    let root_id = match root.as_map() {
+        Some(map) => last_wins(map)?
+            .into_iter()
+            .find(|(key, _)| *key == "$id")
+            .and_then(|(_, id)| id.as_text()),
+        None => None,
+    };
+    if let Some(id) = root_id {
         return Err(structure_error(format!(
             "the document schema carries `$id` `{id}`, against which the JSON Schema validator \
              resolves every `$ref` (or compiles nothing, for a relative one), which the \
@@ -230,15 +232,16 @@ fn refuse_identifiers_that_may_move_a_reference(root: &Value) -> Result<(), Data
 }
 
 /// Refuses an `$id` written as text that is not a plain name, anywhere in `value` the JSON
-/// Schema validator's resolver looks for one: everywhere but the values of `enum` and
-/// `const`, which are instance data it skips.
+/// Schema validator's resolver looks for one: in the entries of each map that JSON keeps,
+/// the last of a repeated key, and everywhere but the values of `enum` and `const`, which
+/// are instance data it skips.
 fn refuse_identifiers_that_are_not_plain_names(value: &Value) -> Result<(), DataContractError> {
     match value {
-        Value::Map(map) => map.iter().try_for_each(|(key, value)| {
-            if matches!(key.as_text(), Some("enum" | "const")) {
+        Value::Map(map) => last_wins(map)?.into_iter().try_for_each(|(key, value)| {
+            if matches!(key, "enum" | "const") {
                 return Ok(());
             }
-            if let (Some("$id"), Some(id)) = (key.as_text(), value.as_text()) {
+            if let ("$id", Some(id)) = (key, value.as_text()) {
                 let plain = !id.is_empty()
                     && id
                         .chars()
