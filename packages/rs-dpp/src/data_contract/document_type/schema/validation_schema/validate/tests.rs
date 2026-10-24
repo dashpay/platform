@@ -97,6 +97,12 @@ fn should_compare_array_elements_as_the_existing_validator_does() {
     check(vec![
         // Up to 15 elements, by value, and objects key by key in written order
         (json!({ "uniqueItems": true }), json!([1, 1.0]), false),
+        // exactly across readings: equal as f64, not as numbers
+        (
+            json!({ "uniqueItems": true }),
+            json!([9007199254740993_u64, 9007199254740992.0]),
+            true,
+        ),
         (
             json!({ "uniqueItems": true }),
             json!([{ "a": 1, "b": 2 }, { "b": 2, "a": 1 }, 3]),

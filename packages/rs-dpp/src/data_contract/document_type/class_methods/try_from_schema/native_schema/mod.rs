@@ -26,7 +26,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::schema::validation_schema::{
-    is_unique, validator_regex_within, DocumentSchemaValidator,
+    equal_json, is_unique, validator_regex_within, DocumentSchemaValidator,
 };
 use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
@@ -668,33 +668,5 @@ fn number_above(number: &JsonNumber, limit: i64) -> bool {
         NumCmp::num_gt(number, limit)
     } else {
         NumCmp::num_gt(number.as_f64().unwrap_or(f64::NAN), limit)
-    }
-}
-
-/// Whether two JSON values are equal as the meta-schema check compared an `enum` member:
-/// numbers by value whatever their reading, objects entry by entry in written order.
-fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
-    match (left, right) {
-        (JsonValue::Number(left), JsonValue::Number(right)) => {
-            match (left.as_u64(), left.as_i64(), right.as_u64(), right.as_i64()) {
-                (Some(left), _, Some(right), _) => left == right,
-                (_, Some(left), _, Some(right)) => left == right,
-                _ => match (left.as_f64(), right.as_f64()) {
-                    (Some(left), Some(right)) => left == right,
-                    _ => false,
-                },
-            }
-        }
-        (JsonValue::Array(left), JsonValue::Array(right)) => {
-            left.len() == right.len() && left.iter().zip(right).all(|(l, r)| equal_json(l, r))
-        }
-        (JsonValue::Object(left), JsonValue::Object(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|((lk, lv), (rk, rv))| lk == rk && equal_json(lv, rv))
-        }
-        (left, right) => left == right,
     }
 }

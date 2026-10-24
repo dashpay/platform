@@ -920,8 +920,9 @@ fn equal_value(instance: &JsonValue, expected: &Value) -> bool {
     }
 }
 
-/// Whether two values of the document are equal as [`equal_value`] compares.
-fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
+/// Whether two values of the document are equal as [`equal_value`] compares: numbers
+/// exactly across their unsigned, signed and float readings.
+pub(crate) fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
     match (left, right) {
         (JsonValue::String(left), JsonValue::String(right)) => left == right,
         (JsonValue::Bool(left), JsonValue::Bool(right)) => left == right,

@@ -1503,3 +1503,14 @@ fn should_refuse_a_type_whose_references_cycle_as_its_documents_would_be() {
         "{error:?}"
     );
 }
+
+#[test]
+fn should_compare_numbers_exactly_across_their_readings() {
+    // Equal as f64, distinct as the meta-schema check compared them
+    assert!(!super::equal_json(
+        &json!(9007199254740993_u64),
+        &json!(9007199254740992.0)
+    ));
+    assert!(super::equal_json(&json!(1_u64), &json!(1.0)));
+    assert!(super::equal_json(&json!(-3_i64), &json!(-3.0)));
+}
