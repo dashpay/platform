@@ -909,10 +909,15 @@ fn refuse_identifiers_that_may_move_a_reference(root: &Value) -> Result<(), Data
     refuse_identifiers_that_are_not_plain_names(root)
 }
 
-/// Refuses an `$id` written as text that is not a plain name, anywhere in `value`.
+/// Refuses an `$id` written as text that is not a plain name, anywhere in `value` the JSON
+/// Schema validator's resolver looks for one: everywhere but the values of `enum` and
+/// `const`, which are instance data it skips.
 fn refuse_identifiers_that_are_not_plain_names(value: &Value) -> Result<(), DataContractError> {
     match value {
         Value::Map(map) => map.iter().try_for_each(|(key, value)| {
+            if matches!(key.as_text(), Some("enum" | "const")) {
+                return Ok(());
+            }
             if let (Some("$id"), Some(id)) = (key.as_text(), value.as_text()) {
                 let plain = !id.is_empty()
                     && id
