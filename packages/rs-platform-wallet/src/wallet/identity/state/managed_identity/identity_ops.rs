@@ -414,8 +414,10 @@ impl ManagedIdentity {
     /// it holds enabled. A fetch at the cache's revision from a block below
     /// the watermark is older than the key states the cache took, so it
     /// changes no key state; only a raised limit is taken. The watermark is
-    /// stored with the scalar snapshot, but the mobile persisters do not
-    /// restore it, so there the first fetch after a restart is taken whole.
+    /// stored with the scalar snapshot. A store that restores only the
+    /// balance's block gives that as the watermark (every fetch folded in
+    /// reached it); one that restores neither leaves none, so there the
+    /// first fetch after a restart is taken whole.
     ///
     /// Revisions only grow on Platform, so a fetch at a lower revision was
     /// answered before an update the cache already holds (one applied
@@ -432,9 +434,11 @@ impl ManagedIdentity {
         let cached = self.identity.public_keys().clone();
         let fold = self.key_fold(fetched, block_time);
         let taken = fold == KeyFold::Whole;
+        if fetched.revision() >= self.identity.revision() {
+            self.revision_refused_at = None;
+        }
         let mut keys = if taken {
             self.identity = fetched.clone();
-            self.revision_refused_at = None;
             self.identity.set_balance(balance);
             if self
                 .last_synced_keys_block_time
