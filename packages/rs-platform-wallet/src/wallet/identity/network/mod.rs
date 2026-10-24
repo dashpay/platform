@@ -93,6 +93,7 @@ pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
     ContactSyncReport,
 };
+pub use contacts::{ExternalAccountRegistration, RegisterExternalError};
 pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
