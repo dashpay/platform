@@ -218,14 +218,32 @@ struct ClaimInvitationSheet: View {
                     network: network
                 ))
 
-                let managed = try await wallet.claimInvitation(
-                    uri: submittedURI,
-                    identityIndex: identityIndex,
-                    identityPubkeys: keys,
-                    signer: signer,
-                    nowUnix: UInt32(Date().timeIntervalSince1970)
-                )
-                let newIdentityId = try managed.getId()
+                let newIdentityId: Identifier
+                do {
+                    let managed = try await wallet.claimInvitation(
+                        uri: submittedURI,
+                        identityIndex: identityIndex,
+                        identityPubkeys: keys,
+                        signer: signer,
+                        nowUnix: UInt32(Date().timeIntervalSince1970)
+                    )
+                    newIdentityId = try managed.getId()
+                } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
+                    // The invitation's identity is this wallet's: one it
+                    // records, or one an earlier claim at this index created
+                    // without recording it, which is loaded like any identity
+                    // of this wallet. Only the identity the error names counts.
+                    if let recorded = identities.first(where: { $0.identityIdBase58 == claimedId }) {
+                        newIdentityId = recorded.identityId
+                    } else if let loaded = try? await wallet.loadIdentity(atIndex: identityIndex),
+                              loaded.toBase58String() == claimedId {
+                        newIdentityId = loaded
+                    } else {
+                        errorMessage = "This invitation already created identity \(claimedId) "
+                            + "in this wallet. If it is not listed, try Re-scan for Identities."
+                        return
+                    }
+                }
                 kickDashPaySync(walletManager)
 
                 // Offer the contact-bootstrap when the link carried an inviter
