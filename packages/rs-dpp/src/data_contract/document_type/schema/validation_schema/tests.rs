@@ -1195,7 +1195,7 @@ fn should_match_the_existing_validator_on_patterns() {
         "\\u0041",
     ] {
         assert_eq!(
-            compiles_as_validator_pattern(pattern),
+            validator_regex(pattern).is_some(),
             compiles(pattern),
             "{pattern}"
         );

@@ -345,6 +345,14 @@ impl ValidationSchema {
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
+        Self::try_from_root_with_patterns(root).map(|(schema, _)| schema)
+    }
+
+    /// [`Self::try_from_root`], with every `pattern` the schema holds compiled as the
+    /// builder compiled it to check it, for the native validator to reuse.
+    pub(crate) fn try_from_root_with_patterns(
+        root: &Value,
+    ) -> Result<(Self, BTreeMap<String, regex::Regex>), DataContractError> {
         // The document validator converts the whole schema before it compiles it, so a value
         // JSON cannot hold anywhere, even one the validator would then ignore or drop as a
         // shadowed entry of a repeated key, leaves it nothing to compile
@@ -383,10 +391,13 @@ impl ValidationSchema {
                     .or_insert_with(|| Arc::clone(node));
             }
         }
-        Ok(Self {
-            root: root_node,
-            references,
-        })
+        Ok((
+            Self {
+                root: root_node,
+                references,
+            },
+            reached.patterns,
+        ))
     }
 }
 
@@ -410,6 +421,30 @@ impl DataContract {
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
+        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
+        Ok(ValidationSchema::try_from_root(&root)?)
+    }
+
+    /// The native validator of one of the contract's document types: its validation schema
+    /// ([`Self::document_type_validation_schema`]) with the patterns the builder compiled.
+    pub(crate) fn document_type_native_validator(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentSchemaValidator, ProtocolError> {
+        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
+        let (schema, patterns) = ValidationSchema::try_from_root_with_patterns(&root)?;
+        Ok(DocumentSchemaValidator::with_patterns(schema, patterns)?)
+    }
+
+    /// The schema the document validator compiles for one of the contract's document types:
+    /// its own schema with the contract's `$defs` and the base schema added and its property
+    /// type shorthands expanded.
+    fn document_type_validated_schema(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         if platform_version
             .dpp
             .contract_versions
@@ -430,9 +465,10 @@ impl DataContract {
             self.schema_defs().map(|defs| Value::from(defs.clone())),
             platform_version,
         )?;
-        let root = DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
-            .unwrap_or(root);
-        Ok(ValidationSchema::try_from_root(&root)?)
+        Ok(
+            DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
+                .unwrap_or(root),
+        )
     }
 }
 
@@ -646,21 +682,15 @@ static URI_REFERENCE: Lazy<regex::Regex> = Lazy::new(|| {
 static CONTROL_ESCAPE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\\c[A-Za-z]").expect("a literal pattern compiles"));
 
-/// Whether the JSON Schema validator compiles `pattern`, as the pinned fork's
-/// `convert_regex` does: it replaces each ECMA control escape `\cX` with its control
-/// character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit ones,
-/// and compiles the result with the `regex` crate, which refuses look-around and
+/// `pattern` compiled as the JSON Schema validator compiles it, `None` when it does not
+/// compile. The pinned fork's `convert_regex` replaces each ECMA control escape `\cX` with its
+/// control character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit
+/// ones, and compiles the result with the `regex` crate, which refuses look-around and
 /// backreferences. The size limit is the crate's default: the document validator compiles
 /// a contract it loaded from state with default `regex` options, and every node validates
 /// documents against a contract so loaded. Registration compiles the schema under a smaller
 /// limit, so every pattern the document schema reaches directly also compiles here; one a
 /// `$ref` target holds is compiled only when a document reaches it, under the default.
-fn compiles_as_validator_pattern(pattern: &str) -> bool {
-    validator_regex(pattern).is_some()
-}
-
-/// `pattern` compiled as the JSON Schema validator compiles it (see
-/// [`compiles_as_validator_pattern`]), `None` when it does not compile.
 fn validator_regex(pattern: &str) -> Option<regex::Regex> {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
@@ -704,6 +734,24 @@ fn validator_regex(pattern: &str) -> Option<regex::Regex> {
 struct Reached {
     /// Every `$ref` met, with the reading of the schema it reaches, to build.
     pending: VecDeque<(String, Reading)>,
+    /// Every `pattern` met, compiled ([`validator_regex`]).
+    patterns: BTreeMap<String, regex::Regex>,
+}
+
+impl Reached {
+    /// Whether the JSON Schema validator compiles `pattern`, keeping it compiled.
+    fn compile_pattern(&mut self, pattern: &str) -> bool {
+        if self.patterns.contains_key(pattern) {
+            return true;
+        }
+        match validator_regex(pattern) {
+            Some(regex) => {
+                self.patterns.insert(pattern.to_string(), regex);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// How consensus reads a schema node, for the three keywords the module documentation says
@@ -1316,7 +1364,7 @@ fn build_node(
                     StringKeyword::MaxBytes => string.max_bytes = Some(count(value, name)?),
                     StringKeyword::Pattern => {
                         let pattern = text(value, name)?;
-                        if !compiles_as_validator_pattern(pattern) {
+                        if !reached.compile_pattern(pattern) {
                             return Err(structure_error(format!(
                                 "the JSON Schema validator compiles no `{name}` `{pattern}`, so \
                                  it refuses every value reaching it"

@@ -79,7 +79,15 @@ impl DocumentSchemaValidator {
     /// compile and a property declared twice, which the builder refuses already, and a chain
     /// of `$ref`s that returns to where it started without entering the value.
     pub fn new(schema: ValidationSchema) -> Result<Self, DataContractError> {
-        let mut patterns = BTreeMap::new();
+        Self::with_patterns(schema, BTreeMap::new())
+    }
+
+    /// [`Self::new`], reusing `patterns`, compiled as [`validator_regex`] compiles them: a
+    /// `pattern` of the schema missing there is compiled.
+    pub(crate) fn with_patterns(
+        schema: ValidationSchema,
+        mut patterns: BTreeMap<String, Regex>,
+    ) -> Result<Self, DataContractError> {
         {
             let mut nodes: Vec<&SchemaNode> = vec![&schema.root];
             nodes.extend(schema.references.values().map(|node| node.as_ref()));

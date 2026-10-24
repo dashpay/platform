@@ -169,8 +169,8 @@ impl DataContract {
         let built = match slot.get() {
             Some(built) => built,
             None => {
-                let validator = match self.document_type_validation_schema(name, platform_version) {
-                    Ok(schema) => DocumentSchemaValidator::new(schema),
+                let validator = match self.document_type_native_validator(name, platform_version) {
+                    Ok(validator) => Ok(validator),
                     Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
                     Err(error) => return Err(error),
                 };
