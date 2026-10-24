@@ -146,6 +146,20 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
+///
+/// 7. **Schemas checked natively at registration**: `CONTRACT_VERSIONS_V7`
+///    selects `check_document_type_schema` 1: full validation checks a
+///    document type's schema with the rules of document meta-schema v3 in
+///    Platform's own code instead of through the `jsonschema` crate, refusing
+///    with the same `JsonSchemaError`. It holds an index property name to 255
+///    bytes, where the meta-schema admitted 256 characters, treats `0.0` and
+///    `-0.0` as one value in a list that must be unique, such as an `enum`'s
+///    members, however long the list, as the document check of note 6 does,
+///    and refuses a document type the typed validation schema does not represent
+///    (`InvalidContractStructure`), so every type registered from this version
+///    has its documents checked natively (note 6). The parser is generation 3
+///    at both versions, and loading a stored contract runs no schema check.
+///    Protocol v14 and earlier keep `check_document_type_schema` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
@@ -164,7 +178,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

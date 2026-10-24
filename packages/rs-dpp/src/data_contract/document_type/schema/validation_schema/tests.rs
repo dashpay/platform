@@ -8,6 +8,8 @@ use crate::tests::fixtures::get_dashpay_contract_fixture;
 use crate::tests::fixtures::get_data_contract_fixture;
 #[cfg(feature = "validation")]
 use crate::validation::JsonSchemaValidator;
+#[cfg(feature = "validation")]
+use crate::ProtocolError;
 use platform_value::platform_value;
 use std::collections::BTreeSet;
 use std::fs;
@@ -691,7 +693,17 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
 /// version.
 #[cfg(feature = "validation")]
 fn registered(properties: Value, defs: Value) -> DataContract {
-    let platform_version = PlatformVersion::latest();
+    registration(properties, defs, PlatformVersion::latest())
+        .expect("expected the document type to register")
+}
+
+/// [`registered`] at `platform_version`, or its refusal.
+#[cfg(feature = "validation")]
+fn registration(
+    properties: Value,
+    defs: Value,
+    platform_version: &PlatformVersion,
+) -> Result<DataContract, ProtocolError> {
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
     let mut all_defs = contract.schema_defs().cloned().unwrap_or_default();
@@ -699,20 +711,34 @@ fn registered(properties: Value, defs: Value) -> DataContract {
     contract
         .set_schema_defs(Some(all_defs), true, &mut Vec::new(), platform_version)
         .expect("expected the definitions to register");
-    contract
-        .set_document_schema(
-            "item",
-            platform_value!({
-                "type": "object",
-                "properties": properties,
-                "additionalProperties": false,
-            }),
-            true,
-            &mut Vec::new(),
-            platform_version,
-        )
-        .expect("expected the document type to register");
-    contract
+    contract.set_document_schema(
+        "item",
+        platform_value!({
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": false,
+        }),
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )?;
+    Ok(contract)
+}
+
+/// [`registered`] at protocol version 14, for a document type without a validation schema,
+/// which registration refuses from protocol version 15.
+#[cfg(feature = "validation")]
+fn registered_before_validation_schemas(properties: Value, defs: Value) -> DataContract {
+    assert!(
+        registration(properties.clone(), defs.clone(), PlatformVersion::latest()).is_err(),
+        "expected the latest protocol version to refuse a type without a validation schema"
+    );
+    registration(
+        properties,
+        defs,
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+    )
+    .expect("expected the document type to register at protocol version 14")
 }
 
 /// Whether document validation through the JSON Schema validator, and the `maxBytes` check
@@ -758,7 +784,7 @@ fn should_hold_platform_keywords_exactly_where_document_validation_checks_them()
         Some(4)
     );
 
-    let contract = registered(
+    let contract = registered_before_validation_schemas(
         platform_value!({
             "name": { "$ref": "#/$defs/wide", "type": "string", "maxBytes": 4, "position": 0 },
         }),
@@ -776,7 +802,7 @@ fn should_hold_platform_keywords_exactly_where_document_validation_checks_them()
         platform_value!({ "type": "string", "maxBytes": 1 }),
         platform_value!({ "byteArray": true }),
     ] {
-        let contract = registered(
+        let contract = registered_before_validation_schemas(
             platform_value!({
                 "tags": {
                     "type": "array",
@@ -2397,7 +2423,7 @@ fn should_read_no_id_in_enum_or_const_data() {
 fn plain_name_ids() -> Value {
     platform_value!({
         "type": "object",
-        "ownerRefersTo": { "where": { "$id": "targetId" } },
+        "ownerRefersTo": { "where": { "$id": "targetId" }, "findBy": { "$id": "$ownerId" } },
         "properties": {
             "scoped": {
                 "$id": "elsewhere",

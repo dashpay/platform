@@ -54,6 +54,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
+#[cfg(feature = "validation")]
+mod native_schema;
 mod v0;
 mod v1;
 mod v2;
