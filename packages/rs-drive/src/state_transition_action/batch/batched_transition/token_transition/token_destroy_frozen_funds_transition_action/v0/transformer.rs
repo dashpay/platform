@@ -357,7 +357,7 @@ fn read_frozen_listings(
         transaction,
         platform_version,
     )?;
-    fee_result.processing_fee = fee_result.processing_fee.saturating_add(read_cost);
+    fee_result.checked_add_assign(FeeResult::new_from_processing_fee(read_cost))?;
     let token_market_contract = if listings.is_empty() {
         None
     } else {

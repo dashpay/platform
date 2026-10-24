@@ -651,12 +651,71 @@ impl DocumentOperationType<'_> {
                     batch_operations.extend(operations);
                 }
             }
-            // A contested insert, a withdrawal and a document history entry: built as before,
-            // after the batch's earlier operations. Listed rather than matched with a wildcard,
-            // so a new operation type has to decide whether it is built against them.
-            operation @ (DocumentOperationType::AddContestedDocument { .. }
-            | DocumentOperationType::AddWithdrawalDocument { .. }
-            | DocumentOperationType::DocumentHistory { .. }) => {
+            DocumentOperationType::AddContestedDocument {
+                owned_document_info,
+                contested_document_resource_vote_poll,
+                contract_info,
+                document_type_info,
+                insert_without_check,
+                also_insert_vote_poll_stored_info,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let operations = drive.add_contested_document_for_contract_operations(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract,
+                        document_type,
+                    },
+                    contested_document_resource_vote_poll,
+                    insert_without_check,
+                    block_info,
+                    also_insert_vote_poll_stored_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+            }
+            DocumentOperationType::AddWithdrawalDocument {
+                owned_document_info,
+            } => {
+                let contract = drive
+                    .cache
+                    .system_data_contracts
+                    .load_withdrawals(platform_version)?;
+                let document_type = contract
+                    .document_type_for_name(withdrawal::NAME)
+                    .map_err(ProtocolError::DataContractError)?;
+                let operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    block_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+            }
+            // A document history entry is built as before. Its API takes no earlier operations,
+            // and none can share its trees: a transition records at most one entry, keyed by its
+            // signer's nonce, and a batch carries one transition
+            // (`SystemLimits::max_transitions_in_documents_batch`). Listed rather than matched
+            // with a wildcard, so a new operation type has to decide how it is built.
+            operation @ DocumentOperationType::DocumentHistory { .. } => {
                 let operations = operation.into_low_level_drive_operations_after_ttl_drain(
                     drive,
                     estimated_costs_only_with_layer_info,
