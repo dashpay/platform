@@ -122,6 +122,51 @@ impl JsonType {
     }
 }
 
+/// A format the JSON Schema validator knows under draft 2020-12, the pinned fork's. It
+/// compiles no schema naming another (it does not ignore unknown formats), so a `$ref`
+/// reaching one refuses every value.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    strum::EnumIter,
+    strum::EnumString,
+    strum::IntoStaticStr,
+)]
+pub enum ValidatorFormat {
+    #[strum(serialize = "date")]
+    Date,
+    #[strum(serialize = "date-time")]
+    DateTime,
+    #[strum(serialize = "email")]
+    Email,
+    #[strum(serialize = "hostname")]
+    Hostname,
+    #[strum(serialize = "idn-email")]
+    IdnEmail,
+    #[strum(serialize = "ipv4")]
+    Ipv4,
+    #[strum(serialize = "ipv6")]
+    Ipv6,
+    #[strum(serialize = "regex")]
+    Regex,
+    #[strum(serialize = "time")]
+    Time,
+    #[strum(serialize = "uri")]
+    Uri,
+}
+
+impl ValidatorFormat {
+    /// The format's name as a schema writes it.
+    pub fn name(self) -> &'static str {
+        self.into()
+    }
+}
+
 /// The value of the `type` keyword, in the form it was written: one JSON type, or a list
 /// of them, any of which a value may be.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,7 +308,7 @@ pub struct NumberConstraints {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FormatConstraints {
     /// `format`.
-    pub format: Option<String>,
+    pub format: Option<ValidatorFormat>,
     /// `encryptedFor`, held only on a schema the document type parser reads as a property.
     pub encrypted_for: Option<EncryptedFor>,
 }
@@ -492,7 +537,9 @@ impl SchemaNode {
             SchemaKeyword::Format(keyword) => {
                 let format = self.format.as_deref()?;
                 match keyword {
-                    FormatKeyword::Format => format.format.clone().map(Value::Text),
+                    FormatKeyword::Format => format
+                        .format
+                        .map(|format| Value::Text(format.name().to_string())),
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for.as_ref().map(encrypted_for_value)
                     }
@@ -582,22 +629,6 @@ const VALIDATOR_KEYWORDS: [&str; 40] = [
     "type",
     "unevaluatedProperties",
     "uniqueItems",
-];
-
-/// The formats the JSON Schema validator knows under draft 2020-12, the pinned fork's. It
-/// compiles no schema naming another (it does not ignore unknown formats), so a `$ref`
-/// reaching one refuses every value.
-const VALIDATOR_FORMATS: [&str; 10] = [
-    "date",
-    "date-time",
-    "email",
-    "hostname",
-    "idn-email",
-    "ipv4",
-    "ipv6",
-    "regex",
-    "time",
-    "uri",
 ];
 
 /// A plain-name anchor, as the draft 2020-12 meta-schema's `anchorString` admits one.
@@ -1311,13 +1342,13 @@ fn build_node(
                 match keyword {
                     FormatKeyword::Format => {
                         let format_name = text(value, name)?;
-                        if !VALIDATOR_FORMATS.contains(&format_name) {
+                        let Ok(validator_format) = format_name.parse::<ValidatorFormat>() else {
                             return Err(structure_error(format!(
                                 "the JSON Schema validator knows no format `{format_name}` and \
                                  compiles no schema that names it"
                             )));
-                        }
-                        format.format = Some(format_name.to_string())
+                        };
+                        format.format = Some(validator_format)
                     }
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for = Some(

@@ -180,7 +180,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     assert_eq!(string(name).max_length, Some(63));
     assert_eq!(string(name).max_bytes, Some(126));
     assert_eq!(string(name).pattern.as_deref(), Some("^[a-z]+$"));
-    assert_eq!(format(name).format.as_deref(), Some("uri"));
+    assert_eq!(format(name).format, Some(ValidatorFormat::Uri));
     assert_eq!(
         name.enum_values,
         Some(vec![Value::Text("a".into()), Value::Text("b".into())])
@@ -873,8 +873,8 @@ fn should_refuse_a_format_the_validator_does_not_know() {
         platform_value!({ "type": "string", "maxLength": 64, "format": "date-time" }),
     ));
     assert_eq!(
-        format(property(&schema.root, "value")).format.as_deref(),
-        Some("date-time")
+        format(property(&schema.root, "value")).format,
+        Some(ValidatorFormat::DateTime)
     );
 
     for root in [
@@ -1283,8 +1283,8 @@ fn should_name_every_json_type_and_read_it_back() {
     assert_eq!(JsonType::from_name("Integer"), None);
 }
 
-/// Ties [`VALIDATOR_FORMATS`] and [`VALIDATOR_KEYWORDS`] to the existing validator: it
-/// compiles exactly the formats the table holds, and ignores the draft 2020-12 keywords the
+/// Ties [`ValidatorFormat`] and [`VALIDATOR_KEYWORDS`] to the existing validator: it
+/// compiles exactly the formats the enum holds, and ignores the draft 2020-12 keywords the
 /// table leaves out.
 #[cfg(feature = "validation")]
 #[test]
@@ -1315,7 +1315,7 @@ fn should_hold_the_formats_and_keywords_the_existing_validator_compiles() {
         );
         assert_eq!(
             compiles,
-            VALIDATOR_FORMATS.contains(&format_name),
+            format_name.parse::<ValidatorFormat>().is_ok(),
             "{format_name}"
         );
     }

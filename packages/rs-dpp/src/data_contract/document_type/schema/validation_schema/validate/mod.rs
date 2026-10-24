@@ -26,7 +26,7 @@
 
 use super::{
     structure_error, validator_regex, ArrayConstraints, JsonType, JsonTypes, NumberConstraints,
-    ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema,
+    ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema, ValidatorFormat,
 };
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::data_contract::errors::DataContractError;
@@ -348,12 +348,13 @@ impl<'v> Walk<'v> {
                 if self.done() {
                     return Ok(());
                 }
-                if let Some(format) = node.format.as_deref().and_then(|f| f.format.as_deref()) {
+                if let Some(format) = node.format.as_deref().and_then(|f| f.format) {
                     if !format_admits(format, string) {
                         self.fail("format", "", || {
+                            let name = format.name();
                             (
-                                json!({ "format": format }),
-                                format!("{instance} is not a \"{format}\""),
+                                json!({ "format": name }),
+                                format!("{instance} is not a \"{name}\""),
                             )
                         });
                     }
@@ -1028,10 +1029,10 @@ fn hash_json<H: Hasher>(value: &JsonValue, state: &mut H) {
     }
 }
 
-/// Whether `value` follows `format`, one the JSON Schema validator knows, as it reads it.
-fn format_admits(format: &str, value: &str) -> bool {
+/// Whether `value` follows `format` as the JSON Schema validator reads it.
+fn format_admits(format: ValidatorFormat, value: &str) -> bool {
     match format {
-        "date" => {
+        ValidatorFormat::Date => {
             time::Date::parse(
                 value,
                 &time::macros::format_description!("[year]-[month]-[day]"),
@@ -1039,23 +1040,21 @@ fn format_admits(format: &str, value: &str) -> bool {
             .is_ok()
                 && DATE.is_match(value)
         }
-        "date-time" => time::OffsetDateTime::parse(value, &Rfc3339).is_ok(),
-        "email" | "idn-email" => is_email(value),
-        "hostname" | "idn-hostname" => is_hostname(value),
-        "ipv4" => {
+        ValidatorFormat::DateTime => time::OffsetDateTime::parse(value, &Rfc3339).is_ok(),
+        ValidatorFormat::Email | ValidatorFormat::IdnEmail => is_email(value),
+        ValidatorFormat::Hostname => is_hostname(value),
+        ValidatorFormat::Ipv4 => {
             !value.starts_with('0')
                 && IpAddr::from_str(value).is_ok_and(|address| address.is_ipv4())
         }
-        "ipv6" => IpAddr::from_str(value).is_ok_and(|address| address.is_ipv6()),
+        ValidatorFormat::Ipv6 => IpAddr::from_str(value).is_ok_and(|address| address.is_ipv6()),
         // Under the `regex` crate's default size limit, as generation 1 compiles a document's
         // `format: regex` value: document validation checks a contract read from state, whose
         // validator `compile_and_validate` builds with the default engine. The 5 MiB limit of
         // `JsonSchemaValidator::compile` applies only where registration compiles the schema.
-        "regex" => validator_regex(value).is_some(),
-        "time" => TIME.is_match(value),
-        "uri" => Url::from_str(value).is_ok(),
-        // The builder refuses a format the validator does not know
-        _ => false,
+        ValidatorFormat::Regex => validator_regex(value).is_some(),
+        ValidatorFormat::Time => TIME.is_match(value),
+        ValidatorFormat::Uri => Url::from_str(value).is_ok(),
     }
 }
 
