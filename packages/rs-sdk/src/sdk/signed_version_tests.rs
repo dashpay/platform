@@ -1,10 +1,11 @@
-use super::{verifier_version, Sdk, SdkBuilder};
+use super::{verifier_version, Sdk, SdkBuilder, SdkInstance};
 use crate::error::StaleNodeError;
 use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::trunk_branch_sync::{
     run_full_tree_scan, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
 };
 use crate::platform::DocumentQuery;
+use crate::sync::retry;
 use crate::Error;
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0::Result as DocumentsResult, GetDocumentsResponseV0,
@@ -31,7 +32,10 @@ use drive::grovedb::{GroveBranchQueryResult, GroveTrunkQueryResult, LeafInfo, Me
 use drive_proof_verifier::types::Documents;
 use drive_proof_verifier::{Error as ProofError, FromProof};
 use platform_version::version::PlatformVersion;
-use rs_dapi_client::{AddressList, CanRetry, DumpData, RequestSettings};
+use rs_dapi_client::{
+    Address, AddressList, CanRetry, DumpData, ExecutionError, ExecutionResponse, IntoInner,
+    RequestSettings,
+};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -872,32 +876,59 @@ async fn verify_document_outcome_signed_at(sdk: &Sdk, version: u32) {
     .expect("signed document outcome verifies");
 }
 
-/// Ask `sdk` to verify a document query answer signed at protocol 13 at `time_ms`. The
-/// verifier refuses it before reading its proof, so the proof bytes are arbitrary. Its
-/// height is above every height the SDK has seen, so learning from it would show.
-async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath, time_ms: u64) -> Error {
-    let provider = DocumentOutcomeProvider::new(14);
-    let query = DocumentQuery::new(provider.contract.clone(), "preorder").unwrap();
-    let response = GetDocumentsResponse {
+/// The query of the document query tests: every `preorder` document, limit 10.
+fn preorder_query() -> DocumentQuery {
+    DocumentQuery::new(DocumentOutcomeProvider::new(14).contract, "preorder")
+        .unwrap()
+        .with_limit(10)
+}
+
+/// A node's answer to [`preorder_query`] at protocol 13, sent at `time_ms` and `height`. The
+/// verifier refuses it before reading its proof, so the proof bytes are arbitrary.
+fn older_document_answer(time_ms: u64, height: u64) -> GetDocumentsResponse {
+    GetDocumentsResponse {
         version: Some(DocumentsResponseVersion::V0(GetDocumentsResponseV0 {
             result: Some(DocumentsResult::Proof(Proof {
                 grovedb_proof: vec![1; 32],
                 ..Default::default()
             })),
             metadata: Some(ResponseMetadata {
-                height: 20,
+                height,
                 time_ms,
                 protocol_version: 13,
                 ..Default::default()
             }),
         })),
-    };
+    }
+}
+
+/// A node's answer to [`preorder_query`] at protocol 14, signed by the test quorum over a
+/// state holding one document, at height 10.
+fn signed_document_answer() -> GetDocumentsResponse {
+    GetDocumentsResponse::decode(document_outcome_vector("pv14-documents-response.bin").as_slice())
+        .unwrap()
+}
+
+/// A time tolerance that keeps both the recorded [`signed_document_answer`] and a current
+/// answer fresh.
+fn tolerance_admitting_the_signed_answer() -> u64 {
+    let signed_at = signed_document_answer().metadata().unwrap().time_ms;
+    now_ms() - signed_at + 24 * 60 * 60 * 1000
+}
+
+/// Ask `sdk` to verify `response` to [`preorder_query`] on `path`.
+async fn verify_document_answer(
+    sdk: &Sdk,
+    path: ProofPath,
+    response: GetDocumentsResponse,
+) -> Result<Option<Documents>, Error> {
+    let query = preorder_query();
     match path {
         ProofPath::Network => {
             sdk.verify_fetching_quorum_key::<DocumentQuery, Documents>(
                 query,
                 response,
-                &provider,
+                &DocumentOutcomeProvider::new(14),
                 "get_documents",
             )
             .await
@@ -911,7 +942,88 @@ async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath, time_ms: u64) 
             .await
         }
     }
-    .expect_err("a document answer signed below the verifier's version is not verified")
+    .map(|(documents, _, _)| documents)
+}
+
+/// Ask `sdk` to verify a document query answer signed at protocol 13 at `time_ms`. Its
+/// height is above every height the SDK has seen, so learning from it would show.
+async fn verify_older_document_answer(sdk: &Sdk, path: ProofPath, time_ms: u64) -> Error {
+    verify_document_answer(sdk, path, older_document_answer(time_ms, 20))
+        .await
+        .expect_err("a document answer signed below the verifier's version is not verified")
+}
+
+/// Fetch [`preorder_query`] as `Fetch` does, through the SDK's retry loop, from one node per
+/// answer: each attempt asks the node the SDK's address list selects, as the DAPI client
+/// does, and that node sends its answer. Returns the result, the nodes asked in order, and
+/// each node's ban count afterwards.
+///
+/// With two nodes, the rotation holds one node at a time and starts at the first: the
+/// second is asked only once the first leaves the rotation, by a ban or without one.
+async fn fetch_documents_from(
+    sdk: &mut Sdk,
+    path: ProofPath,
+    answers: Vec<GetDocumentsResponse>,
+) -> (Result<Option<Documents>, Error>, Vec<usize>, Vec<usize>) {
+    let nodes: Vec<Address> = (0..answers.len())
+        .map(|node| format!("http://127.0.0.1:{}", 3000 + node).parse().unwrap())
+        .collect();
+    let SdkInstance::Mock { address_list, .. } = &mut sdk.inner else {
+        panic!("mock SDK")
+    };
+    *address_list = if nodes.len() == 2 {
+        AddressList::new().with_active_set_size(1)
+    } else {
+        AddressList::new()
+    };
+    address_list.add(nodes[0].clone());
+    if nodes.len() == 2 {
+        assert_eq!(address_list.get_live_address().as_ref(), Some(&nodes[0]));
+    }
+    for node in &nodes[1..] {
+        address_list.add(node.clone());
+    }
+    let sdk = &*sdk;
+    let asked = Mutex::new(Vec::new());
+    let settings = RequestSettings {
+        retries: Some(answers.len() - 1),
+        ban_failed_address: Some(true),
+        ..Default::default()
+    };
+    let result = retry(sdk.address_list(), settings, |_| {
+        let address = sdk.address_list().get_live_address().expect("a live node");
+        let node = nodes.iter().position(|node| *node == address).unwrap();
+        asked.lock().unwrap().push(node);
+        let answer = answers[node].clone();
+        async move {
+            verify_document_answer(sdk, path, answer)
+                .await
+                .map(|documents| ExecutionResponse {
+                    inner: documents,
+                    address: address.clone(),
+                    retries: 0,
+                })
+                .map_err(|inner| ExecutionError {
+                    inner,
+                    address: Some(address),
+                    retries: 0,
+                })
+        }
+    })
+    .await
+    .into_inner();
+    let ban_info = sdk.address_list().ban_info();
+    let bans = nodes
+        .iter()
+        .map(|node| {
+            ban_info
+                .iter()
+                .find(|ban| ban.uri == node.to_string())
+                .unwrap()
+                .ban_count
+        })
+        .collect();
+    (result, asked.into_inner().unwrap(), bans)
 }
 
 fn now_ms() -> u64 {
@@ -949,15 +1061,22 @@ async fn should_retry_document_answers_signed_below_a_version_the_network_has_sh
             "{error:?}"
         );
         assert!(error.can_retry());
+        assert!(!error.spares_responder());
+        assert!(matches!(
+            error.into_exhausted_error(),
+            Error::Proof(ProofError::ProofProtocolVersionMismatch { .. })
+        ));
         assert_eq!(learned_state(&sdk), learned);
     }
 }
 
 /// An SDK pinned, seeded or persisted ahead of its network has no verified answer at its
-/// own version. Every node would be refused and banned alike, emptying the pool, so a
-/// document query fails at once without a retry and nothing is learned from the answer.
+/// own version, and its network's nodes all answer below it. Banning them would empty the
+/// pool, so such an answer moves the request to another node without banning this one, and
+/// a request that runs out of attempts on it fails as a configuration error. Nothing is
+/// learned from the answer.
 #[tokio::test]
-async fn should_fail_fast_on_document_answers_signed_below_a_version_the_network_has_not_shown() {
+async fn should_spare_nodes_answering_below_a_version_the_network_has_not_shown() {
     for path in [ProofPath::Network, ProofPath::Mock] {
         for pinned in [false, true] {
             // Fresh, or having verified only answers signed below the SDK's version.
@@ -969,43 +1088,236 @@ async fn should_fail_fast_on_document_answers_signed_below_a_version_the_network
                 let learned = learned_state(&sdk);
                 assert_eq!(learned, (14, network.unwrap_or(0), 10));
                 let error = verify_older_document_answer(&sdk, path, now_ms()).await;
-                assert!(matches!(error, Error::Config(_)), "{error:?}");
-                assert!(!error.can_retry());
+                assert!(
+                    matches!(
+                        error,
+                        Error::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        })
+                    ),
+                    "{error:?}"
+                );
+                assert!(error.can_retry());
+                assert!(error.spares_responder());
+                assert!(matches!(error.into_exhausted_error(), Error::Config(_)));
                 assert_eq!(learned_state(&sdk), learned);
             }
         }
     }
 }
 
-/// An answer outside the time tolerance comes from a stale node, whatever the SDK's version:
-/// it is retried on another node, which bans this one, even before any verified answer has
-/// shown the network running the SDK's version. Answers from nodes keeping up with the
-/// network are fresh, so an SDK set ahead of its network still fails at once.
+#[derive(Clone, Copy, Debug)]
+enum Freshness {
+    Fresh,
+    StaleTime,
+    StaleHeight,
+}
+
+/// An answer outside the height or time tolerance comes from a stale node, whatever the
+/// SDK's version: it is retried on another node, which bans this one, even before any
+/// verified answer has shown the network running the SDK's version. Its height is compared
+/// with the SDK's height mark but never raises it. Answers from nodes keeping up with the
+/// network are fresh, so an SDK set ahead of its network still bans none.
 #[tokio::test]
 async fn should_retry_stale_document_answers_signed_below_a_version_the_network_has_not_shown() {
     const TOLERANCE_MS: u64 = 60_000;
     for path in [ProofPath::Network, ProofPath::Mock] {
-        for stale in [false, true] {
+        for freshness in [
+            Freshness::Fresh,
+            Freshness::StaleTime,
+            Freshness::StaleHeight,
+        ] {
             let sdk = document_sdk(14, false, Some(TOLERANCE_MS));
             let learned = learned_state(&sdk);
             assert_eq!(learned, (14, 0, 10));
-            let time_ms = if stale {
-                now_ms() - 10 * TOLERANCE_MS
-            } else {
-                now_ms()
+            let answer = match freshness {
+                Freshness::Fresh => older_document_answer(now_ms(), 20),
+                Freshness::StaleTime => older_document_answer(now_ms() - 10 * TOLERANCE_MS, 20),
+                Freshness::StaleHeight => older_document_answer(now_ms(), 5),
             };
-            let error = verify_older_document_answer(&sdk, path, time_ms).await;
-            if stale {
-                assert!(
+            let error = verify_document_answer(&sdk, path, answer)
+                .await
+                .expect_err("a document answer signed below the verifier's version");
+            match freshness {
+                Freshness::Fresh => assert!(error.spares_responder(), "{error:?}"),
+                Freshness::StaleTime => assert!(
                     matches!(error, Error::StaleNode(StaleNodeError::Time { .. })),
                     "{error:?}"
-                );
-                assert!(error.can_retry());
-            } else {
-                assert!(matches!(error, Error::Config(_)), "{error:?}");
-                assert!(!error.can_retry());
+                ),
+                Freshness::StaleHeight => assert!(
+                    matches!(
+                        error,
+                        Error::StaleNode(StaleNodeError::Height {
+                            expected_height: 10,
+                            received_height: 5,
+                            tolerance_blocks: 1,
+                        })
+                    ),
+                    "{error:?}"
+                ),
             }
-            assert_eq!(learned_state(&sdk), learned);
+            assert!(error.can_retry(), "{freshness:?}");
+            let spared = error.spares_responder();
+            assert_eq!(
+                matches!(error.into_exhausted_error(), Error::Config(_)),
+                spared,
+                "only a spared answer ends as a configuration error; {freshness:?}"
+            );
+            assert_eq!(learned_state(&sdk), learned, "{freshness:?}");
+        }
+    }
+}
+
+/// Before any verified answer has shown the network running the SDK's version, a node that
+/// answers at an older version may be behind, or the SDK ahead: the request moves to the
+/// next node without banning it. The next node answers at the SDK's version and is
+/// verified. The refused answer's higher height never raised the height mark, which would
+/// have made the verified answer stale.
+#[tokio::test]
+async fn should_fetch_documents_from_the_next_node_when_one_answers_below_an_unshown_version() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        for pinned in [false, true] {
+            let mut sdk = document_sdk(14, pinned, Some(tolerance_admitting_the_signed_answer()));
+            assert_eq!(learned_state(&sdk), (14, 0, 10));
+            let (result, asked, bans) = fetch_documents_from(
+                &mut sdk,
+                path,
+                vec![
+                    older_document_answer(now_ms(), 20),
+                    signed_document_answer(),
+                ],
+            )
+            .await;
+            let documents = result
+                .expect("the node answering at the SDK's version is verified")
+                .expect("the proved page");
+            assert_eq!(documents.len(), 1, "pinned={pinned}");
+            assert_eq!(asked, [0, 1], "pinned={pinned}");
+            assert_eq!(bans, [0, 0], "no node is banned; pinned={pinned}");
+            assert_eq!(learned_state(&sdk), (14, 14, 10), "pinned={pinned}");
+        }
+    }
+}
+
+/// When every node answers below the SDK's version and no verified answer has shown the
+/// network running it, the SDK is ahead of its network: the request asks every node it may,
+/// bans none, and fails with a configuration error. Nothing is learned.
+#[tokio::test]
+async fn should_fail_with_a_configuration_error_when_no_node_answers_at_the_sdk_version() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        for pinned in [false, true] {
+            let mut sdk = document_sdk(14, pinned, None);
+            let learned = learned_state(&sdk);
+            let (result, mut asked, bans) =
+                fetch_documents_from(&mut sdk, path, vec![older_document_answer(now_ms(), 20); 4])
+                    .await;
+            let error = result.expect_err("no node answers at the SDK's version");
+            let Error::Config(message) = &error else {
+                panic!("{error:?}")
+            };
+            for named in [
+                "protocol version 13",
+                "protocol version 14",
+                "with_initial_version",
+            ] {
+                assert!(message.contains(named), "{message}");
+            }
+            assert!(!error.can_retry());
+            assert_eq!(asked.len(), 4, "pinned={pinned}");
+            asked.sort();
+            assert_eq!(
+                asked,
+                [0, 1, 2, 3],
+                "every node is asked once; pinned={pinned}"
+            );
+            assert_eq!(bans, [0; 4], "no node is banned; pinned={pinned}");
+            assert_eq!(learned_state(&sdk), learned, "pinned={pinned}");
+        }
+    }
+}
+
+/// Once a verified answer has shown the network running the SDK's version, a node answering
+/// below it is behind: the request moves to the next node, and the node behind is banned.
+#[tokio::test]
+async fn should_ban_a_node_answering_below_a_version_the_network_has_shown() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        // Seeded below and raised by the verified answer, or pinned at that version.
+        for (version, pinned) in [(13, false), (14, true)] {
+            let mut sdk = document_sdk(
+                version,
+                pinned,
+                Some(tolerance_admitting_the_signed_answer()),
+            );
+            verify_document_outcome_signed_at(&sdk, 14).await;
+            assert_eq!(learned_state(&sdk), (14, 14, 10));
+            let (result, asked, bans) = fetch_documents_from(
+                &mut sdk,
+                path,
+                vec![
+                    older_document_answer(now_ms(), 20),
+                    signed_document_answer(),
+                ],
+            )
+            .await;
+            assert_eq!(result.unwrap().unwrap().len(), 1, "pinned={pinned}");
+            assert_eq!(asked, [0, 1], "pinned={pinned}");
+            assert_eq!(bans, [1, 0], "the node behind is banned; pinned={pinned}");
+            assert_eq!(learned_state(&sdk), (14, 14, 10), "pinned={pinned}");
+        }
+    }
+}
+
+/// Once a verified answer has shown the network running the SDK's version, nodes answering
+/// below it are behind, not a sign of an SDK set ahead of its network: each one asked is
+/// banned, and the query fails with the retryable proof error, not a configuration error.
+#[tokio::test]
+async fn should_ban_every_node_answering_below_a_version_the_network_has_shown() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        let mut sdk = document_sdk(13, false, None);
+        verify_document_outcome_signed_at(&sdk, 14).await;
+        let learned = learned_state(&sdk);
+        let (result, mut asked, bans) =
+            fetch_documents_from(&mut sdk, path, vec![older_document_answer(now_ms(), 20); 4])
+                .await;
+        let error = result.expect_err("no node answers at the SDK's version");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::ProofProtocolVersionMismatch { .. })
+            ),
+            "{error:?}"
+        );
+        assert!(error.can_retry());
+        asked.sort();
+        assert_eq!(asked, [0, 1, 2, 3], "every node is asked once");
+        assert_eq!(bans, [1; 4], "every node behind is banned");
+        assert_eq!(learned_state(&sdk), learned);
+    }
+}
+
+/// A node whose answer is outside the height or time tolerance is stale whatever its
+/// version, so it is banned even before any verified answer has shown the network running
+/// the SDK's version, and the request moves to the next node.
+#[tokio::test]
+async fn should_ban_a_stale_node_answering_below_an_unshown_version() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        for freshness in [Freshness::StaleTime, Freshness::StaleHeight] {
+            let tolerance = tolerance_admitting_the_signed_answer();
+            let mut sdk = document_sdk(14, false, Some(tolerance));
+            let stale = match freshness {
+                Freshness::StaleTime => {
+                    older_document_answer(now_ms() - tolerance - 24 * 60 * 60 * 1000, 20)
+                }
+                Freshness::StaleHeight => older_document_answer(now_ms(), 5),
+                Freshness::Fresh => unreachable!("only stale answers are asked here"),
+            };
+            let (result, asked, bans) =
+                fetch_documents_from(&mut sdk, path, vec![stale, signed_document_answer()]).await;
+            assert_eq!(result.unwrap().unwrap().len(), 1, "{freshness:?}");
+            assert_eq!(asked, [0, 1], "{freshness:?}");
+            assert_eq!(bans, [1, 0], "the stale node is banned; {freshness:?}");
+            assert_eq!(learned_state(&sdk), (14, 14, 10), "{freshness:?}");
         }
     }
 }

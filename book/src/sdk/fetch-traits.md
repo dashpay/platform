@@ -313,11 +313,12 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    the protocol version they are verified with, so an answer signed at an older
    protocol version than the SDK's is not verified with them. Once a verified
    answer has shown the network running the SDK's protocol version, an answer
-   from a node still on an older version fails with a retryable proof error and
-   the request moves to another node. Until then such an answer fails the query
-   with `Error::Config` and no node is excluded, as for an SDK set to a newer
-   protocol version than its network runs; an answer outside the time tolerance
-   still fails as stale and is retried.
+   from a node still on an older version fails with a retryable proof error: the
+   request moves to another node, and the node behind is banned. Until then such
+   an answer also moves the request to another node but bans no node, since the
+   SDK may be set to a newer protocol version than its network runs; a query whose
+   every attempt ends this way fails with `Error::Config`. An answer outside the
+   height or time tolerance still fails as stale, and its node is banned.
 
 4. **Metadata validation**: The SDK checks that the response metadata (height, time)
    is fresh enough based on the configured tolerances.

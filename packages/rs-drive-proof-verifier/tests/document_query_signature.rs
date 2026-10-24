@@ -6,12 +6,14 @@ use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::{GetDocumentsResponse, ResponseMetadata};
+use dapi_grpc::Message;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::query::DriveDocumentQuery;
@@ -168,4 +170,33 @@ fn should_bind_the_protocol_version_of_a_document_answer_to_its_signature() {
         matches!(*error, Error::InvalidSignature { .. }),
         "{error:?}"
     );
+}
+
+/// Writes the signed answer the SDK tests replay as a node answering at the SDK's protocol
+/// version: all `preorder` documents, limit 10, of `pv14-contract.bin`, signed at protocol 14.
+#[test]
+#[ignore = "regenerates the signed document query answer the SDK tests replay"]
+fn should_export_document_answer_sdk_fixture() {
+    // Fixed at protocol 14, not the latest version, so regenerating it rewrites the same
+    // answer the SDK tests read.
+    let producer = PlatformVersion::get(14).expect("protocol 14 is known");
+    let (contract, document, response) = signed_answer(producer);
+    let documents = verify(&contract, response.clone(), producer)
+        .expect("the answer verifies at the version that signed it")
+        .expect("the proved page");
+    assert_eq!(documents.get(&document.id()), Some(&Some(document)));
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/document-outcome");
+    assert_eq!(
+        contract
+            .serialize_to_bytes_with_platform_version(producer)
+            .expect("serialize the contract"),
+        std::fs::read(directory.join("pv14-contract.bin")).expect("read pv14-contract.bin"),
+        "the answer is over the contract the SDK tests load"
+    );
+    std::fs::write(
+        directory.join("pv14-documents-response.bin"),
+        response.encode_to_vec(),
+    )
+    .expect("write the fixture");
 }

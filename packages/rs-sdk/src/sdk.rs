@@ -552,19 +552,22 @@ impl Sdk {
     /// * the network runs the SDK's version: the node is behind, so the error stays
     ///   [`Error::Proof`], the request moves to another node and this one is banned;
     /// * nothing has shown it yet: the SDK may be pinned, seeded or persisted ahead of its
-    ///   network, where every node would be refused and banned alike, so the query fails
-    ///   at once with [`Error::Config`] and no node is banned. An answer outside the time
-    ///   tolerance still fails as stale ([`StaleNodeError::Time`]), so a node that stopped
-    ///   following the network is retried and banned: answers from nodes keeping up with
-    ///   the network are fresh.
+    ///   network, where every node would be refused and banned alike, so the error is
+    ///   [`StaleNodeError::ProtocolVersion`]: the request moves to another node and none is
+    ///   banned, and a query whose every attempt ends so fails with [`Error::Config`]. An
+    ///   answer outside the height or time tolerance still fails as stale
+    ///   ([`StaleNodeError::Height`], [`StaleNodeError::Time`]), so a node that stopped
+    ///   following the network is banned: answers from nodes keeping up with the network
+    ///   are fresh.
     ///
-    /// `metadata` is the response's, not yet verified, and `now_ms` the time it arrived.
+    /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
+    /// it arrived.
     fn classify_verifier_error(
         &self,
         error: drive_proof_verifier::Error,
         method_name: &str,
         metadata: Option<&ResponseMetadata>,
-        now_ms: u64,
+        arrival: MetadataArrival,
     ) -> Error {
         if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
             error
@@ -572,22 +575,47 @@ impl Sdk {
             if signed < verifier
                 && self.verified_protocol_version.load(Ordering::Relaxed) < verifier
             {
-                let (_, time_tolerance) = self.freshness_criteria(method_name);
-                if let (Some(metadata), Some(tolerance)) = (metadata, time_tolerance) {
-                    if let Err(stale) = verify_metadata_time(metadata, now_ms, tolerance) {
+                if let Some(metadata) = metadata {
+                    if let Err(stale) =
+                        self.check_unverified_freshness(method_name, metadata, arrival)
+                    {
                         return stale;
                     }
                 }
-                return Error::Config(format!(
-                    "this answer names protocol version {signed}, below the SDK's \
-                     protocol version {verifier}, and no verified answer has yet shown the \
-                     network running {verifier}; if the SDK was set ahead of its network, let \
-                     it follow the network's protocol version instead, or seed it with the \
-                     network's version (with_initial_version)"
-                ));
+                return StaleNodeError::ProtocolVersion {
+                    expected_protocol_version: verifier,
+                    received_protocol_version: signed,
+                }
+                .into();
             }
         }
         error.into()
+    }
+
+    /// Check that metadata whose proof was not verified is fresh as of `arrival`, without
+    /// learning anything from it: the height mark is compared with, never raised.
+    fn check_unverified_freshness(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: MetadataArrival,
+    ) -> Result<(), Error> {
+        let (height_tolerance, time_tolerance) = self.freshness_criteria(method_name);
+        if let Some(tolerance) = time_tolerance {
+            verify_metadata_time(metadata, arrival.time_ms, tolerance)?;
+        }
+        if let Some(tolerance) = height_tolerance {
+            check_metadata_height(metadata.height, arrival.height, tolerance)?;
+        }
+        Ok(())
+    }
+
+    /// The SDK's height and clock anchors now, for a response that has just arrived.
+    fn metadata_arrival(&self) -> MetadataArrival {
+        MetadataArrival {
+            height: self.metadata_last_seen_height.load(Ordering::Acquire),
+            time_ms: chrono::Utc::now().timestamp_millis() as u64,
+        }
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -705,8 +733,9 @@ impl Sdk {
     /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     /// Document query answers signed below the stored version are not verified:
     /// they fail with [`Error::Proof`] once a verified answer has shown the network
-    /// running the stored version, and before that with [`Error::Config`], or as
-    /// stale when outside the time tolerance.
+    /// running the stored version, and before that with
+    /// [`StaleNodeError::ProtocolVersion`], which the retry loop moves past without
+    /// banning the node, or as stale when outside the height or time tolerance.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -729,17 +758,13 @@ impl Sdk {
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let metadata = response.response_metadata().ok().cloned();
+                let arrival = self.metadata_arrival();
                 let (verified, from_expectation) = mock
                     .lock()
                     .await
                     .parse_proof_with_metadata(request, response, self.version())
                     .map_err(|error| {
-                        self.classify_verifier_error(
-                            error,
-                            method_name,
-                            metadata.as_ref(),
-                            chrono::Utc::now().timestamp_millis() as u64,
-                        )
+                        self.classify_verifier_error(error, method_name, metadata.as_ref(), arrival)
                     })?;
                 if from_expectation {
                     // An expectation's metadata is made up, not verified: it moves
@@ -970,7 +995,16 @@ fn verify_metadata_height(
     let previous_height = last_seen_height.fetch_max(received_height, Ordering::AcqRel);
     let expected_height = seen_height
         .unwrap_or_else(|| previous_height.max(last_seen_height.load(Ordering::Acquire)));
+    check_metadata_height(received_height, expected_height, tolerance)
+}
 
+/// The remote node is stale if `received_height` is behind `expected_height` by more than
+/// `tolerance`.
+fn check_metadata_height(
+    received_height: u64,
+    expected_height: u64,
+    tolerance: u64,
+) -> Result<(), Error> {
     if expected_height > tolerance && received_height < expected_height.saturating_sub(tolerance) {
         return Err(StaleNodeError::Height {
             expected_height,
@@ -1260,7 +1294,8 @@ impl SdkBuilder {
     /// request version (see
     /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
     /// Document queries need answers signed at least at the pinned version: pinned
-    /// above the network, they fail with [`Error::Config`].
+    /// above the network, they fail with [`Error::Config`] once every node the request
+    /// may ask has answered below it, and no node is banned for it.
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].

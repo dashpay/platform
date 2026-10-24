@@ -1,11 +1,10 @@
 //! Verifying a proof signed by a quorum the context provider has not cached.
 
-use super::{verifier_version, MetadataArrival, ProofResponseMetadata, Sdk};
+use super::{verifier_version, ProofResponseMetadata, Sdk};
 use crate::Error;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use drive_proof_verifier::FromProof;
-use std::sync::atomic::Ordering;
 
 impl Sdk {
     /// Verify `response` against `provider`, fetching the key of a quorum the
@@ -47,10 +46,7 @@ impl Sdk {
         // follow a fetch; the copy is small next to proof verification itself.
         let metadata = response.response_metadata()?.clone();
         let version = verifier_version(self.version(), metadata.protocol_version);
-        let arrival = MetadataArrival {
-            height: self.metadata_last_seen_height.load(Ordering::Acquire),
-            time_ms: chrono::Utc::now().timestamp_millis() as u64,
-        };
+        let arrival = self.metadata_arrival();
         let missing = match O::maybe_from_proof_with_metadata(
             request.clone(),
             response.clone(),
@@ -75,7 +71,7 @@ impl Sdk {
                 missing,
                 method_name,
                 Some(&metadata),
-                arrival.time_ms,
+                arrival,
             ));
         };
         let Some(fetch) =
@@ -116,12 +112,9 @@ impl Sdk {
                     self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                     Ok(verified)
                 }
-                Err(error) => Err(self.classify_verifier_error(
-                    error,
-                    method_name,
-                    Some(&metadata),
-                    arrival.time_ms,
-                )),
+                Err(error) => {
+                    Err(self.classify_verifier_error(error, method_name, Some(&metadata), arrival))
+                }
             },
             Ok(None) => {
                 tracing::warn!(
