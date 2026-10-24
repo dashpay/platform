@@ -17,6 +17,9 @@
 
 use std::time::Duration;
 
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
+
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
     bind_shielded, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
@@ -61,7 +64,7 @@ async fn sh_001_shield_from_account() {
         .await
         .expect("bank.fund_address");
 
-    wait_for_address_balance_chain_confirmed_n(
+    let funded = wait_for_address_balance_chain_confirmed_n(
         s.ctx.sdk(),
         &addr_1,
         FUNDING_CREDITS,
@@ -112,6 +115,31 @@ async fn sh_001_shield_from_account() {
         "shielded_balances[0] must equal the shielded amount exactly \
          (note value = shielded amount, fee deducted from the transparent input); \
          observed {shielded}"
+    );
+
+    let remaining = wait_for(
+        || async {
+            // A failed proof-verified read retries until the deadline; it
+            // never counts as a debit.
+            let balance = match AddressInfo::fetch(s.ctx.sdk(), addr_1).await {
+                Ok(info) => info.map_or(0, |info| info.balance),
+                Err(error) => {
+                    tracing::debug!(%error, "source balance read failed; retrying");
+                    return None;
+                }
+            };
+            (balance < funded).then_some(balance)
+        },
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("source debit must appear on chain");
+    let debit = funded
+        .checked_sub(remaining)
+        .expect("source must be debited");
+    assert!(
+        (SHIELD_AMOUNT..SHIELD_AMOUNT + 1_000_000_000).contains(&debit),
+        "source must pay the shield amount within the existing fee headroom: {debit}"
     );
 
     // Best-effort teardown sweep: drain the residual shielded balance

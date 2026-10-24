@@ -1,21 +1,12 @@
 //! SH-012 — Sync watermark idempotency: `coordinator.sync(force)` twice
 //! yields stable balances.
 //!
-//! **RED-by-design (Found-032)**: `shielded_shield_from_account` fails with
-//! `ShieldedInsufficientBalance { available: 0, required: 2120000000 }` because
-//! `sync_balances()` does not populate the local balance map for `addr_1`. Funding
-//! was chain-confirmed via `wait_for_address_balance_chain_confirmed_n` (DAPI
-//! chain-query path), but `sync_balances()` returns 0 new entries and never
-//! refreshes the local map — `select_shield_inputs` sees `available = 0`.
-//! See TEST_SPEC.md Found-032.
-//!
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-012.
 //! Priority: P2.
 //!
 //! Shields a note, forces two syncs in a row, and asserts the shielded
-//! balance is identical after each (no double-append — a second append at
-//! an existing position would corrupt shardtree and surface as an anchor
-//! error at the next spend). The strong end-to-end check: a spend still
+//! balance is identical after each. This alone does not prove tree integrity.
+//! The strong end-to-end check: a spend still
 //! succeeds post-double-sync, and the spendable note's value survived the
 //! 115-byte serialize→store→deserialize round-trip exactly.
 //!
@@ -87,12 +78,7 @@ async fn sh_012_sync_watermark_idempotency() {
             prover,
         )
         .await
-        .expect(
-            "Found-032 (RED-by-design): shielded_shield_from_account fails with \
-             ShieldedInsufficientBalance (available=0) because sync_balances() \
-             does not refresh the local balance map when the incremental DAPI delta \
-             returns 0 new entries. See TEST_SPEC.md Found-032.",
-        );
+        .expect("shield_from_account");
     wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
         .await
         .expect("shielded balance never reached SHIELD_AMOUNT");
@@ -110,13 +96,13 @@ async fn sh_012_sync_watermark_idempotency() {
         .expect("balances after second forced sync");
     assert_eq!(
         first, second,
-        "shielded_balances must be identical after a second forced sync (no double-append); \
+        "shielded_balances must be identical after a second successful forced sync; \
          first={first:?} second={second:?}"
     );
     assert_eq!(
         second.get(&0).copied(),
         Some(SHIELD_AMOUNT),
-        "the note value must survive the serialize→store→deserialize round-trip exactly; \
+        "the cached note value must remain unchanged; \
          observed {second:?}"
     );
 

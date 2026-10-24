@@ -290,44 +290,45 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | not implemented | L |
 | Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green (harness-fix QA-503: removed structurally-unobservable secondary bank-identity invariant — concurrent `bank_rebalance` core-refill legitimately tops up the bank identity; sweep correctness still pinned by the immune `swept_identity_credits` assertion) | S |
 | PA-3040 | `pa_3040_bug_pin`: Drive chain-time fee exceeds wallet static estimate (platform #3040) | P1 | passes on paloma 2026-06-19 — `DeductFromInput` safety multiplier now covers Drive's chain-time fee; Drive no longer rejects. Regression guard for platform #3040. **NOT VALIDATED (2026-07-05 testnet run)** — failed at setup, but for a DIFFERENT, already-documented reason than the fund-planner blocker affecting other rows on this page: `e2e setup failed: Spv("wait_for_mn_list_synced: timed out after 600s")`, matching the §1.3 dash-spv mn-list QRInfo-stall known issue. Not a signal on this case's own (PA-3040) logic either way. | S |
-| SH-001 | Shield from platform-payment account → shielded pool (Type 15) | P0 | implemented — passes on paloma 2026-06-19 | L |
-| SH-002 | Round-trip: shield then unshield back to a transparent address (Type 15 → 17) | P0 | implemented — passes on paloma 2026-06-19 | L |
-| SH-003 | Shielded → shielded private transfer between two accounts of one wallet (Type 16) | P0 | implemented — passes on paloma 2026-06-19 | L |
-| SH-004 | `shielded_balances` reflects a shielded note after coordinator sync | P1 | implemented — passes on paloma 2026-06-19 | M |
-| SH-005 | Spend against in-memory store fails with witness-unavailable, file-backed succeeds (Found-027 pin) | P1 | implemented — passes on paloma 2026-06-19 (Found-027 resolved). **NOT VALIDATED (2026-07-05 testnet run)** — setup failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above). | M |
-| SH-006 | `shielded_add_account` post-bind: notes for the added account never sync (Found-028 pin) | P1 | implemented — red-by-design (Found-028 pin, confirmed failing on paloma 2026-06-19). **NOT VALIDATED (2026-07-05 testnet run)** — setup failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above). | M |
-| SH-007 | Pre-bind note is witnessable/spendable — guards the #3603 fix (Found-029, FIXED) | P1 | implemented — passes on paloma 2026-06-19. **NOT VALIDATED (2026-07-05 testnet run)** — setup failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above). | L |
-| SH-008 | Unshield insufficient-balance: typed `ShieldedInsufficientBalance` with exact `available`/`required` | P1 | implemented — passes on paloma 2026-06-19 | M |
-| SH-009 | Zero-amount shield / transfer rejected at the boundary (no proof paid) | P2 | implemented — passes on paloma 2026-06-19 | S |
-| SH-010 | Double-spend guard: two overlapping spends reserve disjoint notes (`reserve_unspent_notes`) | P2 | implemented — passes on paloma 2026-06-19 | M |
-| SH-011 | `select_notes_with_fee` convergence + overflow protection (unit-adjacent on real notes) | P2 | implemented — passes on paloma 2026-06-19. **NOT VALIDATED (2026-07-05 testnet run)** — setup failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above). | M |
-| SH-012 | Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances | P2 | implemented — passes on paloma 2026-06-19. **NOT VALIDATED (2026-07-05 testnet run)** — setup failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above). | M |
-| SH-013 | `bind_shielded` with empty accounts → typed `ShieldedKeyDerivation` error (no panic) | P2 | implemented — passes on paloma 2026-06-19 | S |
-| SH-014 | Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation` | P2 | implemented — passes on paloma 2026-06-19 | S |
-| SH-018 | Shield from Core L1 asset lock (Type 18) | P1 | implemented (Wave H + Core-L1 gate) — drives the production orchestrated `shielded_fund_from_asset_lock(FromWalletBalance)` path; Core-L1-gated so may run RED until asset-lock funding plumbing is complete | L |
-| SH-019 | Shielded withdraw to Core L1 address (Type 19) | P1 | implemented — passes on paloma 2026-06-19 | L |
-| SH-020 | ADVERSARIAL: double-spend same note across two transitions (16/17) — backend must reject 2nd | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-021 | ADVERSARIAL: nullifier replay after restart/resync — backend must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-022 | ADVERSARIAL: value not conserved (outputs > inputs) — backend must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-023 | ADVERSARIAL: fee underpayment below min shielded fee — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-024 | ADVERSARIAL: u64/i64 value boundary overflow/underflow — backend must reject safely | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-025 | ADVERSARIAL: forged/tampered/substituted Halo-2 proof — verifier must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-026 | ADVERSARIAL: stale/wrong anchor — backend must reject AnchorMismatch (Found-030 dynamic probe) | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-027 | ADVERSARIAL: malformed note serde (≠115B, corrupt cmx/nullifier) — error safely, no panic | P1 | implemented — passes on paloma 2026-06-19 | M |
-| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | implemented — passes on paloma 2026-06-19 | M |
-| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | implemented — passes on paloma 2026-06-19 | M |
-| SH-030 | ADVERSARIAL: cross-network/wrong-HRP/malformed/own-address recipient; transfer-to-self | P2 | implemented — passes on paloma 2026-06-19 | M |
-| SH-031 | ADVERSARIAL: reject different-seed rebind; preserve binding, notes, balance, and persisted viewing key | P1 | implemented — guards the intentional #4237 refusal; revised expectation not yet run live | M |
-| SH-032 | ADVERSARIAL: boundary balance == amount+fee + off-by-one below — exact-change correctness | P1 | implemented — passes on paloma 2026-06-19 | S |
-| SH-033 | ADVERSARIAL: duplicate nullifier WITHIN one bundle — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-034 | ADVERSARIAL: tampered binding signature — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-035 | ADVERSARIAL: replayed Type 18 asset-lock proof — backend must reject (single-use) | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
-| SH-037 | Identity → own shielded pool (Type 21) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
-| SH-038 | Identity → another wallet’s shielded address (Type 21) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
-| SH-039 | Platform address → another wallet’s shielded address (Type 15) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
-| SH-040 | Shielded → existing identity top-up (Type 22) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
-| SH-041 | Shielded → shielded across distinct wallets (Type 16) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; standard framework funding and sweep | L |
-| SH-042 | Core asset lock → another wallet’s shielded address (Type 18) | P1 | implemented (2026-10-23), not yet run live — exact balance accounting and recipient sync; Core-L1 gate | L |
+| SH-001 | Shield from platform-payment account → shielded pool (Type 15) | P0 | implemented; current assertions await live verification | L |
+| SH-002 | Round-trip: shield then unshield back to a transparent address (Type 15 → 17) | P0 | implemented; current assertions await live verification | L |
+| SH-003 | Shielded → shielded private transfer between two accounts of one wallet (Type 16) | P0 | implemented; current assertions await live verification | L |
+| SH-004 | `shielded_balances` reflects a shielded note after coordinator sync | P1 | implemented; current assertions await live verification | M |
+| SH-005 | Spend against in-memory store fails with witness-unavailable, file-backed succeeds (Found-027 pin) | P1 | implemented; PASS-as-documentation of unsupported in-memory witnesses; revised assertion awaits live verification | M |
+| SH-006 | `shielded_add_account` post-bind: notes for the added account never sync (Found-028 pin) | P1 | implemented; expected RED (Found-028 account registration); failed at 472ed65079 on 2026-10-23 | M |
+| SH-007 | Pre-bind note is witnessable/spendable — guards the #3603 fix (Found-029, FIXED) | P1 | implemented; current assertions await live verification | L |
+| SH-008 | Unshield insufficient balance with typed available/required fields | P1 | implemented; current assertions await live verification | M |
+| SH-009 | Funded zero-amount shield / transfer / unshield / withdraw; no proof | P2 | implemented; expected RED until transfer/unshield/withdraw zero guards land in the separate production PR | S |
+| SH-010 | Double-spend guard: two overlapping spends reserve disjoint notes (`reserve_unspent_notes`) | P2 | implemented; current assertions await live verification | M |
+| SH-011 | `select_notes_with_fee` convergence + overflow protection (unit-adjacent on real notes) | P2 | implemented; current assertions await live verification | M |
+| SH-012 | Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances | P2 | implemented; current assertions await live verification | M |
+| SH-013 | `bind_shielded` with empty accounts → typed `ShieldedKeyDerivation` error (no panic) | P2 | implemented; current assertions await live verification | S |
+| SH-014 | Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation` | P2 | implemented; current assertions await live verification | S |
+| SH-018 | Shield from Core L1 asset lock (Type 18) | P1 | implemented; current assertions await live verification | L |
+| SH-019 | Shielded withdraw to Core L1 address (Type 19) | P1 | implemented; shielded spend/change only; L1 payout observation not implemented | L |
+| SH-020 | ADVERSARIAL: same note in two Type-17 transitions | P0 | implemented; current assertions await live verification | M |
+| SH-021 | ADVERSARIAL: Type-17 nullifier replay after coordinator restart/resync | P0 | implemented; current assertions await live verification | M |
+| SH-022 | ADVERSARIAL: signed unshield amount tampering (sighash binding) | P0 | implemented; current assertions await live verification | M |
+| SH-023 | ADVERSARIAL: unshield amount below the min shielded fee — backend fee floor must reject | P1 | implemented; current assertions await live verification | M |
+| SH-024 | ADVERSARIAL: u64::MAX and u64::MAX−1 unshield amounts | P1 | implemented; current assertions await live verification | M |
+| SH-025 | ADVERSARIAL: forged/tampered/substituted Halo-2 proof — verifier must reject | P0 | implemented; current assertions await live verification | M |
+| SH-026 | ADVERSARIAL: unrecorded anchor rejection | P1 | implemented; unrecorded-anchor arm only; stale recorded-anchor behavior untested | M |
+| SH-027 | ADVERSARIAL: malformed note bytes/commitment; nullifier metadata isolation | P1 | implemented; current assertions await live verification | M |
+| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | BLOCKED; not implemented — no injectable sync-source seam | M |
+| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | BLOCKED; not implemented — no scriptable reorg/sync source | M |
+| SH-030 | Client cross-network HRP / malformed / wrong-type recipient checks | P2 | implemented; client decoding/network checks; network HRP is absent from the wire format | M |
+| SH-031 | ADVERSARIAL: reject different-seed rebind; preserve binding, notes, balance, and persisted viewing key | P1 | implemented; current assertions await live verification | M |
+| SH-032 | ADVERSARIAL: boundary balance == amount+fee + off-by-one below — exact-change correctness | P1 | implemented; exact-change live path and client-only off-by-one rejection; revised harness awaits live verification | S |
+| SH-033 | ADVERSARIAL: duplicate nullifier WITHIN one bundle — backend must reject | P1 | implemented; current assertions await live verification | M |
+| SH-034 | ADVERSARIAL: tampered binding signature — backend must reject | P1 | implemented; current assertions await live verification | M |
+| SH-035 | ADVERSARIAL: replayed Type 18 asset-lock proof — backend must reject (single-use) | P1 | implemented; current assertions await live verification | M |
+| SH-036 | IdentityCreateFromShieldedPool (Type 20), then funding-note replay | P1 | implemented; current assertions await live verification | L |
+| SH-037 | Identity → own shielded pool (Type 21) | P1 | implemented; current assertions await live verification | L |
+| SH-038 | Identity → another wallet’s shielded address (Type 21) | P1 | implemented; current assertions await live verification | L |
+| SH-039 | Platform address → another wallet’s shielded address (Type 15) | P1 | implemented; current assertions await live verification | L |
+| SH-040 | Shielded → existing identity top-up (Type 22) | P1 | implemented; current assertions await live verification | L |
+| SH-041 | Shielded → shielded across distinct wallets (Type 16) | P1 | implemented; current assertions await live verification | L |
+| SH-042 | Core asset lock → another wallet’s shielded address (Type 18) | P1 | implemented; testnet exposed consumed-lock inspection defect; correction verified offline only | L |
 
 #### Found-bug pins
 
@@ -362,8 +363,8 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-029 | (FIXED by v3.1-dev #3603) Pre-bind notes were permanently unwitnessable; the `sync.rs` rewrite now marks EVERY commitment position so the shared tree is witness-complete regardless of bind ordering (`sync.rs:291-310`) | P1 | not implemented (Wave H) — NO LONGER a live bug; SH-007 repurposed as a GREEN regression guard locking in the fix. **2026-07-05 testnet run**: not validated — the guarding case (`sh_007_pre_bind_note_witnessable`) failed at shared bank setup (fund-planner E5 race), before reaching the guarded code path. | L |
 | Found-030 | `extract_spends_and_anchor` doc (`operations.rs:601-611`) and `FileBackedShieldedStore::witness` doc (`file_store.rs:162-165`) describe DIFFERENT anchor semantics for depth-0 (`witness_at_checkpoint_depth(0)` "most recent checkpoint" vs "current tree state"); doc drift that, if either is correct, makes the other a latent `AnchorMismatch` | P2 | not implemented — doc-correctness pin; verify against `grovedb-commitment-tree` semantics | S |
 | Found-031 | `register_wallet` calls `downgrade_to_external_signable()` (`wallet_lifecycle.rs:244`) before IdentityTopUp accounts are provisioned, stripping the root private key `add_account(.., None)` needs for HD derivation | P1 | **RETIRED as a defect — CONFIRMED USAGE ERROR (2026-07-06).** No production code provisions an `IdentityTopUp` account at all; the failure only ever occurred in this suite's own test helper, which called `add_account(AccountType::IdentityTopUp, None)`. The `None` path re-derives from the resident root key, which registration intentionally drops — but the whole asset-lock build/consume flow is signer-driven (external `core_signer`); the account is only used for public `next_address` derivation, so a watch-only account provisioned via a seed-derived `Some(xpub)` (byte-identical to what `None` would have derived) works perfectly, exactly mirroring the production DashPay contact path (`contacts.rs:246,544`). ID-002b now carries this fix and passes GREEN (`fda0478f05`); see ID-002b/AL-001 below. Any future provisioner (Swift/FFI/helper) must use `Some(xpub)` on a post-registration wallet — an API-usage/ergonomics gap, not a wallet bug. An upstream `key-wallet` hardening is in progress (branch `fix/add-account-actionable-error`, not yet a PR) adding a typed `Error::KeylessWalletRequiresAccountKey` so `add_account(_, None)` fails actionably instead of with a generic message. **2026-10-23: the test-side provisioning is gone** — the `add_identity_topup_account` helper inserted `IdentityTopUp` into memory only, so its persisted pool rows matched no stored account and every later `Strict` load of the shared store failed (`ONE_TIME_ROW_UNMATCHED`, the 83-case suite failure); the asset-lock build's lazy `ensure_identity_topup_account` now provisions the account through the `core_signer` and persists its registration. | M |
-| Found-032 | `sync_balances()` incremental DAPI delta: when `query_height >= metadata_height` (0 new entries) the watermark is never advanced and the local balance map is not refreshed from chain state — addresses chain-confirmed via `wait_for_address_balance_chain_confirmed_n` never appear in the local map | P1 | red-by-design — pinned by PA-007 (watermark stays None), PA-006b (source drain = 0 despite on-chain transfer), and SH-012 (ShieldedInsufficientBalance available=0); same root defect that `inject_address_balance` harness workaround compensates for. **2026-07-05 testnet run**: two of the three pinning cases not validated — `pa_007_sync_watermark` and `sh_012_sync_watermark_idempotency` both failed at shared bank setup (fund-planner E5 race), before reaching the pinned code path; PA-006b not covered by this run's scope. **Filed**: dashpay/platform#4029 (confirmed genuine defect, not a usage error — 2026-07-06 adversarial review; re-verified post-#4004/#4005/#4008 rework — the height watermark no longer stalls, but the `last_known_recent_block` in-memory regression-to-zero on empty delta is still live). | M |
-| Found-033 | Sequential shields can hit `AddressNonceMismatch` in either direction due to DAPI node state skew between the fresh `AddressInfo::fetch_many` nonce fetch and broadcast; no client nonce cache on this path | P1 | red-by-design — pinned by SH-011; SH-010/SH-024 setup also affected. Timing-dependent, not a fixed third-iteration failure. **2026-07-05 testnet run**: SH-011 failed at bank setup before reaching this path. | M |
+| Found-032 | `sync_balances()` incremental DAPI delta: when `query_height >= metadata_height` (0 new entries) the watermark is never advanced and the local balance map is not refreshed from chain state — addresses chain-confirmed via `wait_for_address_balance_chain_confirmed_n` never appear in the local map | P1 | red-by-design — pinned by PA-007 (watermark stays None), PA-006b (source drain = 0 despite on-chain transfer), SH-012 is now a functional sync/spend check, not a red pin; same root defect that `inject_address_balance` harness workaround compensates for. **2026-07-05 testnet run**: two of the three pinning cases not validated — `pa_007_sync_watermark` and `sh_012_sync_watermark_idempotency` both failed at shared bank setup (fund-planner E5 race), before reaching the pinned code path; PA-006b not covered by this run's scope. **Filed**: dashpay/platform#4029 (confirmed genuine defect, not a usage error — 2026-07-06 adversarial review; re-verified post-#4004/#4005/#4008 rework — the height watermark no longer stalls, but the `last_known_recent_block` in-memory regression-to-zero on empty delta is still live). | M |
+| Found-033 | Sequential shields can hit `AddressNonceMismatch` in either direction due to DAPI node state skew between the fresh `AddressInfo::fetch_many` nonce fetch and broadcast; no client nonce cache on this path | P1 | historical sequential-shield setup failure; SH-011 is a functional convergence check, not red-by-design. SH-010/SH-024 setup can also expose nonce errors. Timing-dependent, not a fixed third-iteration failure. **2026-07-05 testnet run**: SH-011 failed at bank setup before reaching this path. | M |
 | Found-034 | `dash-spv`'s new-script rescan (post-#820) only re-applies matched blocks within *active* batches — once a batch commits, scripts derived later by wallet gap-limit maintenance can never re-open that committed range; outputs paying gap-window addresses whose scripts postdate their block's commit are silently and permanently missed on resync | P2 | red-by-design (rust-dashcore) — crate-level repro in `repro/pr3549-rdc` (`dash-spv/src/sync/filters/coinjoin_gap_discovery_tests.rs::coinjoin_gap_limit_stall_across_committed_batch`, RED). Headline dense same-batch shape (stall at `highest_used = 59`) already FIXED by rust-dashcore#820 (two GREEN regression tests in the same repro commit). Modeled at the platform-wallet e2e level by `found_coinjoin_gap_limit_sync::sim_tests` (5 simulation cases, all passing — model the shape, do not pin the live rust-dashcore residual). Tracked upstream at rust-dashcore#846. | M |
 | Found-035 | (SUPERSEDED upstream) `register_wallet` unconditionally ran `downgrade_to_external_signable()` before its post-registration best-effort `identity().sync()`, so built-in identity discovery always derived via the now-stripped resident-key path and failed on every registration, logging a misleading `WARN` (`"External signable wallet has no private key"`) — the auto-hydrate-on-reimport feature was dead code for every wallet, not merely noisy | P2 | SUPERSEDED (2026-09-08, v4.2-dev merge) — briefly fixed branch-locally by `3e175d2c31` (capture the BIP-32 master xpriv before the downgrade, route discovery through `discover_from_master(..)`), then obsoleted wholesale by upstream PR #4611, which deletes registration-time discovery instead of repairing it: the scan cost two wallet-manager lock waits and a host persistence round per registration and could stretch a wallet import to minutes. `register_wallet` now runs no scan; hydration belongs to `start_wallet_subsystems` or an explicit `discover_from_master(..)`. The branch-local fix and its `capture_discovery_master` helper are gone; upstream's `register_wallet_records_no_identity_scan_verdict` guards the new contract. **Distinct from Found-031** (retired — a confirmed test-helper usage error in `add_account(.., None)`, not a production defect) despite sharing the same `downgrade_to_external_signable()` call site: Found-031 was the suite's own precondition helper misusing a keyless-wallet API; this is registration's own best-effort discovery silently failing in production for every caller. | S |
 
@@ -386,7 +387,7 @@ Counts by priority: **P0: 17**, **P1: 53** (incl. CR-004 passing-as-regression +
 **Status at HEAD (SHA `cf9b6d2ba4`, post-v47):**
 - CR-004 retargeted (QA-901, 2026-05-14): reclassified `red-by-design (dash-evo-tool#845)` → `passing-as-regression`. The deterministic failure was a test-side dust-threshold mismatch (assumed 2,730; upstream gate at `transaction_builder.rs:294` is 546). Headroom changed `2_500 → 700`; test now pins the symmetric BIP-32 spent-marking + upstream sub-dust fold contracts.
 - Found-025 prior pin retargeted: the v47-era unit test asserted on a local `HashMap` (Found-022 disease) and has been deleted in favour of a documented stub. Status remains `red-by-design — pending upstream test-hook surface`; no Cargo test is emitted today. See the file-level docstring at `cases/found_025_address_sync_silent_discard.rs`.
-- 27 Found-NNN matrix entries (Found-001..018, 021..026, 031..033; Found-019/020 deleted 2026-05-14 — fixes confirmed, knowledge in memcan). Of these **1 is RETIRED** (Found-006 — #3634 dropped `topup_index`, pin deleted), leaving **26 live pins**: **3 red-by-design (Found-031 / AL-001 + ID-002b; Found-032 / PA-007 + PA-006b + SH-012; Found-033 / SH-011)** — client defects filed from E2E run #3 triage (2026-06-22); 1 fixed-and-guarded by a funded gated test (Found-008 / AL-001 — solo job #544); 1 red-pending-upstream-test-hook, pin deleted (Found-025); 2 passing-as-regression with live default-suite Cargo tests (Found-017 — un-`#[ignore]`d, guards the registration-store rollback; Found-024 — V27-007 fix); 3 blocked-scaffold (Found-004, Found-012, Found-013); 1 suspected concurrency-only race (Found-026, pinned by PA-008b); 15 not implemented. (The misconceived `found_008_lock_notify_missed_wakeup` unit pin was retired F-A — it was never counted as a live pin, so the total is unchanged; AL-001 is the genuine Found-008 guard.)
+- 27 Found-NNN matrix entries (Found-001..018, 021..026, 031..033; Found-019/020 deleted 2026-05-14 — fixes confirmed, knowledge in memcan). Of these **1 is RETIRED** (Found-006 — #3634 dropped `topup_index`, pin deleted), leaving **26 live pins**: **3 red-by-design (Found-031 / AL-001 + ID-002b; Found-032 / PA-007 + PA-006b; Found-033 / historical sequential-shield setup)** — client defects filed from E2E run #3 triage (2026-06-22); 1 fixed-and-guarded by a funded gated test (Found-008 / AL-001 — solo job #544); 1 red-pending-upstream-test-hook, pin deleted (Found-025); 2 passing-as-regression with live default-suite Cargo tests (Found-017 — un-`#[ignore]`d, guards the registration-store rollback; Found-024 — V27-007 fix); 3 blocked-scaffold (Found-004, Found-012, Found-013); 1 suspected concurrency-only race (Found-026, pinned by PA-008b); 15 not implemented. (The misconceived `found_008_lock_notify_missed_wakeup` unit pin was retired F-A — it was never counted as a live pin, so the total is unchanged; AL-001 is the genuine Found-008 guard.)
 
 ### Platform Addresses (PA)
 
@@ -2084,511 +2085,251 @@ sane place to pin the harness contract is alongside the wallet contract.
 
 ### Shielded (SH)
 
-Orchard shielded-pool coverage. Every case is `#[cfg(feature = "shielded")]` — these need a live testnet *and* a warmed Halo-2 prover (`CachedOrchardProver`, ~30 s/proof cold). With the required-features cutover (see Gating note above), they run as part of `--features e2e` rather than a separate `--include-ignored` cohort. The shielded surface is a parallel system: a per-network `NetworkShieldedCoordinator` holds the shared commitment-tree store (one SQLite handle), and the per-wallet side holds the `OrchardKeySet`s. **Use the FileBacked store** — the in-memory store's `witness()` is a hard `Err` (Found-027), so spends against it cannot build a proof. Harness extensions live in Wave H (§4).
+These tests compile with `--features e2e` (which enables `shielded`) and need a
+live network except for framework unit tests. Current assertions have only been
+verified offline in this revision. Historical passes do not validate revised tests.
+SH-006 remains an expected account-registration failure; SH-009 intentionally fails
+until the separate zero-amount guard PR lands. SH-028/029 have no implementation.
 
-**Adversarial gate (SH-020..SH-035)**: the adversarial abuse cases run BY DEFAULT — they broadcast malformed shielded transitions and assert the backend rejects them, which is the deliverable. Opt OUT (e.g. for a quick smoke run) by setting `PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL` to a falsy value (`0`/`false`/`no`/`off`); each opted-out case logs `"PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"` and contributes ZERO backend coverage. Per-case funding was right-sized so each adversarial shield clears `SHIELD_AMOUNT + 1 e9 client reserve + ~1.63 e8 shield fee` (sh_021/023/031) and each asset-lock case locks more than `shield + ~2.13 e8 Type-18 fee` (sh_035); the earlier note-too-small-for-fee and asset-lock-floor blockers are resolved. The Testnet/Devnet HRP mismatch is resolved — unshield/transfer cases derive the recipient HRP from `bank().network()` (Devnet). Document any remaining RED against the live backend verdict, not the harness funding.
+Cases use the persisted file-backed commitment tree. `ShieldedHandle::sync` calls
+`try_sync` and fails on typed tree inconsistency and every other sync error. Polling
+waits (`wait_for_shielded_balance`, `wait_for_unspent_notes`) retry recoverable sync
+errors until their deadline and report the last one on timeout; tree inconsistency
+panics there too. Never rebuild an inconsistent tree. Private coordinators isolate SH-004/007/021; the
+other cases share a coordinator, so locks and sync timing are not isolated.
 
-**Teardown (every SH case)**: on teardown, best-effort unshield any residual
-shielded-account balance back to the bank's transparent platform address
-(prevents bank-fund leak — a known e2e lesson). The sweep is wrapped in
-log-on-error and MUST NOT fail teardown: cases where unshield/`witness()` is
-intentionally broken (SH-005 in-memory arm, any Found-027-path case) will fail
-the sweep, and that failure is swallowed-and-logged (`tracing::warn!`), never
-propagated. Spec'd in Wave H (§4).
+The adversarial gate defaults on. Explicitly disabling
+`PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL` opts out and provides no attack coverage.
+`[INJECT]` cases build real funded transitions before mutation/broadcast. A build
+failure is a failed test. Rejection requires a typed SDK consensus error with the
+specified code. Network failures, client proof/readback errors and admitted-but-
+unobserved timeouts fail; `assert_adv_rejected` has no independent chain-state
+evidence to justify passing a timeout. SH-020 alone accepts an admitted loser's
+timeout, and only on chain evidence of no effect (see SH-020).
+Drive's CheckTx order is structure → minimum fee → state (anchor, nullifiers) →
+Orchard proof; block processing runs the proof before state. Expected codes follow
+from that order: 10822 structure, 40904 fee floor, 40900 anchor, 40901 nullifier,
+40902 proof/signature.
 
-**Intent — this suite exists to attempt to BREAK THE BACKEND, not to confirm
-happy paths.** The shielded pool is consensus-critical: a flaw in Drive's
-state-transition validation or the Orchard proof verifier is a fund-integrity or
-inflation bug, not a UX nit. The cases split into two tiers:
-- **SH-001..SH-019 (functional):** confirm the wallet + backend handle correct
-  inputs. Useful as a baseline and for the four code-audit findings (below), but
-  NOT the deliverable.
-- **SH-020..SH-035 (adversarial / abuse):** ATTACK the protocol boundary —
-  double-spend, nullifier replay, value forgery, forged proofs, anchor mismatch,
-  malformed serde, reorg/sync corruption, cross-network sends, key-material mixing.
-  Each asserts the backend MUST REJECT (or behave safely). **A RED here is a WIN:**
-  it proves a malformed transition the backend should refuse was accepted or
-  mishandled. The consensus-critical attacks (SH-020 double-spend, SH-022 value
-  conservation, SH-025 forged proof, SH-033 intra-bundle double-spend, SH-034
-  binding-sig tamper, SH-035 asset-lock replay) are P0/P1 and CRITICAL-if-they-fail.
+Fee-tolerant bounds are intentional. This suite does not tighten existing fee
+bounds to predicted/exact fees. Existing exact assertions in SH-032/040/041/042
+remain unchanged. Recipient waits require at least the amount sent. Shielded
+sweeps run after assertions and log recoverable sweep errors; tree inconsistency
+always fails loudly.
 
-Code-audit findings (separate from the abuse pass): the audit surfaced four;
-verified against the merged tree, **three are live** (Found-027/028 HIGH, Found-030
-LOW) and **one is fixed-and-guarded** (Found-029, FIXED by #3603 — SH-007 locks it
-in as a GREEN regression guard). The live-bug cases are designed to fail loudly
-while those bugs persist; SH-007 is designed to PASS and stay green.
+#### SH-001 — Shield from platform-payment account (Type 15)
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: fund one transparent address, shield 50M to account 0, sync.
+- **Assertions**: exactly 50M shielded credit; proof-verified source debit at least 50M and less than 50M + existing 1B fee headroom. No exact fee assertion.
 
-#### SH-001 — Shield from platform-payment account → shielded pool (Type 15)
-- **Priority**: P0
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: `PlatformWallet::shielded_shield_from_account` (`wallet/platform_wallet.rs:721`) → `wallet/shielded/operations.rs:152` (`shield`). Note: the nonce-placeholder TODO the brief flagged is FIXED — `shield` now sources real on-chain nonces via `fetch_inputs_with_nonce` (`operations.rs:172-200`) with a `checked_add(1)` overflow guard.
-- **Preconditions**: `setup()`; bank-fund one platform address on the test wallet (≥ `amount + fee_buffer`); `bind_shielded(seed, &[0], &coordinator)`; warmed prover.
-- **Scenario**:
-  1. Derive `addr_1`, bank-fund `90_000_000`, `wait_for_address_balance_chain_confirmed_n`, then `sync_balances()`.
-  2. `bind_shielded(seed, &[0], &coordinator)`.
-  3. `shielded_shield_from_account(shielded_account=0, payment_account=0, amount=50_000_000, &signer, &prover)`.
-  4. `coordinator.sync(true)`; then read `shielded_balances(&coordinator)`.
-- **Assertions**:
-  - The call returns `Ok(())` (proven inclusion, not just relay-ACK — `shield` uses `broadcast_and_wait`).
-  - `shielded_balances[0] == 50_000_000` (exact; the note value is the shielded amount, fee deducted from the transparent input via `DeductFromInput(0)`).
-  - The transparent `addr_1` balance dropped by `50_000_000 + fee` (`0 < fee`), verified via the proof-verified chain read — not the local map.
-- **Negative variants**:
-  - `amount == 0` → see SH-009 (rejected at boundary, no proof paid).
-  - `amount > funded balance` → `ShieldedInsufficientBalance` / `ShieldedBuildError` carrying the structured `(address, balance, required)` (`operations.rs:180-186`); no proof paid.
-  - `payment_account` that doesn't exist → typed `AddressOperation` error (per doc-comment `platform_wallet.rs:717`).
-- **Expected current outcome**: PASS (the shield path is fully implemented on this branch). **Fee-floor note**: the real protocol shield fee is ~112 M credits/action (`compute_minimum_shielded_fee` ≈ 100 M proof-verification + 11.5 M/action). The client additionally reserves `FEE_RESERVE_CREDITS = 1_000_000_000` on input 0 (`platform_wallet.rs`); harness funding must exceed the client reserve + amount. Commit `86b05a33ae` raised SH case funding above the 1 e9 client reserve; individual case amounts should be validated against the protocol fee floor before treating a `ShieldedInsufficientBalance` RED as a backend signal. On devnet, also verify the `SHIELD_AMOUNT` is above the ~112 M unshield fee for the spend leg.
-- **Harness extensions required**: Wave H (prover warm-up, `bind_shielded` helper, FileBacked coordinator, `wait_for_shielded_balance`).
-- **Estimated complexity**: L
+#### SH-002 — Shield then unshield (Type 15 → 17)
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: shield 1.12B; unshield 20M to a fresh own transparent address.
+- **Assertions**: successful spend, destination credit at least 20M, and polled change in `(0, 1.12B − 20M)`. Fee-tolerant bounds remain intentional.
 
-#### SH-002 — Round-trip: shield then unshield back to a transparent address (Type 15 → 17)
-- **Priority**: P0
-- **Status**: implemented; change-note polling fix verified offline only.
-- **Wallet feature exercised**: `shielded_shield_from_account` then `shielded_unshield_to` (`platform_wallet.rs:604`) → `operations.rs:323` (`unshield`), exercising `extract_spends_and_anchor` (`operations.rs:612`) and the FileBacked `witness()` path (`file_store.rs:154`).
-- **Preconditions**: SH-001 prerequisites; the spend leg REQUIRES the FileBacked store (in-memory `witness()` errors — Found-027).
-- **Scenario**:
-  1. Shield `1_120_000_000` into account 0; `coordinator.sync(true)` so the note is appended to the tree and marked.
-  2. Derive a fresh transparent `addr_dst`; `shielded_unshield_to(account=0, addr_dst_bech32m, amount=20_000_000, prover)`.
-  3. `wait_for_address_balance_chain_confirmed_n(addr_dst, 20_000_000, …)`; poll shielded sync for a positive change balance with a 60-second timeout.
-- **Assertions**:
-  - Unshield returns `Ok(())`.
-  - `addr_dst` confirmed balance `== 20_000_000` (exact; verified via proof-verified chain read).
-  - After polling, `0 < shielded_balances[0] < 1_120_000_000 - 20_000_000` (change retained with a positive shielded fee).
-- **Expected current outcome**: PASS **when run against the FileBacked store**. If a harness author wires the in-memory store, the unshield fails at `extract_spends_and_anchor` with `ShieldedMerkleWitnessUnavailable` — that is Found-027, pinned explicitly by SH-005.
-- **Harness extensions required**: Wave H + FileBacked store wiring.
-- **Estimated complexity**: L
+#### SH-003 — Private transfer between own accounts (Type 16)
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: bind accounts 0 and 1 initially; shield 1.12B to account 0 and transfer 20M to account 1.
+- **Assertions**: recipient gains exactly 20M; sender retains positive change below `1.12B − 20M`. Exact fee/conservation tightening is out of scope.
 
-#### SH-003 — Shielded → shielded private transfer between two accounts of one wallet (Type 16)
-- **Priority**: P0
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: `shielded_transfer_to` (`platform_wallet.rs:560`) → `operations.rs:420` (`transfer`).
-- **Preconditions**: `bind_shielded(seed, &[0, 1], &coordinator)` (two Orchard accounts bound AT BIND TIME — not via `shielded_add_account`, which is broken per Found-028/SH-006). Shield `50_000_000` into account 0.
-- **Scenario**:
-  1. Bind accounts `[0, 1]`; shield `50_000_000` into account 0; `coordinator.sync(true)`.
-  2. Read account 1's default Orchard address: `shielded_default_address(1)` → 43 raw bytes.
-  3. `shielded_transfer_to(account=0, recipient_raw_43=acct1_addr, amount=20_000_000, prover)`.
-  4. `coordinator.sync(true)`; read `shielded_balances`.
-- **Assertions**:
-  - Transfer returns `Ok(())`.
-  - `shielded_balances[1] == 20_000_000` (the recipient account received the private note).
-  - `shielded_balances[0] == 50_000_000 - 20_000_000 - shielded_fee` (sender retains change).
-  - Total shielded value across accounts decreased by exactly `shielded_fee` (conservation minus fee).
-- **Expected current outcome**: PASS — but this case is the canary for the multi-subwallet sync routing (`sync.rs:243-274`): account 1 must discover its note via the non-driver trial-decryption loop. If routing regresses, `shielded_balances[1]` stays `0`.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: L
-
-#### SH-004 — `shielded_balances` reflects a shielded note after coordinator sync
-- **Priority**: P1
-- **Status**: implemented.
-- **Wallet feature exercised**: `shielded_balances` (`platform_wallet.rs:515`) → `sync::balances_across`; `coordinator.sync` (`coordinator.rs:400`).
-- **Preconditions**: Fresh wallet bound to a private file-backed coordinator/store, so parallel cases cannot sync its notes.
-- **Scenario**: Shield `50_000_000`, assert account 0 is absent or zero BEFORE syncing this store, then assert the exact map `{0: 50_000_000}` AFTER `coordinator.sync(true)`.
-- **Assertions**:
-  - Pre-sync: `shielded_balances` does NOT yet include the note (the note is on-chain but not yet scanned into the local store) — pins that balances read from the local store, not a live query.
-  - Post-`sync(true)`: `shielded_balances == {0: 50_000_000}` (exact key + value; not "non-empty").
-  - The returned map contains only account 0; cross-wallet filtering is not exercised by this isolated single-wallet case.
-- **Expected current outcome**: PASS.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: M
-
-#### SH-005 — Spend against in-memory store fails witness-unavailable; file-backed succeeds (Found-027 pin)
-- **Priority**: P1
-- **Status**: not implemented (Wave H) — **red-by-design**, documenting a **test-scaffold limitation, reframed 2026-07-06 (Marvin adversarial review) as NOT a product defect**. `InMemoryShieldedStore` is a documented test double (struct doc: "for tests and short-lived wallets... real witness generation is not supported — use a real store for spends"; module doc names it as the test alternative to a host-provided store); it has zero production instantiations, and the shielded coordinator holds a concrete `Arc<RwLock<FileBackedShieldedStore>>` — no production caller can substitute the in-memory store, and the production spend path witnesses correctly. Not filed as a bug (dropped). The only residual is a LOW DX guard: no type-level signal prevents binding a spendable wallet to a witness-incapable store, so the mismatch would surface at first spend rather than at compile time if a host ever tried. **2026-07-05 testnet run: NOT VALIDATED** — `sh_005_inmemory_witness_split` failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above the Quick index).
-- **Wallet feature exercised**: `InMemoryShieldedStore::witness` (`wallet/shielded/store.rs:409-416`) vs `FileBackedShieldedStore::witness` (`wallet/shielded/file_store.rs:154-167`), via `extract_spends_and_anchor` (`operations.rs:612`).
-- **Bug (reframed — see Status)**: `InMemoryShieldedStore::witness()` unconditionally returns `Err(InMemoryStoreError("Merkle witness not supported in in-memory store"))` — a labelled placeholder on a documented test double, not a silent production bug. Every spend (unshield/transfer/withdraw) routes through `extract_spends_and_anchor`, which calls `store.witness(note.position)` and maps any `Err` to `ShieldedMerkleWitnessUnavailable`, so all three spend transition types are structurally non-functional against the in-memory store specifically — but production is hard-wired to the file-backed store, so no production host is exposed. The residual observation: both stores implement the same `ShieldedStore` trait with no type-level or doc-level signal that one cannot spend, which is a DX gap, not a functional one.
-- **Scenario**:
-  1. Two coordinators on the same funded note set — one FileBacked, one InMemory.
-  2. Build identical unshields (account 0, same amount, same destination).
-  3. Assert the InMemory spend returns `Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(_))` and the FileBacked spend returns `Ok(())`.
-- **Assertions**:
-  - InMemory: `matches!(err, PlatformWalletError::ShieldedMerkleWitnessUnavailable(_))` — exact variant, not "is_err".
-  - FileBacked: `Ok(())` and the destination balance arrives.
-- **Expected current outcome**: PASS-AS-DOCUMENTATION today (it documents the split). It flips to a regression guard once Found-027 is addressed: when `InMemoryShieldedStore::witness` either gains a real impl OR the type system forbids spending against it, this test's InMemory arm must change. The FINDING is that the split exists silently — the test exists to make it loud.
-- **Coupling to #3603 (Found-029)**: Found-027 is INDEPENDENT of the #3603 fix. #3603 made the FileBacked path witness-complete regardless of bind ordering; it did nothing for the in-memory store, whose `witness()` is still a hard `Err`. So in-memory spends fail today even for notes the wallet owned from the first sync — the in-memory arm of this test stays RED post-merge. Every other spend-side SH case (SH-002/SH-003/SH-007/SH-019) therefore mandates the FileBacked store.
-- **Harness extensions required**: Wave H + a switch to construct both store backings.
-- **Estimated complexity**: M
-- **Rationale (Found-027, reframed)**: not a soundness gap in production — `InMemoryShieldedStore` is test-only and production cannot reach it. The remaining LOW-priority DX improvement: split the trait (e.g. `WitnessCapableStore: ShieldedStore`) so the spend path won't type-check against a non-witnessing backend, or implement a real in-memory tree so tests can exercise spends off-disk. Neither is a correctness fix; both are optional hardening.
-
-#### SH-006 — `shielded_add_account` post-bind: notes for the added account never sync (Found-028 pin)
-- **Priority**: P1
-- **Status**: not implemented (Wave H) — **red-by-design**. **2026-07-05 testnet run: NOT VALIDATED** — `sh_006_add_account_never_syncs` failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above the Quick index).
-- **Wallet feature exercised**: `shielded_add_account` (`platform_wallet.rs:439-457`) vs `bind_shielded`'s coordinator registration (`platform_wallet.rs:395-397`).
-- **Bug**: `shielded_add_account` inserts the new account's `OrchardKeySet` into the per-wallet `shielded_keys` slot but does NOT call `coordinator.register_wallet` with the expanded account set. The coordinator's `accounts` registry — the IVK fan-out that `sync_notes_across` trial-decrypts against (`coordinator.rs:428-431`, `sync.rs:256`) — therefore never learns the new account's IVK. Notes paid to the added account are never discovered. The doc-comment (`platform_wallet.rs:433-438, 453-456`) admits this as a "caveat" requiring a tree wipe + full re-`bind_shielded`. Documenting a silent fund-invisibility footgun as a caveat does not make it not-a-bug.
-- **Scenario**:
-  1. `bind_shielded(seed, &[0], &coordinator)`.
-  2. `shielded_add_account(seed, 1)` → `Ok(())`.
-  3. Pay a shielded note to account 1's default address (via another wallet, or self-transfer from account 0).
-  4. `coordinator.sync(true)`; read `shielded_balances`.
-- **Assertions** (encoding CORRECT behavior, so the test is RED today):
-  - `shielded_account_indices()` includes `1` (the per-wallet slot was updated — this part works).
-  - **`shielded_balances[1] == <note value>`** — this is the assertion that FAILS today: the coordinator never scanned account 1's IVK, so the balance is `0` (or the key is absent). RED proves Found-028.
-- **Expected current outcome**: RED — proves Found-028.
-- **Harness extensions required**: Wave H + a second payer (or self-transfer) for the account-1 note.
-- **Estimated complexity**: M
-
-#### SH-007 — Pre-bind note is witnessable/spendable (Found-029 regression guard, #3603 FIXED)
-- **Priority**: P1
-- **Status**: not implemented (Wave H) — **green regression guard** (NOT red-by-design). **2026-07-05 testnet run: NOT VALIDATED** — `sh_007_pre_bind_note_witnessable` failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above the Quick index).
-- **Wallet feature exercised**: the shared commitment-tree append/mark policy in `sync_notes_across` (`wallet/shielded/sync.rs:276-310`).
-- **History (Found-029, FIXED by v3.1-dev #3603)**: previously the coordinator appended every commitment to the shared tree but only `mark`ed (retained a witnessable auth path for) positions a *currently-registered* IVK decrypted in that pass. A note for wallet B landing during a pass where B was unbound had its auth path discarded as `Ephemeral`; when B bound later the balance was discoverable but the position was unwitnessable — `witness(position)` → `Ok(None)`, spend failing "Merkle witness unavailable" / "Anchor not found in the recorded anchors tree". **#3603 fixes this**: the `sync.rs` rewrite now marks EVERY commitment position so the shared tree is witness-complete regardless of bind ordering (`sync.rs:291-310`: "Marking every position makes the shared tree witness-complete regardless of bind ordering"). Per-wallet ownership is tracked separately in the per-`SubwalletId` notes store, so privacy/accounting is unaffected. This case now GUARDS that fix so a future regression (reverting to mark-only-owned) flips it RED.
-- **Coupling caveat**: the spend leg MUST use the FileBacked store. Found-027 (in-memory `witness()` is a hard `Err`) is independent of #3603 and would mask this guard with a false RED — so SH-007 pins the fix only on the path #3603 actually repaired.
-- **Scenario**:
-  1. `bind_shielded` wallet A on a FileBacked coordinator; `coordinator.sync(true)` to advance the tree past the target position.
-  2. Pay a shielded note to wallet B's default Orchard address while B is NOT yet bound; `coordinator.sync(true)` again (still B-unbound) so B's note position is appended under the mark-every-position policy.
-  3. `bind_shielded` wallet B; `coordinator.sync(true)`.
-  4. Assert `shielded_balances` for B shows the note, then spend it (unshield to a transparent address).
-- **Assertions** (CORRECT behavior — GREEN today, locks in #3603):
-  - `shielded_balances[B/0] == <note value>` (balance discoverable).
-  - **The unshield of that pre-bind note returns `Ok(())`** and the destination balance arrives — i.e. the position IS witnessable despite arriving before B bound. A regression to mark-only-owned flips this to `ShieldedMerkleWitnessUnavailable` and the test goes RED.
-- **Expected current outcome**: GREEN (guards #3603). Timing-sensitive; document the ordering precisely and gate behind the solo concurrency job to avoid sibling-sync interference.
-- **Harness extensions required**: Wave H + FileBacked coordinator + ability to advance the tree before binding B (controlled bind ordering) + a payer for B's pre-bind note.
-- **Estimated complexity**: L
-- **Rationale**: Without this guard, a refactor that reverts the mark-every-position policy would silently re-strand pre-bind funds (balance shows, spend impossible) — exactly the Found-029 failure mode #3603 closed.
-
-#### SH-008 — Unshield insufficient-balance: typed error with exact `available`/`required`
-- **Priority**: P1
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: `select_notes_with_fee` (`wallet/shielded/note_selection.rs:75`) via `reserve_unspent_notes` (`operations.rs:727`).
-- **Preconditions**: shield a small note (e.g. `10_000_000`) into account 0.
-- **Scenario**: `shielded_unshield_to(account=0, addr, amount=50_000_000, prover)` — far above the note value.
-- **Assertions**:
-  - Returns `Err(PlatformWalletError::ShieldedInsufficientBalance { available, required })` — exact variant.
-  - `available == 10_000_000` (the only note's value).
-  - `required == 50_000_000 + exact_fee` (`required > amount`; pins that the fee is folded into the requirement, `note_selection.rs:105`).
-  - NO proof was paid (the failure is pre-build) and NO note was left in the `pending` reservation set — verified by a follow-up unshield of a satisfiable amount succeeding (reservation correctly released by `cancel_pending`).
-- **Expected current outcome**: PASS.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: M
-
-#### SH-009 — Zero-amount shield / transfer rejected at the boundary (no proof paid)
-- **Priority**: P2
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: the zero-amount guard at `shielded_shield_from_account` (`platform_wallet.rs:733`, "Reject zero amount at the boundary") and the analogous guards in transfer/unshield.
-- **Scenario**: call shield, transfer, and unshield each with `amount == 0`.
-- **Assertions**:
-  - Each returns a typed `Err` (not a panic, not `Ok`); pin the specific variant the boundary uses.
-  - No state-transition was broadcast and no Halo-2 proof was built (the rejection is synchronous, well under one proof's ~30 s — a wall-clock upper bound of a few hundred ms is a sound proxy assertion).
-- **Expected current outcome**: PASS for shield (guard confirmed at `:733`); transfer/unshield zero-guards are unconfirmed in this audit — **if either lacks a zero-guard, the case goes RED and surfaces a missing-validation finding** (mirrors PA-001c's contract-(a)/(b) framing).
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: S
-
-#### SH-010 — Double-spend guard: two overlapping spends reserve disjoint notes
-- **Priority**: P2
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: `reserve_unspent_notes` single-write-lock select+reserve (`operations.rs:711-746`) and `mark_pending`/`clear_pending`.
-- **Preconditions**: shield two notes into account 0 (e.g. via two shields) such that each alone covers the spend amount.
-- **Scenario**: fire two `shielded_unshield_to` calls concurrently (`tokio::join!`), each for an amount one note can cover.
-- **Assertions**:
-  - The two spends select DISJOINT note sets (no shared nullifier) — the reservation under one write lock prevents both from picking the same note. Assert via the resulting spent-note set after both settle.
-  - At most one spend may fail (if only enough notes for one); if both succeed, total shielded balance dropped by `2*amount + 2*fee`. No note is double-counted.
-- **Expected current outcome**: PASS (this is the contract `reserve_unspent_notes` exists to uphold) — but it is the canary for a reservation race regression. Gate behind the solo concurrency job.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: M
-
-#### SH-011 — `select_notes_with_fee` convergence + overflow protection on real notes
-- **Priority**: P2
-- **Status**: not implemented (Wave H). (A unit test already covers overflow at `note_selection.rs:187`; this is the e2e-adjacent variant on a real funded note set.) **2026-07-05 testnet run: NOT VALIDATED** — `sh_011_note_selection_convergence` failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above the Quick index).
-- **Wallet feature exercised**: `select_notes_with_fee` iterative fee convergence (`note_selection.rs:75-110`) and the `checked_add` overflow guard (`note_selection.rs:35`).
-- **Scenario**: shield several small notes; request an amount that forces multi-note selection so the fee grows with the action count and the convergence loop iterates (>1 pass).
-- **Assertions**:
-  - The selection covers `amount + exact_fee` exactly (total ≥ requirement, and removing the smallest selected note would drop below — minimal-ish selection).
-  - `exact_fee == compute_minimum_shielded_fee(num_actions, version)` where `num_actions == selected.len().max(min_actions)` (pins the fee is derived from the FINAL selection count, not the initial estimate — guards a regression where the loop returns the wrong fee).
-  - A degenerate `amount == u64::MAX` request returns `ShieldedBuildError("amount + fee overflows u64")` rather than wrapping (`note_selection.rs:35-37`).
-- **Expected current outcome**: PASS.
-- **Harness extensions required**: Wave H (multiple-note funding).
-- **Estimated complexity**: M
-
-#### SH-012 — Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances
-- **Priority**: P2
-- **Status**: not implemented (Wave H). **2026-07-05 testnet run: NOT VALIDATED** — `sh_012_sync_watermark_idempotency` failed before the case body ran: `Bank under-funded for e2e run (planner) ... Platform short 0 credits` (fund-planner E5 race; see run-conditions note above the Quick index).
-- **Wallet feature exercised**: `coordinator.sync` cooldown + watermark gating (`coordinator.rs:400-485`), the append-once gate (`sync.rs:276-289`, gated on `tree_size`, NOT a per-subwallet watermark), and `serialize_note`/`deserialize_note` round-trip (`sync.rs:575-582` ↔ `operations.rs:810-832`, 115 bytes `recipient(43)‖value(8 LE)‖rho(32)‖rseed(32)`).
-- **Scenario**: shield a note; `coordinator.sync(true)` twice in a row; read balances after each.
-- **Assertions**:
-  - `shielded_balances` is byte-identical after the second forced sync (no double-append: a second append at an existing position would corrupt shardtree and surface as an anchor error at the next spend — assert a spend still succeeds post-double-sync as the strong end-to-end check).
-  - The note's value survives the serialize→store→deserialize round-trip exactly (a 1-byte drift in the 115-byte layout silently corrupts `value`/`rho`/`rseed` — assert the spendable note's value equals the shielded amount).
-- **Expected current outcome**: PASS (the append gate and the matching serialize/deserialize layouts were verified by inspection in this audit).
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: M
-
-#### SH-013 — `bind_shielded` with empty accounts → typed error (no panic)
-- **Priority**: P2
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: `bind_shielded` empty-accounts guard (`platform_wallet.rs:352-356`).
-- **Scenario**: `bind_shielded(seed, &[], &coordinator)`.
-- **Assertions**: returns `Err(PlatformWalletError::ShieldedKeyDerivation(_))` with a message naming the "at least one account" requirement; no panic; the wallet remains unbound (a subsequent spend returns `ShieldedNotBound`, not a stale-key spend).
-- **Expected current outcome**: PASS.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: S
-
-#### SH-014 — Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation`
-- **Priority**: P2
-- **Status**: not implemented (Wave H).
-- **Wallet feature exercised**: the `shielded_keys` slot guard (`platform_wallet.rs:568-576`, `612-620`, `661-669`) across transfer/unshield/withdraw.
-- **Scenario**:
-  1. Without calling `bind_shielded`, call `shielded_unshield_to(account=0, …)`.
-  2. `bind_shielded(seed, &[0], …)`, then call `shielded_unshield_to(account=7, …)` (account 7 not bound).
-- **Assertions**:
-  - Step 1: `Err(PlatformWalletError::ShieldedNotBound)` — exact variant.
-  - Step 2: `Err(PlatformWalletError::ShieldedKeyDerivation(_))` whose message names account `7` (`platform_wallet.rs:573-575`).
-  - Both fail BEFORE any proof is built.
-- **Expected current outcome**: PASS.
-- **Harness extensions required**: Wave H.
-- **Estimated complexity**: S
-
-#### SH-018 — Shield from Core L1 asset lock (Type 18)
-- **Priority**: P1
-- **Status**: implemented (Wave H + Core-L1 gate). MAY run RED until the Core-L1 asset-lock funding plumbing is complete — that is acceptable and expected; a RED here pins the missing harness/asset-lock seam rather than a passing happy path.
-- **Wallet feature exercised**: `PlatformWallet::shielded_fund_from_asset_lock` with `AssetLockFunding::FromWalletBalance` — the same orchestrated path the FFI and the seed-pool funder drive: it builds the asset lock from the wallet's Core balance, resolves the proof with IS→CL fallback, derives `shield_amount = lock_value − pool_fee`, submits Type 18, and consumes the tracked lock. There is no guard-free broadcasting Type-18 entry point in the wallet; the raw-proof replay lives in SH-035 behind the `test-utils` build seam.
-- **Preconditions**: Core-L1 gate (`PLATFORM_WALLET_E2E_BANK_CORE_GATE`): a Core-funded test wallet (Wave E `setup_with_core_funded_test_wallet`) + an asset-lock builder producing a single-use `AssetLockProof`; `bind_shielded(&[0])` on a FileBacked coordinator; warmed prover.
-- **Scenario**:
-  1. Fund the test wallet's Core receive address (`setup_with_core_funded_test_wallet(duffs)`); wait for the SPV-observed Core balance.
-  2. `shielded_fund_from_asset_lock(FromWalletBalance { amount_duffs })`.
-  3. Sync; read `shielded_balances`.
-- **Assertions**:
-  - The orchestrated call returns `Ok` (proven inclusion: the asset-lock proof is single-use, so a false positive on a later-rejected transition would strand the L1 outpoint).
-  - `shielded_balances[0]` lands in the post-fee range `[lock / 2, lock]` (production shields `lock_value − pool_fee`).
-  - Single-use enforcement of a re-submitted proof is SH-035's job.
-- **Expected current outcome**: PASS if the Core-L1 gate is wired; otherwise RED on the missing asset-lock funding seam (the RED documents the gate, not a production defect in the shield path itself). **Devnet blocker (paloma 2026-06-02)**: the asset-lock floor is 1.25 e9 credits; SH-018 currently funds 1.2 e9 → 50 M short, so the case fails before shielding. Raise `SHIELD_AMOUNT` above 1.25 e9 before treating a RED here as a backend signal. The SH-035 replay leg shares this funding gap and never runs until it is resolved.
-- **Harness extensions required**: Wave H + Core-L1 gate (Core-funded wallet).
-- **Estimated complexity**: L
-
-#### SH-019 — Shielded withdraw to Core L1 address (Type 19)
-- **Priority**: P1
-- **Status**: not implemented (Wave H + Core-L1 gate). The shielded SPEND half is exercisable now (same path as SH-002/SH-003); the L1-arrival assertion needs Layer-1 observation and MAY run RED until that lands.
-- **Wallet feature exercised**: `PlatformWallet::shielded_withdraw_to` (`platform_wallet.rs:652`) → `wallet/shielded/operations.rs:506` (`withdraw`) → `build_shielded_withdrawal_transition`.
-- **Preconditions**: shield `≥ amount + fee` into account 0 on a FileBacked coordinator (the spend needs `witness()` — Found-027 means in-memory cannot withdraw); a Core L1 address to observe; Layer-1 observation seam (SPV is enabled per Wave E, but observing the withdrawal payout tx is the gated piece, shared with §5 item 2).
-- **Scenario**:
-  1. Shield `50_000_000` into account 0; `coordinator.sync(true)`.
-  2. `shielded_withdraw_to(account=0, to_core_address, amount=20_000_000, core_fee_per_byte, prover)`.
-  3. `coordinator.sync(true)`; assert the shielded side; then (gated) observe the L1 payout.
-- **Assertions**:
-  - Withdraw returns `Ok(())`.
-  - `shielded_balances[0] == 50_000_000 - 20_000_000 - shielded_fee` (change note retained; shielded side fully assertable WITHOUT the L1 gate — this half is GREEN-capable).
-  - **(Core-L1 gated)** the Core L1 address receives the withdrawal payout (amount minus L1 fee); this assertion is what MAY run RED until Layer-1 observation is wired.
-  - The spent note is marked spent (a second identical withdraw does not re-select it).
-- **Expected current outcome**: shielded-side assertions PASS; the L1-arrival assertion PASS if the Layer-1 observation seam exists, else RED (documents the gate). Split the test so the shielded-side guard is not blocked by the L1 gate (assert shielded side unconditionally, gate only the L1 read behind `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). **Devnet blocker (paloma 2026-06-02)**: unshield/transfer to a Core L1 address surfaces `network mismatch: address Testnet, wallet Devnet` — the `to_core_address` passed must match the wallet's configured network (`Network::Devnet`). Verify harness address derivation uses the devnet HRP; a Testnet bech32 address passed to a devnet wallet triggers this error before reaching Drive. On devnet the `withdrawals contract not available` rejection from Drive is also possible (devnet env gap, not a wallet bug — see SH-019 note in paloma run 2026-06-02).
-- **Harness extensions required**: Wave H + Core-L1 gate (Layer-1 payout observation, shared with §5 item 2 transparent withdrawal design).
-- **Estimated complexity**: L
-
-#### Adversarial / abuse cases (SH-020..SH-035)
-
-**This is the deliverable.** The cases above (SH-001..SH-019) largely confirm the
-wallet WORKS. These cases try to BREAK THE BACKEND — Drive's consensus and
-state-transition validation, and the Orchard proof verifier. A RED test here is a
-WIN: it means a malformed/adversarial transition the backend MUST reject was
-accepted or mishandled. Every case below asserts **backend rejection (or safe
-behavior)**; the "Expected current outcome" line states what a FINDING looks like.
-
-**Critical methodology — bypass client-side guards.** The wallet's public spend
-API validates client-side (zero-amount guards, balance checks, address parsing,
-network HRP). Those guards would mask the backend test by failing the call before
-it reaches Drive. To genuinely test the backend, the adversarial transition MUST
-be constructed at the protocol boundary and broadcast directly, NOT through the
-guarded wallet method. The injection seam: the `dpp::shielded::builder::build_*_transition`
-functions (`packages/rs-dpp/src/shielded/builder/{unshield,shielded_transfer,shield,shielded_withdrawal,shield_from_asset_lock}.rs`)
-produce a state transition from a `SerializedBundle` (`builder/mod.rs:74-89` — `anchor`,
-`proof`, `value_balance`, `binding_signature` all public and mutable) which is then
-handed to `BroadcastStateTransition::broadcast_and_wait` (`operations.rs:232/304/371/467/556`).
-Wave H adds **adversarial injection hooks** (below) that (a) build a valid transition
-then mutate the serialized bytes / `SerializedBundle` fields before broadcast, (b)
-swap in a tampering/mock prover, or (c) feed the dpp builder out-of-range inputs the
-wallet wrapper would reject. Cases needing such a hook are marked **[INJECT]**.
-
-**Correct-rejection assertion shape**: assert the broadcast returns a typed
-consensus/state error (e.g. `ShieldedNullifierAlreadySpent`, `ShieldedInvalidProof`,
-`AnchorMismatch`, `ShieldedValueNotConserved`, or the DPP `ConsensusError` variant the
-protocol defines) — NOT a generic "is_err". Where the exact variant is unknown to this
-audit, the case names the EXPECTED variant and flags that a different error (or `Ok`) is
-itself a finding (the backend rejected for the wrong reason, or did not reject).
-
-##### SH-020 — Double-spend: same note in two concurrent transitions [INJECT]
-- **Priority**: P0 (consensus-critical).
-- **Attack**: build two distinct, individually-valid spend transitions (Type 16 transfer and/or Type 17 unshield) that both spend the SAME shielded note (same nullifier), and broadcast both — concurrently and, in a second arm, sequentially within one block window. The wallet's `reserve_unspent_notes` (`operations.rs:711-746`) would normally prevent two local spends from selecting the same note; this case BYPASSES that by building the second transition directly against the same `SpendableNote` (the local reservation is a client convenience, not the consensus guarantee).
-- **Transition type**: 16 / 17.
-- **Injection point**: build both via `build_unshield_transition` / `build_shielded_transfer_transition` against the same selected note + witness; broadcast both. **[INJECT]** — second build must skip the local reservation.
-- **Correct backend behavior**: exactly ONE transition is accepted; the second is rejected because its Orchard nullifier is already in Drive's spent-nullifier set. The accepted+rejected split must be deterministic (not "both rejected", not "both accepted").
-- **Assertions**: first broadcast `Ok`; second broadcast `Err` with a nullifier-already-spent / double-spend consensus error; the shielded balance reflects exactly ONE spend (no double-debit, no fund creation).
-- **Expected current outcome**: the test asserts correct rejection. **FINDING (RED) if** the backend accepts both (double-spend — CRITICAL fund-integrity break), accepts neither (liveness bug), or accepts one but the balance is wrong.
-- **Harness extensions**: Wave H + adversarial injection hook (build-against-same-note) + solo concurrency job.
-- **Severity if it fails**: CRITICAL.
-
-##### SH-021 — Nullifier replay after restart / resync [INJECT]
-- **Priority**: P0 (consensus-critical).
-- **Attack**: spend a note (Type 17), let it confirm, then resubmit a transition spending the SAME already-spent note — after a simulated process restart + resync (so the local pending/spent state is reloaded from the persister, not just in-memory). Models an attacker replaying a captured transition.
-- **Transition type**: 17 (and 16 arm).
-- **Injection point**: capture the first transition's bytes (or rebuild against the now-spent note via the injection hook), restart the coordinator/store from persisted state, rebroadcast. **[INJECT]** to rebuild against a known-spent note.
-- **Correct backend behavior**: rejected — the nullifier is permanently in Drive's spent set regardless of client state; replay across restart MUST NOT succeed.
-- **Assertions**: replay broadcast returns a nullifier-already-spent consensus error; balance unchanged by the replay; no second debit.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** the replay is accepted (double-spend via replay) or if the local resync re-marks the note unspent and the wallet then re-selects it (client-side fund-loss / double-build).
-- **Harness extensions**: Wave H + persister restart hook + injection hook.
-- **Severity if it fails**: CRITICAL.
-
-##### SH-022 — Value not conserved: outputs exceed inputs [INJECT]
-- **Priority**: P0 (consensus-critical).
-- **Attack**: construct a transfer/unshield whose declared outputs (recipient + change) exceed the spent note value — i.e. mint value out of nothing. Set the `SerializedBundle.value_balance` (`builder/mod.rs:79`) inconsistent with the actual spend, or pass an `amount` larger than the note to the dpp builder directly.
-- **Transition type**: 16 / 17.
-- **Injection point**: dpp builder with output > input, or mutate `value_balance` post-build. **[INJECT]** — the wallet's `select_notes_with_fee` would reject insufficient input client-side; bypass it.
-- **Correct backend behavior**: rejected. Orchard's value-balance check + Drive's credit accounting must refuse a bundle where shielded inputs < outputs + fee. The Halo-2 proof binds `value_balance`; a mismatch must fail proof verification or the consensus value check.
-- **Assertions**: broadcast returns a value-conservation / invalid-proof consensus error; no credits created; total shielded+transparent supply unchanged.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** accepted — that is value forgery (CRITICAL: unlimited inflation of the shielded pool).
-- **Harness extensions**: Wave H + injection hook (value_balance / amount tamper).
-- **Severity if it fails**: CRITICAL.
-
-##### SH-023 — Fee underpayment below `compute_minimum_shielded_fee` [INJECT]
+#### SH-004 — Balances before and after coordinator sync
 - **Priority**: P1.
-- **Attack**: build a spend declaring a fee BELOW `compute_minimum_shielded_fee(num_actions, version)` (`note_selection.rs:81/87`) — pass an `Some(exact_fee)` that is too small to `build_unshield_transition`'s fee param, or zero. The wallet computes the correct fee; bypass it.
-- **Transition type**: 16 / 17 / 19.
-- **Injection point**: dpp builder with an under-floor fee. **[INJECT]**.
-- **Correct backend behavior**: rejected with an insufficient-fee / below-minimum consensus error; Drive must enforce the same floor `compute_minimum_shielded_fee` derives.
-- **Assertions**: broadcast `Err` insufficient-fee; no inclusion.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** an under-floor fee is accepted (fee-market bypass / spam vector) — note the client floor and the backend floor MUST agree; a divergence is itself a finding.
-- **Harness extensions**: Wave H + injection hook.
-- **Severity if it fails**: HIGH.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: use a private coordinator, shield 50M and inspect before/after explicit sync.
+- **Assertions**: no pre-sync balance; exact post-sync map `{0: 50M}`. This does not test cross-wallet filtering.
 
-##### SH-024 — u64 value boundary: overflow / underflow at amount edges [INJECT]
+#### SH-005 — In-memory witness limitation versus file-backed spend
 - **Priority**: P1.
-- **Attack**: drive the spend at `amount == u64::MAX`, `amount + fee` wrapping past `u64::MAX`, and `value_balance` at `i64::MIN`/`i64::MAX`. The wallet has a `checked_add` guard at `note_selection.rs:35`; bypass it and feed the raw boundary value to the dpp builder / `value_balance`.
-- **Transition type**: 16 / 17.
-- **Injection point**: dpp builder + `value_balance` field at boundary. **[INJECT]**.
-- **Correct backend behavior**: rejected with a typed validation error (no wraparound, no panic in the validator, no negative-value-as-huge-positive). The arithmetic must be checked on the BACKEND, not only client-side.
-- **Assertions**: broadcast `Err` typed; the validator process does not panic/abort; balance/supply unchanged.
-- **Expected current outcome**: asserts safe rejection. **FINDING (RED) if** the backend wraps, panics, or accepts a boundary value that the client guard alone was catching (backend missing the check ⇒ a client without the guard, or a direct gRPC submitter, breaks it).
-- **Harness extensions**: Wave H + injection hook.
-- **Severity if it fails**: HIGH.
+- **Status**: implemented; PASS-as-documentation of unsupported in-memory witnesses; revised assertion awaits live verification.
+- **Scenario**: copy a funded note to the in-memory test store, then attempt identical unshields against both stores.
+- **Assertions**: in-memory error is `ShieldedMerkleWitnessUnavailable` containing `not supported in in-memory store`; file-backed spend succeeds and credits the destination.
+- **Meaning**: documents the test double's deliberate limitation. The incomplete copied tree is not a valid positive witness fixture, so this is not a regression guard for a future in-memory witness implementation.
 
-##### SH-025 — Forged / tampered Halo-2 proof [INJECT]
-- **Priority**: P0 (consensus-critical).
-- **Attack**: build a valid transition, then flip bytes in `SerializedBundle.proof` (`builder/mod.rs:85`) — single-bit flip, truncation, all-zeros, and a proof copied from a DIFFERENT valid transition (proof-substitution). Broadcast.
-- **Transition type**: 16 / 17 (proof present on all spends).
-- **Injection point**: mutate `proof` bytes post-build before broadcast. **[INJECT]** — also covered by a "tampering prover" hook that emits a wrong proof.
-- **Correct backend behavior**: rejected by Orchard proof verification at validation; the proof is bound to the public inputs (anchor, nullifiers, value_balance, cmx), so any mutation or substitution must fail.
-- **Assertions**: broadcast `Err` invalid-proof consensus error for every mutation variant; no inclusion.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** ANY tampered/substituted proof is accepted — that is a total break of shielded soundness (CRITICAL).
-- **Harness extensions**: Wave H + injection hook (proof-byte mutation + tampering-prover).
-- **Severity if it fails**: CRITICAL.
-
-##### SH-026 — Anchor mismatch: spend against a stale / wrong checkpoint anchor [INJECT] (Found-030 dynamic probe)
+#### SH-006 — Add shielded account after binding (Found-028)
 - **Priority**: P1.
-- **Attack**: build a spend whose `SerializedBundle.anchor` (`builder/mod.rs:84`) is a VALID-but-stale tree root (an earlier checkpoint) or an outright wrong/random 32 bytes, while the witness paths authenticate against the current root. This directly exercises the depth-0 anchor semantics that **Found-030** flagged as doc-ambiguous (`operations.rs:601-611` "most recent checkpoint" vs `file_store.rs:162-165` "current tree state").
-- **Transition type**: 16 / 17.
-- **Injection point**: override `anchor` post-build, or pass a stale `Anchor` to the dpp builder. **[INJECT]**.
-- **Correct backend behavior**: rejected with `AnchorMismatch` (or "Anchor not found in the recorded anchors tree") — Drive accepts only anchors it has recorded; a wrong/stale-beyond-window anchor must fail.
-- **Assertions**: broadcast `Err` anchor-mismatch; no inclusion. Sub-arm: a STALE-but-still-in-window anchor (if the protocol accepts a bounded history) is accepted — pin which side of the Found-030 ambiguity is true. **This case is the dynamic probe that resolves Found-030**: whichever anchor depth the backend actually accepts tells us which doc-comment is correct and which is the latent bug.
-- **Expected current outcome**: asserts rejection of wrong/over-stale anchors. **FINDING (RED) if** a wrong anchor is accepted (soundness break), OR the observed accepted-anchor-window contradicts BOTH doc-comments (Found-030 is worse than a doc drift — the behavior is undocumented).
-- **Harness extensions**: Wave H + injection hook (anchor override) + a tree-checkpoint advancer to manufacture a stale anchor.
-- **Severity if it fails**: HIGH.
+- **Status**: implemented; expected RED (Found-028 account registration); failed at 472ed65079 on 2026-10-23.
+- **Scenario**: bind account 0, add account 1, transfer a note to account 1.
+- **Assertions**: account list includes 1 and sync discovers exactly the transferred amount there. The account-1 wait fails while the coordinator registration bug persists. No tree reset or manual registration workaround.
 
-##### SH-027 — Malformed note serde: note_data ≠ 115 bytes, corrupted cmx/nullifier
+#### SH-007 — Pre-bind note remains witnessable (Found-029 guard)
 - **Priority**: P1.
-- **Attack**: feed the store / `deserialize_note` (`operations.rs:810-832`, strict `SERIALIZED_NOTE_LEN = 115`) a truncated (114 B), oversized (116 B), empty, and bit-corrupted `note_data`; and a corrupted `cmx` / `nullifier` on a stored note. Drive this through the spend path that calls `extract_spends_and_anchor` → `deserialize_note`.
-- **Transition type**: 16 / 17 (spend-side deserialization).
-- **Injection point**: seed the store with a malformed `ShieldedNote.note_data` / `cmx` via a store-injection hook. **[INJECT]** (store seeding).
-- **Correct backend/wallet behavior**: error SAFELY — `deserialize_note` returns `None` → `ShieldedBuildError` (`operations.rs:623-628`); NO panic, NO silent acceptance of a truncated note as a valid one, NO out-of-bounds slice. The 115-byte layout (`recipient43‖value8‖rho32‖rseed32`) must round-trip exactly with `serialize_note` (`sync.rs:575-582`); a length drift is silent corruption.
-- **Assertions**: every malformed length/content returns a typed error, never a panic; a corrupted `cmx` fails at `ExtractedNoteCommitment::from_bytes` (`operations.rs:647-654`) not silently; no partial/garbage note enters a built bundle.
-- **Expected current outcome**: asserts safe errors. **FINDING (RED) if** any malformed input panics (DoS), is silently truncated/padded, or produces a bundle (corruption ⇒ unspendable funds or wrong cmx).
-- **Harness extensions**: Wave H + store-seeding injection hook.
-- **Severity if it fails**: HIGH (panic = validator/host DoS; silent corruption = fund loss).
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: A and B share a private file-backed coordinator; only A is bound when A pays B. Before binding B, wait for A's positive change from that same transition and assert it is below the original balance minus the payment. This proves the transition was scanned while B was unbound.
+- **Assertions**: B later discovers the exact note and successfully unshields it; destination receives at least the requested amount. This guards the mark-every-position fix (#3603).
 
-##### SH-028 — Sync robustness: interrupt mid-chunk, resume, no double-count [INJECT]
+#### SH-008 — Fee-inclusive insufficient balance
 - **Priority**: P1.
-- **Status**: **BLOCKED — not implemented.** No injectable sync-source seam exists: `sync_notes_across` is `pub(super)` and fetches from the SDK directly, with no cancellation point between fetch and store-write. Driving this attack requires a production `SyncSource` seam (a trait the coordinator fetches through, with a test impl). Intentionally NOT built in this wave — flagged as a production gap. Removed from `cases/`.
-- **Attack**: interrupt `sync_notes_across` (`sync.rs:169-340`) mid-chunk (cancel the future between fetch and append), then resume; assert the append-once gate (`sync.rs:276-289`, gated on `tree_size` not a watermark) prevents double-append. Combine with a forced `coordinator.sync(true)` storm.
-- **Transition type**: n/a (sync layer).
-- **Injection point**: cancellation hook between fetch and store-write; or a store wrapper that drops a write. **[INJECT]**.
-- **Correct behavior**: no commitment appended twice (a double-append corrupts shardtree → "Anchor not found"); no note lost; balance consistent after resume; watermark monotonic.
-- **Assertions**: post-resume, `tree_size` equals the count of distinct positions; a spend still builds a valid witness (proves no shardtree corruption); balance equals the pre-interrupt expected value.
-- **Expected current outcome**: asserts consistency. **FINDING (RED) if** a note is double-counted, lost, or the tree is corrupted (spend fails witness post-resume).
-- **Harness extensions**: Wave H + sync-cancellation hook (analogous to Wave F's broadcast/proof-fetch cancellation hook, Harness-G4).
-- **Severity if it fails**: HIGH.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: overdraw a funded note, then perform a satisfiable spend.
+- **Assertions**: exact `ShieldedInsufficientBalance` variant, `available` equals the note value, `required > amount`; follow-up spend succeeds.
+- **Limit**: selection fails before reservation, so the follow-up does not test reservation rollback. Exact required-fee tightening is out of scope.
 
-##### SH-029 — Simulated reorg / out-of-order blocks / rescan-from-0 [INJECT]
-- **Priority**: P1.
-- **Status**: **BLOCKED — not implemented.** Same missing sync-source seam as SH-028 (`sync_notes_across` fetches from the SDK directly; no scriptable mock sync source). Intentionally NOT built — flagged as a production gap. Removed from `cases/`.
-- **Attack**: (a) feed the sync notes whose positions arrive out of order; (b) simulate a reorg that rolls back recently-appended commitments then re-appends a different set; (c) force `next_start_index == 0` rescan-from-0 (the warned-about path at `sync.rs:235-241`) and assert it does not double-count already-stored notes.
-- **Transition type**: n/a (sync layer).
-- **Injection point**: a mock SDK-sync source that returns scripted (reordered / rolled-back / from-zero) note chunks. **[INJECT]**.
-- **Correct behavior**: balances converge to the canonical chain state; rolled-back commitments are not retained as spendable; rescan-from-0 is idempotent (the `tree_size` gate skips re-append); no nullifier double-derived.
-- **Assertions**: after each scripted scenario, `shielded_balances` equals the canonical expected value; no duplicate notes; a spend builds correctly.
-- **Expected current outcome**: asserts convergence. **FINDING (RED) if** a reorg leaves orphaned-as-spendable notes (phantom funds), rescan-from-0 double-counts, or out-of-order positions corrupt the tree.
-- **Harness extensions**: Wave H + scriptable mock sync source.
-- **Severity if it fails**: HIGH.
-
-##### SH-030 — Cross-network / wrong-HRP recipient; malformed / own-address; transfer-to-self
+#### SH-009 — Funded zero requests reject before proving
 - **Priority**: P2.
-- **Attack**: unshield/withdraw/transfer to: (a) a recipient address with the WRONG network HRP (mainnet `dash1…` on testnet, and vice versa); (b) a malformed bech32m / base58 address; (c) the spender's OWN shielded/transparent address (transfer-to-self); (d) a syntactically-valid address of the wrong type (Core address where a platform address is expected).
-- **Transition type**: 16 / 17 / 19.
-- **Injection point**: mostly expressible via the public API (it parses + checks network at `platform_wallet.rs:621-633`), so this case ALSO asserts the client guard fires; an **[INJECT]** arm bypasses the client network check to confirm the BACKEND independently rejects a cross-network recipient (client guard must not be the only line of defense).
-- **Correct behavior**: wrong-HRP and malformed addresses rejected with a typed parse/network-mismatch error (client AND backend); transfer-to-self either cleanly succeeds with correct accounting (value conserved minus fee, no phantom credit) or is rejected — pin whichever the protocol defines, assert no value creation either way.
-- **Assertions**: each malformed/cross-network input → typed error, no broadcast; transfer-to-self → exact value conservation (no net mint).
-- **Expected current outcome**: asserts rejection / safe self-transfer. **FINDING (RED) if** a cross-network recipient is accepted by the backend (funds sent to a wrong-network address = loss), or transfer-to-self mints/loses value.
-- **Harness extensions**: Wave H + injection hook for the backend-only network arm.
-- **Severity if it fails**: HIGH (cross-network acceptance = fund loss).
+- **Status**: implemented; expected RED until transfer/unshield/withdraw zero guards land in the separate production PR.
+- **Scenario**: fund a real 1.12B note, then shield, transfer, unshield and withdraw zero with `NoProofProver`.
+- **Assertions**: each returns exactly `ShieldedBuildError("amount must be > 0")`; requesting a proving key panics. Balances and selectable note data/nullifiers remain unchanged, with no spent or pending note. No wall-clock ceiling.
+- **Expected live result**: shield passes; the missing transfer/unshield/withdraw guards make the case fail before proving. No production fix is included here.
 
-##### SH-031 — Reject rebinding a different seed; preserve the existing account
+#### SH-010 — Concurrent spends reserve disjoint notes
+- **Priority**: P2.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: shield two notes, each independently covering one unshield; join two spends.
+- **Assertions**: both succeed, both original nullifiers become spent, each destination receives at least its requested amount, and the pool debit is at least the sum sent. One successful spend is insufficient.
+
+#### SH-011 — Three-note fee convergence and overflow
+- **Priority**: P2.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: shield three 600M notes; unshield 1.25B, which needs three inputs and grows beyond the two-action fee floor.
+- **Assertions**: `u64::MAX` returns exactly `ShieldedBuildError("amount + fee overflows u64")`; the three-note spend succeeds and credits at least 1.25B; sender debit is at least that amount. Exact final fee is not asserted.
+
+#### SH-012 — Repeated sync followed by a real spend
+- **Priority**: P2.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: shield, force two successful syncs, compare balances, then spend.
+- **Assertions**: cached balance remains stable and equal to the shielded amount. The successful post-sync spend and destination credit are the witness/serialization check; balance equality alone does not establish append idempotency or deserialize note data.
+
+#### SH-013 — Empty account binding
+- **Priority**: P2.
+- **Status**: implemented; current assertions await live verification.
+- **Assertions**: binding an empty account list returns the exact key-derivation requirement error; a follow-up spend returns `ShieldedNotBound`.
+
+#### SH-014 — Unbound wallet/account spend
+- **Priority**: P2.
+- **Status**: implemented; current assertions await live verification.
+- **Assertions**: unshield before binding returns `ShieldedNotBound`; unshield on an unbound account returns `ShieldedKeyDerivation`.
+- **Coverage limit**: transfer and withdraw share the key derivation path but have no separate arms here.
+
+#### SH-018 — Core asset lock to own pool (Type 18)
 - **Priority**: P1.
-- **Attack**: `bind_shielded(seed_A, &[0])`, shield and sync a note, then attempt `bind_shielded(seed_B, &[0])` with a different seed on the same wallet/coordinator.
-- **Transition type**: n/a (key management).
-- **Injection point**: public API (`bind_shielded` twice with different seeds).
-- **Correct behavior**: reject seed_B with `PlatformWalletError::ShieldedKeyDerivation` before changing seed_A's binding or durable state. The guard introduced by #4237 is intentional: notes and watermarks are keyed by wallet/account without a key-generation identifier, so replacing the viewing key would misattribute existing notes and hide the new key's history.
-- **Assertions**: seed_A remains bound with the same default address and coordinator registration; its unspent notes and balance are unchanged; its persisted viewing key still equals seed_A's derived FVK. Check preservation immediately after rejection, without rebinding or rescanning to repair state.
-- **Expected current outcome**: PASS. **FINDING (RED) if** the different-seed bind succeeds, returns an unrelated error, or changes seed_A's binding, notes, balance, or persisted viewing key.
-- **Harness extensions**: Wave H (two seeds; no new hook — public API).
-- **Severity if it fails**: HIGH.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: fund 1,750,000 Core duffs; lock 1,500,000 through `shielded_fund_from_asset_lock(FromWalletBalance)`.
+- **Assertions**: sync observes credit within the existing half-lock/full-lock fee-tolerant range. Core funding, proof construction and submission errors fail the test; no obsolete 1.2B funding blocker or exact-fee claim.
 
-##### SH-032 — Boundary: balance exactly `== amount + fee`, and off-by-one below
+#### SH-019 — Shielded withdrawal (Type 19), shielded half
 - **Priority**: P1.
-- **Attack**: fund a single note to EXACTLY `amount + compute_minimum_shielded_fee(1, version)`; spend `amount`. Then off-by-one: fund `amount + fee - 1` and attempt the same spend.
-- **Transition type**: 17 (unshield, single-note exact-change).
-- **Injection point**: public API (exact funding via a precise shield), so this is a non-INJECT correctness case — but the spend must reach the backend so the BACKEND's fee/value check is exercised, not just the client's.
-- **Correct behavior**: exact case succeeds, leaves ZERO change (no dust note created), value conserved exactly; off-by-one-below case is rejected (client `ShieldedInsufficientBalance` AND, via an [INJECT] arm, the backend value/fee check) — no spend that underpays the fee by 1.
-- **Assertions**: exact: `Ok`, post-balance `== 0`, recipient `== amount`, fee `== expected`; off-by-one: `Err` insufficient (client) and rejected (backend arm).
-- **Expected current outcome**: asserts exact-change correctness + boundary rejection. **FINDING (RED) if** the exact case creates a phantom change note, over/under-charges the fee, or the off-by-one is accepted by the backend.
-- **Harness extensions**: Wave H + optional [INJECT] for the backend off-by-one arm.
-- **Severity if it fails**: MEDIUM.
+- **Status**: implemented; shielded spend/change only; L1 payout observation not implemented.
+- **Scenario**: shield 1.12B, withdraw 20M to the bank's valid Core address, sync change, then withdraw another 20M.
+- **Assertions**: pool debit is at least 20M, positive change remains, and the second withdrawal succeeds from that change. Any double-spend rejection or unrelated error fails.
+- **Not implemented**: L1 payout observation. Passing this case does not establish Core arrival.
 
-##### SH-033 — Duplicate nullifier WITHIN a single bundle [INJECT]
+#### SH-020 — Same note in two Type-17 transitions [INJECT]
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: build two distinct unshields against one captured funded note; submit both before waiting.
+- **Assertions**: exactly one verified commit; the loser has typed consensus code 40901 (`NullifierAlreadySpentError`). Winner credit is at least the amount; loser destination is unchanged; sync marks the original spent and the only unspent note is the winner's change, at most `SHIELD − UNSHIELD` (fee tolerant). Failed reads are fatal.
+- **Timeout exception**: a loser admitted at CheckTx whose result times out (mempool recheck may evict it after the winner commits) passes only because the committed winner spent the shared nullifier and the loser destination is proven unchanged. Any other loser error must be 40901.
+- **Coverage limit**: no separate Type-16 or same-block scheduling arm.
+
+#### SH-021 — Replay after persisted coordinator restart [INJECT]
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: capture and spend a note, sync, drop the private coordinator, reopen its SQLite tree, reload the persisted FVK/notes via `bind_shielded_from_persisted`, and resync. Build a new Type-17 spend of the captured original.
+- **Assertions**: restored note remains spent before and after replay; backend returns code 40901; fresh replay destination stays zero.
+- **Coverage limit**: restarts the coordinator and reloads the wallet's shielded persister snapshot, not the whole process; no Type-16 arm.
+
+#### SH-022 — Signed unshield amount tampering [INJECT]
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: build a valid funded Type-17 unshield, then overwrite its signed amount above the spent note's value.
+- **Assertion**: typed consensus code 40902 (`InvalidShieldedProofError`). The amount is bound into the Orchard sighash.
+- **Coverage limit**: tests tamper detection, not value conservation of a correctly signed over-value bundle. No such construction seam exists here.
+
+#### SH-023 — Unshield amount below the fee floor [INJECT]
 - **Priority**: P1.
-- **Attack**: construct one transition whose Orchard bundle spends the same note twice (two actions, identical nullifier) — an intra-transition double-spend.
-- **Transition type**: 16 / 17.
-- **Injection point**: dpp builder with a duplicated `SpendableNote`. **[INJECT]**.
-- **Correct backend behavior**: rejected — duplicate nullifiers within one bundle must fail validation before any state write.
-- **Assertions**: broadcast `Err` duplicate-nullifier / invalid-bundle; no partial application.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** accepted (double-spend within one tx).
-- **Harness extensions**: Wave H + injection hook.
-- **Severity if it fails**: CRITICAL.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: fund a 200M note, capture a valid Type-17 unshield, overwrite `unshielding_amount` (the gross leaving the pool) with `compute_shielded_unshield_fee(actions) − 1`.
+- **Assertion**: typed consensus code 40904 (`InsufficientShieldedFeeError`). `validate_minimum_shielded_fee` runs before proof verification at CheckTx and in block processing, so the broken signature cannot decide the verdict; without the floor the probe would be rejected with 40902 and the case would fail.
+- **Coverage limit**: no correctly signed under-floor bundle exists (the DPP builders derive their own fee), so this probes the floor gate, not a signed underpayment.
 
-##### SH-034 — Tampered binding signature [INJECT]
+#### SH-024 — Unshield u64 boundary amounts [INJECT]
 - **Priority**: P1.
-- **Attack**: flip bytes in `SerializedBundle.binding_signature` (`builder/mod.rs:88`, 64 bytes); broadcast.
-- **Transition type**: 16 / 17.
-- **Injection point**: mutate `binding_signature` post-build. **[INJECT]**.
-- **Correct backend behavior**: rejected — the binding signature commits to the value balance; a tampered signature must fail Orchard bundle verification.
-- **Assertions**: broadcast `Err` invalid-signature/bundle; no inclusion.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** accepted (value-balance binding bypass).
-- **Harness extensions**: Wave H + injection hook.
-- **Severity if it fails**: CRITICAL.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: fund a separate note per probe; mutate valid unshield amounts to `u64::MAX` and `u64::MAX − 1`.
+- **Assertion**: typed consensus code 10822 (`ShieldedInvalidValueBalanceError`) for each.
+- **Coverage limit**: no independent i64-negative or fee-addition overflow backend arm; client addition overflow is SH-011.
 
-##### SH-035 — Replayed Type 18 asset-lock proof (single-use enforcement) [INJECT]
-- **Priority**: P1 (Core-L1 gated).
-- **Attack**: shield-from-asset-lock (Type 18) with a valid `AssetLockProof`, then resubmit the SAME asset-lock proof in a second Type 18 transition. (Extends SH-018's single-use note into a dedicated abuse case.)
-- **Transition type**: 18.
-- **Injection point**: reuse the captured `AssetLockProof`. Each Type-18 transition is built through the `test-utils` seam `operations::build_shield_from_asset_lock_st` (the one-time key comes from `operations::test_utils::derive_asset_lock_private_key`) and broadcast straight through the SDK (`broadcast_and_wait`), so the replay reaches Drive's single-use outpoint check. **[INJECT]** + Core-L1 gate.
-- **Correct backend behavior**: rejected — an asset-lock outpoint is single-use; the second consumption must fail (already-used / outpoint-spent consensus error).
-- **Assertions**: first `Ok`, second `Err` asset-lock-already-used; only one shielded note created.
-- **Expected current outcome**: asserts rejection. **FINDING (RED) if** the proof is consumed twice (double-shield from one L1 lock = value forgery).
-- **Harness extensions**: Wave H + Core-L1 gate + asset-lock-proof reuse hook.
-- **Severity if it fails**: CRITICAL.
+#### SH-025 — Forged/truncated/substituted proof [INJECT]
+- **Priority**: P0.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: five funded notes cover four mutated transitions and one separate donor proof. Flip a proof byte, zero the proof, replace with 32 bytes, and substitute the donor transition's proof.
+- **Assertion**: every probe reaches the backend and receives code 40902. SDK proof-readback errors do not qualify. No no-op prover hook.
 
-##### SH-036 — IdentityCreateFromShieldedPool (Type 20): create an identity funded from the pool
+#### SH-026 — Unrecorded anchor [INJECT]
 - **Priority**: P1.
-- **Flow**: shield a `DENOMINATION + fee headroom` note into Orchard account 0, then `shielded_identity_create_from_pool` spends the pool note to create a brand-new Platform identity holding `DENOMINATION − consensus_create_fee`. `DENOMINATION` is read at runtime from `platform_version…event_constants.shielded_identity_create_denominations` (smallest member — never hardcoded). Identity funding and existing-identity top-up are covered separately by SH-037/SH-038 and SH-040.
-- **Transition type**: 20 (identity-create from shielded pool).
-- **Injection point**: public API (`PlatformWallet::shielded_identity_create_from_pool`), so this is a non-INJECT correctness case — but the transition must reach the backend so consensus actually creates the identity and the proof-verified read is the verdict.
-- **Correct behavior**: the call returns the new identity's `Identifier`; the identity exists on chain with exactly the submitted key set; `DENOMINATION` leaves the pool exactly (the metered fee is carved from it, change re-enters the pool).
-- **Assertions**: A1 call `Ok(non-nil Identifier)`; A2 `Identity::fetch == Some` (proof-verified on-chain existence — THE verdict); A3 fetched public keys match the submitted set (count + purposes/data); A4 shielded pool balance dropped by EXACTLY `DENOMINATION`. Secondary (logged, non-fatal): A5 identity balance `== DENOMINATION − consensus_create_fee` (asserted `>0 && <=DENOMINATION` with a `TODO(#3040-fee)` since the exact fee is version-dependent); A6 no-double-spend (funding notes marked spent / a second create against the same notes fails).
-- **Expected current outcome**: PASS = A1∧A2∧A3∧A4. FAIL (not skip) if any authoritative assert fails or the transition is rejected. SKIP (explicit `E2E-SKIP`, never silent green) when the bank floor is unmet / devnet unavailable.
-- **Harness extensions**: Wave H + the `id_*` identity key-set / signer helpers (`derive_identity_key`, `SeedBackedIdentitySigner`).
-- **Severity if it fails**: CRITICAL.
-- **Out of scope**: adversarial Type 20 — insufficient denomination, forged proof, double-spent funding notes, tampered binding signature, fallback-address-on-failure path.
+- **Status**: implemented; unrecorded-anchor arm only; stale recorded-anchor behavior untested.
+- **Scenario**: overwrite a valid Type-17 bundle's anchor with `[0xAB; 32]`.
+- **Assertion**: code 40900 (`InvalidAnchorError`), not a generic proof failure.
+- **Not covered**: stale-but-recorded anchors and retention-window acceptance. This test does not resolve Found-030.
+
+#### SH-027 — Malformed note bytes and metadata
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: seed independently selectable 1.12B notes with invalid lengths (0, 1, 114, 116, 200) and invalid 115-byte contents; spend through production selection/deserialization. Also capture a real funded note and corrupt its rho high bit, cmx, or stored nullifier.
+- **Assertions**: invalid note data returns the exact position-specific deserialization `ShieldedBuildError`; invalid cmx returns the exact stored-cmx build error before proving. Neither insufficient balance nor witness failure passes these arms.
+- **Nullifier semantics**: stored nullifier is selection metadata; the builder recomputes the actual nullifier from the real note/FVK. Assert the bundle contains the original derived nullifier and excludes corrupted metadata. This does not claim the metadata itself is rejected or test corrupted reservation bookkeeping.
+
+#### SH-028 — Interrupt sync mid-chunk and resume [INJECT]
+- **Priority**: P1.
+- **Status**: BLOCKED; not implemented — no injectable sync-source seam.
+- **Blocker**: no injectable SDK sync source/cancellation seam between fetch and store write.
+- **Required future assertions**: no duplicate commitment, no lost note, monotonic watermark and successful spend after resume. No case file exists.
+
+#### SH-029 — Reorg/out-of-order sync [INJECT]
+- **Priority**: P1.
+- **Status**: BLOCKED; not implemented — no scriptable reorg/sync source.
+- **Blocker**: no scriptable sync source for reordered or rolled-back commitment chunks.
+- **Required future assertions**: balances converge to canonical state, no phantom spendable notes, no duplicate append, and valid witnesses after rescan. No case file exists.
+
+#### SH-030 — Client recipient network and parsing checks
+- **Priority**: P2.
+- **Status**: implemented; client decoding/network checks; network HRP is absent from the wire format.
+- **Scenario**: generate a checksum-valid mainnet P2PKH bech32m recipient for a non-mainnet wallet; also try malformed and wrong-type strings.
+- **Assertions**: typed `ShieldedBuildError` naming network mismatch for the valid mainnet address, and platform-address decoding for malformed/wrong-type inputs.
+- **Refuted backend premise**: the wire `PlatformAddress` carries no HRP/network; there is no independent backend HRP check to inject. Own-transparent-address unshield is SH-002; own-account shielded transfer is SH-003/006. This case has no additional self-transfer arm.
+
+#### SH-031 — Reject different-seed rebind
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: bind and fund seed A, then attempt a seed B rebind on the same wallet/account.
+- **Assertions**: exact key-derivation error; binding, note set, balance and persisted FVK stay unchanged immediately after rejection. No repair rebind/rescan.
+
+#### SH-032 — Exact-change boundary and one credit short
+- **Priority**: P1.
+- **Status**: implemented; exact-change live path and client-only off-by-one rejection; revised harness awaits live verification.
+- **Scenario**: fund exactly amount plus the computed unshield fee; spend; then use a second wallet with one credit less.
+- **Assertions**: first spend succeeds, destination receives at least the amount, and change is zero; second fails locally with `ShieldedInsufficientBalance`. Existing exact-change assertions are retained.
+- **Coverage limit**: off-by-one is client-only; it is not a backend under-fee injection.
+
+#### SH-033 — Duplicate nullifier within a bundle [INJECT]
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: build an unshield with the same funded note twice, bypassing local reservation.
+- **Assertion**: construction must succeed and backend must return code 40901 for the duplicated nullifier. Build failures, transport errors and unobserved outcomes fail.
+
+#### SH-034 — Tampered binding signature [INJECT]
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: zero or flip the binding signature of valid funded unshields.
+- **Assertion**: typed code 40902 for each, never a broad string or readback-error match.
+
+#### SH-035 — Replayed Type-18 asset-lock proof [INJECT]
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: build and submit Type 18 directly, await affected-state proof of fully consumed lock, then reuse the same proof.
+- **Assertions**: replay returns an asset-lock already-consumed/replay consensus variant; shielded sync finds exactly one unchanged note. Sweep shielded residual to the bank afterward.
+- **Prerequisite**: live Core funding/proof support; failures remain fatal.
+
+#### SH-036 — Identity creation from pool, then funding-note replay
+- **Priority**: P1.
+- **Status**: implemented; current assertions await live verification.
+- **Scenario**: bank-fund the smallest protocol denomination plus 1B transparent reserve; shield only the denomination; capture its note; create a new identity with four keys.
+- **Assertions**: non-nil ID, proof-verified identity and exact submitted key set, pool debit equals denomination, identity credit in `(0, denomination]` (fee tolerant). Rebuild a Type-17 spend of the captured Type-20 funding note, require backend code 40901 and zero replay-destination credit.
+- **Funding gate**: when the bank's effective Platform balance is below this case's denomination-plus-headroom budget, the case is an explicit `E2E-SKIP` (warn + stderr marker, the token-suite convention), never a silent green and never keyed to the unrelated 88.8B token-suite floor.
+- **Coverage limit**: replay proves Type-20 funding nullifiers stay spent; malformed Type-20 proofs, duplicate identity creation, denomination errors and fallback paths are not covered.
 
 #### SH-037 — Identity → own shielded pool (Type 21)
 - **Priority**: P1.
@@ -3189,7 +2930,7 @@ Location: `rs-sdk` (production side). A GroveDB path-not-found condition during 
 - **Priority**: P1 (blocks shielding and any balance-dependent operation after chain-confirmed funding via the DAPI chain-query path)
 - **Severity**: HIGH (local balance reads 0 for chain-confirmed addresses; shield/transfer flows fail with `InsufficientBalance` or `ShieldedInsufficientBalance` despite on-chain funds being present)
 - **Owner**: `rs-platform-wallet` (this crate)
-- **Status**: red-by-design. Pinned by three tests: `pa_007_sync_watermark.rs` (watermark stays `None` after sync), `pa_006b_concurrent_broadcast.rs` (source-address drain = 0 despite a successful on-chain transfer), and `sh_012_sync_watermark_idempotency.rs` (`ShieldedInsufficientBalance { available: 0, required: 2120000000 }` despite chain-confirmed funding). **Note**: this is the same root defect that the harness `inject_address_balance` spend-cache workaround in `framework/bank.rs` compensates for — that workaround seeds the spend cache so `fund_address` can spend verified credits; it does NOT fix the local balance map visibility gap documented here. **2026-07-05 testnet run**: two of the three pinning cases not validated — `pa_007_sync_watermark_idempotency` and `sh_012_sync_watermark_idempotency` both failed earlier this run, at shared bank setup (`Bank under-funded for e2e run (planner) ... Platform short 0 credits`, fund-planner E5 race), before reaching the pinned code path; PA-006b not covered by this run's scope.
+- **Status**: historical address-sync finding (#4029), tracked by PA-007 / PA-006b. SH-012 is a functional repeated-sync/spend check; it no longer labels arbitrary setup failures as this defect.
 - **Wallet feature exercised**: `src/platform_addresses/sync.rs` (`PlatformAddressWallet::sync_balances` → incremental DAPI sync); `src/platform_addresses/wallet.rs` (`sync_watermark` accessor); `src/shielded/` (`select_shield_inputs` — reads local balance map).
 - **Defect**: `sync_balances()` calls the incremental DAPI address-sync. When `query_height >= metadata_height` (no new entries indexed since the last sync), the query returns 0 entries and the watermark-advance branch is never entered — the watermark stays `None` and the local balance map retains whatever state it had before the call. Addresses funded on-chain and confirmed via `wait_for_address_balance_chain_confirmed_n` (which polls a DAPI chain-query path, NOT the local balance map) are never reflected in the local map. Subsequent `sync_balances()` calls hit the same zero-entry case and repeat the no-op. The local balance map effectively never sees the chain-confirmed funding.
 - **Preconditions**: a caller funds an address via `bank.fund_address`, confirms it via `wait_for_address_balance_chain_confirmed_n` (DAPI chain-query path), then calls `sync_balances()` and reads the local balance map or attempts to shield.
@@ -3202,16 +2943,17 @@ Location: `rs-sdk` (production side). A GroveDB path-not-found condition during 
   - Expected (after fix): `sync_watermark()` returns `Some(current_height)`; `balances()` reflects the chain-confirmed amount; shielding succeeds.
 - **Expected** (after fix): after each successful `sync_balances()`, refresh all tracked addresses from chain state and advance the watermark to `metadata_height` even when the incremental delta returns 0 new entries.
 - **Actual** (current code): the watermark is only advanced when the incremental sync returns ≥1 new entries; a "nothing new, but current" result leaves both the watermark and the balance map unchanged.
-- **Harness extensions required**: none — PA-007, PA-006b, and SH-012 are fully implemented and fail deterministically on this gap.
+- **Harness extensions required**: none for the existing cases. Diagnose failures by their actual error; SH-012 is not expected to fail deterministically.
 - **Estimated complexity**: M (requires redesigning the "zero entries returned" branch of `sync_balances` to still flush tracked addresses from chain state and advance the watermark).
 - **Rationale**: The local balance map is the sole source of truth for `select_shield_inputs`, transfer-amount validation, and balance display. Any address funded solely through the DAPI chain-query path is invisible to these consumers even after chain confirmation. This is a fundamental contract violation: after `sync_balances()` completes, the local map MUST reflect on-chain state for all tracked addresses.
 - **Filed**: dashpay/platform#4029 (open). Confirmed a genuine defect, not a usage error, by a 2026-07-06 adversarial review: the regression is on the default incremental BLAST path with no caller parameter that gates it. Re-verified post-`#4004`/`#4005`/`#4008` rework of the same reconcile/watermark seam — the *height* watermark no longer stalls (fixed), but `sync_balances`'s `> 0` guard on the changeset write (`sync.rs:178-180`) is not mirrored inside `AddressSyncProvider::update_sync_state` (`provider.rs:499`), so the in-memory `last_known_recent_block` still regresses to 0 on every quiet incremental pass — the exact `pa_007` symptom. A crate-level repro (`repro/pr3549-platform-a`, `provider.rs::found_032_empty_delta_must_not_regress_recent_block_watermark`) confirms RED.
+
 
 #### Found-033 — DAPI node state skew between nonce fetch and broadcast breaks sequential shielding
 - **Priority**: P1 (breaks sequential shielding when calls reuse a P2PKH input and DAPI nodes observe different address state).
 - **Severity**: HIGH (multi-note shielding can fail partway through; occurrence and failing iteration depend on node timing, not a fixed limit of two successful shields).
 - **Owner**: `rs-platform-wallet` / `rs-sdk` (input-state freshness and broadcast consistency/recovery).
-- **Status**: red-by-design, pinned by `sh_011_note_selection_convergence.rs`; sequential-shield setup in SH-010 and SH-024 exposes the same problem. **2026-07-05 testnet run**: SH-011 was not validated — it failed at shared bank setup (fund-planner E5 race) before reaching the shield loop.
+- **Status**: historical sequential-shield setup issue. SH-011 now expects successful funding and three-note convergence; a setup nonce failure needs separate diagnosis, not a predetermined RED label.
 - **Wallet feature exercised**: `wallet/shielded/operations.rs` calls `fetch_inputs_with_nonce`, whose SDK implementation in `platform/transition/address_inputs.rs` calls `AddressInfo::fetch_many` for every shield, then increments the fetched nonce before broadcasting the Type-15 shield.
 - **Diagnosis**: there is no client nonce cache on this path. The observed `AddressNonceMismatch` errors in both directions reflect DAPI node state skew between the fresh nonce fetch and broadcast:
   - SH-010: `provided=1, expected=2` is consistent with a fetch observing pre-shield nonce 0 while the broadcast node has already applied the preceding shield and stores nonce 1.
@@ -3221,10 +2963,10 @@ Location: `rs-sdk` (production side). A GroveDB path-not-found condition during 
 - **Scenario**:
   1. Fund one address; bind shielded account 0.
   2. Shield multiple notes sequentially from that address, requiring every call to succeed.
-- **Assertions**: SH-011 stays RED-by-design: its shield loop must complete successfully, and a nonce mismatch fails the test. It does not assert a particular failing iteration or nonce direction.
+- **Assertions**: SH-011 requires its shield loop to succeed. A nonce error fails honestly, but is not proof of this specific diagnosis.
 - **Expected** (after fix): enforce input-state freshness against verified post-shield nonce/height bounds; when a broadcast node lags, use bounded retry of the same signed transition against a caught-up node. Do not rebuild with a lower nonce to match a stale server view.
 - **Actual** (current code): a fresh address query does not ensure the subsequent broadcast node observes the same state; `AddressNonceMismatch` escapes to the caller.
-- **Harness extensions required**: none for the live SH-011 pin. Endpoint/height tracing would distinguish the precise fetch/broadcast sequence.
+- **Harness extensions required**: endpoint/height tracing to distinguish the actual nonce fetch/broadcast sequence.
 - **Estimated complexity**: M (cross-request freshness and broadcast recovery, not cache invalidation).
 - **Rationale**: Sequential shielding from one funded address is a normal multi-note workflow. Fresh per-call queries still need consistency with the node validating the next transition.
 
@@ -3343,35 +3085,23 @@ order. Each wave unlocks the cases listed.
 <!-- merge note: kept theirs' updated build-order paragraph (Wave G/D supersession, SDK-wrapper helper note). Appended HEAD's "Wave E is complete" as a follow-on sentence reflecting Task #15 closure (CR-003 has flipped PASS). Preserved HEAD-only "Framework notes (post-V20)" subsection — distinct content the test-branch doesn't carry. -->
 **Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave G unlocks the entire TK column once Wave A is in place; the SDK-wrapper helpers in Wave G (helpers 6–10 and 14–19, previously tracked as Gap-T1..T6) land together with Wave G, not as follow-up wallet PRs. Wave F's expensive items (test DAPI proxy, cancellation hook) and Wave E are independent and can run in parallel with the others once a champion is assigned. Wave D is superseded by Wave G. Wave E is complete (Task #15 closed; CR-003 has flipped PASS, see §3 CR-003 Status).
 
-### Wave H — Shielded (Orchard) harness extensions
+### Wave H — Shielded (Orchard) harness
 
-Unlocks the `### Shielded (SH)` area. Every helper is `#[cfg(feature = "shielded")]`;
-the SH cases compile only under `--features shielded`. The prover is the cost
-center — `CachedOrchardProver` warm-up loads Halo-2 parameters once (~seconds) and
-each proof is ~30 s, so the suite shares ONE warmed instance and runs SH cases in
-the gated `--include-ignored` cohort, never the default tier.
+Implemented in `framework/shielded.rs`:
 
-- **`shielded_prover()` — process-wide warmed `CachedOrchardProver`** behind a `OnceCell` (mirrors the Wave G default-contract `OnceCell` and the bank singleton). Warm it once in the first SH case; all SH cases borrow `&CachedOrchardProver`. (`OrchardProver` is impl'd on the reference type — see `platform_wallet.rs:553-558`.)
-- **`SetupGuard::bind_shielded(accounts: &[u32]) -> Arc<NetworkShieldedCoordinator>`** — derives the seed (already held by `TestWallet`), constructs a per-test **FileBacked** coordinator (the in-memory store cannot witness — Found-027), calls `PlatformWallet::bind_shielded`, and returns the coordinator so the test can drive `sync(true)`. MUST use a fresh per-test SQLite path under the workdir (the commitment tree is network-shared but tests need isolation; document the cross-test sharing model or give each test its own DB file).
-- **`wait_for_shielded_balance(wallet, &coordinator, account, expected, timeout)`** in `framework/wait.rs` — polls `shielded_balances` after `coordinator.sync(true)` until `== expected` or timeout; mirrors the PA `wait_for_balance` shape. Drives a `sync(true)` each poll (the cooldown gate at `coordinator.rs:405-423` is bypassed by `force=true`).
-- **`shielded_default_address_43(wallet, account) -> [u8; 43]`** thin wrapper over `shielded_default_address` for the SH-003 transfer-recipient plumbing.
-- **Store-backing switch** for SH-005: a helper that constructs both an InMemory and a FileBacked coordinator over the same funded note set so the witness-availability split is observable in one test.
-- **Second-payer / self-transfer helper** for SH-006 and SH-007 (a note paid to an account/wallet that is not the synced driver). Likely composes `shielded_transfer_to` from a sibling account, or `register_extra_identity`-style a second bound wallet.
-- **Controlled bind-ordering hook** for SH-007 — advance one coordinator's tree (`sync(true)`) before binding the second wallet; needs either two coordinators or a bind-after-append sequence. (SH-007 now guards the #3603 fix — assert the pre-bind note IS spendable — so this hook drives a GREEN regression guard, not a RED pin.)
-- **Teardown shielded fund-sweep (bank-leak prevention)** — on `SetupGuard`/SH-case teardown, unshield any residual shielded-account balance back to the **bank's transparent platform address** (the same sink the PA sweep uses), so credits funded into the shielded pool are recovered rather than stranded run-over-run. **MUST be best-effort and logged**: wrap the unshield in a `try`/log-on-error, and NEVER let a sweep failure fail teardown. Critically, the RED-by-design cases (SH-005 in-memory arm, and any case where `witness()`/unshield is intentionally broken) WILL fail the sweep — that failure must be swallowed-and-logged (`tracing::warn!`), not propagated, exactly as `cancel_pending` (`operations.rs:765-779`) and the PA identity-sweep floor already do. Rationale: a known e2e lesson — un-swept funding silently starves the bank across a long suite. Mirrors `cleanup::sweep_identities` (best-effort, below-floor balances left for the next-run orphan sweep).
-- **Core-L1 gate (for SH-018 / SH-019)** — gated behind `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (parity with ID-002b / CR-003 / AL-001). Provides: (a) a Core-funded test wallet via Wave E `setup_with_core_funded_test_wallet(duffs)` + an **asset-lock builder** producing a single-use `AssetLockProof` (for Type 18, SH-018); and (b) a **Layer-1 payout observation** seam to confirm the withdrawal tx landed on Core (for Type 19, SH-019 — shared design with §5 item 2 transparent withdrawal). Until both exist, SH-018 and the L1-arrival half of SH-019 run RED — acceptable, the RED documents the missing seam. SH-019's shielded-side assertions stay GREEN-capable independent of this gate.
-- **Adversarial injection hooks (for SH-020..SH-035 — the abuse pass).** The whole point of the abuse cases is to reach the BACKEND with transitions the wallet's client-side guards would normally reject, so the wallet's validation must NOT mask the backend test. These hooks construct/mutate transitions at the protocol boundary and broadcast them directly via `BroadcastStateTransition`, bypassing the guarded `PlatformWallet::shielded_*` methods:
-  - **`build_raw_shielded_transition(kind, spends, outputs, anchor, value_balance, fee, proof_override, …) -> StateTransition`** — a thin test wrapper over the public `dpp::shielded::builder::build_*_transition` functions (`packages/rs-dpp/src/shielded/builder/`) that lets the test pass out-of-range / inconsistent inputs the wallet wrapper forbids (output > input for SH-022, under-floor fee for SH-023, `u64`/`i64` boundary for SH-024, duplicate `SpendableNote` for SH-033, stale/random `anchor` for SH-026).
-  - **`broadcast_raw(sdk, state_transition) -> Result<…>`** — broadcast an arbitrary (possibly invalid) state transition directly, returning the typed backend error so the test can assert the exact rejection variant. The seam already exists at `operations.rs:232/304/371/467/556`; expose it test-side.
-  - **`mutate_serialized_bundle(st, field, bytes)`** — flip/truncate/zero bytes in the serialized `SerializedBundle` fields (`builder/mod.rs:74-89`): `proof` (SH-025), `binding_signature` (SH-034), `anchor` (SH-026), `value_balance` (SH-022/SH-024). Operates on the built transition's bytes pre-broadcast.
-  - **`TamperingProver`** — an `OrchardProver` impl (the trait is just `proving_key()`, `builder/mod.rs:58-61`) paired with a post-hoc proof-corrupting wrapper, for the proof-substitution arm of SH-025 (emit a proof from a different transition).
-  - **`build_against_note(note, witness)` / skip-reservation build** — build a spend directly against a chosen `SpendableNote` WITHOUT going through `reserve_unspent_notes` (`operations.rs:711-746`), for the double-spend SH-020 and replay SH-021 (rebuild against an already-spent note).
-  - **`seed_malformed_note(store, note_data, cmx, nullifier)`** — inject a `ShieldedNote` with non-115-byte `note_data` / corrupted `cmx` into the store, for the serde-abuse SH-027.
-  - **Scriptable mock sync source** — a sync provider returning scripted note chunks (out-of-order, rolled-back/reorg, from-index-0), for SH-028/SH-029; pairs with a **sync-cancellation hook** (analogous to Wave F's broadcast/proof-fetch cancellation hook) to interrupt mid-chunk.
-  - **`reuse_asset_lock_proof(proof)`** — resubmit a captured single-use `AssetLockProof`, for SH-035 (Core-L1 gated).
-  - **`PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL` gate** — the abuse cases run only under this env gate (plus `--features shielded --include-ignored`) so a stray malformed-transition broadcast can't pollute a normal run; the gate also signals "these are EXPECTED to attempt-and-be-rejected", so a backend acceptance is logged as a finding rather than a flake.
-- **Unlocks**: SH-001..SH-035. SH-001..SH-014 need only the core Wave H helpers; SH-018 needs the Core-L1 asset-lock builder; SH-019 needs the Core-L1 Layer-1 observation seam; **SH-020..SH-035 (abuse pass) need the adversarial injection hooks above** (SH-035 also needs the Core-L1 gate).
-- **Cost**: prover warm-up + `bind_shielded` helper + `wait_for_shielded_balance` + the best-effort teardown sweep are the cheap core (~180 LoC) and unblock SH-001..SH-004, SH-007, SH-008..SH-014. The store-backing switch (SH-005), second-payer (SH-006/SH-007), and bind-ordering hook (SH-007) are incremental. SH-018/SH-019 add the Core-L1 gate. The adversarial injection hooks (~250-400 LoC: raw-build/broadcast + bundle-byte mutation + tampering prover + scriptable sync source) unblock the entire abuse pass and are the single highest-leverage harness investment, since the abuse pass is where backend FINDINGS are won. **Highest-value deliverables**: the consensus-critical abuse cases (SH-020 double-spend, SH-022 value conservation, SH-025 forged proof, SH-033 intra-bundle double-spend, SH-034 binding-sig tamper — all CRITICAL-if-they-fail), then the two live Found pins (SH-005/Found-027, SH-006/Found-028), the #3603 regression guard (SH-007/Found-029), and the Found-030 dynamic probe (SH-026).
+- Shared cached prover, `bind_shielded`, and private file-backed coordinators.
+- Strict typed sync with no tree rebuild; balance and note-set polling that retries recoverable sync errors; best-effort shielded sweep after assertions (tree inconsistency still fails).
+- `capture_unshield_st` and `build_unshield_st_against_notes` for funded real transitions, with reservation bypass only in the chosen-note seam. The fee argument is diagnostic-only; DPP computes fees internally.
+- Typed `broadcast_raw` / `wait_commit_raw` and `assert_adv_rejected`: require attack-specific consensus codes, fail on timeout, network failure or client proof error.
+- `mutate_serialized_bundle` for proof/signature/anchor/amount mutation; proof substitution uses a separate real transition.
+- `NoProofProver` for deterministic early-rejection assertions, plus store seeding for malformed note data.
+- Asset-lock replay uses the public Type-18 build seam and the affected-state wait.
+
+Still missing: a correctly signed under-floor bundle (SH-023 probes the fee gate by
+amount mutation), scriptable sync/cancellation/reorg sources (SH-028/029, blocked),
+stale recorded-anchor acceptance coverage (SH-026), and Core payout observation (SH-019).
+The adversarial gate defaults on under `--features e2e`; explicitly opting out
+provides no attack coverage.
 
 ### Framework notes (post-V20)
 

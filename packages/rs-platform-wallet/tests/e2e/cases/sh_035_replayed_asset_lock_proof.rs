@@ -40,7 +40,10 @@ use platform_wallet::wallet::shielded::{AccountViewingKeys, OrchardKeySet};
 use platform_wallet::{AssetLockFundingType, PlatformWalletError};
 
 use crate::framework::prelude::*;
-use crate::framework::shielded::{adversarial_enabled, bind_shielded, shielded_prover};
+use crate::framework::shielded::{
+    adversarial_enabled, bind_shielded, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    wait_for_shielded_balance,
+};
 use crate::framework::signer::SeedBackedCoreSigner;
 
 // The lock is funded for the FULL `ASSET_LOCK_DUFFS`, but the shield asks
@@ -56,7 +59,6 @@ const TEST_WALLET_CORE_FUNDING: u64 = 1_950_000;
 const ASSET_LOCK_DUFFS: u64 = 1_750_000;
 const SHIELD_DUFFS: u64 = 1_400_000;
 const SHIELDED_ACCOUNT: u32 = 0;
-#[allow(dead_code)]
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Build a Type-18 transition consuming `proof` and broadcast it through the
@@ -112,7 +114,7 @@ async fn sh_035_replayed_asset_lock_proof() {
     let network = s.test_wallet.platform_wallet().sdk().network;
     let seed_bytes = s.test_wallet.seed_bytes();
     let prover = shielded_prover();
-    let _handle = bind_shielded(&s.test_wallet, &[SHIELDED_ACCOUNT], &s.ctx.workdir)
+    let handle = bind_shielded(&s.test_wallet, &[SHIELDED_ACCOUNT], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
 
@@ -159,6 +161,20 @@ async fn sh_035_replayed_asset_lock_proof() {
         "first shield must fully consume the asset lock; result={first:?}"
     );
 
+    wait_for_shielded_balance(
+        &s.test_wallet,
+        &handle,
+        SHIELDED_ACCOUNT,
+        credits,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("first asset lock shield note");
+    let before = unspent_notes(&s.test_wallet, &handle, SHIELDED_ACCOUNT)
+        .await
+        .expect("first notes");
+    assert_eq!(before.len(), 1, "exactly one note from the first shield");
+
     // Replay: resubmit the SAME proof. The outpoint is already consumed,
     // so the backend MUST reject.
     let replay = shield_with_proof(&sdk, &keys, proof, &one_time_key, credits, &prover)
@@ -179,5 +195,18 @@ async fn sh_035_replayed_asset_lock_proof() {
         "ADV-VERDICT probe=SH-035 stage=consensus result=rejected detail=\"{replay}\""
     );
 
+    handle.sync().await;
+    let after = unspent_notes(&s.test_wallet, &handle, SHIELDED_ACCOUNT)
+        .await
+        .expect("post-replay notes");
+    assert_eq!(after.len(), 1, "replay must not create a second note");
+    assert_eq!(after[0].nullifier, before[0].nullifier);
+    assert_eq!(after[0].value, before[0].value);
+    let bank = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(network);
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank).await;
     s.teardown().await.expect("teardown");
 }

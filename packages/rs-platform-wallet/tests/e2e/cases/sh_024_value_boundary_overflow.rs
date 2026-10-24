@@ -128,20 +128,8 @@ async fn sh_024_value_boundary_overflow() {
         )
         .expect("set boundary amount");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        // Gate on the value-balance rejection REASON, resolved past check_tx to
-        // consensus: a DAPI transport drop (also an `Err`) must not read as
-        // "attack rejected", and a check_tx-admitted-then-consensus-rejected
-        // boundary value still passes. FAILS only if the backend committed it.
         let probe = format!("SH-024/{boundary}");
-        assert_adv_rejected(
-            s.ctx.sdk(),
-            &probe,
-            &result,
-            &st,
-            COMMIT_TIMEOUT,
-            &["value", "balance", "amount", "maximum"],
-        )
-        .await;
+        assert_adv_rejected(s.ctx.sdk(), &probe, &result, &st, COMMIT_TIMEOUT, &[10822]).await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_024",
             boundary,

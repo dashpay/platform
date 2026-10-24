@@ -1,21 +1,12 @@
-//! SH-022 — ADVERSARIAL: value not conserved (outputs > inputs) —
-//! backend MUST reject [INJECT].
-//! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-022. Priority: P0
-//! (consensus-critical). CRITICAL-if-it-fails (value forgery / unlimited
-//! shielded-pool inflation).
-//!
-//! Attack: capture a VALID Type-17 unshield (spending the funded note,
-//! unshielding `UNSHIELD_AMOUNT`), then overwrite `unshielding_amount` to
-//! exceed the spent note value — minting value from nothing — and
-//! broadcast raw.
-//! Orchard's value-balance check + Drive's credit accounting must refuse
-//! a bundle where shielded inputs < outputs + fee. The Halo-2 proof binds
-//! `value_balance`, so the mismatch must fail proof verification or the
-//! consensus value check (`ShieldedInvalidValueBalanceError`, code 10822).
-//!
-//! RED if accepted — value forgery.
+//! SH-022 — ADVERSARIAL: tampering with a signed unshield amount.
+//! Increasing the amount after proving must fail Orchard signature/proof
+//! verification (40902). This tests sighash binding, not value conservation
+//! of a correctly signed over-value bundle, for which no construction seam exists.
 
 #![cfg(feature = "shielded")]
+
+// TODO(SH-022): probe value conservation with a correctly signed over-value
+// bundle once a raw bundle construction seam exists.
 
 use std::time::Duration;
 
@@ -40,7 +31,7 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-async fn sh_022_value_not_conserved() {
+async fn sh_022_signed_amount_tampering() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -115,30 +106,18 @@ async fn sh_022_value_not_conserved() {
     )
     .expect("forge unshielding_amount");
     let result = broadcast_raw(s.ctx.sdk(), &st).await;
-    // Verdict is load-bearing: the TRUE consensus result (not just check_tx
-    // admission) gates PASS/FAIL, and the value-balance / proof reason pins the
-    // rejection so a transport drop can't read as "value conserved". FAILS only
-    // if the forged outputs-greater-than-inputs transition committed at consensus.
     assert_adv_rejected(
         s.ctx.sdk(),
         "SH-022",
         &result,
         &st,
         COMMIT_TIMEOUT,
-        &[
-            "value",
-            "balance",
-            "proof",
-            "bundle",
-            "verification",
-            "invalid",
-            "conserv",
-        ],
+        &[40902],
     )
     .await;
     tracing::info!(
         target: "platform_wallet::e2e::cases::sh_022",
-        "value-not-conserved transition correctly rejected by backend"
+        "signed amount tampering correctly rejected by backend"
     );
 
     let bank_addr = s

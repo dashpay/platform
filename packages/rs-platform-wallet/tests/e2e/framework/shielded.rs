@@ -35,8 +35,8 @@
 //! The functional cases (SH-001..SH-019) call the guarded
 //! `PlatformWallet::shielded_*` methods. The adversarial cases bypass
 //! those guards to reach Drive's validation directly; the seams they
-//! need ([`build_raw_shielded_transition`], [`broadcast_raw`],
-//! [`mutate_serialized_bundle`], [`TamperingProver`], …) live here and
+//! need ([`capture_unshield_st`], [`broadcast_raw`],
+//! [`mutate_serialized_bundle`], …) live here and
 //! are gated behind [`adversarial_enabled`] so a stray malformed
 //! broadcast can't pollute a normal functional run.
 
@@ -45,8 +45,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::shielded::builder::OrchardProver;
 use grovedb_commitment_tree::ProvingKey;
+use platform_wallet::error::PlatformWalletError;
 use platform_wallet::manager::shielded_sync::WalletShieldedOutcome;
 use platform_wallet::wallet::shielded::{
     CachedOrchardProver, FileBackedShieldedStore, InMemoryShieldedStore,
@@ -55,10 +57,6 @@ use platform_wallet::wallet::shielded::{
 
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
-
-/// Display prefix of `PlatformWalletError::ShieldedTreeInconsistent`. Sync
-/// outcomes carry errors as strings, so the harness matches on this prefix.
-const TREE_INCONSISTENT_PREFIX: &str = "Shielded commitment tree has";
 
 /// Env gate for the adversarial / abuse cases (SH-020..SH-035). The
 /// hooks below broadcast malformed transitions and assert the backend
@@ -115,21 +113,31 @@ impl ShieldedHandle {
     /// Force a sync pass so on-chain notes are scanned into the store.
     /// `force=true` bypasses the coordinator's caught-up cooldown.
     ///
-    /// Panics when a wallet's sync reports an inconsistent commitment tree:
-    /// that state means another wallet bug corrupted the tree, so the run
-    /// must stop and the tree file must be kept as evidence, never rebuilt.
+    /// Panics on any sync failure. An inconsistent tree must be retained as
+    /// evidence and never rebuilt.
     pub async fn sync(&self) {
-        let summary = self.coordinator.sync(true).await;
-        for outcome in summary.wallet_results.values() {
+        self.try_sync().await.expect("shielded sync must succeed");
+    }
+
+    /// Preserve recoverable failures for best-effort teardown only.
+    /// Tree inconsistency always panics, including during teardown.
+    async fn try_sync(&self) -> FrameworkResult<()> {
+        let summary = match self.coordinator.try_sync(true).await {
+            Ok(summary) => summary,
+            Err(error @ PlatformWalletError::ShieldedTreeInconsistent { .. }) => panic!(
+                "{error}; keep {} as evidence; never rebuild the tree",
+                self.coordinator.db_path().display(),
+            ),
+            Err(error) => return Err(FrameworkError::Wallet(format!("shielded sync: {error:?}"))),
+        };
+        for (wallet_id, outcome) in &summary.wallet_results {
             if let WalletShieldedOutcome::Err(message) = outcome {
-                assert!(
-                    !message.starts_with(TREE_INCONSISTENT_PREFIX),
-                    "shielded commitment tree is inconsistent ({message}); this indicates a \
-                     wallet bug. Keep {} as evidence and investigate; do not rebuild it.",
-                    self.coordinator.db_path().display(),
-                );
+                return Err(FrameworkError::Wallet(format!(
+                    "shielded sync failed for {wallet_id:?}: {message}"
+                )));
             }
         }
+        Ok(())
     }
 
     /// This wallet's per-account unspent shielded balances.
@@ -200,11 +208,8 @@ static SHARED_COORDINATOR: tokio::sync::OnceCell<Arc<NetworkShieldedCoordinator>
 /// cross-handle WAL contention) and one persisted tree whose `tree_size`
 /// carries the full ~1M-leaf scan forward across cases.
 ///
-/// Assumes a serial, single-process, single-network sh run
-/// (`--test-threads=1`): the `OnceCell` is keyed only on `<network>` (in
-/// the db filename) and pins the SDK + workdir of whichever case binds
-/// first. A future parallel or multi-network sh run would need to key
-/// per-(network, workdir) instead of relying on this one-shot pin.
+/// Shared by parallel cases within one process/network/workdir. Sync and
+/// proof timing are not isolated; cases needing that use a private coordinator.
 async fn shared_coordinator(
     wallet: &TestWallet,
     workdir: &std::path::Path,
@@ -294,14 +299,14 @@ pub fn in_memory_store() -> Arc<tokio::sync::RwLock<InMemoryShieldedStore>> {
 /// Poll `shielded_balances` after a forced sync until `account`'s
 /// balance reaches `expected`, or `timeout` elapses.
 ///
-/// Drives a `coordinator.sync(true)` each poll (the caught-up cooldown
+/// Drives a `coordinator.try_sync(true)` each poll (the caught-up cooldown
 /// is bypassed by `force=true`), mirroring the
 /// [`super::tokens::wait_for_token_balance`] event-driven +
 /// chain-confirmed shape. Returns the observed balance on success.
 ///
-/// Errors: [`FrameworkError::Cleanup`] on timeout (carries account +
-/// expected for triage), [`FrameworkError::Wallet`] never — fetch
-/// failures are logged and retried.
+/// Errors: [`FrameworkError::Cleanup`] on timeout, carrying account,
+/// expected and the last recoverable sync/read error for triage. Those
+/// errors are retried until the deadline; tree inconsistency still panics.
 pub async fn wait_for_shielded_balance(
     wallet: &TestWallet,
     handle: &ShieldedHandle,
@@ -311,8 +316,11 @@ pub async fn wait_for_shielded_balance(
 ) -> FrameworkResult<u64> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        handle.sync().await;
-        match handle.balances(wallet).await {
+        let polled = match handle.try_sync().await {
+            Ok(()) => handle.balances(wallet).await,
+            Err(error) => Err(error),
+        };
+        let last_error = match polled {
             Ok(balances) => {
                 let current = balances.get(&account).copied().unwrap_or(0);
                 if current >= expected {
@@ -325,19 +333,71 @@ pub async fn wait_for_shielded_balance(
                     expected,
                     "shielded balance below target"
                 );
+                None
             }
-            Err(err) => tracing::debug!(
-                target: "platform_wallet::e2e::shielded",
-                account,
-                error = %err,
-                "shielded_balances fetch failed; retrying"
-            ),
-        }
+            Err(error) => {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::shielded",
+                    account,
+                    %error,
+                    "shielded sync/balance read failed; retrying"
+                );
+                Some(error)
+            }
+        };
 
         if std::time::Instant::now() >= deadline {
             return Err(FrameworkError::Cleanup(format!(
                 "wait_for_shielded_balance timed out after {timeout:?} \
-                 (account={account} expected={expected})"
+                 (account={account} expected={expected} last_error={last_error:?})"
+            )));
+        }
+        tokio::time::sleep(super::wait::DEFAULT_POLL_INTERVAL).await;
+    }
+}
+
+/// Poll `account`'s reservation-aware unspent notes after each forced sync
+/// until `ready` returns `Some`, or `timeout` elapses.
+///
+/// For assertions that need a specific note set (both change notes scanned,
+/// a spent original replaced by its change) rather than a balance floor that
+/// a partially scanned set may already satisfy. Recoverable sync/read errors
+/// are retried and reported on timeout; tree inconsistency still panics.
+pub async fn wait_for_unspent_notes<T>(
+    wallet: &TestWallet,
+    handle: &ShieldedHandle,
+    account: u32,
+    timeout: Duration,
+    mut ready: impl FnMut(&[platform_wallet::wallet::shielded::ShieldedNote]) -> Option<T>,
+) -> FrameworkResult<T> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let polled = match handle.try_sync().await {
+            Ok(()) => unspent_notes(wallet, handle, account).await,
+            Err(error) => Err(error),
+        };
+        let last_error = match polled {
+            Ok(notes) => {
+                if let Some(value) = ready(&notes) {
+                    return Ok(value);
+                }
+                None
+            }
+            Err(error) => {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::shielded",
+                    account,
+                    %error,
+                    "shielded sync/note read failed; retrying"
+                );
+                Some(error)
+            }
+        };
+
+        if std::time::Instant::now() >= deadline {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_unspent_notes timed out after {timeout:?} \
+                 (account={account} last_error={last_error:?})"
             )));
         }
         tokio::time::sleep(super::wait::DEFAULT_POLL_INTERVAL).await;
@@ -365,9 +425,8 @@ pub async fn shielded_default_address_43(
 /// address, preventing a bank-fund leak across a long suite.
 ///
 /// **MUST NOT fail teardown.** Every error is swallowed and logged at
-/// `warn` — the RED-by-design cases (SH-005 in-memory arm, any
-/// intentionally-broken `witness()` path) WILL fail the sweep, and that
-/// failure must never propagate. Mirrors `cancel_pending` and the PA
+/// `warn`. Commitment-tree inconsistency is the exception: it always
+/// stops the run and retains the tree as evidence. Mirrors `cancel_pending` and the PA
 /// identity-sweep floor (best-effort, below-floor balances left for the
 /// next-run orphan sweep).
 ///
@@ -383,7 +442,14 @@ pub async fn teardown_sweep_shielded(
     let prover = shielded_prover();
     for &account in &handle.accounts {
         // Re-scan so the residual is current before we attempt to drain.
-        handle.sync().await;
+        if let Err(error) = handle.try_sync().await {
+            tracing::warn!(
+                account,
+                ?error,
+                "teardown sweep: sync failed; skipping account"
+            );
+            continue;
+        }
         let balance = match handle.balances(wallet).await {
             Ok(b) => b.get(&account).copied().unwrap_or(0),
             Err(err) => {
@@ -528,25 +594,12 @@ pub enum BundleMutation {
     FlipByte(usize),
 }
 
-/// An `OrchardProver` that emits a structurally-valid-looking but
-/// circuit-invalid proof, for the proof-substitution arm of SH-025.
-///
-/// The trait is just `proving_key()`, so a tampering prover hands back a
-/// real key and the abuse case corrupts the resulting proof bytes
-/// post-hoc via [`mutate_serialized_bundle`]. Holding the inner cached
-/// prover keeps the key build shared.
-pub struct TamperingProver;
+/// Fails deterministically if an operation that must reject before proving requests a key.
+pub struct NoProofProver;
 
-impl OrchardProver for &TamperingProver {
+impl OrchardProver for &NoProofProver {
     fn proving_key(&self) -> &ProvingKey {
-        // Borrow the shared, warmed key; the abuse case tampers with the
-        // emitted proof bytes afterwards rather than corrupting the key.
-        // The cached prover handle is itself `'static`, so the
-        // double-reference we hand the inner impl lives long enough.
-        static PROVER_REF: std::sync::OnceLock<&'static CachedOrchardProver> =
-            std::sync::OnceLock::new();
-        let prover: &'static &'static CachedOrchardProver = PROVER_REF.get_or_init(shielded_prover);
-        OrchardProver::proving_key(prover)
+        panic!("operation reached Orchard proving despite an invalid request")
     }
 }
 
@@ -565,18 +618,15 @@ impl OrchardProver for &TamperingProver {
 pub async fn broadcast_raw(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &dpp::state_transition::StateTransition,
-) -> FrameworkResult<()> {
+) -> Result<(), dash_sdk::Error> {
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 
     if !adversarial_enabled() {
-        return Err(FrameworkError::Config(format!(
+        return Err(dash_sdk::Error::Config(format!(
             "broadcast_raw refused: set {ADVERSARIAL_GATE_ENV} to run the abuse pass"
         )));
     }
-    state_transition
-        .broadcast(sdk.as_ref(), None)
-        .await
-        .map_err(|e| FrameworkError::Sdk(format!("broadcast_raw: {e}")))
+    state_transition.broadcast(sdk.as_ref(), None).await
 }
 
 /// Wait for an already-broadcast [`StateTransition`]'s **consensus**
@@ -597,13 +647,13 @@ pub async fn wait_commit_raw(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &dpp::state_transition::StateTransition,
     timeout: Duration,
-) -> FrameworkResult<dpp::state_transition::proof_result::StateTransitionProofResult> {
+) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error> {
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
     use dash_sdk::platform::transition::put_settings::PutSettings;
     use dpp::state_transition::proof_result::StateTransitionProofResult;
 
     if !adversarial_enabled() {
-        return Err(FrameworkError::Config(format!(
+        return Err(dash_sdk::Error::Config(format!(
             "wait_commit_raw refused: set {ADVERSARIAL_GATE_ENV} to run the abuse pass"
         )));
     }
@@ -614,170 +664,50 @@ pub async fn wait_commit_raw(
     state_transition
         .wait_for_response::<StateTransitionProofResult>(sdk.as_ref(), Some(settings))
         .await
-        .map_err(|e| FrameworkError::Sdk(format!("wait_commit_raw: {e}")))
 }
 
-/// The TRUE verdict of a malformed-transition probe, resolved past mempool
-/// admission to the consensus result (SD-002).
-///
-/// The detail string carries the rejection reason / commit summary so a
-/// caller can gate on the reason (e.g. `value-balance`, `anchor`), not just
-/// the fact of rejection — distinguishing a backend rejection from a DAPI
-/// transport drop.
-#[derive(Debug, Clone)]
-pub enum AdvVerdict {
-    /// Rejected at `check_tx` (stateless / structure). `detail` is the error.
-    RejectedCheckTx(String),
-    /// Rejected at consensus. `detail` is the consensus error / code.
-    RejectedConsensus(String),
-    /// Admitted at `check_tx` and COMMITTED at consensus — a malformed tx the
-    /// backend accepted. `detail` is the commit summary. **Potential P0.**
-    Accepted(String),
-    /// Admitted at `check_tx`, but the proof-verified consensus readback timed
-    /// out (the rust-dashcore quorum-by-hash gap). NOT a probe failure.
-    Unobserved(String),
+/// Require a typed backend consensus rejection with an attack-specific code.
+/// Transport failures, SDK proof errors and timeouts never establish rejection.
+pub fn assert_consensus_rejection(error: &dash_sdk::Error, expected_codes: &[u32]) {
+    let consensus = error.consensus_error().unwrap_or_else(|| {
+        panic!("expected backend consensus rejection, observed unrelated failure: {error:?}")
+    });
+    assert!(
+        expected_codes.contains(&consensus.code()),
+        "expected consensus code in {expected_codes:?}, got {}: {consensus:?}",
+        consensus.code(),
+    );
 }
 
-impl AdvVerdict {
-    /// The probe was rejected by the backend at some stage (the GOOD outcome).
-    pub fn is_rejected(&self) -> bool {
-        matches!(
-            self,
-            AdvVerdict::RejectedCheckTx(_) | AdvVerdict::RejectedConsensus(_)
-        )
-    }
-
-    /// The rejection reason / commit-summary detail, lowercased for substring
-    /// gating on the rejection reason.
-    pub fn detail_lower(&self) -> String {
-        match self {
-            AdvVerdict::RejectedCheckTx(d)
-            | AdvVerdict::RejectedConsensus(d)
-            | AdvVerdict::Accepted(d)
-            | AdvVerdict::Unobserved(d) => d.to_lowercase(),
-        }
-    }
-}
-
-/// Resolve the TRUE verdict of a malformed-transition probe past mempool
-/// admission to the consensus result (SD-002), and emit the greppable
-/// `ADV-VERDICT` line.
-///
-/// Pass the result of [`broadcast_raw`] as `broadcast`:
-/// - `Err` → caught at `check_tx`: [`AdvVerdict::RejectedCheckTx`].
-/// - `Ok` → driven to consensus via [`wait_commit_raw`]:
-///   - committed → [`AdvVerdict::Accepted`] (**potential P0**),
-///   - consensus error → [`AdvVerdict::RejectedConsensus`] (the GOOD outcome),
-///   - readback timeout → [`AdvVerdict::Unobserved`] (quorum-gap, not a failure).
-///
-/// Resolution only — never asserts, so a quorum-gap timeout can't false-RED.
-pub async fn classify_adv_verdict(
-    sdk: &Arc<dash_sdk::Sdk>,
-    probe: &str,
-    broadcast: &FrameworkResult<()>,
-    state_transition: &dpp::state_transition::StateTransition,
-    timeout: Duration,
-) -> AdvVerdict {
-    let verdict = match broadcast {
-        Err(e) => AdvVerdict::RejectedCheckTx(e.to_string()),
-        Ok(()) => match wait_commit_raw(sdk, state_transition, timeout).await {
-            Ok(r) => AdvVerdict::Accepted(format!("committed: {r}")),
-            Err(e) => {
-                let es = e.to_string();
-                let lower = es.to_lowercase();
-                if lower.contains("timeout") || lower.contains("timed out") {
-                    AdvVerdict::Unobserved(es)
-                } else {
-                    AdvVerdict::RejectedConsensus(es)
-                }
-            }
-        },
-    };
-    match &verdict {
-        AdvVerdict::RejectedCheckTx(d) => tracing::info!(
-            target: "platform_wallet::e2e::shielded",
-            "ADV-VERDICT probe={probe} stage=check_tx result=rejected detail=\"{d}\""
-        ),
-        AdvVerdict::RejectedConsensus(d) => tracing::info!(
-            target: "platform_wallet::e2e::shielded",
-            "ADV-VERDICT probe={probe} stage=consensus result=rejected detail=\"{d}\""
-        ),
-        AdvVerdict::Accepted(d) => tracing::warn!(
-            target: "platform_wallet::e2e::shielded",
-            "ADV-VERDICT probe={probe} stage=consensus result=accepted detail=\"{d}\""
-        ),
-        AdvVerdict::Unobserved(d) => tracing::info!(
-            target: "platform_wallet::e2e::shielded",
-            "ADV-VERDICT probe={probe} stage=consensus result=unobserved detail=\"{d}\""
-        ),
-    }
-    verdict
-}
-
-/// Emit the greppable `ADV-VERDICT` line for a malformed-transition probe,
-/// reading the TRUE verdict (not just mempool admission, SD-002).
-///
-/// Observation only — never asserts, so a quorum-gap timeout can't false-RED.
-/// Use [`assert_adv_rejected`] when the verdict should gate PASS/FAIL.
-pub async fn observe_adv_verdict(
-    sdk: &Arc<dash_sdk::Sdk>,
-    probe: &str,
-    broadcast: &FrameworkResult<()>,
-    state_transition: &dpp::state_transition::StateTransition,
-    timeout: Duration,
-) {
-    let _ = classify_adv_verdict(sdk, probe, broadcast, state_transition, timeout).await;
-}
-
-/// Assert a malformed-transition probe was REJECTED by the backend for the
-/// right reason, resolving the verdict past mempool admission (SD-002).
-///
-/// This is the load-bearing adversarial gate: it accepts rejection at EITHER
-/// `check_tx` OR consensus, and FAILS only when the backend [`AdvVerdict::Accepted`]
-/// (committed) the malformed transition. A `check_tx`-admitted transition that
-/// is later rejected at consensus therefore PASSES (no false-RED), and a
-/// `check_tx` rejection no longer hinges on the ambiguous `is_err()` of
-/// [`broadcast_raw`] (which also covers transport drops) — `reason_substrings`
-/// pins the rejection to the attack class.
-///
-/// - `reason_substrings`: the verdict detail (lowercased) must contain at least
-///   one of these — e.g. `["value", "balance"]` for a value-overflow probe,
-///   `["anchor", "root"]` for an anchor mismatch. Pass `&[]` to skip the reason
-///   gate (rejection-at-any-stage suffices).
-/// - [`AdvVerdict::Unobserved`] (consensus readback timed out after a `check_tx`
-///   admission) is treated as a PASS: the quorum-by-hash gap is an environment
-///   artifact, not the backend accepting the attack.
-///
-/// Panics (test assertion) on [`AdvVerdict::Accepted`] or on a rejection whose
-/// reason matches none of `reason_substrings`.
+/// Require rejection at CheckTx or consensus for the specified attack.
+/// An admitted transition whose execution cannot be observed fails: this helper
+/// has no independent chain-state evidence that could establish harmlessness.
 pub async fn assert_adv_rejected(
     sdk: &Arc<dash_sdk::Sdk>,
     probe: &str,
-    broadcast: &FrameworkResult<()>,
+    broadcast: &Result<(), dash_sdk::Error>,
     state_transition: &dpp::state_transition::StateTransition,
     timeout: Duration,
-    reason_substrings: &[&str],
-) -> AdvVerdict {
-    let verdict = classify_adv_verdict(sdk, probe, broadcast, state_transition, timeout).await;
-
-    if let AdvVerdict::Accepted(detail) = &verdict {
-        panic!(
-            "{probe} FINDING (CRITICAL): backend ACCEPTED a malformed transition — \
-             the attack committed at consensus. detail=\"{detail}\""
-        );
-    }
-
-    if !reason_substrings.is_empty() && verdict.is_rejected() {
-        let detail = verdict.detail_lower();
-        assert!(
-            reason_substrings.iter().any(|s| detail.contains(s)),
-            "{probe}: rejected, but not for the expected reason (wanted one of \
-             {reason_substrings:?}); a transport/connection drop must not read as \
-             'attack rejected'. verdict={verdict:?}"
-        );
-    }
-
-    verdict
+    expected_codes: &[u32],
+) {
+    let commit_error;
+    let error = match broadcast {
+        Err(error) => error,
+        Ok(()) => {
+            commit_error = wait_commit_raw(sdk, state_transition, timeout)
+                .await
+                .expect_err("malformed transition committed at consensus");
+            &commit_error
+        }
+    };
+    assert_consensus_rejection(error, expected_codes);
+    let stage = if broadcast.is_err() {
+        "check_tx"
+    } else {
+        "consensus"
+    };
+    tracing::info!(target: "platform_wallet::e2e::shielded",
+        "ADV-VERDICT probe={probe} stage={stage} result=rejected detail=\"{error}\"");
 }
 
 /// Mutate one `SerializedBundle` field of a built shielded
@@ -956,9 +886,8 @@ pub async fn unspent_notes(
 /// Build a Type-17 unshield [`StateTransition`] against a CHOSEN note set,
 /// SKIPPING the reservation guard — the build-against-note seam for the
 /// double-spend (SH-020), replay (SH-021), and intra-bundle-duplicate
-/// (SH-033) abuse cases. The caller computes the fee
-/// (`compute_minimum_shielded_fee`) since reservation (which derives it)
-/// is bypassed.
+/// (SH-033) abuse cases. `exact_fee` is diagnostic-only in the wallet seam;
+/// the DPP builder derives the on-wire fee itself. It cannot inject underpayment.
 pub async fn build_unshield_st_against_notes(
     wallet: &TestWallet,
     handle: &ShieldedHandle,
@@ -1032,6 +961,34 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use super::{unshield_sweep_amount, UNSHIELD_MIN_ACTIONS};
+
+    #[test]
+    fn should_accept_only_the_expected_typed_consensus_rejection() {
+        use dpp::consensus::ConsensusError;
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            ConsensusError::DefaultError,
+        )));
+        super::assert_consensus_rejection(&error, &[1]);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::assert_consensus_rejection(&error, &[40902])
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn should_fail_on_timeout_and_client_errors_even_with_attack_words() {
+        let errors = [
+            dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(1), "elapsed".into()),
+            dash_sdk::Error::InvalidProvedResponse("invalid proof verification nullifier".into()),
+            dash_sdk::Error::Generic("invalid anchor 40900".into()),
+        ];
+        for error in errors {
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                super::assert_consensus_rejection(&error, &[40900, 40901, 40902])
+            }))
+            .is_err());
+        }
+    }
 
     #[test]
     fn unshield_sweep_leaves_exactly_the_unshield_fee() {

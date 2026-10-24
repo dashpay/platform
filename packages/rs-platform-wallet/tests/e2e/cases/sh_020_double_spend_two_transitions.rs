@@ -16,6 +16,12 @@
 //! committed only if it both passed `check_tx` AND `wait_commit_raw`
 //! returned a verified proof result.
 //!
+//! The loser must carry consensus code 40901. One exception: a loser that
+//! CheckTx admitted and whose result then timed out (mempool recheck can evict
+//! it once the winner commits) passes only on chain evidence of no effect —
+//! the winner committed the shared nullifier and the loser's destination is
+//! unchanged. Any other loser error fails.
+//!
 //! RED if the backend commits both (double-spend — CRITICAL fund forgery)
 //! or commits neither (liveness bug).
 
@@ -28,9 +34,9 @@ use dpp::version::PlatformVersion;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
-    shielded_prover, teardown_sweep_shielded, unspent_notes, wait_commit_raw,
-    wait_for_shielded_balance,
+    adversarial_enabled, assert_consensus_rejection, bind_shielded, broadcast_raw,
+    build_unshield_st_against_notes, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    wait_commit_raw, wait_for_shielded_balance, wait_for_unspent_notes,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -159,128 +165,78 @@ async fn sh_020_double_spend_two_transitions() {
     let bcast_a = broadcast_raw(s.ctx.sdk(), &st_a).await;
     let bcast_b = broadcast_raw(s.ctx.sdk(), &st_b).await;
 
-    // Drive each admitted spend to its consensus outcome (block inclusion /
-    // state apply), not just check_tx. The commit result is secondary
-    // evidence + the rejection reason; the authoritative verdict is the
-    // post-execution STATE delta below (SD-002). A check_tx-rejected spend
-    // never reaches consensus, so its broadcast error IS its verdict.
-    let commit_a = match &bcast_a {
+    let admitted_a = bcast_a.is_ok();
+    let admitted_b = bcast_b.is_ok();
+    let commit_a = match bcast_a {
         Ok(()) => wait_commit_raw(s.ctx.sdk(), &st_a, COMMIT_TIMEOUT).await,
-        Err(e) => Err(crate::framework::FrameworkError::Sdk(format!(
-            "check_tx rejected before consensus: {e}"
-        ))),
+        Err(error) => Err(error),
     };
-    let commit_b = match &bcast_b {
+    let commit_b = match bcast_b {
         Ok(()) => wait_commit_raw(s.ctx.sdk(), &st_b, COMMIT_TIMEOUT).await,
-        Err(e) => Err(crate::framework::FrameworkError::Sdk(format!(
-            "check_tx rejected before consensus: {e}"
-        ))),
+        Err(error) => Err(error),
     };
-
-    // AFTER state — the AUTHORITATIVE verdict. Each unshield pays its value
-    // to a DISTINCT transparent address, so the on-chain economic effect of
-    // double-spending one note is unambiguous: BOTH dst_a AND dst_b get
-    // credited (~UNSHIELD_AMOUNT each) — one note's value materialised into
-    // two outputs. The commit waits above already blocked until execution;
-    // give the credited destination(s) a bounded settle on the proof-verified
-    // path so the read lands after state-apply, then point-read both. A leg
-    // that never credits simply times out (ignored) and reads back 0.
-    let settle = Duration::from_secs(30);
-    let _ =
-        wait_for_address_balance_chain_confirmed_n(s.ctx.sdk(), &dst_a, UNSHIELD_AMOUNT, 1, settle)
-            .await;
-    let _ =
-        wait_for_address_balance_chain_confirmed_n(s.ctx.sdk(), &dst_b, UNSHIELD_AMOUNT, 1, settle)
-            .await;
-    let after_a = fetch_credits(s.ctx.sdk(), &dst_a).await;
-    let after_b = fetch_credits(s.ctx.sdk(), &dst_b).await;
-
-    // A destination is "credited" if its on-chain balance rose toward the
-    // unshield value (tolerate fee/rounding by gating at half the amount).
-    let credit_threshold = UNSHIELD_AMOUNT / 2;
-    let credited_a = after_a.saturating_sub(before_a) >= credit_threshold;
-    let credited_b = after_b.saturating_sub(before_b) >= credit_threshold;
-    let credited_count = [credited_a, credited_b].iter().filter(|c| **c).count();
-
-    // Authoritative trace: the STATE before/after AND the secondary
-    // check_tx/commit signals, so Marvin's trace shows the economic effect
-    // and the consensus rejection reason side by side.
-    tracing::info!(
-        target: "platform_wallet::e2e::cases::sh_020",
-        before_a, after_a, credited_a,
-        before_b, after_b, credited_b,
-        credited_count,
-        check_tx_a = bcast_a.is_ok(),
-        check_tx_b = bcast_b.is_ok(),
-        committed_a = commit_a.is_ok(),
-        committed_b = commit_b.is_ok(),
-        ?commit_a,
-        ?commit_b,
-        "SH-020 double-spend verdict: post-execution STATE delta (authoritative) + check_tx/commit (secondary)"
-    );
-
-    // VERDICT on STATE, not status flags.
-    if credited_count == 2 {
-        panic!(
-            "SH-020 FINDING (CRITICAL DOUBLE-SPEND): one Orchard note's value materialised \
-             into TWO transparent outputs — fund forgery. dst_a {before_a}->{after_a}, \
-             dst_b {before_b}->{after_b} (each ~{UNSHIELD_AMOUNT}). commit_a={commit_a:?} \
-             commit_b={commit_b:?}"
-        );
-    }
     assert_eq!(
-        credited_count,
+        [commit_a.is_ok(), commit_b.is_ok()]
+            .into_iter()
+            .filter(|ok| *ok)
+            .count(),
         1,
-        "SH-020 FINDING: exactly ONE same-note spend must materialise on chain; observed \
-         {credited_count} credited (dst_a {before_a}->{after_a}, dst_b {before_b}->{after_b}). \
-         Two = double-spend / fund forgery; zero = liveness bug (neither unshield's value \
-         landed within {COMMIT_TIMEOUT:?}). check_tx[a={},b={}] commit_a={commit_a:?} \
-         commit_b={commit_b:?}",
-        bcast_a.is_ok(),
-        bcast_b.is_ok(),
+        "exactly one spend must commit; a={commit_a:?}, b={commit_b:?}"
     );
-
-    // Corroborate: the shielded note's value must have left the pool exactly
-    // ONCE. A double-spend would let the same note pay out twice; with one
-    // spend committed the residual change note is below SHIELD_AMOUNT.
-    handle.sync().await;
-    let residual = handle
-        .balances(&s.test_wallet)
-        .await
-        .map(|b| b.get(&0).copied().unwrap_or(0))
-        .unwrap_or(0);
-    assert!(
-        residual < SHIELD_AMOUNT,
-        "SH-020: shielded balance must drop after the single committed spend; \
-         observed residual {residual} >= SHIELD_AMOUNT {SHIELD_AMOUNT} (the note's value \
-         did not leave the pool — investigate)"
+    let (winner, loser, before_winner, before_loser, loser_admitted, rejection) =
+        match (&commit_a, &commit_b) {
+            (Ok(_), Err(error)) => (&dst_a, &dst_b, before_a, before_b, admitted_b, error),
+            (Err(error), Ok(_)) => (&dst_b, &dst_a, before_b, before_a, admitted_a, error),
+            _ => unreachable!("one successful commit asserted above"),
+        };
+    let credited = wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        winner,
+        before_winner + UNSHIELD_AMOUNT,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("winning spend must credit at least the amount sent");
+    assert!(credited - before_winner >= UNSHIELD_AMOUNT);
+    assert_eq!(
+        fetch_credits(s.ctx.sdk(), loser).await,
+        before_loser,
+        "rejected same-note spend must not credit its destination"
     );
-
-    // Secondary corroboration (best-effort): when the chain surfaces a
-    // CONSENSUS error for the spend that did NOT materialise, it should be
-    // nullifier-already-spent (code 40901) — evidence the replay was caught
-    // for the right reason. The STATE delta above is the authoritative
-    // verdict; this is skipped when no consensus error surfaced — the
-    // duplicate was dropped silently at check_tx, OR (common on a quiet
-    // devnet) the rejected tx simply never committed and `wait_commit_raw`
-    // returned a timeout rather than a coded rejection. A timeout is NOT a
-    // wrong-reason rejection, so it must not fail the test.
-    let rejected_err = if !credited_a {
-        format!("{commit_a:?}")
-    } else {
-        format!("{commit_b:?}")
-    };
-    let err_s = rejected_err.to_lowercase();
-    let is_timeout = err_s.contains("timeout") || err_s.contains("elapsed");
-    if !is_timeout && (err_s.contains("error") || err_s.contains("err(")) {
-        assert!(
-            err_s.contains("nullifier")
-                || err_s.contains("alreadyspent")
-                || err_s.contains("already spent"),
-            "SH-020: the rejected spend's consensus error should be nullifier-already-spent \
-             (code 40901); observed {rejected_err}"
-        );
+    match rejection {
+        // Admitted at CheckTx, then evicted or never reported before the
+        // deadline. The winner committed the shared nullifier, so the loser can
+        // never execute, and its destination is proven unchanged above.
+        dash_sdk::Error::TimeoutReached(..) if loser_admitted => tracing::warn!(
+            target: "platform_wallet::e2e::cases::sh_020",
+            ?rejection,
+            "ADV-VERDICT probe=SH-020 stage=consensus result=unobserved; \
+             no effect proven by the committed nullifier and unchanged destination"
+        ),
+        _ => assert_consensus_rejection(rejection, &[40901]),
     }
+
+    // Corroborate: the note's value left the pool exactly ONCE. The seam
+    // bypassed local reservation, so wait until sync marks the original spent
+    // and scans the winner's change: one unspent note, a different nullifier.
+    let residual =
+        wait_for_unspent_notes(
+            &s.test_wallet,
+            &handle,
+            0,
+            STEP_TIMEOUT,
+            |notes| match notes {
+                [change] if change.nullifier != one_note[0].nullifier => Some(change.value),
+                _ => None,
+            },
+        )
+        .await
+        .expect("original note spent and winner change scanned");
+    assert!(
+        residual <= SHIELD_AMOUNT - UNSHIELD_AMOUNT,
+        "SH-020: change must exclude the committed spend; residual={residual}"
+    );
 
     let bank_addr = s
         .ctx
@@ -291,23 +247,10 @@ async fn sh_020_double_spend_two_transitions() {
     s.teardown().await.expect("teardown");
 }
 
-/// Proof-verified on-chain credit balance for `addr`, the authoritative
-/// state read for the double-spend verdict. An address not yet on chain
-/// (`Ok(None)`) reads as 0; a fetch error also reads as 0 and is logged —
-/// a transient read failure must not be misread as "credited" (which would
-/// only ever soften, never fabricate, a double-spend signal).
+/// Proof-verified balance; an absent address is zero, a failed read is fatal.
 async fn fetch_credits(sdk: &dash_sdk::Sdk, addr: &PlatformAddress) -> u64 {
-    match AddressInfo::fetch(sdk, *addr).await {
-        Ok(Some(info)) => info.balance,
-        Ok(None) => 0,
-        Err(e) => {
-            tracing::warn!(
-                target: "platform_wallet::e2e::cases::sh_020",
-                addr = ?addr,
-                error = %e,
-                "fetch_credits: AddressInfo::fetch failed; treating as 0 credits"
-            );
-            0
-        }
-    }
+    AddressInfo::fetch(sdk, *addr)
+        .await
+        .expect("proof-verified address balance")
+        .map_or(0, |info| info.balance)
 }

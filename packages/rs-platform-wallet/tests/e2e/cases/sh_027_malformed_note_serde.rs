@@ -19,17 +19,26 @@
 
 #![cfg(feature = "shielded")]
 
+use std::time::Duration;
+
+use dpp::shielded::compute_shielded_unshield_fee;
+use dpp::state_transition::unshield_transition::UnshieldTransition;
+use dpp::state_transition::StateTransition;
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::wallet::shielded::{operations, OrchardKeySet, SubwalletId};
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, in_memory_store, seed_malformed_note, shielded_prover,
+    adversarial_enabled, bind_shielded, in_memory_store, seed_malformed_note, shielded_prover,
+    teardown_sweep_shielded, unspent_notes, wait_for_shielded_balance, NoProofProver,
 };
 
-/// Malformed `note_data` lengths to probe. The valid layout is 115 bytes
-/// (`recipient43 ‖ value8 ‖ rho32 ‖ rseed32`); each of these must error.
-const BAD_LENGTHS: &[usize] = &[0, 1, 114, 116, 200];
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+/// All-ones payloads: wrong lengths plus invalid field encodings at 115 bytes.
+const PAYLOAD_LENGTHS: &[usize] = &[0, 1, 114, 115, 116, 200];
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_027_malformed_note_serde() {
@@ -64,7 +73,7 @@ async fn sh_027_malformed_note_serde() {
         .await
         .expect("derive addr_dst");
 
-    for &len in BAD_LENGTHS {
+    for &len in PAYLOAD_LENGTHS {
         // Fresh store per length so a prior malformed note can't mask the
         // next. The note value is large so note-selection picks it and
         // the deserialize path is reached.
@@ -72,23 +81,16 @@ async fn sh_027_malformed_note_serde() {
         seed_malformed_note(
             &store,
             id,
-            50_000_000,
-            vec![0xABu8; len],
+            1_120_000_000,
+            vec![0xFFu8; len],
             [0x11; 32],
             [0x22; 32],
         )
         .await
         .expect("seed malformed note");
 
-        // Drive the spend path. `deserialize_note` runs inside
-        // `extract_spends_and_anchor` (per note, before witness), so a
-        // malformed note surfaces a typed `ShieldedBuildError`. An
-        // in-memory store ALSO has a hard-Err witness() (Found-027), so a
-        // 115-byte-but-otherwise-bad note can instead surface
-        // `ShieldedMerkleWitnessUnavailable` — both are acceptable typed
-        // errors. The forbidden outcomes are `Ok` (silent corruption) and
-        // a PANIC (host DoS). A panic propagates as a test failure naming
-        // this case, which is itself the RED finding.
+        // 115 all-ones bytes also has an invalid recipient/rho; all probes
+        // must reach deserialization, before the in-memory witness limitation.
         let result = operations::unshield(
             &pw.sdk_arc(),
             &store,
@@ -102,28 +104,118 @@ async fn sh_027_malformed_note_serde() {
         )
         .await;
 
-        match result {
-            Err(
-                PlatformWalletError::ShieldedBuildError(_)
-                | PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)
-                | PlatformWalletError::ShieldedInsufficientBalance { .. },
-            ) => {
-                tracing::info!(
-                    target: "platform_wallet::e2e::cases::sh_027",
-                    len,
-                    "malformed note ({len} B) rejected with a typed error (no panic)"
-                );
-            }
-            Ok(()) => panic!(
-                "SH-027 FINDING: malformed {len}-byte note_data was accepted into a built bundle \
-                 (silent corruption)"
-            ),
-            Err(other) => panic!(
-                "SH-027: malformed {len}-byte note must surface a typed serde/witness error; \
-                 observed {other:?}"
-            ),
-        }
+        assert!(
+            matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+            if message == "Failed to deserialize note at position 0"),
+            "malformed {len}-byte note must reach deserialization: {result:?}"
+        );
     }
+
+    // Use a genuine serialized note for content/metadata probes so a malformed
+    // recipient cannot hide the field being tested.
+    const NOTE_VALUE: u64 = 1_120_000_000;
+    const FUNDING: u64 = 2_400_000_000;
+    let timeout = Duration::from_secs(60);
+    s.ctx
+        .bank()
+        .fund_address(&addr_dst, FUNDING)
+        .await
+        .expect("fund content probes");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_dst,
+        FUNDING,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        timeout,
+    )
+    .await
+    .expect("funding observed");
+    s.test_wallet.sync_balances().await.expect("funding sync");
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind");
+    pw.shielded_shield_from_account(
+        &handle.coordinator,
+        0,
+        0,
+        NOTE_VALUE,
+        s.test_wallet.address_signer(),
+        prover,
+    )
+    .await
+    .expect("shield real note");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, NOTE_VALUE, timeout)
+        .await
+        .expect("real note observed");
+    let notes = unspent_notes(&s.test_wallet, &handle, 0)
+        .await
+        .expect("real notes");
+    assert_eq!(notes.len(), 1);
+    let fee = compute_shielded_unshield_fee(2, s.ctx.sdk().version()).expect("fee");
+    for corrupt_cmx in [false, true] {
+        let mut note = notes[0].clone();
+        let expected = if corrupt_cmx {
+            note.cmx = [0xFF; 32];
+            format!("invalid stored cmx for note at position {}", note.position)
+        } else {
+            // A single high-bit flip makes rho non-canonical without changing length.
+            note.note_data[82] ^= 0x80;
+            format!("Failed to deserialize note at position {}", note.position)
+        };
+        let result = operations::build_unshield_st(
+            &pw.sdk_arc(),
+            handle.coordinator.store(),
+            &keyset,
+            &addr_dst,
+            10_000_000,
+            fee,
+            &[note],
+            &&NoProofProver,
+        )
+        .await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+            if message == &expected),
+            "corruption must fail before proving: {result:?}"
+        );
+    }
+    // Stored nullifiers are selection metadata. The proof builder derives the
+    // actual nullifier from the note and FVK; corrupt metadata must not enter it.
+    let mut corrupt = notes[0].clone();
+    corrupt.nullifier[0] ^= 0xFF;
+    let corrupt_nullifier = corrupt.nullifier;
+    let built = operations::build_unshield_st(
+        &pw.sdk_arc(),
+        handle.coordinator.store(),
+        &keyset,
+        &addr_dst,
+        10_000_000,
+        fee,
+        &[corrupt],
+        &prover,
+    )
+    .await
+    .expect("build from real note");
+    let StateTransition::Unshield(UnshieldTransition::V0(built)) = built else {
+        panic!("expected unshield")
+    };
+    assert!(built
+        .actions
+        .iter()
+        .any(|action| action.nullifier == notes[0].nullifier));
+    assert!(
+        built
+            .actions
+            .iter()
+            .all(|action| action.nullifier != corrupt_nullifier),
+        "untrusted metadata must not become an on-wire nullifier"
+    );
+    let bank = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(network);
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank).await;
 
     s.teardown().await.expect("teardown");
 }

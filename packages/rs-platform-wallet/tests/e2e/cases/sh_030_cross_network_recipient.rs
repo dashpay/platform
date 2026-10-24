@@ -1,26 +1,12 @@
-//! SH-030 — ADVERSARIAL: cross-network / wrong-HRP / malformed recipient;
-//! transfer-to-self.
-//! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-030. Priority: P2. HIGH-if-fails
-//! (cross-network acceptance = fund loss).
-//!
-//! Attack: unshield to (a) a WRONG-network-HRP address, (b) a malformed
-//! bech32m address, (c) a syntactically-valid wrong-type address.
-//!
-//! Correct behavior: wrong-HRP and malformed addresses rejected with a
-//! typed parse/network-mismatch error CLIENT-side (the parse + network
-//! check at `platform_wallet.rs:621-633`). This case asserts the client
-//! guard fires — the achievable half, no production-seam change needed.
-//!
-//! # PRODUCTION GAP (flagged, not fixed)
-//!
-//! The BACKEND-only arm (confirm Drive ALSO rejects a cross-network
-//! recipient when the client check is bypassed — client must not be the
-//! only line of defense) needs the raw build/broadcast seam to skip the
-//! client network check. Not public — see
-//! `framework::shielded::ADVERSARIAL_SEAM_MISSING`.
+//! SH-030 — Client recipient decoding and network mismatch checks.
+//! The wire PlatformAddress contains a type and hash, not an HRP/network;
+//! a backend cross-network-HRP check is therefore inapplicable. Own-address
+//! unshield and transfers between own accounts are covered by SH-002/006.
 
 #![cfg(feature = "shielded")]
 
+use dashcore::Network;
+use dpp::address_funds::PlatformAddress;
 use platform_wallet::error::PlatformWalletError;
 
 use crate::framework::prelude::*;
@@ -54,19 +40,20 @@ async fn sh_030_cross_network_recipient() {
     // (a) Wrong-network HRP: a mainnet `dash1…` platform address on a
     // testnet wallet must be rejected with a typed network-mismatch /
     // parse error BEFORE any proof build.
-    let mainnet_hrp = "dash1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+    let mainnet_hrp = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(Network::Mainnet);
     let wrong_net = pw
         .shielded_unshield_to(
             &handle.coordinator,
             &s.test_wallet.seed_bytes(),
             0,
-            mainnet_hrp,
+            &mainnet_hrp,
             1_000_000,
             prover,
         )
         .await;
     assert!(
-        matches!(wrong_net, Err(PlatformWalletError::ShieldedBuildError(_))),
+        matches!(&wrong_net, Err(PlatformWalletError::ShieldedBuildError(message))
+            if message.starts_with("platform address network mismatch:")),
         "wrong-network-HRP recipient must be rejected with a typed ShieldedBuildError; \
          observed {wrong_net:?}"
     );
@@ -84,7 +71,8 @@ async fn sh_030_cross_network_recipient() {
         )
         .await;
     assert!(
-        matches!(bad, Err(PlatformWalletError::ShieldedBuildError(_))),
+        matches!(&bad, Err(PlatformWalletError::ShieldedBuildError(message))
+            if message.starts_with("invalid platform address:")),
         "malformed recipient address must be rejected with a typed ShieldedBuildError; \
          observed {bad:?}"
     );
@@ -103,7 +91,8 @@ async fn sh_030_cross_network_recipient() {
         )
         .await;
     assert!(
-        matches!(wrong_type, Err(PlatformWalletError::ShieldedBuildError(_))),
+        matches!(&wrong_type, Err(PlatformWalletError::ShieldedBuildError(message))
+            if message.starts_with("invalid platform address:")),
         "wrong-type (Core) recipient must be rejected with a typed ShieldedBuildError; \
          observed {wrong_type:?}"
     );

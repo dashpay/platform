@@ -1,14 +1,6 @@
 //! SH-011 — `select_notes_with_fee` convergence + overflow protection on
 //! a real funded note set.
 //!
-//! **RED-by-design (Found-033)**: sequential shields can fail with
-//! `AddressNonceMismatch` when DAPI nodes disagree on address state between
-//! the nonce fetch and broadcast. Every shield re-fetches `AddressInfo` via
-//! `fetch_many`; there is no client nonce cache on this path. The submitted
-//! nonce can be below or above the receiving node's expected nonce, depending
-//! on which node lags. The failing iteration is timing-dependent.
-//! See TEST_SPEC.md Found-033.
-//!
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-011.
 //! Priority: P2. (A unit test covers overflow at `note_selection.rs:187`;
 //! this is the e2e-adjacent variant on a real funded note set.)
@@ -39,10 +31,10 @@ use crate::framework::wait::{
 const FUNDING_CREDITS: u64 = 3_288_553_600;
 const SHIELD_EACH: u64 = 600_000_000;
 const NUM_NOTES: u64 = 3;
-/// Above any single note (600M) yet `+ fee` below the 3-note sum (1.8e9) —
+/// Above two notes (1.2B) yet `+ fee` below the 3-note sum (1.8e9) —
 /// the raw amount alone forces multi-note selection (fee-independent), so the
 /// convergence loop iterates (>1 pass) regardless of the exact shielded fee.
-const MULTI_NOTE_UNSHIELD: u64 = 650_000_000;
+const MULTI_NOTE_UNSHIELD: u64 = 1_250_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
@@ -99,11 +91,7 @@ async fn sh_011_note_selection_convergence() {
                 prover,
             )
             .await
-            .expect(
-                "Found-033 (RED-by-design): sequential shield failed; DAPI node state skew \
-                 between the fresh AddressInfo nonce fetch and broadcast can cause \
-                 AddressNonceMismatch in either direction. See TEST_SPEC.md Found-033.",
-            );
+            .expect("sequential shield must succeed");
     }
     wait_for_shielded_balance(
         &s.test_wallet,
@@ -137,14 +125,9 @@ async fn sh_011_note_selection_convergence() {
         .await;
     match overflow {
         Err(PlatformWalletError::ShieldedBuildError(msg)) => assert!(
-            msg.contains("overflow"),
+            msg == "amount + fee overflows u64",
             "u64::MAX request must surface an overflow build error; observed {msg:?}"
         ),
-        Err(PlatformWalletError::ShieldedInsufficientBalance { .. }) => {
-            // Acceptable: the requirement overflow guard may live behind
-            // the balance check depending on the version; either way it
-            // did NOT wrap. The overflow build error is the tighter pin.
-        }
         other => panic!("u64::MAX request must not wrap; observed {other:?}"),
     }
 
@@ -176,14 +159,12 @@ async fn sh_011_note_selection_convergence() {
     )
     .await
     .expect("multi-note unshield destination never observed");
-    handle.sync().await;
-    let after = handle
-        .balances(&s.test_wallet)
+    // All three notes were finalized as spent on broadcast, so a positive
+    // balance means the change note was scanned; a single sync could miss it
+    // and loosen the drop bound below.
+    let after = wait_for_shielded_balance(&s.test_wallet, &handle, 0, 1, STEP_TIMEOUT)
         .await
-        .expect("post-spend shielded_balances")
-        .get(&0)
-        .copied()
-        .unwrap_or(0);
+        .expect("multi-note unshield change never scanned");
     assert!(
         before.saturating_sub(after) >= MULTI_NOTE_UNSHIELD,
         "shielded balance must drop by at least the unshield amount; before={before} after={after}"

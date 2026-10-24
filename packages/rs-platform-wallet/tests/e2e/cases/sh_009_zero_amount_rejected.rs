@@ -1,47 +1,94 @@
-//! SH-009 — Zero-amount shield / transfer / unshield rejected at the
-//! boundary (no proof paid).
-//! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-009.
-//! Priority: P2.
-//!
-//! Each call with `amount == 0` must return a typed `Err` (not a panic,
-//! not `Ok`) synchronously — well under one ~30 s proof. The shield
-//! zero-guard is confirmed in production (`platform_wallet.rs:733`); the
-//! transfer/unshield guards are unconfirmed in the audit — **if either
-//! lacks a zero-guard, this case goes RED and surfaces a
-//! missing-validation finding** (mirrors PA-001c's contract framing).
+//! SH-009 — Funded zero-amount operations reject before Orchard proving.
+//! Transfer, unshield and withdraw remain RED until their zero guards land.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use platform_wallet::error::PlatformWalletError;
+use platform_wallet::wallet::shielded::{ShieldedStore, SubwalletId};
 
 use crate::framework::prelude::*;
-use crate::framework::shielded::{bind_shielded, shielded_default_address_43, shielded_prover};
+use crate::framework::shielded::{
+    bind_shielded, shielded_default_address_43, shielded_prover, teardown_sweep_shielded,
+    wait_for_shielded_balance, NoProofProver,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
-/// Generous upper bound: a synchronous boundary rejection must return far
-/// below one Halo-2 proof (~30 s). A few seconds covers lock acquisition
-/// and address parsing without admitting a proof build.
-const REJECT_CEILING: Duration = Duration::from_secs(5);
+const SHIELD_AMOUNT: u64 = 1_120_000_000;
+const FUNDING_CREDITS: u64 = 2_400_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_009_zero_amount_rejected() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,platform_wallet=debug".into()),
-        )
-        .with_test_writer()
-        .try_init();
-
     let s = setup().await.expect("e2e setup failed");
-    let prover = shielded_prover();
-
     let handle = bind_shielded(&s.test_wallet, &[0, 1], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
+    let funding = s
+        .test_wallet
+        .next_unused_address()
+        .await
+        .expect("funding address");
+    s.ctx
+        .bank()
+        .fund_address(&funding, FUNDING_CREDITS)
+        .await
+        .expect("fund real note");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &funding,
+        FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("funding observed");
+    s.test_wallet
+        .sync_balances()
+        .await
+        .expect("pre-shield sync");
     let pw = s.test_wallet.platform_wallet();
+    pw.shielded_shield_from_account(
+        &handle.coordinator,
+        0,
+        0,
+        SHIELD_AMOUNT,
+        s.test_wallet.address_signer(),
+        shielded_prover(),
+    )
+    .await
+    .expect("fund shielded note");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .await
+        .expect("spendable note observed");
+    let id = SubwalletId::new(s.test_wallet.id(), 0);
+    let before = {
+        let store = handle.coordinator.store().read().await;
+        store.get_unspent_notes(id).expect("unspent notes")
+    };
+    assert_eq!(
+        before.len(),
+        1,
+        "zero guards must be tested with a selectable note"
+    );
+    let before_balances = handle.balances(&s.test_wallet).await.expect("balances");
+    let recipient = shielded_default_address_43(&s.test_wallet, 1)
+        .await
+        .expect("recipient");
+    let destination = funding.to_bech32m_string(s.ctx.bank().network());
+    let core = s
+        .ctx
+        .bank()
+        .primary_core_receive_address()
+        .await
+        .expect("Core address")
+        .to_string();
+    let seed = s.test_wallet.seed_bytes();
+    let prover = &NoProofProver;
 
-    // Shield with amount == 0.
-    let t0 = Instant::now();
-    let shield = pw
-        .shielded_shield_from_account(
+    assert_zero_error(
+        pw.shielded_shield_from_account(
             &handle.coordinator,
             0,
             0,
@@ -49,73 +96,67 @@ async fn sh_009_zero_amount_rejected() {
             s.test_wallet.address_signer(),
             prover,
         )
-        .await;
-    assert!(
-        shield.is_err(),
-        "zero-amount shield must be rejected with a typed Err; observed {shield:?}"
+        .await,
     );
-    assert!(
-        t0.elapsed() < REJECT_CEILING,
-        "zero-amount shield must reject synchronously (no proof build); took {:?}",
-        t0.elapsed()
-    );
-
-    // Transfer with amount == 0 to account 1's address.
-    let acct1_addr = shielded_default_address_43(&s.test_wallet, 1)
-        .await
-        .expect("account 1 default Orchard address");
-    let t1 = Instant::now();
-    let transfer = pw
-        .shielded_transfer_to(
+    assert_zero_error(
+        pw.shielded_transfer_to(
             &handle.coordinator,
-            &s.test_wallet.seed_bytes(),
+            &seed,
             0,
-            &acct1_addr,
+            &recipient,
             0,
-            [0u8; 36],
+            [0; 36],
             prover,
         )
-        .await;
-    assert!(
-        transfer.is_err(),
-        "zero-amount transfer must be rejected with a typed Err (RED if no guard exists); \
-         observed {transfer:?}"
+        .await,
     );
-    assert!(
-        t1.elapsed() < REJECT_CEILING,
-        "zero-amount transfer must reject synchronously; took {:?}",
-        t1.elapsed()
+    assert_zero_error(
+        pw.shielded_unshield_to(&handle.coordinator, &seed, 0, &destination, 0, prover)
+            .await,
     );
-
-    // Unshield with amount == 0 to a transparent address.
-    let addr_dst = s
-        .test_wallet
-        .next_unused_address()
-        .await
-        .expect("derive addr_dst");
-    let addr_dst_bech32m = addr_dst.to_bech32m_string(s.ctx.bank().network());
-    let t2 = Instant::now();
-    let unshield = pw
-        .shielded_unshield_to(
-            &handle.coordinator,
-            &s.test_wallet.seed_bytes(),
-            0,
-            &addr_dst_bech32m,
-            0,
-            prover,
-        )
-        .await;
-    assert!(
-        unshield.is_err(),
-        "zero-amount unshield must be rejected with a typed Err (RED if no guard exists); \
-         observed {unshield:?}"
-    );
-    assert!(
-        t2.elapsed() < REJECT_CEILING,
-        "zero-amount unshield must reject synchronously; took {:?}",
-        t2.elapsed()
+    assert_zero_error(
+        pw.shielded_withdraw_to(&handle.coordinator, &seed, 0, &core, 0, 1, prover)
+            .await,
     );
 
-    // No funds were ever shielded, so the teardown sweep is a no-op.
+    assert_eq!(
+        before_balances,
+        handle
+            .balances(&s.test_wallet)
+            .await
+            .expect("balances after rejection")
+    );
+    {
+        let store = handle.coordinator.store().read().await;
+        let all = store.get_all_notes(id).expect("all notes");
+        let selectable = store.get_unspent_notes(id).expect("unreserved notes");
+        // get_unspent_notes excludes pending reservations as well as spent notes.
+        assert_eq!(all.len(), before.len());
+        assert_eq!(
+            selectable.len(),
+            before.len(),
+            "zero requests must not leave reservations"
+        );
+        for (original, current) in before.iter().zip(&selectable) {
+            assert_eq!(original.nullifier, current.nullifier);
+            assert_eq!(original.note_data, current.note_data);
+            assert_eq!(original.value, current.value);
+            assert!(!current.is_spent);
+        }
+    }
+    let bank = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank).await;
     s.teardown().await.expect("teardown");
+}
+
+fn assert_zero_error(result: Result<(), PlatformWalletError>) {
+    assert!(
+        matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+        if message == "amount must be > 0"),
+        "expected exact zero-amount guard: {result:?}"
+    );
 }

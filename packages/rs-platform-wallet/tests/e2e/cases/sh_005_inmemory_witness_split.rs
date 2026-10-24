@@ -1,23 +1,9 @@
 //! SH-005 — Spend against the in-memory store fails witness-unavailable;
 //! the file-backed store succeeds (Found-027 pin).
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-005.
-//! Priority: P1. **RED-by-design** until Found-027 is fixed.
-//!
-//! `InMemoryShieldedStore::witness()` unconditionally returns `Err`, so
-//! every spend (unshield/transfer/withdraw) is structurally
-//! non-functional against it, while `FileBackedShieldedStore::witness()`
-//! works — a silent backing-store-dependent capability split with no
-//! type-level signal. Both implement the same `ShieldedStore` trait.
-//!
-//! This test seeds the SAME funded note into both stores and builds
-//! identical unshields:
-//!   * InMemory arm asserts `ShieldedMerkleWitnessUnavailable` (exact
-//!     variant) — this documents the split.
-//!   * FileBacked arm asserts `Ok(())`.
-//!
-//! The InMemory arm flips to a regression guard once Found-027 is
-//! addressed (witness gains a real impl, or the type system forbids
-//! spending against a store that cannot witness).
+//! Priority: P1. PASS-as-documentation: the in-memory store explicitly
+//! does not support witnesses. Only that specific error passes the first arm;
+//! the file-backed arm must spend the same note successfully.
 
 use std::time::Duration;
 
@@ -155,8 +141,9 @@ async fn sh_005_inmemory_witness_split() {
     .await;
     assert!(
         matches!(
-            inmem_result,
-            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(_))
+            &inmem_result,
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(message))
+                if message.contains("not supported in in-memory store")
         ),
         "InMemory spend must fail with ShieldedMerkleWitnessUnavailable (Found-027); \
          observed {inmem_result:?}"

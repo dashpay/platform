@@ -118,27 +118,8 @@ async fn sh_034_tampered_binding_signature() {
         mutate_serialized_bundle(&mut st, BundleField::BindingSignature, &mutation)
             .expect("tamper binding signature");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        // Verdict is load-bearing: the TRUE consensus result (not just check_tx
-        // admission) gates PASS/FAIL, and the bundle-verification reason pins the
-        // rejection so a transport drop can't read as "binding enforced". FAILS
-        // only if the tampered binding signature actually committed at consensus.
         let probe = format!("SH-034/{mutation:?}");
-        assert_adv_rejected(
-            s.ctx.sdk(),
-            &probe,
-            &result,
-            &st,
-            COMMIT_TIMEOUT,
-            &[
-                "binding",
-                "signature",
-                "proof",
-                "bundle",
-                "verification",
-                "invalid",
-            ],
-        )
-        .await;
+        assert_adv_rejected(s.ctx.sdk(), &probe, &result, &st, COMMIT_TIMEOUT, &[40902]).await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_034",
             ?mutation,

@@ -3,32 +3,36 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-036.
 //! Priority: P1.
 //!
-//! Shields `DENOMINATION + fee headroom` into Orchard account 0, then drives
+//! Shields `DENOMINATION` into Orchard account 0, retains transparent headroom,
+//! then drives
 //! `PlatformWallet::shielded_identity_create_from_pool` to spend the pool note
 //! and register a new identity. The proof-verified `Identity::fetch` is the
 //! verdict — the test asserts on the resulting on-chain STATE, not on broadcast
-//! success. This is the only shielded transition the suite did not previously
-//! exercise.
+//! success.
 //!
 //! `DENOMINATION` is read at runtime from the protocol's versioned
 //! exit-denomination set; never hardcoded.
 //!
-//! Expected outcome: PASS (A1∧A2∧A3∧A4). Explicit `E2E-SKIP` when the bank
-//! floor / devnet is unavailable — never a silent green.
+//! Every assertion is fatal, including the funding-note replay check. A bank
+//! below this case's own denomination + headroom budget is an explicit
+//! `E2E-SKIP`, never a silent green.
 
 use std::time::Duration;
 
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use dpp::shielded::compute_shielded_identity_create_fee;
+use dpp::shielded::compute_shielded_unshield_fee;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    bind_shielded, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    assert_adv_rejected, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
+    shielded_prover, teardown_sweep_shielded, unspent_notes, wait_for_shielded_balance,
 };
 use crate::framework::signer::{derive_identity_key, SeedBackedIdentitySigner};
 use crate::framework::wait::{
@@ -39,10 +43,7 @@ use crate::framework::wait::{
 /// the bank identity's slot; a fresh-seed wallet has nothing else here.
 const IDENTITY_INDEX: u32 = 0;
 
-/// Headroom shielded on top of `DENOMINATION`: the create spends a note whose
-/// value must be `>= DENOMINATION`, and the metered fee is carved from the
-/// denomination at execution. The excess re-enters the pool as change, so it
-/// is recoverable — sized to comfortably exceed any version's create fee.
+/// Transparent headroom retained for the shield input reserve and fee.
 const FEE_HEADROOM: u64 = 1_000_000_000;
 
 /// Per-step wait deadline.
@@ -59,13 +60,6 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .try_init();
 
     let s = setup().await.expect("e2e setup failed");
-
-    // SKIP (never silent green) when the live bank can't fund the flow. The
-    // generic token-suite floor (~88.8B) sits well above DENOMINATION + headroom,
-    // so it is a safe, central gate for "the devnet bank can't run this".
-    if s.ctx.skip_if_bank_floor_unmet("sh_036") {
-        return;
-    }
 
     let prover = shielded_prover();
     let network = s.ctx.bank().network();
@@ -85,6 +79,35 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .min()
         .expect("protocol must define at least one shielded identity-create denomination");
     let funding_credits = denomination + FEE_HEADROOM;
+
+    // Case-specific funding gate. A drained live bank is a legitimate reason
+    // not to run, but the skip must be loud (E2E-SKIP, the token-suite
+    // convention) and keyed to THIS case's budget, not the ~88.8B token floor.
+    s.ctx
+        .bank()
+        .sync_balances()
+        .await
+        .expect("bank balance refresh");
+    let bank_credits = s.ctx.bank().effective_platform_credits().await;
+    if bank_credits < funding_credits {
+        let refill = s
+            .ctx
+            .bank()
+            .primary_receive_address()
+            .to_bech32m_string(network);
+        tracing::warn!(
+            target: "platform_wallet::e2e::cases::sh_036",
+            bank_credits,
+            funding_credits,
+            refill_address = %refill,
+            "E2E-SKIP: sh_036 did NOT run — bank Platform balance below this case's \
+             denomination + headroom budget; this is a SKIP reporting PASS, not a verified pass"
+        );
+        eprintln!(
+            "E2E-SKIP: sh_036 did NOT run (bank {bank_credits} < required {funding_credits}); refill {refill}"
+        );
+        return;
+    }
 
     // --- 1. Fund a fresh transparent address with DENOMINATION + headroom and
     //        wait until the chain-confirmed view sees it. ---
@@ -112,8 +135,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .await
         .expect("pre-shield sync");
 
-    // --- 2. Bind shielded account 0 and shield the full funding amount into
-    //        the pool. ---
+    // Bind account 0 and shield the denomination, retaining transparent headroom.
     let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
@@ -139,6 +161,11 @@ async fn sh_036_identity_create_from_shielded_pool() {
         wait_for_shielded_balance(&s.test_wallet, &handle, 0, denomination, STEP_TIMEOUT)
             .await
             .expect("shielded balance never reached the denomination");
+
+    let funding_notes = unspent_notes(&s.test_wallet, &handle, 0)
+        .await
+        .expect("capture funding notes");
+    assert_eq!(funding_notes.len(), 1);
 
     // --- 3. Build the new identity's key set: MASTER + HIGH + TRANSFER +
     //        CRITICAL, exactly as the address-funded id_* path does. Convert
@@ -252,8 +279,8 @@ async fn sh_036_identity_create_from_shielded_pool() {
     }
 
     // A4: the shielded pool dropped by EXACTLY the denomination. The fee is
-    // carved from the denomination at execution and the excess (FEE_HEADROOM)
-    // re-enters account 0 as a change note, so the net exit is the denomination.
+    // carved from the denomination at execution. Headroom stayed transparent;
+    // the single denomination note is fully consumed.
     handle.sync().await;
     let pool_after = handle
         .balances(&s.test_wallet)
@@ -269,11 +296,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
          before={pool_before} after={pool_after}"
     );
 
-    // A5 (SECONDARY, logged, non-fatal): the identity is created holding
-    // `denomination - consensus_create_fee`. The exact metered fee is
-    // version-dependent, so we only bound it here and log the predicted value.
-    // TODO(#3040-fee): pin the exact identity balance once the create fee is a
-    // stable, queryable consensus constant.
+    // A5: preserve the fee-tolerant identity credit bound.
     let identity_balance = on_chain.balance();
     // The create spends the single note produced by the one shield above.
     // Mirror the builder's `spends.len().max(2)` action-padding floor
@@ -292,52 +315,41 @@ async fn sh_036_identity_create_from_shielded_pool() {
         "A5: identity balance {identity_balance} must be in (0, {denomination}]"
     );
 
-    // A6 (SECONDARY, logged): no double-spend — a second create against the
-    // already-spent funding notes must fail (the pool note is consumed). The
-    // suite's "second op proves no replay" pattern.
-    let replay_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)> = key_specs
-        .iter()
-        .map(|&(key_index, purpose, security_level)| {
-            let key = derive_identity_key(
-                &seed,
-                network,
-                IDENTITY_INDEX,
-                key_index,
-                purpose,
-                security_level,
-            )
-            .expect("derive_identity_key (replay)");
-            let in_creation: IdentityPublicKeyInCreation = (&key).into();
-            (key, in_creation)
-        })
-        .collect();
-    let replay_failure_addr = s
+    // A6: rebuild against the captured funding note, bypassing local selection.
+    // An empty local pool cannot make this backend replay check pass.
+    let replay_destination = s
         .test_wallet
         .next_unused_address()
         .await
-        .expect("derive replay fallback address");
-    let replay = s
-        .test_wallet
-        .platform_wallet()
-        .shielded_identity_create_from_pool(
-            &handle.coordinator,
-            &seed,
-            0,
-            IDENTITY_INDEX + 1,
-            replay_keys,
-            denomination,
-            replay_failure_addr,
-            &identity_signer,
-            prover,
-        )
-        .await;
-    if replay.is_ok() {
-        tracing::warn!(
-            target: "platform_wallet::e2e::cases::sh_036",
-            "A6: second create after pool exhaustion unexpectedly succeeded — \
-             possible insufficient-balance / replay gap (logged, non-fatal)"
-        );
-    }
+        .expect("replay destination");
+    let replay_st = build_unshield_st_against_notes(
+        &s.test_wallet,
+        &handle,
+        0,
+        &replay_destination,
+        1_000_000,
+        compute_shielded_unshield_fee(2, s.ctx.sdk().version()).expect("unshield fee"),
+        &funding_notes,
+    )
+    .await
+    .expect("build replay of Type-20 funding note");
+    let replay = broadcast_raw(s.ctx.sdk(), &replay_st).await;
+    assert_adv_rejected(
+        s.ctx.sdk(),
+        "SH-036/replay",
+        &replay,
+        &replay_st,
+        Duration::from_secs(120),
+        &[40901],
+    )
+    .await;
+    assert_eq!(
+        AddressInfo::fetch(s.ctx.sdk(), replay_destination)
+            .await
+            .expect("replay destination balance")
+            .map_or(0, |info| info.balance),
+        0
+    );
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::sh_036",
@@ -347,7 +359,6 @@ async fn sh_036_identity_create_from_shielded_pool() {
         predicted_fee,
         pool_before,
         pool_after,
-        replay_rejected = replay.is_err(),
         "SH-036 snapshot"
     );
 

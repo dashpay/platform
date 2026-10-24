@@ -138,7 +138,15 @@ async fn sh_007_pre_bind_note_witnessable() {
         )
         .await
         .expect("A → B private transfer");
-    let _ = coordinator.sync(true).await;
+    // The original note is spent locally. A new positive balance requires
+    // scanning A's change from the same transition that appended B's note.
+    let change = wait_for_shielded_balance(&a.test_wallet, &a_handle, 0, 1, STEP_TIMEOUT)
+        .await
+        .expect("A change must be scanned while B remains unbound");
+    assert!(
+        change < SHIELD_AMOUNT - NOTE_TO_B,
+        "expected A's new change note"
+    );
 
     // NOW bind B on the same coordinator and sync.
     b.test_wallet

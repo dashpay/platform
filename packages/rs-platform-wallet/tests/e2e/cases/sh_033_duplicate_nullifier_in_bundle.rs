@@ -9,10 +9,7 @@
 //! duplicate nullifier within one bundle must fail validation before any
 //! state write.
 //!
-//! The build itself may reject the duplicate (a client-side guard), in
-//! which case the dup never reaches Drive — acceptable, since no state
-//! write occurs. The FINDING (RED) is a SUCCESSFUL broadcast: the backend
-//! accepted an intra-bundle double-spend.
+//! Build failures fail the case; only a typed backend nullifier rejection passes.
 
 #![cfg(feature = "shielded")]
 
@@ -23,8 +20,8 @@ use dpp::version::PlatformVersion;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
-    observe_adv_verdict, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    adversarial_enabled, assert_adv_rejected, bind_shielded, broadcast_raw,
+    build_unshield_st_against_notes, shielded_prover, teardown_sweep_shielded, unspent_notes,
     wait_for_shielded_balance,
 };
 use crate::framework::wait::{
@@ -115,7 +112,7 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
         .expect("compute_minimum_shielded_fee");
     let dst = s.test_wallet.next_unused_address().await.expect("dst");
 
-    let built = build_unshield_st_against_notes(
+    let st = build_unshield_st_against_notes(
         &s.test_wallet,
         &handle,
         0,
@@ -124,35 +121,18 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
         exact_fee,
         &dup,
     )
+    .await
+    .expect("duplicate-note bundle must build to reach backend validation");
+    let result = broadcast_raw(s.ctx.sdk(), &st).await;
+    assert_adv_rejected(
+        s.ctx.sdk(),
+        "SH-033",
+        &result,
+        &st,
+        COMMIT_TIMEOUT,
+        &[40901],
+    )
     .await;
-
-    match built {
-        Ok(st) => {
-            let result = broadcast_raw(s.ctx.sdk(), &st).await;
-            // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
-            observe_adv_verdict(s.ctx.sdk(), "SH-033", &result, &st, COMMIT_TIMEOUT).await;
-            assert!(
-                result.is_err(),
-                "SH-033 FINDING (CRITICAL): backend ACCEPTED a bundle with a duplicate nullifier \
-                 — intra-transaction double-spend. result={result:?}"
-            );
-            tracing::info!(
-                target: "platform_wallet::e2e::cases::sh_033",
-                "intra-bundle duplicate nullifier correctly rejected by backend"
-            );
-        }
-        Err(e) => {
-            // The build rejected the duplicate before it could reach Drive;
-            // no state write occurs. Acceptable (the dup is stopped early),
-            // but log it so a reviewer knows the backend arm wasn't exercised.
-            // Emit the greppable tag with a build stage so Marvin's one grep
-            // still captures SH-033's verdict.
-            tracing::info!(
-                target: "platform_wallet::e2e::cases::sh_033",
-                "ADV-VERDICT probe=SH-033 stage=build result=rejected detail=\"{e}\""
-            );
-        }
-    }
 
     let bank_addr = s
         .ctx

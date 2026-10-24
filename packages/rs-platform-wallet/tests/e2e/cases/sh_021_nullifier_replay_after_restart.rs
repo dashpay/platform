@@ -13,16 +13,26 @@
 
 #![cfg(feature = "shielded")]
 
+// TODO(SH-021): add a Type-16 replay arm once the harness has a
+// build-transfer-against-notes seam (only Type 17 has one today).
+
+use std::sync::Arc;
 use std::time::Duration;
+
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
+use platform_wallet::wallet::shielded::{
+    FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedStore, SubwalletId,
+};
 
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::version::PlatformVersion;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
-    observe_adv_verdict, shielded_prover, teardown_sweep_shielded, unspent_notes,
-    wait_for_shielded_balance,
+    adversarial_enabled, assert_adv_rejected, broadcast_raw, build_unshield_st_against_notes,
+    new_file_backed_coordinator, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    wait_for_shielded_balance, ShieldedHandle,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -57,9 +67,18 @@ async fn sh_021_nullifier_replay_after_restart() {
 
     let s = setup().await.expect("e2e setup failed");
     let prover = shielded_prover();
-    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+    let coordinator = new_file_backed_coordinator(&s.test_wallet, &s.ctx.workdir)
         .await
-        .expect("bind_shielded");
+        .expect("private persisted coordinator");
+    s.test_wallet
+        .platform_wallet()
+        .bind_shielded(&s.test_wallet.seed_bytes(), &[0], &coordinator)
+        .await
+        .expect("bind shielded");
+    let handle = ShieldedHandle {
+        coordinator,
+        accounts: vec![0],
+    };
 
     let addr_1 = s
         .test_wallet
@@ -133,6 +152,50 @@ async fn sh_021_nullifier_replay_after_restart() {
     .await
     .expect("first unshield destination never observed");
 
+    // Restart the coordinator against its persisted SQLite tree and reload the
+    // wallet's shielded snapshot through the normal bind path. Never reset it.
+    handle.sync().await;
+    s.test_wallet
+        .platform_wallet()
+        .flush_persist()
+        .expect("flush shielded snapshot before restart");
+    let path = handle.coordinator.db_path().to_path_buf();
+    drop(handle);
+    let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen persisted tree");
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        s.test_wallet.platform_wallet().sdk_arc(),
+        s.ctx.bank().network(),
+        path,
+        store,
+    ));
+    assert!(
+        s.test_wallet
+            .platform_wallet()
+            .bind_shielded_from_persisted(&[0], &coordinator)
+            .await
+            .expect("reload persisted shielded binding"),
+        "persisted binding must exist"
+    );
+    let handle = ShieldedHandle {
+        coordinator,
+        accounts: vec![0],
+    };
+    handle.sync().await;
+    let id = SubwalletId::new(s.test_wallet.id(), 0);
+    let restored = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_all_notes(id)
+        .expect("restored notes");
+    assert!(
+        restored
+            .iter()
+            .any(|note| note.nullifier == captured[0].nullifier && note.is_spent),
+        "restart/resync must preserve the spent nullifier"
+    );
+
     // Replay: rebuild a fresh transition against the now-spent captured
     // note and broadcast. The witness still resolves (the commitment is
     // in the tree), but the nullifier is already spent on-chain.
@@ -151,20 +214,34 @@ async fn sh_021_nullifier_replay_after_restart() {
     .await
     .expect("rebuild replay against spent note");
     let replay = broadcast_raw(s.ctx.sdk(), &replay_st).await;
-    // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
-    observe_adv_verdict(s.ctx.sdk(), "SH-021", &replay, &replay_st, COMMIT_TIMEOUT).await;
-    assert!(
-        replay.is_err(),
-        "SH-021 FINDING (CRITICAL): replay of a confirmed-spent note was ACCEPTED — \
-         double-spend via replay. result={replay:?}"
+    assert_adv_rejected(
+        s.ctx.sdk(),
+        "SH-021",
+        &replay,
+        &replay_st,
+        COMMIT_TIMEOUT,
+        &[40901],
+    )
+    .await;
+    assert_eq!(
+        AddressInfo::fetch(s.ctx.sdk(), dst2)
+            .await
+            .expect("replay destination balance")
+            .map_or(0, |info| info.balance),
+        0,
+        "replay must not credit dst2"
     );
-    let err_s = format!("{replay:?}").to_lowercase();
-    assert!(
-        err_s.contains("nullifier")
-            || err_s.contains("alreadyspent")
-            || err_s.contains("already spent"),
-        "SH-021: replay must fail nullifier-already-spent (code 40901); observed {replay:?}"
-    );
+    handle.sync().await;
+    let notes = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_all_notes(id)
+        .expect("post-replay notes");
+    assert!(notes
+        .iter()
+        .any(|note| note.nullifier == captured[0].nullifier && note.is_spent));
 
     let bank_addr = s
         .ctx

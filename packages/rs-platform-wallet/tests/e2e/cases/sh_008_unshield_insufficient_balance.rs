@@ -128,8 +128,7 @@ async fn sh_008_unshield_insufficient_balance() {
         ),
     }
 
-    // Follow-up satisfiable unshield must succeed — proves the
-    // reservation taken during the failed attempt was released.
+    // Selection fails before reserving; the unchanged note must remain spendable.
     s.test_wallet
         .platform_wallet()
         .shielded_unshield_to(
@@ -141,7 +140,7 @@ async fn sh_008_unshield_insufficient_balance() {
             prover,
         )
         .await
-        .expect("satisfiable unshield after release must succeed");
+        .expect("satisfiable unshield after failed selection must succeed");
     wait_for_address_balance_chain_confirmed_n(
         s.ctx.sdk(),
         &addr_dst,

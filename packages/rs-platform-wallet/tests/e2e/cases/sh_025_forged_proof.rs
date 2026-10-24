@@ -6,7 +6,8 @@
 //!
 //! Attack: build a VALID Type-17 unshield via the production capture seam
 //! (`operations::build_unshield_st`), then corrupt `SerializedBundle.proof`
-//! (bit-flip, zero) and broadcast directly via `broadcast_raw`, bypassing
+//! (bit-flip, zero, truncation, substitution) and broadcast via `broadcast_raw`,
+//! bypassing
 //! the guarded wallet method. The proof is bound to the public inputs
 //! (anchor, nullifiers, value_balance, cmx), so any mutation must fail
 //! Orchard proof verification at the backend.
@@ -16,6 +17,9 @@
 #![cfg(feature = "shielded")]
 
 use std::time::Duration;
+
+use dpp::state_transition::unshield_transition::UnshieldTransition;
+use dpp::state_transition::StateTransition;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
@@ -27,13 +31,11 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-// Two proof mutations each consume one note via `capture_unshield_st`
-// (which reserves and never releases), so fund + shield one note PER
-// probe: `2 × (SHIELD_AMOUNT + 1.63e8) + 1e9` (see `sh_024`).
-const FUNDING_CREDITS: u64 = 1_725_702_400;
+// Four mutations plus one donor proof each need a separate funded note.
+const FUNDING_CREDITS: u64 = 2_900_000_000;
 const SHIELD_AMOUNT: u64 = 200_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
-const NUM_PROBES: u64 = 2;
+const NUM_NOTES: u64 = 5;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 /// Consensus commit needs block production + proof — longer than a per-step gate.
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -87,7 +89,7 @@ async fn sh_025_forged_proof() {
         .expect("pre-shield sync");
     // One note per probe: `capture_unshield_st` reserves a note and never
     // releases it, so a single note would starve the second probe.
-    for _ in 0..NUM_PROBES {
+    for _ in 0..NUM_NOTES {
         s.test_wallet
             .platform_wallet()
             .shielded_shield_from_account(
@@ -105,7 +107,7 @@ async fn sh_025_forged_proof() {
         &s.test_wallet,
         &handle,
         0,
-        SHIELD_AMOUNT * NUM_PROBES,
+        SHIELD_AMOUNT * NUM_NOTES,
         STEP_TIMEOUT,
     )
     .await
@@ -115,29 +117,28 @@ async fn sh_025_forged_proof() {
 
     // For each proof mutation: capture a fresh valid unshield, tamper the
     // proof, broadcast raw. Each must be rejected by the backend.
-    for mutation in [BundleMutation::FlipByte(0), BundleMutation::Zero] {
+    let donor = capture_unshield_st(&s.test_wallet, &handle, 0, &dst, UNSHIELD_AMOUNT)
+        .await
+        .expect("capture proof from a distinct note");
+    let StateTransition::Unshield(UnshieldTransition::V0(donor)) = donor else {
+        panic!("expected unshield donor")
+    };
+    for (label, mutation) in [
+        ("flip", BundleMutation::FlipByte(0)),
+        ("zero", BundleMutation::Zero),
+        ("truncated", BundleMutation::Overwrite(vec![0; 32])),
+        ("substituted", BundleMutation::Overwrite(donor.proof)),
+    ] {
         let mut st = capture_unshield_st(&s.test_wallet, &handle, 0, &dst, UNSHIELD_AMOUNT)
             .await
             .expect("capture valid unshield ST");
         mutate_serialized_bundle(&mut st, BundleField::Proof, &mutation).expect("tamper proof");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        // Verdict is load-bearing: the TRUE consensus result (not just check_tx
-        // admission) gates PASS/FAIL, and the proof-invalid reason pins the
-        // rejection so a transport drop can't read as "soundness preserved".
-        // FAILS only if the tampered proof actually committed at consensus.
-        let probe = format!("SH-025/{mutation:?}");
-        assert_adv_rejected(
-            s.ctx.sdk(),
-            &probe,
-            &result,
-            &st,
-            COMMIT_TIMEOUT,
-            &["proof", "bundle", "verification", "invalid"],
-        )
-        .await;
+        let probe = format!("SH-025/{label}");
+        assert_adv_rejected(s.ctx.sdk(), &probe, &result, &st, COMMIT_TIMEOUT, &[40902]).await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_025",
-            ?mutation,
+            label,
             "tampered proof correctly rejected by backend"
         );
     }

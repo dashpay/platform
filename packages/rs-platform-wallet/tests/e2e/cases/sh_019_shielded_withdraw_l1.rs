@@ -2,18 +2,8 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-019.
 //! Priority: P1. (Wave H + Core-L1 gate.)
 //!
-//! The shielded SPEND half is exercisable now (same path as SH-002): we
-//! shield a note, withdraw part of it to a Core L1 address, and assert
-//! the shielded-side bookkeeping unconditionally (this half is
-//! GREEN-capable). The L1-arrival assertion needs Layer-1 payout
-//! observation and is gated behind `PLATFORM_WALLET_E2E_BANK_CORE_GATE`;
-//! until that observation seam is wired it MAY run RED — documenting the
-//! gate, not a production defect in the shield path.
-//!
-//! NOTE (flagged gap): there is no harness Layer-1 payout-observation
-//! seam yet (shared with §5 item 2 transparent withdrawal). The L1-read
-//! arm below is therefore left as a documented TODO rather than a live
-//! assertion — wiring it is the Core-L1 follow-up.
+//! Covers the shielded spend and change bookkeeping only. L1 payout
+//! observation is not implemented; this case does not assert Core arrival.
 
 use std::time::Duration;
 
@@ -120,17 +110,12 @@ async fn sh_019_shielded_withdraw_l1() {
         .await
         .expect("shielded_withdraw_to (shielded spend half must succeed)");
 
-    // Shielded-side assertions (GREEN-capable, no L1 gate): the change
-    // note is retained and the balance dropped by at least the withdraw
-    // amount.
-    handle.sync().await;
-    let after = handle
-        .balances(&s.test_wallet)
+    // Shielded-side assertions (no L1 gate): the spent note was finalized on
+    // broadcast, so a positive balance means the change note was scanned and
+    // the balance dropped by at least the withdraw amount.
+    let after = wait_for_shielded_balance(&s.test_wallet, &handle, 0, 1, STEP_TIMEOUT)
         .await
-        .expect("post-withdraw shielded_balances")
-        .get(&0)
-        .copied()
-        .unwrap_or(0);
+        .expect("withdraw change never scanned");
     assert!(
         before.saturating_sub(after) >= WITHDRAW_AMOUNT,
         "shielded balance must drop by at least the withdraw amount; before={before} after={after}"
@@ -141,8 +126,7 @@ async fn sh_019_shielded_withdraw_l1() {
     );
 
     // The spent note must be marked spent — a second identical withdraw
-    // must not re-select it (it either spends the change or fails
-    // insufficient-balance, never re-spends the consumed note).
+    // must spend the available change, never re-select the consumed note.
     let second = s
         .test_wallet
         .platform_wallet()
@@ -156,20 +140,11 @@ async fn sh_019_shielded_withdraw_l1() {
             prover,
         )
         .await;
-    // Either it succeeds from the remaining change or it fails on
-    // insufficient balance — both prove the original note was consumed
-    // exactly once. A panic / double-spend would be the regression.
-    tracing::info!(
-        target: "platform_wallet::e2e::cases::sh_019",
-        ?second,
-        "second withdraw outcome (must not re-spend the consumed note)"
-    );
+    second.expect("second withdrawal must spend the available change, never the spent original");
 
-    // TODO(Core-L1 follow-up): observe the L1 payout on `to_core` once
-    // the Layer-1 payout-observation seam exists (shared with §5 item 2).
-    // Gated behind PLATFORM_WALLET_E2E_BANK_CORE_GATE. Until then the
-    // L1-arrival assertion is intentionally absent — the shielded-side
-    // assertions above are the GREEN-capable half.
+    // TODO(Core-L1 follow-up): observe the L1 payout on `to_core` once the
+    // harness has a Layer-1 payout-observation seam (shared with §5 item 2
+    // transparent withdrawal). Until then this case does not prove Core arrival.
 
     let bank_addr = s
         .ctx

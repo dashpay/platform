@@ -5,8 +5,9 @@
 //!
 //! Shields two notes into account 0, then fires two concurrent unshields
 //! each coverable by one note. The single-write-lock select+reserve must
-//! hand them disjoint notes — no shared nullifier, no double-count. If
-//! both succeed, the shielded balance dropped by `2*amount + 2*fee`.
+//! hand them disjoint notes — no shared nullifier, no double-count. Both
+//! spends must succeed, both original nullifiers must end up spent, and the
+//! balance must drop by at least `2*amount` (fee-tolerant by design).
 //!
 //! Expected outcome: PASS — this is the contract `reserve_unspent_notes`
 //! exists to uphold; the canary for a reservation-race regression.
@@ -18,9 +19,12 @@
 
 use std::time::Duration;
 
+use platform_wallet::wallet::shielded::{ShieldedStore, SubwalletId};
+
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
     bind_shielded, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    wait_for_unspent_notes,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -107,6 +111,17 @@ async fn sh_010_double_spend_reservation() {
         .copied()
         .unwrap_or(0);
 
+    let id = SubwalletId::new(s.test_wallet.id(), 0);
+    let original_notes = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_unspent_notes(id)
+        .expect("original notes");
+    assert_eq!(original_notes.len(), 2);
+    assert_ne!(original_notes[0].nullifier, original_notes[1].nullifier);
+
     // Two destinations, two concurrent unshields.
     let dst_a = s.test_wallet.next_unused_address().await.expect("dst_a");
     let dst_b = s.test_wallet.next_unused_address().await.expect("dst_b");
@@ -134,28 +149,54 @@ async fn sh_010_double_spend_reservation() {
         ),
     );
 
-    // At most one may fail (if only one note were spendable); if both
-    // succeed they MUST have reserved disjoint notes — verified via the
-    // post-spend balance drop being at least 2*amount (no double-count).
-    let succeeded = [ra.is_ok(), rb.is_ok()].iter().filter(|ok| **ok).count();
     assert!(
-        succeeded >= 1,
-        "at least one concurrent unshield must succeed; ra={ra:?} rb={rb:?}"
+        ra.is_ok() && rb.is_ok(),
+        "both independently funded spends must succeed; ra={ra:?}, rb={rb:?}"
     );
-
-    handle.sync().await;
-    let after = handle
-        .balances(&s.test_wallet)
+    for dst in [&dst_a, &dst_b] {
+        wait_for_address_balance_chain_confirmed_n(
+            s.ctx.sdk(),
+            dst,
+            UNSHIELD_EACH,
+            CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+            STEP_TIMEOUT,
+        )
         .await
-        .expect("post-spend shielded_balances")
-        .get(&0)
-        .copied()
-        .unwrap_or(0);
+        .expect("each unshield must credit its destination");
+    }
+
+    // Both originals were finalized as spent on broadcast, so the unspent set
+    // becomes exactly the two change notes once both are scanned. Reading a
+    // partially scanned set would only loosen the drop bound below.
+    let after = wait_for_unspent_notes(&s.test_wallet, &handle, 0, STEP_TIMEOUT, |notes| {
+        let fresh = notes.iter().all(|note| {
+            original_notes
+                .iter()
+                .all(|original| original.nullifier != note.nullifier)
+        });
+        (notes.len() == 2 && fresh).then(|| notes.iter().map(|note| note.value).sum::<u64>())
+    })
+    .await
+    .expect("both change notes scanned");
+    let all = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_all_notes(id)
+        .expect("spent notes");
+    for original in &original_notes {
+        assert!(
+            all.iter()
+                .any(|note| note.nullifier == original.nullifier && note.is_spent),
+            "each original note must be spent: concurrent selection must be disjoint"
+        );
+    }
     let dropped = before.saturating_sub(after);
     assert!(
-        dropped >= UNSHIELD_EACH * (succeeded as u64),
-        "shielded balance must drop by at least {UNSHIELD_EACH} per successful spend \
-         (disjoint notes, no double-count); before={before} after={after} succeeded={succeeded}"
+        dropped >= 2 * UNSHIELD_EACH,
+        "shielded balance must drop by at least {UNSHIELD_EACH} per spend \
+         (disjoint notes, no double-count); before={before} after={after}"
     );
 
     let bank_addr = s

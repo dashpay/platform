@@ -1,5 +1,5 @@
 //! SH-026 — ADVERSARIAL: wrong/random anchor — backend MUST reject
-//! AnchorMismatch [INJECT] (Found-030 dynamic probe).
+//! InvalidAnchorError [INJECT].
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-026. Priority: P1. HIGH-if-fails.
 //!
 //! Attack: capture a VALID Type-17 unshield, overwrite
@@ -8,12 +8,13 @@
 //! then broadcast raw. Drive accepts only anchors it has recorded, so a
 //! wrong anchor must fail.
 //!
-//! Found-030 dynamic probe: whichever anchor the backend accepts resolves
-//! the doc ambiguity between `operations.rs:601-611` ("most recent
-//! checkpoint") and `file_store.rs:162-165` ("current tree state"). A
-//! wrong-anchor acceptance is a soundness break (RED).
+//! Only an unrecorded anchor is covered. Stale-but-recorded anchor behavior
+//! (Found-030) remains untested by this case.
 
 #![cfg(feature = "shielded")]
+
+// TODO(SH-026/Found-030): add a stale-but-recorded anchor arm and a valid proof
+// against a fabricated, unrecorded tree; neither seam exists today.
 
 use std::time::Duration;
 
@@ -110,22 +111,18 @@ async fn sh_026_anchor_mismatch() {
     )
     .expect("tamper anchor");
     let result = broadcast_raw(s.ctx.sdk(), &st).await;
-    // Gate on the anchor/proof rejection REASON, resolved past check_tx to
-    // consensus: a wrong anchor breaks the bound Orchard proof, so it surfaces
-    // as an anchor / proof / bundle-verification error. A transport drop must
-    // not read as "soundness preserved"; FAILS only if the backend committed it.
     assert_adv_rejected(
         s.ctx.sdk(),
         "SH-026",
         &result,
         &st,
         COMMIT_TIMEOUT,
-        &["anchor", "root", "proof", "bundle", "merkle"],
+        &[40900],
     )
     .await;
     tracing::info!(
         target: "platform_wallet::e2e::cases::sh_026",
-        "wrong anchor correctly rejected by backend (Found-030 probe: rejected as expected)"
+        "wrong anchor correctly rejected by backend"
     );
 
     let bank_addr = s

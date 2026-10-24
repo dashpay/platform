@@ -70,7 +70,7 @@ async fn sh_006_add_account_never_syncs() {
         .expect("pre-shield sync");
 
     // Bind ONLY account 0, then add account 1 post-bind.
-    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+    let mut handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
     s.test_wallet
@@ -78,6 +78,7 @@ async fn sh_006_add_account_never_syncs() {
         .shielded_add_account(&s.test_wallet.seed_bytes(), 1)
         .await
         .expect("shielded_add_account");
+    handle.accounts.push(1);
 
     // The per-wallet slot was updated — this part works.
     let indices = s
