@@ -38,7 +38,7 @@ use platform_value::Value;
 use regex::Regex;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -954,28 +954,31 @@ fn is_unique(items: &[JsonValue]) -> bool {
                 .all(|other| !equal_json(item, other))
         });
     }
-    // The hash only groups the elements; equality decides within a group
-    let mut hashed: Vec<(u64, &JsonValue)> = items
-        .iter()
-        .map(|item| {
-            let mut hasher = DefaultHasher::new();
-            hash_json(item, &mut hasher);
-            (hasher.finish(), item)
-        })
-        .collect();
-    hashed.sort_unstable_by_key(|(hash, _)| *hash);
-    hashed
-        .chunk_by(|left, right| left.0 == right.0)
-        .all(|group| {
-            group
-                .iter()
-                .enumerate()
-                .all(|(index, (_, item))| group[index + 1..].iter().all(|(_, other)| item != other))
-        })
+    // The first repeat ends the check; equality, not the hash, decides what repeats
+    let mut seen = HashSet::with_capacity(items.len());
+    items.iter().all(|item| seen.insert(UniqueElement(item)))
 }
 
+/// An element of a list `uniqueItems` checks beyond [`UNIQUE_ITEMS_PAIRWISE_LIMIT`]: equal to
+/// another as JSON values are, hashed as [`hash_json`] hashes it.
+struct UniqueElement<'a>(&'a JsonValue);
+
+impl Hash for UniqueElement<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_json(self.0, state);
+    }
+}
+
+impl PartialEq for UniqueElement<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for UniqueElement<'_> {}
+
 /// Hashes `value` so that two values equal as JSON values hash alike.
-fn hash_json(value: &JsonValue, state: &mut DefaultHasher) {
+fn hash_json<H: Hasher>(value: &JsonValue, state: &mut H) {
     match value {
         JsonValue::Null => state.write_u8(0),
         JsonValue::Bool(value) => {
