@@ -220,7 +220,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0xbbfL, handler.persistenceCapabilitiesBits())
+        assertEquals(0x4bbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -234,6 +234,11 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.DPNS_NAME_STATES))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.TRACKED_ASSET_LOCKS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_CHAIN_TRUNCATION))
+        assertEquals(
+            NativePersistenceBridge.CAPABILITY_CORE_CHAIN_TRUNCATION,
+            PlatformWalletPersistenceCapabilities.CORE_CHAIN_TRUNCATION,
+        )
     }
 
     @Test
@@ -6142,6 +6147,274 @@ class PlatformWalletPersistenceHandlerTest {
             listOf("Alice"),
             db.dpnsNameDao().getAllByIdentity(identityId).map { it.label },
         )
+    }
+
+    // ── Chain truncations ─────────────────────────────────────────────
+
+    /**
+     * The truncation slot as the JNI trampoline packs it: each list as one
+     * flat array plus its count.
+     */
+    private fun truncate(
+        h: PlatformWalletPersistenceHandler,
+        height: Int,
+        removed: List<ByteArray> = emptyList(),
+        unconfirmed: List<ByteArray> = emptyList(),
+        restored: List<ByteArray> = emptyList(),
+        wallet: ByteArray = walletId,
+    ): Int = h.onWalletChangesetChainTruncated(
+        wallet,
+        height,
+        removed.fold(ByteArray(0)) { acc, txid -> acc + txid },
+        removed.size,
+        unconfirmed.fold(ByteArray(0)) { acc, txid -> acc + txid },
+        unconfirmed.size,
+        restored.fold(ByteArray(0)) { acc, outpoint -> acc + outpoint },
+        restored.size,
+    )
+
+    /**
+     * Stage [txid] mined at [height], spending [inputs] and paying output 0
+     * back to the wallet's address. The caller brackets the round.
+     */
+    private fun stageMinedSpend(txid: ByteArray, height: Int, blockHash: ByteArray, vararg inputs: ByteArray) {
+        recordTransaction(
+            handler,
+            walletId, txid, ByteArray(10) { 5 }, 2, height, blockHash,
+            1_700_000_100, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            inputs.fold(ByteArray(0)) { acc, op -> acc + op }, inputs.size,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, txid, 0, 50_000, "yUtxoAddr", ByteArray(25) { 6 },
+            height, false, true, false, false,
+        )
+    }
+
+    /**
+     * A funded coin at height 100 and a spend of it mined at 101 that pays
+     * change back, with the wallet synced to 101. Returns the coin's and
+     * the change's outpoints.
+     */
+    private suspend fun seedSpendMinedAboveTheFork(spend: ByteArray): Pair<ByteArray, ByteArray> {
+        val coin = seedFundedCoin(ByteArray(32) { 0x50 })
+        handler.onChangesetBegin(walletId)
+        stageMinedSpend(spend, 101, ByteArray(32) { 8 }, coin)
+        handler.onChangesetEnd(walletId, success = true)
+        headerRound(handler, synced = 101)
+        assertTrue(db.txoDao().getByOutpoint(coin)!!.isSpent)
+        return coin to makeOutpoint(spend, 0)
+    }
+
+    @Test
+    fun shouldRemoveATransactionOfADroppedBlockAndRestoreTheCoinItSpent() = runTest {
+        val spend = ByteArray(32) { 0x51 }
+        val (coin, change) = seedSpendMinedAboveTheFork(spend)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, truncate(handler, height = 100, removed = listOf(spend), restored = listOf(coin)))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        assertNull(db.transactionDao().getByTxid(spend))
+        assertNull("the removed transaction's own output is gone", db.txoDao().getByOutpoint(change))
+        val restored = db.txoDao().getByOutpoint(coin)!!
+        assertFalse(restored.isSpent)
+        assertNull(restored.spendingTxid)
+        assertEquals(100, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+        val reloaded = newHandler().onLoadWalletList().single()
+        assertEquals("the restored coin is spendable after a restart", 1, reloaded.utxos.size)
+        assertEquals(100, reloaded.syncedHeight)
+    }
+
+    @Test
+    fun shouldKeepAnInstantLockedTransactionUnconfirmedWhenItsBlockIsDropped() = runTest {
+        val spend = ByteArray(32) { 0x52 }
+        val (coin, change) = seedSpendMinedAboveTheFork(spend)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, truncate(handler, height = 100, unconfirmed = listOf(spend)))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        val kept = db.transactionDao().getByTxid(spend)!!
+        assertEquals("unconfirmed, and still InstantSend-locked", 1, kept.context)
+        assertEquals(0, kept.blockHeight)
+        assertNull(kept.blockHash)
+        val output = db.txoDao().getByOutpoint(change)!!
+        assertFalse(output.isConfirmed)
+        assertTrue(output.isInstantLocked)
+        assertEquals(0, output.height)
+        assertTrue("what it spent stays spent", db.txoDao().getByOutpoint(coin)!!.isSpent)
+        assertEquals(100, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+    }
+
+    @Test
+    fun shouldStoreATransactionOnceInItsNewBlockWhenTheSameRoundMinesItAgain() = runTest {
+        val spend = ByteArray(32) { 0x53 }
+        val (coin, change) = seedSpendMinedAboveTheFork(spend)
+        val newBlock = ByteArray(32) { 9 }
+
+        // Native order: the truncation first, then the round as the wallet
+        // holds it after the fork. Applied in that order the removal cannot
+        // take the rows the new block wrote.
+        handler.onChangesetBegin(walletId)
+        truncate(handler, height = 100, removed = listOf(spend), restored = listOf(coin))
+        stageMinedSpend(spend, 101, newBlock, coin)
+        handler.onWalletChangesetHeader(walletId, true, 101, false, 0, 0, 0, 0, ByteArray(0))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        val mined = db.transactionDao().getByTxid(spend)!!
+        assertEquals(101, mined.blockHeight)
+        assertTrue(newBlock.contentEquals(mined.blockHash))
+        assertNotNull(db.txoDao().getByOutpoint(change))
+        val spent = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("spent again, by the transaction in its new block", spent.isSpent)
+        assertTrue(spend.contentEquals(spent.spendingTxid))
+        assertEquals(101, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+    }
+
+    @Test
+    fun shouldLeaveASyncedHeightBelowTheForkAlone() = runTest {
+        seedFundedCoin(ByteArray(32) { 0x54 })
+        headerRound(handler, synced = 90)
+
+        handler.onChangesetBegin(walletId)
+        truncate(handler, height = 100)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertEquals(90, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+    }
+
+    @Test
+    fun shouldRollATruncationBackWithItsRound() = runTest {
+        val spend = ByteArray(32) { 0x55 }
+        val (coin, change) = seedSpendMinedAboveTheFork(spend)
+
+        handler.onChangesetBegin(walletId)
+        truncate(handler, height = 100, removed = listOf(spend), restored = listOf(coin))
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(db.transactionDao().getByTxid(spend))
+        assertNotNull(db.txoDao().getByOutpoint(change))
+        assertTrue(db.txoDao().getByOutpoint(coin)!!.isSpent)
+        assertEquals(101, db.walletDao().getByWalletId(walletId)!!.syncedHeight)
+    }
+
+    @Test
+    fun shouldFailTheRoundOnATruncationWhoseArraysDisagreeWithTheirCounts() = runTest {
+        seedFundedCoin(ByteArray(32) { 0x56 })
+
+        handler.onChangesetBegin(walletId)
+        val code = handler.onWalletChangesetChainTruncated(
+            walletId, 100, ByteArray(31), 1, ByteArray(0), 0, ByteArray(0), 0,
+        )
+
+        assertTrue("a packing drift must not be read as an empty truncation", code != 0)
+        handler.onChangesetEnd(walletId, success = false)
+    }
+
+    // A transaction two wallets share: one row, a coin for each.
+
+    private val sharingWalletA = ByteArray(32) { 0x61 }
+    private val sharingWalletB = ByteArray(32) { 0x62 }
+    private val sharedTxid = ByteArray(32) { 0x63 }
+
+    /** Stage [sharedTxid] mined at [height] with [wallet]'s own output [vout]. The caller brackets the round. */
+    private fun stageSharedOutput(wallet: ByteArray, vout: Int, address: String, height: Int, blockHash: ByteArray) {
+        recordTransaction(
+            handler,
+            wallet, sharedTxid, ByteArray(10) { 5 }, 2, height, blockHash,
+            1_700_000_100, 0, "Standard", 0, 50_000, 0, false, "", 1_700_000_050,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            wallet, sharedTxid, vout, 50_000, address, ByteArray(25) { 6 },
+            height, false, true, false, false,
+        )
+    }
+
+    /** Two wallets, and [sharedTxid] mined at 101 paying output 0 to A and output 1 to B. */
+    private suspend fun seedTransactionSharedByTwoWallets() {
+        seedWalletWithAddress(sharingWalletA, "yWalletA", xpubFill = 30)
+        seedWalletWithAddress(sharingWalletB, "yWalletB", xpubFill = 31)
+        for ((wallet, vout, address) in sharedOutputs) {
+            handler.onChangesetBegin(wallet)
+            stageSharedOutput(wallet, vout, address, 101, ByteArray(32) { 8 })
+            assertEquals(0, handler.onChangesetEnd(wallet, success = true))
+        }
+    }
+
+    private val sharedOutputs = listOf(Triple(sharingWalletA, 0, "yWalletA"), Triple(sharingWalletB, 1, "yWalletB"))
+
+    /**
+     * Each wallet's whole backlog in a round of its own, A's first: the
+     * truncation, then the transaction in its new block with that wallet's
+     * output.
+     */
+    private fun truncateAndMineAgainForEachWallet(removed: List<ByteArray>, unconfirmed: List<ByteArray>) {
+        for ((wallet, vout, address) in sharedOutputs) {
+            handler.onChangesetBegin(wallet)
+            assertEquals(0, truncate(handler, 100, removed, unconfirmed, wallet = wallet))
+            stageSharedOutput(wallet, vout, address, 102, ByteArray(32) { 9 })
+            assertEquals(0, handler.onChangesetEnd(wallet, success = true))
+        }
+    }
+
+    @Test
+    fun shouldKeepAnotherWalletsReMinedOutputWhenItsOwnTruncationArrivesLater() = runTest {
+        seedTransactionSharedByTwoWallets()
+
+        truncateAndMineAgainForEachWallet(removed = listOf(sharedTxid), unconfirmed = emptyList())
+
+        val first = db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 0))
+        assertNotNull("wallet A's coin went missing when wallet B's truncation arrived", first)
+        assertEquals("wallet A's coin lost its new block", 102, first!!.height)
+        val second = db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 1))
+        assertNotNull("wallet B's coin went missing", second)
+        assertEquals("wallet B's coin lost its new block", 102, second!!.height)
+        assertEquals(102, db.transactionDao().getByTxid(sharedTxid)!!.blockHeight)
+    }
+
+    @Test
+    fun shouldKeepAnotherWalletsReMinedOutputConfirmedWhenItsOwnTruncationKeepsTheTransaction() = runTest {
+        seedTransactionSharedByTwoWallets()
+
+        truncateAndMineAgainForEachWallet(removed = emptyList(), unconfirmed = listOf(sharedTxid))
+
+        val first = db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 0))
+        assertNotNull("wallet A's coin went missing", first)
+        assertTrue(
+            "wallet A's coin was returned to unconfirmed by wallet B's truncation",
+            first!!.isConfirmed,
+        )
+        assertEquals("wallet A's coin lost its new block", 102, first.height)
+        val second = db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 1))
+        assertNotNull("wallet B's coin went missing", second)
+        assertTrue("wallet B's coin stayed unconfirmed after its own round mined it", second!!.isConfirmed)
+        val row = db.transactionDao().getByTxid(sharedTxid)!!
+        assertEquals(2, row.context)
+        assertEquals(102, row.blockHeight)
+    }
+
+    @Test
+    fun shouldLeaveASharedTransactionWhileAnotherWalletStillHoldsACoinFromIt() = runTest {
+        seedTransactionSharedByTwoWallets()
+
+        handler.onChangesetBegin(sharingWalletA)
+        assertEquals(0, truncate(handler, 100, removed = listOf(sharedTxid), wallet = sharingWalletA))
+        assertEquals(0, handler.onChangesetEnd(sharingWalletA, success = true))
+
+        assertNull("the truncating wallet's own coin is gone", db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 0)))
+        assertNotNull(
+            "wallet B's coin went missing before its own truncation arrived",
+            db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 1)),
+        )
+        assertNotNull("the row stays while a wallet has a part in it", db.transactionDao().getByTxid(sharedTxid))
+
+        handler.onChangesetBegin(sharingWalletB)
+        assertEquals(0, truncate(handler, 100, removed = listOf(sharedTxid), wallet = sharingWalletB))
+        assertEquals(0, handler.onChangesetEnd(sharingWalletB, success = true))
+
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(sharedTxid, 1)))
+        assertNull("and goes once no wallet does", db.transactionDao().getByTxid(sharedTxid))
     }
 
     // ── Bounded tombstone lifetime ────────────────────────────────────

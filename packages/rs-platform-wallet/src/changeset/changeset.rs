@@ -19,7 +19,7 @@
 //! changeset's `core` slot — so every domain, core included, shares one
 //! merge / apply shape downstream consumers can rely on.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 use dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -32,6 +32,7 @@ use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
@@ -65,7 +66,11 @@ use crate::wallet::identity::{
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
 /// emitted by `WalletManager`. Every field is additive except
-/// [`Self::sweeps`]. The merge implementation coalesces the record vecs
+/// [`Self::sweeps`] and [`Self::truncations`]. A persister applies the
+/// truncations first, then the additive fields, then the sweeps; everything
+/// but the truncations describes the wallet after the last of them. The
+/// merge implementation keeps that true (see [`Self::truncations`]),
+/// coalesces the record vecs
 /// newest-wins (by txid for the wallet-level `records`, by
 /// `(txid, account)` for `account_records` — see
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
@@ -320,6 +325,62 @@ pub struct CoreChangeSet {
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+
+    /// Chain truncations this batch carries, in the order the wallet
+    /// emitted them — the other subtractive part of this type, and the only
+    /// one that lowers a height.
+    ///
+    /// A persister applies these BEFORE every other field, in order. The
+    /// rest of the changeset is therefore what the wallet recorded after the
+    /// last truncation: a transaction a truncation removed and a block of
+    /// the new branch mined again is deleted and then stored once, in its
+    /// new block, and a height recorded on the new branch is raised from the
+    /// lowered one.
+    ///
+    /// Merge keeps that reading true when a truncation arrives after content
+    /// this changeset already holds: that content is rewritten as the
+    /// truncation left it — removed transactions and their coins dropped,
+    /// kept ones demoted to unconfirmed, spends of restored coins dropped,
+    /// both heights capped at the fork — before the truncation is appended.
+    ///
+    /// One case is not exact. A sweep already in the changeset gets the
+    /// restored coins added to what it releases, but it still holds, for its
+    /// winner, an input funded by a transaction the truncation removes. When
+    /// winner and funding transaction were both in a dropped block, a store
+    /// applying the merged changeset keeps that coin spent if the funding
+    /// transaction is mined again and neither the winner nor any other
+    /// spender of it is. Applied as separate rounds the store follows the
+    /// wallet, which holds the coin again when the winner was a transaction
+    /// it had recorded; a winner it never recorded leaves the coin spent in
+    /// the wallet too, and the two agree. The error is on the safe side: the
+    /// coin is withheld, never handed out twice.
+    ///
+    /// `serde(default)` for the same backward-compatible reading as
+    /// [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub truncations: Vec<ChainTruncation>,
+}
+
+/// One `ChainTruncated` event: a fork replaced the chain above `height` and
+/// the wallet dropped what it recorded from the blocks above it.
+///
+/// A persister applies it before the rest of the changeset that carries it
+/// (see [`CoreChangeSet::truncations`]) and atomically with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ChainTruncation {
+    /// Height of the last block the fork keeps. Stored `synced_height` and
+    /// `last_processed_height` above it are lowered to it.
+    pub height: u32,
+    /// Transactions removed: recorded in blocks above `height` and not
+    /// InstantSend-locked. Their rows and every UTXO they created go.
+    pub txids: Vec<Txid>,
+    /// InstantSend-locked transactions recorded in blocks above `height`.
+    /// The network mines them again, so they are kept as unconfirmed: the
+    /// coins they spent stay spent and their outputs stay InstantSend-locked.
+    pub unconfirmed_txids: Vec<Txid>,
+    /// Coins the removed transactions spent, unspent again.
+    pub restored_outpoints: Vec<OutPoint>,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -680,8 +741,64 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
     }
 }
 
+impl CoreChangeSet {
+    /// Rewrite this changeset as `truncation` left the wallet, so that what
+    /// it holds can be applied after that truncation instead of before it —
+    /// see [`Self::truncations`].
+    fn rewind_to(&mut self, truncation: &ChainTruncation) {
+        let removed: HashSet<&Txid> = truncation.txids.iter().collect();
+        let demoted: HashSet<&Txid> = truncation.unconfirmed_txids.iter().collect();
+        let restored: HashSet<&OutPoint> = truncation.restored_outpoints.iter().collect();
+
+        for records in [&mut self.records, &mut self.account_records] {
+            records.retain(|record| !removed.contains(&record.txid));
+            for record in records.iter_mut() {
+                if demoted.contains(&record.txid) {
+                    record.update_context(TransactionContext::Mempool);
+                }
+            }
+        }
+        self.new_utxos
+            .retain(|coin| !removed.contains(&coin.outpoint.txid));
+        for coin in &mut self.new_utxos {
+            if demoted.contains(&coin.outpoint.txid) {
+                coin.is_confirmed = false;
+                coin.is_instantlocked = true;
+                coin.height = 0;
+            }
+        }
+        // A spend is undone when its coin is restored, and moot when the
+        // transaction that created the coin is gone.
+        let undone =
+            |outpoint: &OutPoint| restored.contains(outpoint) || removed.contains(&outpoint.txid);
+        self.spent_utxos.retain(|coin| !undone(&coin.outpoint));
+        self.utxo_credit_verdicts
+            .retain(|outpoint, _| !undone(outpoint));
+        self.instant_locks_for_non_final_records
+            .retain(|txid, _| !removed.contains(txid));
+        self.last_processed_height = self
+            .last_processed_height
+            .map(|height| height.min(truncation.height));
+        self.synced_height = self
+            .synced_height
+            .map(|height| height.min(truncation.height));
+        // Sweeps are applied last, so a coin an earlier sweep left with its
+        // winner would be written spent again after the truncation freed it.
+        for batch in &mut self.sweeps {
+            for outpoint in &truncation.restored_outpoints {
+                if !batch.released_outpoints.contains(outpoint) {
+                    batch.released_outpoints.push(*outpoint);
+                }
+            }
+        }
+    }
+}
+
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
+        for truncation in &other.truncations {
+            self.rewind_to(truncation);
+        }
         // A record arriving after a sweep that removed the same transaction
         // reinstates it, and every persister writes records before replaying
         // sweeps — so without this the sweep would delete a row the wallet
@@ -882,6 +999,7 @@ impl Merge for CoreChangeSet {
         // batch's decision to free it, and only replaying them in sequence
         // preserves that.
         self.sweeps.extend(other.sweeps);
+        self.truncations.extend(other.truncations);
 
         // Credit verdicts, part 2: newest wins per outpoint; the stale
         // entries of records the newer changeset re-projected were dropped
@@ -893,6 +1011,7 @@ impl Merge for CoreChangeSet {
         self.records.is_empty()
             && self.account_records.is_empty()
             && self.sweeps.is_empty()
+            && self.truncations.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -3908,5 +4027,260 @@ mod coalesce_account_records_tests {
             let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
             assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
         }
+    }
+}
+
+#[cfg(test)]
+mod chain_truncation_merge_tests {
+    //! A truncation folded into a changeset that already holds content must
+    //! leave what an in-order store would hold: persisters apply the
+    //! truncations first, so the merge has to undo, in the earlier content,
+    //! what each later truncation undid in the wallet.
+
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::{Address, BlockHash, TxOut};
+    use key_wallet::transaction_checking::BlockInfo;
+
+    /// Height of the last block every fork in these tests keeps.
+    const FORK: u32 = 100;
+
+    fn txid(byte: u8) -> Txid {
+        Txid::from_byte_array([byte; 32])
+    }
+
+    fn outpoint(byte: u8) -> OutPoint {
+        OutPoint {
+            txid: txid(byte),
+            vout: 0,
+        }
+    }
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(height, BlockHash::all_zeros(), 0))
+    }
+
+    fn record(txid_byte: u8, context: TransactionContext) -> TransactionRecord {
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            context,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        record.txid = txid(txid_byte);
+        record
+    }
+
+    /// A confirmed coin created by `txid_byte` in the block at `height`.
+    fn coin(txid_byte: u8, height: u32) -> Utxo {
+        let address = Address::dummy(Network::Testnet, 1);
+        let txout = TxOut {
+            value: 1_000,
+            script_pubkey: address.script_pubkey(),
+        };
+        let mut coin = Utxo::new(outpoint(txid_byte), txout, address, height, false);
+        coin.is_confirmed = true;
+        coin
+    }
+
+    /// What a block at `height` holding `txid_byte`, which spends
+    /// `spent_byte`'s coin, adds to a changeset.
+    fn block_with(txid_byte: u8, height: u32, spent_byte: u8) -> CoreChangeSet {
+        CoreChangeSet {
+            records: vec![record(txid_byte, in_block(height))],
+            account_records: vec![record(txid_byte, in_block(height))],
+            new_utxos: vec![coin(txid_byte, height)],
+            spent_utxos: vec![coin(spent_byte, FORK)],
+            last_processed_height: Some(height),
+            synced_height: Some(height),
+            ..CoreChangeSet::default()
+        }
+    }
+
+    fn truncation(
+        height: u32,
+        removed: &[u8],
+        unconfirmed: &[u8],
+        restored: &[u8],
+    ) -> CoreChangeSet {
+        CoreChangeSet {
+            truncations: vec![ChainTruncation {
+                height,
+                txids: removed.iter().copied().map(txid).collect(),
+                unconfirmed_txids: unconfirmed.iter().copied().map(txid).collect(),
+                restored_outpoints: restored.iter().copied().map(outpoint).collect(),
+            }],
+            ..CoreChangeSet::default()
+        }
+    }
+
+    fn spent(cs: &CoreChangeSet) -> Vec<OutPoint> {
+        cs.spent_utxos.iter().map(|coin| coin.outpoint).collect()
+    }
+
+    #[test]
+    fn should_report_a_changeset_carrying_only_a_truncation_as_not_empty() {
+        assert!(!truncation(FORK, &[1], &[], &[]).is_empty());
+    }
+
+    #[test]
+    fn should_drop_a_removed_transaction_recorded_before_its_truncation() {
+        let mut cs = block_with(1, FORK + 1, 9);
+        cs.utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Uncredited);
+
+        cs.merge(truncation(FORK, &[1], &[], &[9]));
+
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+        assert!(cs.new_utxos.is_empty(), "its coin never existed");
+        assert!(
+            cs.spent_utxos.is_empty(),
+            "the coin it spent is unspent again"
+        );
+        assert!(cs.utxo_credit_verdicts.is_empty());
+        assert_eq!(cs.truncations.len(), 1, "the store still has to be told");
+    }
+
+    #[test]
+    fn should_store_a_transaction_mined_again_once_in_its_new_block() {
+        let mut cs = block_with(1, FORK + 2, 9);
+        cs.merge(truncation(FORK, &[1], &[], &[9]));
+        cs.merge(block_with(1, FORK + 1, 9));
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].height(), Some(FORK + 1));
+        assert_eq!(cs.account_records.len(), 1);
+        assert_eq!(cs.new_utxos.len(), 1);
+        assert_eq!(cs.new_utxos[0].height, FORK + 1);
+        assert_eq!(spent(&cs), [outpoint(9)], "spent once, by the new block");
+        assert_eq!(
+            cs.truncations[0].txids,
+            [txid(1)],
+            "the old row is deleted before the new one is stored"
+        );
+    }
+
+    #[test]
+    fn should_not_let_a_height_from_before_a_truncation_outlive_it() {
+        let heights = |synced, processed| CoreChangeSet {
+            synced_height: Some(synced),
+            last_processed_height: Some(processed),
+            ..CoreChangeSet::default()
+        };
+
+        let mut cs = heights(FORK + 5, FORK + 6);
+        cs.merge(truncation(FORK, &[], &[], &[]));
+        assert_eq!(cs.synced_height, Some(FORK));
+        assert_eq!(cs.last_processed_height, Some(FORK));
+
+        cs.merge(heights(FORK + 2, FORK + 1));
+        assert_eq!(cs.synced_height, Some(FORK + 2));
+        assert_eq!(cs.last_processed_height, Some(FORK + 1));
+    }
+
+    #[test]
+    fn should_not_invent_a_height_for_a_changeset_that_carried_none() {
+        let mut cs = CoreChangeSet::default();
+        cs.merge(truncation(FORK, &[], &[], &[]));
+
+        assert_eq!(cs.synced_height, None);
+        assert_eq!(cs.last_processed_height, None);
+    }
+
+    #[test]
+    fn should_demote_a_kept_transaction_recorded_before_its_truncation() {
+        let mut cs = block_with(2, FORK + 1, 9);
+        cs.merge(truncation(FORK, &[], &[2], &[]));
+
+        assert!(matches!(cs.records[0].context, TransactionContext::Mempool));
+        assert!(matches!(
+            cs.account_records[0].context,
+            TransactionContext::Mempool
+        ));
+        let coin = &cs.new_utxos[0];
+        assert_eq!(
+            (coin.is_confirmed, coin.is_instantlocked, coin.height),
+            (false, true, 0)
+        );
+        assert_eq!(spent(&cs), [outpoint(9)], "what it spent stays spent");
+
+        cs.merge(block_with(2, FORK + 1, 9));
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].height(), Some(FORK + 1), "mined again");
+    }
+
+    #[test]
+    fn should_apply_two_truncations_in_the_order_they_happened() {
+        let mut cs = block_with(1, FORK + 3, 8);
+        cs.merge(truncation(FORK + 1, &[1], &[], &[8]));
+        cs.merge(block_with(2, FORK + 2, 9));
+        cs.merge(truncation(FORK, &[2], &[], &[9]));
+        cs.merge(CoreChangeSet {
+            synced_height: Some(FORK + 1),
+            ..CoreChangeSet::default()
+        });
+
+        assert!(cs.records.is_empty());
+        assert!(cs.new_utxos.is_empty());
+        assert!(cs.spent_utxos.is_empty());
+        let heights: Vec<u32> = cs.truncations.iter().map(|t| t.height).collect();
+        assert_eq!(heights, [FORK + 1, FORK]);
+        assert_eq!(cs.synced_height, Some(FORK + 1));
+        assert_eq!(cs.last_processed_height, Some(FORK));
+    }
+
+    #[test]
+    fn should_release_a_restored_coin_from_a_sweep_recorded_before_the_truncation() {
+        let mut cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![txid(5)],
+                superseded_by: txid(6),
+                winner_mined_height: Some(FORK + 1),
+                released_outpoints: vec![outpoint(7)],
+            }],
+            ..CoreChangeSet::default()
+        };
+
+        cs.merge(truncation(FORK, &[6], &[], &[7, 9]));
+
+        assert_eq!(
+            cs.sweeps[0].released_outpoints,
+            [outpoint(7), outpoint(9)],
+            "the removed winner no longer holds the coin, and nothing is listed twice"
+        );
+        assert_eq!(cs.sweeps[0].txids, [txid(5)], "the loser stays removed");
+    }
+
+    #[test]
+    fn should_keep_what_a_truncation_does_not_name() {
+        let mut cs = block_with(3, FORK, 9);
+        cs.records.push(record(4, TransactionContext::Mempool));
+        cs.instant_locks_for_non_final_records
+            .insert(txid(4), InstantLock::default());
+
+        cs.merge(truncation(FORK, &[1], &[2], &[8]));
+
+        assert_eq!(cs.records.len(), 2);
+        assert_eq!(cs.records[0].height(), Some(FORK));
+        assert_eq!(cs.new_utxos.len(), 1);
+        assert!(cs.new_utxos[0].is_confirmed);
+        assert_eq!(spent(&cs), [outpoint(9)]);
+        assert_eq!(cs.instant_locks_for_non_final_records.len(), 1);
+        assert_eq!(cs.synced_height, Some(FORK));
     }
 }

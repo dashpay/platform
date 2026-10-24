@@ -63,8 +63,18 @@
   [rust-dashcore#1183](https://github.com/dashpay/rust-dashcore/pull/1183)
   runs the storage writer only between start and stop.
 - **platform-wallet:** a chain reorganization reported by key-wallet
-  (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
-  mirrored to persisted wallet state
+  (`WalletEvent::ChainTruncated`) now reaches persisted wallet state as
+  `CoreChangeSet::truncations`. The SQLite backend and the Swift and Kotlin
+  persistence handlers remove the transactions of the dropped blocks and their
+  coins, keep InstantSend-locked ones as unconfirmed, restore the coins the
+  removed ones spent and lower the stored sync heights to the fork, so a
+  restart after a reorg loads the same wallet as no restart. FFI hosts receive
+  truncations through the size-negotiated
+  `on_persist_wallet_changeset_truncations_fn` extension callback, Kotlin
+  bridges through `onWalletChangesetChainTruncated`. A persister attests
+  support with the new
+  `PersistenceCapabilities::CORE_CHAIN_TRUNCATION` bit; one that does not is
+  not handed the truncation and keeps the replaced branch until it rescans
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
 - **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
   wakes when the client starts or dash-spv reports a peer update, instead of

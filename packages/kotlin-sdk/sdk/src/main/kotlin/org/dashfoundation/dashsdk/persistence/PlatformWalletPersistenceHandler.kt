@@ -154,7 +154,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_WALLET_RESTORE or
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
-            CAPABILITY_CORE_SWEEP_REMOVAL
+            CAPABILITY_CORE_SWEEP_REMOVAL or
+            CAPABILITY_CORE_CHAIN_TRUNCATION
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -1280,6 +1281,85 @@ class PlatformWalletPersistenceHandler(
         val chainlockOverIsLock =
             newContext >= CONTEXT_CHAIN_LOCKED && existing.context == CONTEXT_INSTANT_SEND
         return !chainlockOverIsLock
+    }
+
+    // ── Chain truncations ─────────────────────────────────────────────
+
+    /** One chain truncation, unpacked from the JNI trampoline's flat arrays at the callback. */
+    private class ChainTruncation(
+        val height: Int,
+        val removedTxids: List<ByteArray>,
+        val unconfirmedTxids: List<ByteArray>,
+        val restoredOutpoints: List<ByteArray>,
+    )
+
+    /**
+     * Stage one chain truncation. Native fires this before the round's
+     * other core callbacks and the round replays its ops in order, so the
+     * truncation lands first and a transaction it removes can be stored
+     * again, in its new block, by the slices that follow. Outside a round
+     * it runs in its own transaction.
+     */
+    override fun onWalletChangesetChainTruncated(
+        walletId: ByteArray,
+        height: Int,
+        txids: ByteArray,
+        txidCount: Int,
+        unconfirmedTxids: ByteArray,
+        unconfirmedTxidCount: Int,
+        restoredOutpoints: ByteArray,
+        restoredOutpointCount: Int,
+    ): Int = guarded {
+        require(height >= 0) { "truncation height must not be negative" }
+        val truncation = ChainTruncation(
+            height = height,
+            removedTxids = unpackFixed(txids, txidCount, 32, "truncated txids"),
+            unconfirmedTxids = unpackFixed(unconfirmedTxids, unconfirmedTxidCount, 32, "unconfirmed txids"),
+            restoredOutpoints = unpackFixed(restoredOutpoints, restoredOutpointCount, 36, "restored outpoints"),
+        )
+        stage(walletId) { db -> applyChainTruncation(db, walletId, truncation) }
+        0
+    }
+
+    /**
+     * Cut the store back the way the wallet cut itself back when a fork
+     * replaced the chain above [ChainTruncation.height] — the Room mirror
+     * of the SQLite store's `apply_truncation`.
+     *
+     * Everything but the transaction row is this wallet's own. The row is
+     * shared across wallets and each wallet's round commits on its own, so
+     * another wallet may already have stored a removed transaction again,
+     * in its new block, by the time this truncation arrives: its coins are
+     * not this truncation's to take, and the row goes only once nothing
+     * references it. The row's block columns are the one thing wallets
+     * share; between two wallets' rounds they can show the branch the other
+     * wallet last wrote.
+     *
+     * A restored coin needs no veto from stored claims, unlike a sweep's
+     * release: its spender was confirmed, and no block the fork keeps can
+     * hold a second spend of it.
+     */
+    private suspend fun applyChainTruncation(db: DashDatabase, walletId: ByteArray, truncation: ChainTruncation) {
+        // Drop stale post-deletion callbacks (can't resurrect a wallet).
+        if (db.walletDao().getByWalletId(walletId) == null) return
+        // Removed: this wallet's coins, links, claims and involvement
+        // first, then the rows nothing references any more.
+        chunked(truncation.removedTxids) { db.txoDao().deleteWalletTxosByTxids(it, walletId) }
+        chunked(truncation.removedTxids) { db.txoDao().detachWalletSpenders(it, walletId) }
+        chunked(truncation.removedTxids) { db.documentDao().deleteWalletClaimsBySpenders(walletId, it) }
+        chunked(truncation.removedTxids) { db.transactionDao().deleteWalletInvolvements(it, walletId) }
+        chunked(truncation.removedTxids) { db.transactionDao().deleteUnreferencedByTxids(it) }
+        // Kept: InstantSend-locked, so mined again. Stored until then the
+        // way a locked transaction no block holds yet is; the coins they
+        // spent stay spent.
+        chunked(truncation.unconfirmedTxids) { db.transactionDao().unconfirmByTxids(it) }
+        chunked(truncation.unconfirmedTxids) { db.txoDao().unconfirmInstantLockedByTxids(it, walletId) }
+        // Restored: this wallet's coins the removed transactions spent.
+        chunked(truncation.restoredOutpoints) { db.txoDao().releaseByOutpoints(it, walletId) }
+        chunked(truncation.restoredOutpoints) {
+            db.documentDao().deleteWalletSweptTombstonesByOutpoints(walletId, it)
+        }
+        db.walletDao().lowerSyncedHeight(walletId, truncation.height, System.currentTimeMillis())
     }
 
     // ── Sweeps ────────────────────────────────────────────────────────
@@ -4120,6 +4200,8 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
             NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        internal const val CAPABILITY_CORE_CHAIN_TRUNCATION: Long =
+            NativePersistenceBridge.CAPABILITY_CORE_CHAIN_TRUNCATION
 
         private const val TAG = "DashPersistence"
 

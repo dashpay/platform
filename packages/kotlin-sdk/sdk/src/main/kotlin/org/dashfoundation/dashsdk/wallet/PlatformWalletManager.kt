@@ -77,6 +77,13 @@ data class PlatformWalletPersistenceCapabilities(
          * is deliberately absent: Android never attests it).
          */
         const val CORE_SWEEP_REMOVAL: Long = NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        /**
+         * A stored core changeset's chain truncations are durably applied
+         * before the rest of their round. Mirrors
+         * `PersistenceCapabilities::CORE_CHAIN_TRUNCATION`; aliased to the
+         * bridge's declaration like [CORE_SWEEP_REMOVAL].
+         */
+        const val CORE_CHAIN_TRUNCATION: Long = NativePersistenceBridge.CAPABILITY_CORE_CHAIN_TRUNCATION
     }
 }
 
