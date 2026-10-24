@@ -41,6 +41,8 @@ use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::OutPoint;
+#[cfg(test)]
+use dpp::prelude::AssetLockProof;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -49,8 +51,10 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use key_wallet_manager::{WalletId, WalletManager};
 use tokio::sync::RwLock;
 
-use crate::changeset::changeset::AssetLockChangeSet;
-use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+use crate::changeset::changeset::{AssetLockChangeSet, AssetLockEntry};
+use crate::wallet::asset_lock::tracked::{
+    AssetLockStatus, TrackedAssetLock, MAX_ASSET_LOCK_OPERATION_REVISION,
+};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Map a record's owning account to the asset-lock funding family it
@@ -232,6 +236,7 @@ fn reconstruct_candidates(
             let (status, proof) = recovered_status(record, out_point);
             Some(TrackedAssetLock {
                 operation_id: None,
+                operation_revision: 0,
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -304,7 +309,9 @@ fn enrich_from_record(
         let upgradable = entry.proof.is_none()
             && matches!(
                 entry.status,
-                AssetLockStatus::Broadcast | AssetLockStatus::InstantSendLocked
+                AssetLockStatus::Broadcast
+                    | AssetLockStatus::InstantSendLocked
+                    | AssetLockStatus::Conflicted
             );
         if !upgradable {
             continue;
@@ -315,11 +322,26 @@ fn enrich_from_record(
             prior_status = ?entry.status,
             "attaching chain proof to tracked asset lock from finalized scan record"
         );
+        let recovering_conflict = entry.status == AssetLockStatus::Conflicted;
+        let previous_revision = entry.operation_revision;
+        if recovering_conflict {
+            // Exhausted generations stay blocked; never wrap into an old epoch.
+            if entry.operation_revision >= MAX_ASSET_LOCK_OPERATION_REVISION {
+                tracing::error!(outpoint = %entry.out_point, "asset lock operation revision exhausted; retaining conflict");
+                continue;
+            }
+            let next = entry.operation_revision + 1;
+            entry.operation_revision = next;
+        }
         entry.status = AssetLockStatus::RecoveredFromChain;
         entry.proof = Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
             height, out_point,
         )));
-        cs.asset_locks.insert(out_point, (&*entry).into());
+        let mut snapshot = AssetLockEntry::from(&*entry);
+        if recovering_conflict {
+            snapshot.expected_operation_revision = Some(previous_revision);
+        }
+        cs.asset_locks.insert(out_point, snapshot);
     }
 }
 
@@ -359,35 +381,16 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
     cs
 }
 
-/// `TransactionsSwept` sibling of the hooks above: drop every tracked
-/// entry whose funding transaction the sweep just removed.
+/// Apply conflict cleanup to tracked funding transactions.
 ///
-/// A swept funding tx was provably beaten to one of its inputs, so it can
-/// never confirm and its credit outputs will never be usable — but nothing
-/// else ever cascades the removal into this table. Left alone, the entry
-/// is a zombie the resume path re-broadcasts and then waits on without
-/// bound, and the persisted mirror carries it forever. The changeset's
-/// `removed` set is the same deletion channel a rejected-at-broadcast
-/// `Built` row uses, and every store already applies it.
+/// Untagged locks retain ordinary removal/reconstruction behavior. UUID-bound
+/// locks keep their transaction and outpoint as non-actionable conflict evidence.
+/// A later authenticated chain return may reactivate that exact binding with a
+/// new revision; a mempool observation or stale snapshot cannot do so.
 ///
-/// Removal is safe against the one way the verdict can reverse: a
-/// chainlocked return re-emits the funding record through
-/// `TransactionDetected` / `BlockProcessed`, and reconstruction re-inserts
-/// the entry from it — the same path a restore scan uses.
-///
-/// The tracked map is inspected under the write lock (sweeps are rare and
-/// carry few txids, so there is no hot path to protect), and untouched
-/// wallets return an empty changeset without allocating.
-///
-/// Deliberately NO rejection undo, unlike the sweep's payment flips: if
-/// the round this changeset rides is rejected, the in-memory entry is
-/// gone while the mirror row survives — a session-local divergence only.
-/// The rejection faults the wallet, the frozen watermark already forces
-/// the restart, and `load()` there re-syncs from the mirror while the
-/// re-scan re-emits the sweep (rejected rounds keep the loser's record)
-/// and re-drops the entry — or re-inserts it through reconstruction if
-/// the funding tx turned out to live. An undo ledger would buy nothing
-/// that restart does not already guarantee.
+/// Live projection precedes the atomic event-round store. A rejected round faults
+/// the wallet and requires restart; operation status blocks uncommitted conflict
+/// and never uses it to report a durable outcome or authorize fresh funding.
 pub(crate) async fn remove_tracked_asset_locks_for_swept(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -416,11 +419,26 @@ pub(crate) async fn remove_tracked_asset_locks_for_swept(
         .copied()
         .collect();
     for out_point in dead {
-        info.tracked_asset_locks.remove(&out_point);
-        cs.removed.insert(out_point);
+        let Some(entry) = info.tracked_asset_locks.get_mut(&out_point) else {
+            continue;
+        };
+        if entry.status.is_consumed() || entry.status == AssetLockStatus::Conflicted {
+            continue;
+        }
+        if entry.operation_id.is_some() {
+            entry.status = AssetLockStatus::Conflicted;
+            entry.proof = None;
+            let mut snapshot = AssetLockEntry::from(&*entry);
+            snapshot.advance_operation_revision();
+            entry.operation_revision = snapshot.operation_revision;
+            cs.asset_locks.insert(out_point, snapshot);
+        } else {
+            info.tracked_asset_locks.remove(&out_point);
+            cs.removed.insert(out_point);
+        }
         tracing::info!(
             outpoint = %out_point,
-            "dropped tracked asset lock — its funding transaction was swept"
+            "applied asset lock funding conflict"
         );
     }
     cs
@@ -516,7 +534,9 @@ pub(crate) async fn enrich_tracked_asset_locks_from_chain_lock(
         let upgradable = entry.proof.is_none()
             && matches!(
                 entry.status,
-                AssetLockStatus::Broadcast | AssetLockStatus::InstantSendLocked
+                AssetLockStatus::Broadcast
+                    | AssetLockStatus::InstantSendLocked
+                    | AssetLockStatus::Conflicted
             );
         if !upgradable {
             continue;
@@ -527,12 +547,27 @@ pub(crate) async fn enrich_tracked_asset_locks_from_chain_lock(
             prior_status = ?entry.status,
             "attaching chain proof to tracked asset lock from chainlock promotion"
         );
+        let recovering_conflict = entry.status == AssetLockStatus::Conflicted;
+        let previous_revision = entry.operation_revision;
+        if recovering_conflict {
+            // Exhausted generations stay blocked; never wrap into an old epoch.
+            if entry.operation_revision >= MAX_ASSET_LOCK_OPERATION_REVISION {
+                tracing::error!(outpoint = %entry.out_point, "asset lock operation revision exhausted; retaining conflict");
+                continue;
+            }
+            let next = entry.operation_revision + 1;
+            entry.operation_revision = next;
+        }
         entry.status = AssetLockStatus::RecoveredFromChain;
         entry.proof = Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
             chain_lock_height,
             *out_point,
         )));
-        cs.asset_locks.insert(*out_point, (&*entry).into());
+        let mut snapshot = AssetLockEntry::from(&*entry);
+        if recovering_conflict {
+            snapshot.expected_operation_revision = Some(previous_revision);
+        }
+        cs.asset_locks.insert(*out_point, snapshot);
     }
     cs
 }
@@ -766,6 +801,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -1002,6 +1038,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        operation_revision: 0,
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,
@@ -1268,5 +1305,118 @@ mod tests {
                 .status,
             AssetLockStatus::Consumed
         );
+    }
+    #[tokio::test]
+    async fn should_reactivate_only_the_bound_outpoint_after_authenticated_return() {
+        for from_record in [true, false] {
+            let (wallet_manager, wallet_id, tx) =
+                wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+            let outpoint = OutPoint::new(tx.txid(), 0);
+            let record = record_for(
+                &tx,
+                AccountType::IdentityRegistration,
+                TransactionContext::Mempool,
+            );
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await;
+            let original = {
+                let mut manager = wallet_manager.write().await;
+                let lock = manager
+                    .get_wallet_info_mut(&wallet_id)
+                    .unwrap()
+                    .tracked_asset_locks
+                    .get_mut(&outpoint)
+                    .unwrap();
+                lock.operation_id = Some([0x32; 16]);
+                AssetLockEntry::from(&*lock)
+            };
+            let mut folded =
+                remove_tracked_asset_locks_for_swept(&wallet_manager, &wallet_id, &[tx.txid()])
+                    .await;
+            let conflict = &folded.asset_locks[&outpoint];
+            assert_eq!(conflict.status, AssetLockStatus::Conflicted);
+            assert_eq!(conflict.operation_revision, 1);
+            assert_eq!(conflict.expected_operation_revision, Some(0));
+            assert!(folded.removed.is_empty());
+            let unconfirmed =
+                reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await;
+            assert!(
+                unconfirmed.asset_locks.is_empty(),
+                "mempool return cannot clear conflict"
+            );
+            let returned = if from_record {
+                let record = record_for(
+                    &tx,
+                    AccountType::IdentityRegistration,
+                    chainlocked_context(88),
+                );
+                reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await
+            } else {
+                enrich_tracked_asset_locks_from_chain_lock(
+                    &wallet_manager,
+                    &wallet_id,
+                    88,
+                    &BTreeMap::from([(AccountType::IdentityRegistration, vec![tx.txid()])]),
+                )
+                .await
+            };
+            assert_eq!(returned.asset_locks[&outpoint].operation_revision, 2);
+            assert_eq!(
+                returned.asset_locks[&outpoint].expected_operation_revision,
+                Some(1)
+            );
+            folded.merge(returned);
+            assert_eq!(
+                folded.asset_locks[&outpoint].expected_operation_revision,
+                Some(0)
+            );
+            assert!(folded.asset_locks[&outpoint].accepts_operation_snapshot(&original));
+            folded.merge(AssetLockChangeSet {
+                asset_locks: [(outpoint, original)].into_iter().collect(),
+                ..Default::default()
+            });
+            folded.merge(AssetLockChangeSet {
+                removed: [outpoint].into_iter().collect(),
+                ..Default::default()
+            });
+            let recovered = &folded.asset_locks[&outpoint];
+            assert_eq!(recovered.operation_id, Some([0x32; 16]));
+            assert_eq!(recovered.status, AssetLockStatus::RecoveredFromChain);
+            assert_eq!(
+                recovered.proof.as_ref().and_then(AssetLockProof::out_point),
+                Some(outpoint)
+            );
+            assert!(folded.removed.is_empty());
+            {
+                let mut manager = wallet_manager.write().await;
+                let lock = manager
+                    .get_wallet_info_mut(&wallet_id)
+                    .unwrap()
+                    .tracked_asset_locks
+                    .get_mut(&outpoint)
+                    .unwrap();
+                lock.status = AssetLockStatus::Conflicted;
+                lock.proof = None;
+                lock.operation_revision = MAX_ASSET_LOCK_OPERATION_REVISION;
+            }
+            let final_record = record_for(
+                &tx,
+                AccountType::IdentityRegistration,
+                chainlocked_context(89),
+            );
+            let exhausted =
+                reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&final_record])
+                    .await;
+            assert!(
+                exhausted.asset_locks.is_empty(),
+                "exhausted evidence cannot wrap and reactivate"
+            );
+            let manager = wallet_manager.read().await;
+            let lock = &manager
+                .get_wallet_info(&wallet_id)
+                .unwrap()
+                .tracked_asset_locks[&outpoint];
+            assert_eq!(lock.status, AssetLockStatus::Conflicted);
+            assert_eq!(lock.operation_revision, MAX_ASSET_LOCK_OPERATION_REVISION);
+        }
     }
 }

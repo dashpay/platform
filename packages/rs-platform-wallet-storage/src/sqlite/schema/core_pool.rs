@@ -16,12 +16,16 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, KeySource, PublicKeyType,
+};
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
+use crate::sqlite::rehydrate::MAX_REHYDRATION_DERIVATION_INDEX;
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
+use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
 
 /// Stored `pool_type` discriminant. Kept in the primary key so an External
 /// and an Internal pool never collide at the same `address_index`.
@@ -201,9 +205,10 @@ pub fn apply_pools(
     Ok(())
 }
 
-// TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
+///
+/// `reserved_at` is not part of the row: [`restore_pools`] restores it for
+/// every pool, this one included.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
 /// Load typed public-key rows for one account pool, ordered by address index.
@@ -483,6 +488,535 @@ pub fn load_used_addresses_with_ctx(
     Ok(out)
 }
 
+/// Public key material that re-derives `account_type`'s pool entries, if the
+/// watch-only `wallet` holds any.
+fn public_key_source(
+    wallet: &key_wallet::wallet::Wallet,
+    account_type: key_wallet::account::AccountType,
+) -> Option<KeySource> {
+    if let Some(account) = wallet.accounts.account_of_type(account_type) {
+        return Some(KeySource::Public(account.account_xpub));
+    }
+    wallet
+        .accounts
+        .bls_account_of_type(account_type)
+        .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
+}
+
+/// How many indices a stored pool may be missing below its highest row and
+/// still be derived all the way through.
+///
+/// Checking a row means deriving every index below it, and that work has to
+/// be bounded: one damaged `address_index` must not buy billions of
+/// derivations. Depth is not what marks a damaged index, though. The writer
+/// stores a pool row for row however far the wallet has really grown it, so
+/// a deep pool brings one row for every index it asks to have derived, and a
+/// wallet that issued twenty thousand funding keys is as healthy as one that
+/// issued twenty. What marks damage is sparseness: far more indices below a
+/// row than there are rows. The derivation budget is therefore the pool's
+/// own row count plus this allowance for indices no row covers — the same
+/// allowance the discovery walk gives an account, so a partial snapshot it
+/// could have resolved is restored here too.
+const UNSTORED_INDEX_ALLOWANCE: u32 = MAX_REHYDRATION_DERIVATION_INDEX;
+
+/// Derive `pool` from its account's public key towards `highest_stored`, so
+/// the stored rows meet entries this wallet derived itself.
+///
+/// At most `stored_rows` + [`UNSTORED_INDEX_ALLOWANCE`] indices are derived.
+/// A row left above that has no derived entry, and the overlay skips it.
+///
+/// Hardened pools are left as they are; see [`restore_pools`].
+fn derive_towards(
+    pool: &mut AddressPool,
+    key_source: Option<&KeySource>,
+    highest_stored: u32,
+    stored_rows: u32,
+) -> Result<(), WalletStorageError> {
+    if pool.pool_type == AddressPoolType::AbsentHardened {
+        return Ok(());
+    }
+    let derived = pool
+        .highest_generated
+        .map_or(0, |highest| highest.saturating_add(1));
+    if highest_stored < derived {
+        return Ok(());
+    }
+    // Without key material nothing is derived, and the overlay refuses the
+    // rows that are left without a derived entry.
+    let Some(key_source) = key_source else {
+        return Ok(());
+    };
+    let missing = highest_stored - derived + 1;
+    let budget = stored_rows.saturating_add(UNSTORED_INDEX_ALLOWANCE);
+    pool.generate_addresses(missing.min(budget), key_source, true)
+        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+    Ok(())
+}
+
+/// Labels of the accounts whose keys each fund one asset lock.
+///
+/// Such a key leaves the wallet — an invitation exports it — and never shows
+/// up as a coin, so the `used` flag or reservation on its pool row is the
+/// only record that it is gone. The set is the one the wallet snapshots after
+/// an asset-lock build (`asset_lock_account_pool_entries` in
+/// `rs-platform-wallet`'s `wallet/asset_lock/build.rs`), which this crate
+/// cannot name from there; `one_time_funding_labels_match_the_asset_lock_writer`
+/// holds the two together.
+const ONE_TIME_FUNDING_LABELS: [&str; 6] = [
+    "identity_registration",
+    "identity_topup",
+    "identity_topup_unbound",
+    "identity_invitation",
+    "asset_lock_address_topup",
+    "asset_lock_shielded_topup",
+];
+
+const ONE_TIME_ROW_UNMATCHED: &str = "one-time funding key row matches no restored account";
+const ONE_TIME_ROW_NOT_RESTORED: &str = "one-time funding key row could not be restored";
+
+/// Refuse a stored pool row.
+///
+/// The error says only what is wrong with the row, and under `Strict`
+/// nothing else records where the row sits, so its coordinates go to the log
+/// here. Neither its address nor its key is logged.
+fn refuse_pool_row(
+    wallet_id: &WalletId,
+    account_type: &dyn std::fmt::Debug,
+    pool_type: &dyn std::fmt::Debug,
+    address_index: Option<u32>,
+    reason: &'static str,
+) -> WalletStorageError {
+    tracing::error!(
+        wallet_id = %hex::encode(wallet_id),
+        account_type = ?account_type,
+        pool_type = ?pool_type,
+        address_index = ?address_index,
+        reason,
+        "core pool row refused; its wallet does not load"
+    );
+    WalletStorageError::blob_decode(reason)
+}
+
+/// Restore every persisted Core pool, including handed-out and pre-derived keys.
+///
+/// A restored entry is an address the wallet goes on to hand out, so a row is
+/// not taken on trust where it can be checked. Each pool is first derived,
+/// from the account's public key in `wallet`, through its highest stored
+/// index; a row then overlays an entry this wallet derived itself and must
+/// name the same address and key.
+///
+/// That derivation is budgeted by the pool's own row count (see
+/// [`UNSTORED_INDEX_ALLOWANCE`]), so a deep pool the wallet really grew
+/// restores in full, while an index with almost nothing stored below it
+/// cannot force unbounded work. A row above the budget is not restored: it
+/// is counted as [`LoadSite::PoolRowBeyondDerivationBudget`] under either
+/// policy and the wallet loads without it, the way the discovery walk defers
+/// an address it cannot reach.
+///
+/// One-time funding keys ([`ONE_TIME_FUNDING_LABELS`]) get no such leniency.
+/// A row of theirs that is used or reserved and that no pool restored here
+/// takes back — its coordinates match no account, it lies above the budget,
+/// or its script cannot be read — fails the wallet: loading without it would
+/// hand the same key out again. A row that is gone altogether leaves nothing
+/// to notice, and a wallet that rebuilds no account is not asked.
+///
+/// `AbsentHardened` pools are the exception. A hardened child cannot be
+/// derived from public key material, and a watch-only load holds nothing
+/// else, so their rows — the pre-derived platform-node keys — are trusted as
+/// stored, as [`restore_provider_platform_node_pool`] already trusts them.
+///
+/// [`restore_provider_platform_node_pool`]: crate::sqlite::rehydrate::restore_provider_platform_node_pool
+pub(crate) fn restore_pools(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    wallet: &key_wallet::wallet::Wallet,
+    wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    let accounts = wallet_info.accounts.all_accounts_mut();
+    // No account, no pool: there is nothing to restore into, and nothing a
+    // stored reservation could be handed out from, so the store is not asked.
+    if accounts.is_empty() {
+        return Ok(());
+    }
+    // Prepared once, and cached like every repeated-shape statement in this
+    // module: every account and pool below binds the same three shapes.
+    let mut stored_pool_types = conn.prepare_cached(
+        "SELECT DISTINCT pool_type FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
+    )?;
+    let mut highest_stored_index = conn.prepare_cached(
+        "SELECT MAX(address_index), COUNT(*) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+           AND pool_type = ?7",
+    )?;
+    let mut stored_rows = conn.prepare_cached(
+        "SELECT address_index, length(script), script, length(public_key), public_key, \
+         key_type, used, reserved_at FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+           AND pool_type = ?7 ORDER BY address_index",
+    )?;
+    let mut restored_reservations: i64 = 0;
+    // Coordinates of every one-time funding pool restored below.
+    let mut one_time_pools = std::collections::HashSet::new();
+    for mut account in accounts {
+        let account_type = account.managed_account_type().to_account_type();
+        let label = accounts::account_type_db_label(&account_type);
+        let one_time = ONE_TIME_FUNDING_LABELS.contains(&label);
+        let (user, friend) = accounts::account_dashpay_ids(&account_type);
+        let key_source = public_key_source(wallet, account_type);
+        let account_index = i64::from(accounts::account_index(&account_type));
+        let key_class = i64::from(accounts::account_key_class(&account_type));
+        // A row filed under a pool this account does not have is read by no
+        // pool below, so whatever it reserves would be dropped by a load that
+        // reports success.
+        let pool_types: Vec<i64> = account
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .map(|pool| pool_type_to_i64(pool.pool_type))
+            .collect();
+        let mut stored = stored_pool_types.query(params![
+            wallet_id.as_slice(),
+            label,
+            account_index,
+            key_class,
+            user.as_slice(),
+            friend.as_slice(),
+        ])?;
+        while let Some(row) = stored.next()? {
+            let stored_pool_type: i64 = row.get(0)?;
+            if !pool_types.contains(&stored_pool_type) {
+                return Err(refuse_pool_row(
+                    wallet_id,
+                    &account_type,
+                    &stored_pool_type,
+                    None,
+                    "core pool row names a pool its account does not have",
+                ));
+            }
+        }
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            let pool_rows = params![
+                wallet_id.as_slice(),
+                label,
+                account_index,
+                key_class,
+                user.as_slice(),
+                friend.as_slice(),
+                pool_type_to_i64(pool.pool_type)
+            ];
+            if one_time {
+                one_time_pools.insert((
+                    label.to_string(),
+                    account_index,
+                    key_class,
+                    user.to_vec(),
+                    friend.to_vec(),
+                    pool_type_to_i64(pool.pool_type),
+                ));
+            }
+            let (highest_stored, stored): (Option<i64>, i64) =
+                highest_stored_index.query_row(pool_rows, |row| Ok((row.get(0)?, row.get(1)?)))?;
+            if let Some(highest_stored) = highest_stored {
+                derive_towards(
+                    pool,
+                    key_source.as_ref(),
+                    i64_to_u32("core_address_pool.address_index", highest_stored)?,
+                    // Saturating: a larger count only widens the budget.
+                    u32::try_from(stored).unwrap_or(u32::MAX),
+                )?;
+            }
+            let mut beyond_budget = 0usize;
+            let mut rows = stored_rows.query(pool_rows)?;
+            while let Some(row) = rows.next()? {
+                let index = i64_to_u32("core_address_pool.address_index", row.get(0)?)?;
+                blob::check_size(row.get(1)?)?;
+                let script = dashcore::ScriptBuf::from_bytes(row.get(2)?);
+                let address = match dashcore::Address::from_script(&script, pool.network) {
+                    Ok(address) => address,
+                    Err(source) => {
+                        // No earlier reader accounts for a one-time funding key.
+                        if one_time
+                            && (row.get::<_, bool>(6)? || row.get::<_, Option<i64>>(7)?.is_some())
+                        {
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
+                                ONE_TIME_ROW_NOT_RESTORED,
+                            ));
+                        }
+                        // Earlier readers already account for used and typed platform rows.
+                        if row.get::<_, bool>(6)?
+                            || (account_type
+                                == key_wallet::account::AccountType::ProviderPlatformKeys
+                                && (row.get::<_, Option<i64>>(3)?.is_some()
+                                    || row.get::<_, Option<i64>>(5)?.is_some()))
+                        {
+                            continue;
+                        }
+                        ctx.tolerate_at(
+                            LoadSite::UndecodableAddressScript,
+                            SiteCoords {
+                                wallet_id: Some(*wallet_id),
+                                account_type: &account_type,
+                                affected: 1,
+                                detail: Some(&pool.pool_type),
+                            },
+                            WalletStorageError::from(source),
+                        )?;
+                        continue;
+                    }
+                };
+                let key_len: Option<i64> = row.get(3)?;
+                let key_type: Option<i64> = row.get(5)?;
+                let public_key = match (key_len, key_type) {
+                    (None, None) => None,
+                    (Some(len), Some(kind)) => {
+                        let expected_kind = match account_type {
+                            key_wallet::account::AccountType::ProviderOperatorKeys => KEY_TYPE_BLS,
+                            key_wallet::account::AccountType::ProviderPlatformKeys => {
+                                KEY_TYPE_EDDSA
+                            }
+                            _ => KEY_TYPE_ECDSA,
+                        };
+                        if kind != expected_kind {
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
+                                "core pool key type does not match its account",
+                            ));
+                        }
+                        let expected = match kind {
+                            KEY_TYPE_ECDSA => ECDSA_PUBLIC_KEY_LEN,
+                            KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
+                            KEY_TYPE_BLS => BLS_PUBLIC_KEY_LEN,
+                            _ => {
+                                return Err(refuse_pool_row(
+                                    wallet_id,
+                                    &account_type,
+                                    &pool.pool_type,
+                                    Some(index),
+                                    "core_address_pool.key_type is outside 0..=2",
+                                ))
+                            }
+                        };
+                        blob::check_fixed_width(
+                            len,
+                            expected,
+                            "core_address_pool.public_key has the wrong length for key_type",
+                        )?;
+                        let bytes = row.get(4)?;
+                        Some(match kind {
+                            KEY_TYPE_ECDSA => PublicKeyType::ECDSA(bytes),
+                            KEY_TYPE_EDDSA => PublicKeyType::EdDSA(bytes),
+                            _ => PublicKeyType::BLS(bytes),
+                        })
+                    }
+                    _ => {
+                        return Err(refuse_pool_row(
+                            wallet_id,
+                            &account_type,
+                            &pool.pool_type,
+                            Some(index),
+                            "core_address_pool.public_key and key_type nullability differ",
+                        ))
+                    }
+                };
+                let used: bool = row.get(6)?;
+                let reserved: Option<i64> = row.get(7)?;
+                let reserved = reserved
+                    .map(|at| i64_to_u64("core_address_pool.reserved_at", at))
+                    .transpose()?;
+                let child = if pool.pool_type == AddressPoolType::AbsentHardened {
+                    key_wallet::bip32::ChildNumber::from_hardened_idx(index)
+                } else {
+                    key_wallet::bip32::ChildNumber::from_normal_idx(index)
+                }
+                .map_err(|source| WalletStorageError::AccountRecordInvalid {
+                    e: key_wallet::error::Error::Bip32(source),
+                })?;
+                let mut path = pool.base_path.clone();
+                path.push(child);
+                let previous = pool.addresses.get(&index);
+                if previous.is_none() && pool.pool_type != AddressPoolType::AbsentHardened {
+                    // The pool was derived as far as its budget reaches, so a
+                    // row above its end is one the budget left out.
+                    if key_source.is_some() && pool.highest_generated.is_some_and(|end| index > end)
+                    {
+                        if one_time && (used || reserved.is_some()) {
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
+                                ONE_TIME_ROW_NOT_RESTORED,
+                            ));
+                        }
+                        beyond_budget += 1;
+                        continue;
+                    }
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
+                        "core pool row has no derived entry to be checked against",
+                    ));
+                }
+                if previous.is_some_and(|info| {
+                    info.address != address
+                        || public_key
+                            .as_ref()
+                            .zip(info.public_key.as_ref())
+                            .is_some_and(|(a, b)| a != b)
+                }) {
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
+                        "core pool row conflicts with its derived address or key",
+                    ));
+                }
+                if pool
+                    .address_index
+                    .get(&address)
+                    .is_some_and(|other| *other != index)
+                {
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
+                        "core pool address has multiple derivation indices",
+                    ));
+                }
+                let stored_reservation = !used && reserved.is_some();
+                // Chain-derived usage takes precedence over an older pool snapshot.
+                let used = used || previous.is_some_and(|info| info.is_used());
+                let state = if used {
+                    AddressState::Used
+                } else if let Some(at) = reserved {
+                    AddressState::Reserved { at }
+                } else {
+                    AddressState::Available
+                };
+                let info = key_wallet::AddressInfo {
+                    address,
+                    script_pubkey: script,
+                    public_key: public_key
+                        .or_else(|| previous.and_then(|info| info.public_key.clone())),
+                    index,
+                    path,
+                    state,
+                    tx_count: previous.map_or(0, |info| info.tx_count),
+                    total_received: previous.map_or(0, |info| info.total_received),
+                    total_sent: previous.map_or(0, |info| info.total_sent),
+                    balance: previous.map_or(0, |info| info.balance),
+                    label: previous.and_then(|info| info.label.clone()),
+                    metadata: previous.map_or_else(Default::default, |info| info.metadata.clone()),
+                };
+                if let Some(previous) = pool.addresses.remove(&index) {
+                    pool.address_index.remove(&previous.address);
+                    pool.script_pubkey_index.remove(&previous.script_pubkey);
+                }
+                pool.address_index.insert(info.address.clone(), index);
+                pool.script_pubkey_index
+                    .insert(info.script_pubkey.clone(), index);
+                pool.addresses.insert(index, info);
+                restored_reservations += i64::from(stored_reservation);
+                pool.highest_generated =
+                    Some(pool.highest_generated.map_or(index, |old| old.max(index)));
+                if used {
+                    pool.used_indices.insert(index);
+                    pool.highest_used = Some(
+                        pool.highest_used
+                            .map_or(index, |highest| highest.max(index)),
+                    );
+                }
+            }
+            if beyond_budget > 0 {
+                ctx.note_degraded(
+                    LoadSite::PoolRowBeyondDerivationBudget,
+                    SiteCoords {
+                        wallet_id: Some(*wallet_id),
+                        account_type: &account_type,
+                        affected: beyond_budget,
+                        detail: Some(&pool.pool_type),
+                    },
+                    "stored pool rows sit further above the rest of their pool than the \
+                     derivation budget reaches, so they cannot be checked and are not restored",
+                );
+            }
+        }
+    }
+    // Rows are read account by account, so a row whose coordinates match no
+    // pool restored above was read by nobody. For a one-time funding key that
+    // is used or reserved, loading on would hand the key out a second time.
+    let [l0, l1, l2, l3, l4, l5] = ONE_TIME_FUNDING_LABELS;
+    let mut one_time_rows = conn.prepare_cached(
+        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type IN (?2, ?3, ?4, ?5, ?6, ?7) \
+           AND (used = 1 OR reserved_at IS NOT NULL)",
+    )?;
+    let mut rows = one_time_rows.query(params![wallet_id.as_slice(), l0, l1, l2, l3, l4, l5])?;
+    while let Some(row) = rows.next()? {
+        let pool: (String, i64, i64, Vec<u8>, Vec<u8>, i64) = (
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            row.get(5)?,
+        );
+        if !one_time_pools.contains(&pool) {
+            // The identity ids of the row are left out of the log.
+            return Err(refuse_pool_row(
+                wallet_id,
+                &format_args!("{}[{}], key class {}", pool.0, pool.1, pool.2),
+                &pool.5,
+                u32::try_from(row.get::<_, i64>(6)?).ok(),
+                ONE_TIME_ROW_UNMATCHED,
+            ));
+        }
+    }
+    // A reservation of any other account can go unread the same way. Whether
+    // its row is damaged or belongs to an account this wallet no longer
+    // rebuilds cannot be told from the row, and handing its address out again
+    // costs privacy, not funds, so it is reported under either policy instead
+    // of failing the wallet.
+    let stored_reservations: i64 = conn
+        .prepare_cached(
+            "SELECT COUNT(*) FROM core_address_pool \
+             WHERE wallet_id = ?1 AND used = 0 AND reserved_at IS NOT NULL",
+        )?
+        .query_row(params![wallet_id.as_slice()], |row| row.get(0))?;
+    let unrestored = stored_reservations.saturating_sub(restored_reservations);
+    if unrestored > 0 {
+        ctx.note_degraded(
+            LoadSite::UnrestoredPoolReservation,
+            SiteCoords {
+                wallet_id: Some(*wallet_id),
+                account_type: &"wallet",
+                affected: usize::try_from(unrestored).unwrap_or(usize::MAX),
+                detail: None,
+            },
+            "stored address reservations were taken back by no pool this wallet restored, \
+             so those addresses can be handed out again",
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,6 +1228,267 @@ mod tests {
             })
             .unwrap();
         assert_eq!(rows, 0, "the guard must refuse before binding the row");
+    }
+
+    fn with_pool_of<R>(
+        info: &mut key_wallet::wallet::ManagedWalletInfo,
+        address: &dashcore::Address,
+        read: impl Fn(&mut AddressPool, u32) -> R,
+    ) -> R {
+        for mut account in info.accounts.all_accounts_mut() {
+            for pool in account.managed_account_type_mut().address_pools_mut() {
+                if let Some(index) = pool.address_index.get(address).copied() {
+                    return read(pool, index);
+                }
+            }
+        }
+        panic!("the address must belong to a pool");
+    }
+
+    /// A wallet whose BIP44 external pool is stored exactly as derived, and
+    /// the first receive address of that pool.
+    fn wallet_with_stored_external_pool(
+        conn: &mut rusqlite::Connection,
+    ) -> (
+        key_wallet::wallet::Wallet,
+        key_wallet::wallet::ManagedWalletInfo,
+        dashcore::Address,
+    ) {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::{ManagedWalletInfo, Wallet};
+
+        let wallet = Wallet::new_random(
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet.wallet_id.as_slice()],
+        )
+        .unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let stored = with_pool_of(&mut info, &address, |pool, _| AccountAddressPoolEntry {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            pool_type: pool.pool_type,
+            addresses: pool.addresses.values().cloned().collect(),
+        });
+        let tx = conn.transaction().unwrap();
+        apply_pools(&tx, &wallet.wallet_id, std::slice::from_ref(&stored)).unwrap();
+        tx.commit().unwrap();
+        (wallet, info, address)
+    }
+
+    /// `restore_pools` overlays a persisted row on the entry the load
+    /// projection already built, and a repaired wallet is rebuilt twice in
+    /// one load. The accounting that entry carries must come through
+    /// unchanged: neither reset by the overlay nor counted a second time.
+    #[test]
+    fn restore_pools_keeps_existing_address_accounting_exactly_once() {
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        with_pool_of(&mut info, &address, |pool, index| {
+            let entry = pool.addresses.get_mut(&index).unwrap();
+            entry.update_stats(700, 200);
+            entry.balance = 500;
+        });
+
+        let ctx = LoadCtx::strict();
+        for round in 1..=2 {
+            restore_pools(&conn, &wallet.wallet_id, &wallet, &mut info, &ctx).unwrap();
+            let accounting = with_pool_of(&mut info, &address, |pool, index| {
+                let entry = &pool.addresses[&index];
+                (
+                    entry.tx_count,
+                    entry.total_received,
+                    entry.total_sent,
+                    entry.balance,
+                )
+            });
+            assert_eq!(accounting, (1, 700, 200, 500), "restore round {round}");
+        }
+    }
+
+    /// Checking a stored row means deriving every index below it. An index
+    /// with almost nothing stored below it is left out instead: the pool is
+    /// derived as far as its budget reaches and no further, the row is
+    /// counted, and the rest of the pool is restored. The index used here
+    /// would take billions of derivations if the budget did not hold.
+    #[test]
+    fn restore_pools_skips_a_row_the_derivation_budget_cannot_reach() {
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        let derived_end = with_pool_of(&mut info, &address, |pool, _| pool.highest_generated)
+            .expect("the stored pool is derived");
+        let stored_rows: u32 = conn
+            .query_row("SELECT COUNT(*) FROM core_address_pool", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let unreachable = u32::try_from(i32::MAX).unwrap();
+        let moved = conn
+            .execute(
+                "UPDATE core_address_pool SET address_index = ?1 \
+                 WHERE address_index = (SELECT MAX(address_index) FROM core_address_pool)",
+                params![i64::from(unreachable)],
+            )
+            .unwrap();
+        assert_eq!(moved, 1);
+
+        let ctx = LoadCtx::strict();
+        restore_pools(&conn, &wallet.wallet_id, &wallet, &mut info, &ctx)
+            .expect("an unreachable row must not fail the wallet");
+        assert_eq!(
+            ctx.degradation()
+                .by_site
+                .get(&LoadSite::PoolRowBeyondDerivationBudget),
+            Some(&1),
+            "the row left out must be counted"
+        );
+        with_pool_of(&mut info, &address, |pool, index| {
+            assert!(
+                !pool.addresses.contains_key(&unreachable),
+                "a row that could not be checked must not be restored"
+            );
+            assert_eq!(pool.addresses[&index].address, address);
+            assert_eq!(
+                pool.highest_generated,
+                Some(derived_end + stored_rows + UNSTORED_INDEX_ALLOWANCE),
+                "nothing may be derived beyond the budget"
+            );
+        });
+    }
+
+    /// The typed error names what is wrong; the log has to name where, without
+    /// the address or the key.
+    #[test]
+    #[tracing_test::traced_test]
+    fn restore_pools_logs_where_a_refused_row_sits() {
+        const INDEX: u32 = 3;
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        let derived = with_pool_of(&mut info, &address, |pool, _| {
+            pool.addresses[&INDEX].address.clone()
+        });
+        let foreign = format!("76a914{}88ac", "42".repeat(20));
+        let rewritten = conn
+            .execute(
+                &format!(
+                    "UPDATE core_address_pool SET script = X'{foreign}' WHERE address_index = ?1"
+                ),
+                params![INDEX],
+            )
+            .unwrap();
+        assert_eq!(rewritten, 1);
+
+        let error = restore_pools(
+            &conn,
+            &wallet.wallet_id,
+            &wallet,
+            &mut info,
+            &LoadCtx::strict(),
+        )
+        .expect_err("a row that contradicts its derivation is refused");
+        assert!(
+            matches!(
+                error,
+                WalletStorageError::BlobDecode { reason }
+                    if reason == "core pool row conflicts with its derived address or key"
+            ),
+            "unexpected error: {error:?}"
+        );
+        for coordinate in [
+            hex::encode(wallet.wallet_id),
+            "BIP44Account".to_string(),
+            "pool_type=External".to_string(),
+            format!("address_index=Some({INDEX})"),
+            "core pool row conflicts with its derived address or key".to_string(),
+        ] {
+            assert!(
+                logs_contain(&coordinate),
+                "missing from the log: {coordinate}"
+            );
+        }
+        for withheld in [derived.to_string(), foreign, "42".repeat(20)] {
+            assert!(!logs_contain(&withheld), "must not be logged: {withheld}");
+        }
+    }
+
+    /// The asset-lock writer in `rs-platform-wallet` decides which accounts
+    /// hold one-time funding keys; that crate does not export its list, so
+    /// it is read from the source. A variant added there fails here until the
+    /// label list follows.
+    #[test]
+    fn one_time_funding_labels_match_the_asset_lock_writer() {
+        use key_wallet::account::AccountType;
+        use std::collections::BTreeSet;
+
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-platform-wallet/src/wallet/asset_lock/build.rs"
+        ))
+        .expect("the asset-lock writer's source");
+        let writer = source
+            .split_once("fn asset_lock_account_pool_entries")
+            .and_then(|(_, body)| body.split_once("matches!("))
+            .and_then(|(_, filter)| filter.split_once(".flat_map("))
+            .map(|(filter, _)| filter)
+            .expect("the writer's account filter");
+        let named_by_writer: BTreeSet<&str> = writer
+            .split("AccountType::")
+            .skip(1)
+            .map(|rest| {
+                rest.split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        let accounts = [
+            AccountType::IdentityRegistration,
+            AccountType::IdentityTopUp {
+                registration_index: 0,
+            },
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            AccountType::IdentityInvitation,
+            AccountType::AssetLockAddressTopUp,
+            AccountType::AssetLockShieldedAddressTopUp,
+        ];
+        let named_here: BTreeSet<String> = accounts
+            .iter()
+            .map(|account| format!("{account:?}"))
+            .map(|debug| {
+                debug
+                    .split([' ', '{'])
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            named_by_writer,
+            named_here.iter().map(String::as_str).collect(),
+            "the asset-lock writer snapshots a different set of accounts"
+        );
+        assert_eq!(
+            accounts
+                .iter()
+                .map(accounts::account_type_db_label)
+                .collect::<BTreeSet<_>>(),
+            ONE_TIME_FUNDING_LABELS.into_iter().collect(),
+        );
     }
 
     #[test]

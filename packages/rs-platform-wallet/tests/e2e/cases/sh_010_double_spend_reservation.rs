@@ -1,0 +1,209 @@
+//! SH-010 — Double-spend guard: two overlapping spends reserve disjoint
+//! notes (`reserve_unspent_notes`).
+//! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-010.
+//! Priority: P2.
+//!
+//! Shields two notes into account 0, then fires two concurrent unshields
+//! each coverable by one note. The single-write-lock select+reserve must
+//! hand them disjoint notes — no shared nullifier, no double-count. Both
+//! spends must succeed, both original nullifiers must end up spent, and the
+//! balance must drop by at least `2*amount` (fee-tolerant by design).
+//!
+//! Expected outcome: PASS — this is the contract `reserve_unspent_notes`
+//! exists to uphold; the canary for a reservation-race regression.
+//!
+//! Setup can fail with `AddressNonceMismatch` (Found-033): every shield
+//! re-fetches `AddressInfo` via `fetch_many`, but DAPI node state skew between
+//! that fetch and broadcast can leave the submitted nonce below or above
+//! the receiving node's expectation. There is no client nonce cache here.
+
+use std::time::Duration;
+
+use platform_wallet::wallet::shielded::{ShieldedStore, SubwalletId};
+
+use crate::framework::prelude::*;
+use crate::framework::shielded::{
+    bind_shielded, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    wait_for_unspent_notes,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+// `select_shield_inputs` claims greedily from the smallest-key address,
+// so BOTH sequential shields concentrate on one funded address before
+// moving on. Each shield reserves `FEE_RESERVE_CREDITS` (1e9,
+// `platform_wallet.rs`) on its input plus the ~1.63e8 protocol fee, so a
+// single address must survive both shields: `2 × (SHIELD_EACH + 1.63e8)
+// + 1e9`. Two addresses are funded (one per loop iteration); each carries
+// the full two-shield budget so whichever sorts smallest can absorb both.
+const FUNDING_CREDITS: u64 = 3_545_702_400;
+const SHIELD_EACH: u64 = 1_110_000_000;
+const UNSHIELD_EACH: u64 = 10_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
+async fn sh_010_double_spend_reservation() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,platform_wallet=debug".into()),
+        )
+        .with_test_writer()
+        .try_init();
+
+    let s = setup().await.expect("e2e setup failed");
+    let prover = shielded_prover();
+
+    // Two separate fundings → two shields → two distinct notes.
+    for _ in 0..2 {
+        let addr = s
+            .test_wallet
+            .next_unused_address()
+            .await
+            .expect("derive funding addr");
+        s.ctx
+            .bank()
+            .fund_address(&addr, FUNDING_CREDITS)
+            .await
+            .expect("bank.fund_address");
+        wait_for_address_balance_chain_confirmed_n(
+            s.ctx.sdk(),
+            &addr,
+            FUNDING_CREDITS,
+            CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+            STEP_TIMEOUT,
+        )
+        .await
+        .expect("funding never observed");
+        s.test_wallet
+            .sync_balances()
+            .await
+            .expect("pre-shield sync");
+    }
+
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind_shielded");
+    for _ in 0..2 {
+        s.test_wallet
+            .platform_wallet()
+            .shielded_shield_from_account(
+                &handle.coordinator,
+                0,
+                0,
+                SHIELD_EACH,
+                s.test_wallet.address_signer(),
+                prover,
+            )
+            .await
+            .expect("shield_from_account");
+    }
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_EACH * 2, STEP_TIMEOUT)
+        .await
+        .expect("shielded balance never reached 2 notes");
+
+    let before = handle
+        .balances(&s.test_wallet)
+        .await
+        .expect("pre-spend shielded_balances")
+        .get(&0)
+        .copied()
+        .unwrap_or(0);
+
+    let id = SubwalletId::new(s.test_wallet.id(), 0);
+    let original_notes = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_unspent_notes(id)
+        .expect("original notes");
+    assert_eq!(original_notes.len(), 2);
+    assert_ne!(original_notes[0].nullifier, original_notes[1].nullifier);
+
+    // Two destinations, two concurrent unshields.
+    let dst_a = s.test_wallet.next_unused_address().await.expect("dst_a");
+    let dst_b = s.test_wallet.next_unused_address().await.expect("dst_b");
+    let dst_a_b32 = dst_a.to_bech32m_string(s.ctx.bank().network());
+    let dst_b_b32 = dst_b.to_bech32m_string(s.ctx.bank().network());
+    let pw = s.test_wallet.platform_wallet();
+    let seed = s.test_wallet.seed_bytes();
+
+    let (ra, rb) = tokio::join!(
+        pw.shielded_unshield_to(
+            &handle.coordinator,
+            &seed,
+            0,
+            &dst_a_b32,
+            UNSHIELD_EACH,
+            prover,
+        ),
+        pw.shielded_unshield_to(
+            &handle.coordinator,
+            &seed,
+            0,
+            &dst_b_b32,
+            UNSHIELD_EACH,
+            prover,
+        ),
+    );
+
+    assert!(
+        ra.is_ok() && rb.is_ok(),
+        "both independently funded spends must succeed; ra={ra:?}, rb={rb:?}"
+    );
+    for dst in [&dst_a, &dst_b] {
+        wait_for_address_balance_chain_confirmed_n(
+            s.ctx.sdk(),
+            dst,
+            UNSHIELD_EACH,
+            CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+            STEP_TIMEOUT,
+        )
+        .await
+        .expect("each unshield must credit its destination");
+    }
+
+    // Both originals were finalized as spent on broadcast, so the unspent set
+    // becomes exactly the two change notes once both are scanned. Reading a
+    // partially scanned set would only loosen the drop bound below.
+    let after = wait_for_unspent_notes(&s.test_wallet, &handle, 0, STEP_TIMEOUT, |notes| {
+        let fresh = notes.iter().all(|note| {
+            original_notes
+                .iter()
+                .all(|original| original.nullifier != note.nullifier)
+        });
+        (notes.len() == 2 && fresh).then(|| notes.iter().map(|note| note.value).sum::<u64>())
+    })
+    .await
+    .expect("both change notes scanned");
+    let all = handle
+        .coordinator
+        .store()
+        .read()
+        .await
+        .get_all_notes(id)
+        .expect("spent notes");
+    for original in &original_notes {
+        assert!(
+            all.iter()
+                .any(|note| note.nullifier == original.nullifier && note.is_spent),
+            "each original note must be spent: concurrent selection must be disjoint"
+        );
+    }
+    let dropped = before.saturating_sub(after);
+    assert!(
+        dropped >= 2 * UNSHIELD_EACH,
+        "shielded balance must drop by at least {UNSHIELD_EACH} per spend \
+         (disjoint notes, no double-count); before={before} after={after}"
+    );
+
+    let bank_addr = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank_addr).await;
+    s.teardown().await.expect("teardown");
+}

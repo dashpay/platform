@@ -69,6 +69,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
     (
         TrackedAssetLock {
             operation_id: Some(OPERATION_ID),
+            operation_revision: 0,
             out_point,
             transaction,
             account_index: 0,
@@ -139,6 +140,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                     *out_point,
                     TrackedAssetLock {
                         operation_id: row.operation_id,
+                        operation_revision: row.operation_revision,
                         out_point: *out_point,
                         transaction: row.transaction.clone(),
                         account_index: row.account_index,
@@ -791,4 +793,108 @@ async fn status_reads_durable_state_without_network_or_guards() {
             .state,
         AssetLockOperationState::Completed
     );
+}
+
+#[tokio::test]
+async fn should_prefer_durable_conflict_over_stale_live_lock_and_operation_context() {
+    let (lock, keys) = drain_lock_fixture();
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+    let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
+    let _registration = wallet
+        .asset_locks
+        .register_wallet_drain_operation(operation.clone());
+    operation.set(AssetLockOperationState::Pending, Some(lock.out_point));
+    {
+        let mut manager = wallet.wallet_manager.write().await;
+        let live = manager
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .tracked_asset_locks
+            .get_mut(&lock.out_point)
+            .unwrap();
+        live.status = AssetLockStatus::Conflicted;
+        live.operation_revision = 1;
+    }
+    assert!(matches!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await,
+        Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+    ));
+    wallet
+        .wallet_manager
+        .write()
+        .await
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .tracked_asset_locks
+        .insert(lock.out_point, lock.clone());
+    let mut conflict = AssetLockEntry::from(&lock);
+    conflict.status = AssetLockStatus::Conflicted;
+    conflict.proof = None;
+    conflict.advance_operation_revision();
+    persistence
+        .committed
+        .lock()
+        .unwrap()
+        .insert(lock.out_point, conflict.clone());
+    let status = wallet
+        .shielded_wallet_drain_operation_status(OPERATION_ID)
+        .await
+        .unwrap();
+    assert_eq!(status.state, AssetLockOperationState::Conflicted);
+    assert_eq!(status.out_point, Some(lock.out_point));
+    assert!(
+        matches!(wallet.asset_locks.begin_wallet_drain(&operation).await,
+        Err(PlatformWalletError::AssetLockConflicted(outpoint)) if outpoint == lock.out_point)
+    );
+    assert!(
+        matches!(wallet.asset_locks.complete_wallet_drain(lock.out_point, OPERATION_ID).await,
+        Err(PlatformWalletError::AssetLockConflicted(outpoint)) if outpoint == lock.out_point)
+    );
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(live_status(&wallet, &lock.out_point).await, lock.status);
+
+    // A stale context for a settled conflict must not block unrelated UUIDs.
+    operation.set(AssetLockOperationState::Pending, Some(lock.out_point));
+    {
+        let other = Arc::new(AssetLockOperationContext::new([0x74; 16]));
+        let _other_registration = wallet
+            .asset_locks
+            .register_wallet_drain_operation(other.clone());
+        assert_eq!(
+            wallet.asset_locks.begin_wallet_drain(&other).await.unwrap(),
+            None
+        );
+    }
+
+    // Only a newer, durably authenticated return re-enables this same outpoint.
+    let mut returned = AssetLockEntry::from(&lock);
+    returned.operation_revision = 2;
+    returned.expected_operation_revision = Some(1);
+    persistence
+        .committed
+        .lock()
+        .unwrap()
+        .insert(lock.out_point, returned);
+    assert_eq!(
+        wallet
+            .asset_locks
+            .begin_wallet_drain(&operation)
+            .await
+            .unwrap(),
+        Some(lock.out_point)
+    );
+    let live = wallet.asset_locks.list_tracked_locks().await;
+    assert_eq!(live.len(), 1);
+    assert_eq!(live[0].operation_revision, 2);
+    assert_eq!(live[0].operation_id, Some(OPERATION_ID));
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    persistence.committed.lock().unwrap().clear();
+    assert!(matches!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await,
+        Err(PlatformWalletError::Persistence(_))
+    ));
 }

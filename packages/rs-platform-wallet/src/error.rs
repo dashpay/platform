@@ -443,6 +443,11 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
+    /// Funding lost a Core input conflict. The operation stays bound to this
+    /// outpoint until authenticated finality restores it.
+    #[error("Asset lock funding conflicted: {0}")]
+    AssetLockConflicted(dashcore::OutPoint),
+
     /// A tracked outpoint belongs to another funding family or identity
     /// index. Resuming it for the requested destination would spend the
     /// one-shot output on the wrong operation.
@@ -1012,6 +1017,18 @@ pub enum PlatformWalletError {
 
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
+
+    /// The local tree exceeds the maximum proven count from a sync containing
+    /// a response at least as fresh as the tree's recorded height bound.
+    /// Stale responses and unknown tree provenance cannot trigger this error.
+    /// No automatic repair is performed.
+    #[error("Shielded commitment tree has {local_leaf_count} leaves, but a sufficiently fresh sync reports only {chain_leaf_count}; explicitly rebuild the shielded tree and resync")]
+    ShieldedTreeInconsistent {
+        /// Number of leaves in the local tree after consuming the stream.
+        local_leaf_count: u64,
+        /// Largest commitment count reported by the stream's proofs.
+        chain_leaf_count: u64,
+    },
 
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),

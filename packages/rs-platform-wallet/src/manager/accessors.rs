@@ -973,6 +973,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::Consumed => 4,
                     AssetLockStatus::DrainCompleted => 6,
                     AssetLockStatus::RecoveredFromChain => 5,
+                    AssetLockStatus::Conflicted => 7,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {
                     Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),

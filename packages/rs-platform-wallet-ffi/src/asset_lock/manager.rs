@@ -26,7 +26,8 @@ pub struct TrackedAssetLockFFI {
     /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
     /// 4=Consumed, 5=RecoveredFromChain — Core finality proven by restore
     /// reconstruction or live reconciliation, Platform-side consumption unknown;
-    /// 6=DrainCompleted — proven drain consumption and owned output recorded durably).
+    /// 6=DrainCompleted — proven drain consumption and owned output recorded durably,
+    /// 7=Conflicted — funding conflict, not finality or consumption).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,
@@ -82,7 +83,8 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                         AssetLockStatus::ChainLocked => 3,
                         AssetLockStatus::Consumed => 4,
                         AssetLockStatus::RecoveredFromChain => 5,
-        AssetLockStatus::DrainCompleted => 6,
+                        AssetLockStatus::DrainCompleted => 6,
+                        AssetLockStatus::Conflicted => 7,
                     },
                     has_proof: lock.proof.is_some(),
                 }

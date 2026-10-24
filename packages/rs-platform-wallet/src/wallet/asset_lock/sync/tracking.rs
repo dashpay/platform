@@ -327,7 +327,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// marker is stored and flushed synchronously. A failure rolls back the
     /// in-memory mutation only when the backend has not committed the store and
     /// did not retain a transient retry buffer. Before mutating, the backend
-    /// must attest atomic tracked-asset-lock persistence and restart restore.
+    /// must attest atomic tracked-asset-lock persistence.
     pub(crate) async fn mark_asset_lock_consumption_unknown(
         &self,
         out_point: &OutPoint,
@@ -455,6 +455,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(*out_point));
+        }
         if entry.status.is_consumed() {
             tracing::warn!(
                 outpoint = %out_point,
@@ -525,6 +528,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Conflicted {
+            return Err(PlatformWalletError::AssetLockConflicted(*out_point));
+        }
         if entry.status.is_consumed() {
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
         }

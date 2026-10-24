@@ -361,7 +361,9 @@ impl PlatformWalletInfo {
         if let Some(al_cs) = asset_locks {
             for (out_point, mut entry) in al_cs.asset_locks {
                 if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
-                    if !entry.preserve_recovery_metadata(existing.operation_id) {
+                    if !entry.preserve_recovery_metadata(existing.operation_id)
+                        || !entry.follows_operation(existing.operation_revision, &existing.status)
+                    {
                         continue;
                     }
                     if existing.status == AssetLockStatus::DrainCompleted
@@ -375,6 +377,7 @@ impl PlatformWalletInfo {
                     out_point,
                     TrackedAssetLock {
                         operation_id: entry.operation_id,
+                        operation_revision: entry.operation_revision,
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -392,7 +395,11 @@ impl PlatformWalletInfo {
                 if self
                     .tracked_asset_locks
                     .get(&out_point)
-                    .is_some_and(|entry| entry.status.is_consumed())
+                    .is_some_and(|entry| {
+                        !entry
+                            .status
+                            .permits_removal(entry.operation_id, entry.operation_revision)
+                    })
                 {
                     continue;
                 }
@@ -750,6 +757,8 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                operation_revision: 0,
+                expected_operation_revision: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -813,6 +822,8 @@ mod tests {
     ) -> AssetLockEntry {
         AssetLockEntry {
             operation_id,
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: OutPoint::default(),
             transaction: dashcore::Transaction {
                 version: 3,

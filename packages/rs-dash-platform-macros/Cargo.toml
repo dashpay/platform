@@ -12,3 +12,8 @@ proc-macro = true
 quote = "1.0.37"
 syn = { version = "2.0.75", features = ["full"] }
 heck = "0.5.0"
+
+[dev-dependencies]
+# Exercises the runtime the `stack_size` macro drives async bodies on; needs
+# `rt-multi-thread` so tests can call `block_in_place` (issue #3535 regression).
+tokio = { version = "1.40", features = ["rt", "rt-multi-thread"] }
