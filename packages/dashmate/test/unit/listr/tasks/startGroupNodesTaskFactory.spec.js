@@ -189,4 +189,72 @@ describe('startGroupNodesTaskFactory', () => {
     expect(dependencies.waitForNodesToHaveTheSameHeight).to.not.have.been.called();
     expect(dependencies.dockerCompose.execCommand).to.not.have.been.called();
   });
+
+  describe('building services from local sources', () => {
+    /**
+     * @param {Object} sinon
+     * @return {Object}
+     */
+    function createBuildingConfig(sinon) {
+      const config = createConfig(sinon, 'local_seed', 19998, 'local');
+
+      config.get.withArgs('platform.enable').returns(true);
+      config.get.withArgs('platform.drive.abci.docker.build.enabled').returns(true);
+
+      return config;
+    }
+
+    it('should build the images of a group configured to build them', async function it() {
+      const configs = [createBuildingConfig(this.sinon)];
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask(configs).run({ waitForReadiness: false });
+
+      expect(dependencies.buildServicesTask).to.have.been.calledOnceWith(configs[0]);
+    });
+
+    // Nothing makes the members of a group build the same services: each node's
+    // own configuration decides which of its images come from local sources
+    it('should build the images of every node that builds any', async function it() {
+      const drive = createBuildingConfig(this.sinon);
+      const rsDapi = createConfig(this.sinon, 'local_1', 20002, 'local');
+
+      rsDapi.get.withArgs('platform.enable').returns(true);
+      rsDapi.get.withArgs('platform.dapi.rsDapi.docker.build.enabled').returns(true);
+
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask([drive, rsDapi]).run({ waitForReadiness: false });
+
+      expect(dependencies.buildServicesTask).to.have.been.calledTwice();
+      expect(dependencies.buildServicesTask).to.have.been.calledWith(drive);
+      expect(dependencies.buildServicesTask).to.have.been.calledWith(rsDapi);
+    });
+
+    // A development group copies one config to every node, and the images it
+    // builds are tagged by the config, so each node would only rebuild them
+    it('should build images that several nodes share only once', async function it() {
+      const configs = [createBuildingConfig(this.sinon), createBuildingConfig(this.sinon)];
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask(configs).run({ waitForReadiness: false });
+
+      expect(dependencies.buildServicesTask).to.have.been.calledOnceWith(configs[0]);
+    });
+
+    // Restart builds the images before it stops anything, so that a build
+    // failure cannot leave the group down. Building them again here would make
+    // every restart of a development group pay for the whole build twice.
+    it('should not build again for a caller that has already built', async function it() {
+      const configs = [createBuildingConfig(this.sinon)];
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask(configs).run({
+        waitForReadiness: false,
+        skipBuildServices: true,
+      });
+
+      expect(dependencies.buildServicesTask).to.not.have.been.called();
+    });
+  });
 });

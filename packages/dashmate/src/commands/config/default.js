@@ -13,7 +13,6 @@ Shows default config name or sets another config as default
         name: 'config',
         required: false,
         description: 'config name',
-        default: null, // only allow input to be from a discrete set
       },
     ),
   };
@@ -32,7 +31,8 @@ Shows default config name or sets another config as default
     configFile,
     configFileRepository,
   ) {
-    if (configName === null) {
+    // The argument is omitted when only the current default config name is requested
+    if (configName === undefined) {
       // eslint-disable-next-line no-console
       console.log(configFile.getDefaultConfigName());
     } else {

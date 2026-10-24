@@ -1,6 +1,7 @@
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
+import selectGroupBuildConfigs from '../../util/selectGroupBuildConfigs.js';
 
 export default class GroupRestartCommand extends GroupBaseCommand {
   static description = 'Restart group nodes';
@@ -20,6 +21,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
    * @param {DockerCompose} dockerCompose
    * @param {stopNodeTask} stopNodeTask
    * @param {startGroupNodesTask} startGroupNodesTask
+   * @param {buildServicesTask} buildServicesTask
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
@@ -32,15 +34,50 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     dockerCompose,
     stopNodeTask,
     startGroupNodesTask,
+    buildServicesTask,
     configGroup,
   ) {
     const groupName = configGroup[0].get('group');
+
+    const buildConfigs = selectGroupBuildConfigs(configGroup);
 
     const tasks = new Listr(
       {
         title: `Restart ${groupName} nodes`,
         task: async () => (
           new Listr([
+            {
+              // An image built from local sources is in no registry, so the
+              // pull below cannot confirm it. Building before the group is
+              // stopped is what keeps a build failure from leaving it down
+              enabled: () => buildConfigs.length > 0,
+              title: 'Build services',
+              task: (ctx) => {
+                // The group start builds the same images, and would otherwise
+                // repeat the whole build on every restart
+                ctx.skipBuildServices = true;
+
+                return new Listr(buildConfigs.map((config) => ({
+                  title: `Build ${config.getName()} services`,
+                  task: () => buildServicesTask(config),
+                })));
+              },
+            },
+            {
+              // Every node's images must be fetched before the first node is
+              // stopped, otherwise a failed pull leaves the group stopped
+              title: 'Pull missing images',
+              task: () => (
+                new Listr(configGroup.map((config) => ({
+                  task: (ctx, task) => dockerCompose.pullMissingImages(config, {
+                    onProgress: (message) => {
+                      // eslint-disable-next-line no-param-reassign
+                      task.output = message;
+                    },
+                  }),
+                })))
+              ),
+            },
             {
               title: 'Stop nodes',
               task: () => (
