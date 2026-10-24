@@ -622,7 +622,10 @@ fn after_refusal(
     pinned: bool,
     retried: bool,
 ) -> AfterRefusal {
-    let Some(drive) = proved.filter(|proved| proved + 1 < transition) else {
+    let Some((drive, next)) = proved
+        .and_then(|drive| Some((drive, drive.checked_add(1)?)))
+        .filter(|&(_, next)| next < transition)
+    else {
         return AfterRefusal::Fail;
     };
     if pinned {
@@ -630,7 +633,7 @@ fn after_refusal(
     } else if retried {
         AfterRefusal::Fail
     } else {
-        AfterRefusal::Retry(drive + 1)
+        AfterRefusal::Retry(next)
     }
 }
 
@@ -753,7 +756,7 @@ mod update_revision_tests {
         assert_eq!(after_refusal(Some(4), 6, false, true), AfterRefusal::Fail);
         // Drive would take the transition (6), is at it or above, or no
         // proof shows the refusal.
-        for proved in [Some(6), Some(7), Some(9), None] {
+        for proved in [Some(6), Some(7), Some(9), Some(u64::MAX), None] {
             assert_eq!(
                 after_refusal(proved, 7, false, false),
                 AfterRefusal::Fail,

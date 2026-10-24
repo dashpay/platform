@@ -1007,8 +1007,10 @@ pub struct IdentityKeyDerivationIndices {
 
 /// A derivation breadcrumb as the raw `(wallet_id, identity_index,
 /// key_index)` triple passed to `ManagedIdentity::add_key` / `add_keys`.
-/// `Some` lets the client re-derive the private key from the wallet seed;
-/// `None` marks a watch-only key.
+/// `Some` lets the client re-derive the private key from the wallet seed.
+/// `None` gives no coordinates: a key the persister does not hold yet is
+/// watch-only, and one it holds keeps its breadcrumb (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 
 /// One public key paired with its derivation breadcrumb — the unit
@@ -1018,12 +1020,13 @@ pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 /// Discovery derives a candidate scalar, validates it against the on-chain
 /// key, and emits a breadcrumb (the DIP-9 coordinates) only when it matches.
 /// The scalar itself is never carried out — the client derives the key on
-/// demand from the Keychain seed at the breadcrumb path. `breadcrumb` is
-/// `None` for a watch-only key.
+/// demand from the Keychain seed at the breadcrumb path. A `None`
+/// `breadcrumb` gives no coordinates (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub struct KeyWithBreadcrumb {
     /// The DPP public-key record.
     pub key: dpp::identity::IdentityPublicKey,
-    /// Derivation coordinates for re-derivable keys; `None` for watch-only.
+    /// Derivation coordinates for re-derivable keys; `None` gives none.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
 }
 
