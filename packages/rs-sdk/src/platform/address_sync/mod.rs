@@ -616,35 +616,7 @@ async fn incremental_catch_up<P: AddressProvider>(
     // If last_recent_block < checkpoint_height → there's a gap that may contain
     //   compacted data. Query compacted.
     // If no boundaries → recent tree is empty, nothing to compact. Skip.
-    let need_compacted = match get_last_recent_block_from_proof(&recent_proof) {
-        Ok(Some(last_recent_block)) => {
-            if last_recent_block >= result.checkpoint_height {
-                debug!(
-                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
-                    last_recent_block, result.checkpoint_height
-                );
-                false
-            } else {
-                debug!(
-                    "Address sync: last recent block {} < checkpoint {} — need compacted",
-                    last_recent_block, result.checkpoint_height
-                );
-                true
-            }
-        }
-        Ok(None) => {
-            // No boundaries in recent tree → empty, nothing to compact
-            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
-            false
-        }
-        Err(e) => {
-            debug!(
-                "Address sync: boundary extraction failed ({}), running compacted to be safe",
-                e
-            );
-            true
-        }
-    };
+    let need_compacted = needs_compacted_phase(&recent_proof, result.checkpoint_height);
 
     // Phase 2b — Compacted (historical) catch-up (conditional)
     if need_compacted {
@@ -784,6 +756,40 @@ async fn incremental_catch_up<P: AddressProvider>(
     // this stays at 0 and the next sync falls back to RangeFrom (inclusive).
     result.last_known_recent_block = highest_recent_block;
     Ok(())
+}
+
+/// Phase 2 of [`incremental_catch_up`]: whether the compacted phase must run,
+/// judged from the boundary nodes of the recent query's proof.
+fn needs_compacted_phase(recent_proof: &Proof, checkpoint_height: u64) -> bool {
+    match get_last_recent_block_from_proof(recent_proof) {
+        Ok(Some(last_recent_block)) => {
+            if last_recent_block >= checkpoint_height {
+                debug!(
+                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
+                    last_recent_block, checkpoint_height
+                );
+                false
+            } else {
+                debug!(
+                    "Address sync: last recent block {} < checkpoint {} — need compacted",
+                    last_recent_block, checkpoint_height
+                );
+                true
+            }
+        }
+        Ok(None) => {
+            // No boundaries in recent tree → empty, nothing to compact
+            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
+            false
+        }
+        Err(e) => {
+            debug!(
+                "Address sync: boundary extraction failed ({}), running compacted to be safe",
+                e
+            );
+            true
+        }
+    }
 }
 
 // ── Address-balance change application ────────────────────────────────
@@ -1394,6 +1400,12 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::grovedb::operations::proof::{
+        GroveDBProof, GroveDBProofV0, MerkOnlyLayerProof, ProveOptions,
+    };
+    use drive::grovedb::{MerkProofNode, MerkProofOp};
+    use drive::grovedb_query::proofs::encode_into;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_extract_funds_from_element() {
@@ -1524,6 +1536,86 @@ mod tests {
         };
         let result = get_last_recent_block_from_proof(&proof);
         assert!(result.is_err());
+    }
+
+    /// A decodable recent-query proof whose `[SavedBlockTransactions, 'm']`
+    /// layer holds `ops`. Mock expectations return an empty proof, which takes
+    /// the decode-error arm, so the boundary arms need a real one.
+    fn recent_proof(ops: &[MerkProofOp]) -> Proof {
+        let mut merk_proof = Vec::new();
+        encode_into(ops.iter(), &mut merk_proof);
+        let layer = |merk_proof, key: u8, child| MerkOnlyLayerProof {
+            merk_proof,
+            lower_layers: BTreeMap::from([(vec![key], child)]),
+        };
+        let address_balances = MerkOnlyLayerProof {
+            merk_proof,
+            lower_layers: BTreeMap::new(),
+        };
+        let root_layer = layer(
+            Vec::new(),
+            RootTree::SavedBlockTransactions as u8,
+            layer(Vec::new(), ADDRESS_BALANCES_KEY_U8, address_balances),
+        );
+        let proof = GroveDBProof::V0(GroveDBProofV0 {
+            root_layer,
+            prove_options: ProveOptions::default(),
+        });
+        let config = dpp::bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<{ 256 * 1024 * 1024 }>();
+        Proof {
+            grovedb_proof: dpp::bincode::encode_to_vec(&proof, config).expect("encode proof"),
+            ..Default::default()
+        }
+    }
+
+    /// A block returned as a query result: a `KV` node, never a boundary.
+    fn block_result(height: u64) -> MerkProofOp {
+        MerkProofOp::Push(MerkProofNode::KV(height.to_be_bytes().to_vec(), vec![0; 4]))
+    }
+
+    /// The start key of an exclusive range that is still in the recent tree.
+    fn boundary(height: u64) -> MerkProofOp {
+        MerkProofOp::Push(MerkProofNode::KVDigest(
+            height.to_be_bytes().to_vec(),
+            [0; 32],
+        ))
+    }
+
+    /// Testnet SH-040: the trunk checkpoint (642131) predates a funding in a
+    /// block the server then compacted. The `RangeFrom` recent proof holds only
+    /// the later block 642139 and no boundary, so only the compacted phase can
+    /// deliver the credit. A genuinely empty recent zone proves no more.
+    #[test]
+    fn should_run_compacted_phase_when_recent_proof_has_no_boundary() {
+        for proof in [recent_proof(&[block_result(642_139)]), recent_proof(&[])] {
+            assert!(matches!(get_last_recent_block_from_proof(&proof), Ok(None)));
+            assert!(needs_compacted_phase(&proof, 642_131));
+        }
+    }
+
+    #[test]
+    fn should_skip_compacted_phase_when_a_boundary_reaches_the_checkpoint() {
+        for height in [642_131, 642_135] {
+            let proof = recent_proof(&[boundary(height), block_result(height + 1)]);
+            assert!(!needs_compacted_phase(&proof, 642_131));
+        }
+    }
+
+    #[test]
+    fn should_run_compacted_phase_when_the_boundary_predates_the_checkpoint() {
+        let proof = recent_proof(&[boundary(642_125), block_result(642_126)]);
+        assert!(needs_compacted_phase(&proof, 642_131));
+    }
+
+    #[test]
+    fn should_run_compacted_phase_when_recent_proof_is_undecodable() {
+        let proof = Proof {
+            grovedb_proof: vec![0xFF, 0xFE, 0xFD, 0xFC],
+            ..Default::default()
+        };
+        assert!(needs_compacted_phase(&proof, 642_131));
     }
 
     #[test]
