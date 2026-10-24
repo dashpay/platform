@@ -981,6 +981,7 @@ impl Sdk {
             || Identity::fetch(self, prospective_identity_id),
             |hash| Identity::fetch(self, PublicKeyHash(hash)),
         );
+        let master_key = &master_key;
 
         claim_unless_refused(preflight, || async move {
             // The voucher key signs the asset lock's outer ST signature (ECDSA
@@ -1029,9 +1030,13 @@ impl Sdk {
             // reaches here is a claim repeated after an earlier one landed,
             // refused because its outpoint is consumed: adopt the identity
             // when it carries exactly the keys we submitted.
-            adopt_already_landed_claim(submitted, &out_point, placeholder.public_keys(), || {
-                Identity::fetch(self, prospective_identity_id)
-            })
+            adopt_already_landed_claim(
+                submitted,
+                &out_point,
+                placeholder.public_keys(),
+                master_key,
+                || Identity::fetch(self, prospective_identity_id),
+            )
             .await
         })
         .await
@@ -1398,12 +1403,13 @@ fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// else [`InvitationError::AlreadyClaimed`]); no identity or a failed lookup
 /// reports the original rejection.
 ///
-/// `fetch` looks up the identity at the prospective id: the injectable seam
-/// (production passes `Identity::fetch`).
+/// `master_key` is the submitted key 0. `fetch` looks up the identity at the
+/// prospective id: the injectable seam (production passes `Identity::fetch`).
 async fn adopt_already_landed_claim<F, Fut>(
     submitted: Result<Identity, InvitationError>,
     out_point: &OutPoint,
     submitted_keys: &BTreeMap<KeyID, IdentityPublicKey>,
+    master_key: &IdentityPublicKey,
     fetch: F,
 ) -> Result<Identity, InvitationError>
 where
@@ -1426,10 +1432,7 @@ where
         }
         // Not exactly our submission, but whose claim it is still matters:
         // our master key at another index, or keys changed since, is ours.
-        Ok(Some(identity)) => match submitted_keys.get(&0) {
-            Some(master_key) => Err(claimed_by(&identity, master_key)),
-            None => Err(InvitationError::Sdk(error)),
-        },
+        Ok(Some(identity)) => Err(claimed_by(&identity, master_key)),
         Ok(None) => Err(InvitationError::Sdk(error)),
         Err(lookup) => {
             tracing::warn!(
@@ -2876,11 +2879,12 @@ mod tests {
         ) -> (Result<Identity, InvitationError>, u32) {
             let calls = Cell::new(0);
             let keys = our_keys();
-            let result = adopt_already_landed_claim(submitted, &out_point(), &keys, || {
-                calls.set(calls.get() + 1);
-                async { lookup }
-            })
-            .await;
+            let result =
+                adopt_already_landed_claim(submitted, &out_point(), &keys, &keys[&0], || {
+                    calls.set(calls.get() + 1);
+                    async { lookup }
+                })
+                .await;
             (result, calls.get())
         }
 
@@ -3342,6 +3346,197 @@ mod tests {
                 "the fallback's own rejection must propagate as Sdk, got {result:?}"
             );
             assert_eq!(submitted.len(), 2, "no third submission may follow");
+        }
+    }
+
+    /// `Sdk::claim_invitation` against a mock SDK: the funding transaction
+    /// comes from Core, the preflight looks up the invitation's id and every
+    /// submitted key hash, and a refusal ends the claim before anything is
+    /// signed. The mock answers no broadcast and the signer signs nothing, so
+    /// a claim that reached the submission would fail with another error.
+    mod claim_through_the_sdk {
+        use super::super::{claim_key_hashes, identity_id_for_out_point, Error, InvitationError};
+        use super::{asset_lock_tx_paying_voucher_at, identity_with_keys, parsed, voucher};
+        use crate::platform::types::identity::PublicKeyHash;
+        use crate::SdkBuilder;
+        use dapi_grpc::core::v0::{GetTransactionRequest, GetTransactionResponse};
+        use dpp::address_funds::AddressWitness;
+        use dpp::dashcore::consensus::Encodable;
+        use dpp::dashcore::{Network, OutPoint};
+        use dpp::identity::accessors::IdentitySettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::signer::Signer;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use dpp::prelude::Identifier;
+        use dpp::secp256k1::{PublicKey, SecretKey};
+        use dpp::ProtocolError;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct UnusedSigner;
+
+        #[async_trait::async_trait]
+        impl Signer<IdentityPublicKey> for UnusedSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Err(ProtocolError::Generic(
+                    "not signing in this test".to_string(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                Err(ProtocolError::Generic(
+                    "not signing in this test".to_string(),
+                ))
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                true
+            }
+        }
+
+        /// Two keys with real secp256k1 points, which Platform hashes for
+        /// its unique-key index: the master key and one more.
+        fn claim_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+            [0x31u8, 0x32]
+                .into_iter()
+                .zip(0..)
+                .map(|(byte, id)| {
+                    let secret = SecretKey::from_secret_bytes([byte; 32]).expect("valid scalar");
+                    let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                        id,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: if id == 0 {
+                            SecurityLevel::MASTER
+                        } else {
+                            SecurityLevel::HIGH
+                        },
+                        contract_bounds: None,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: BinaryData::new(
+                            PublicKey::from_secret_key(&secret).serialize().to_vec(),
+                        ),
+                        disabled_at: None,
+                    });
+                    (id, key)
+                })
+                .collect()
+        }
+
+        fn identity_at(id: Identifier) -> Identity {
+            let mut identity = identity_with_keys(claim_keys());
+            identity.set_id(id);
+            identity
+        }
+
+        /// Claim a chain-locked invitation with `claim_keys()`. `by_id` answers
+        /// the lookup of the invitation's identity and `by_hash` the lookup of
+        /// each submitted key hash; it gets the invitation's id.
+        async fn claim(
+            by_id: impl FnOnce(Identifier) -> Option<Identity>,
+            by_hash: impl Fn([u8; 20], Identifier) -> Option<Identity>,
+        ) -> (Result<Identity, InvitationError>, Identifier) {
+            let key = voucher();
+            let tx = asset_lock_tx_paying_voucher_at(&key, 0);
+            let txid = tx.txid().to_string();
+            let invitation_id = identity_id_for_out_point(OutPoint::new(tx.txid(), 0));
+            let mut raw = Vec::new();
+            tx.consensus_encode(&mut raw)
+                .expect("encode the funding tx");
+
+            let mut sdk = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk");
+            sdk.mock()
+                .expect_request(
+                    &GetTransactionRequest { id: txid.clone() },
+                    GetTransactionResponse {
+                        transaction: raw,
+                        height: 100,
+                        is_chain_locked: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("expect the funding tx");
+            sdk.mock()
+                .expect_fetch(invitation_id, by_id(invitation_id))
+                .await
+                .expect("expect the lookup by id");
+            for hash in claim_key_hashes(&claim_keys()).expect("key hashes") {
+                sdk.mock()
+                    .expect_fetch(PublicKeyHash(hash), by_hash(hash, invitation_id))
+                    .await
+                    .expect("expect the lookup by key hash");
+            }
+
+            let result = sdk
+                .claim_invitation(parsed(key, txid, None), claim_keys(), &UnusedSigner, None)
+                .await;
+            (result, invitation_id)
+        }
+
+        #[tokio::test]
+        async fn should_stop_the_claim_at_our_identity_found_by_id() {
+            let (result, invitation_id) = claim(|id| Some(identity_at(id)), |_, _| None).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(InvitationError::ClaimedByThisWallet { identity_id })
+                        if identity_id == invitation_id
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// The lookup of the last submitted key, not only the master key,
+        /// decides: another identity holding it stops the claim.
+        #[tokio::test]
+        async fn should_stop_the_claim_at_a_taken_key_found_by_its_hash() {
+            let foreign = Identifier::new([9; 32]);
+            let last_hash = *claim_key_hashes(&claim_keys())
+                .expect("key hashes")
+                .last()
+                .expect("a key hash");
+            let (result, _) = claim(
+                |_| None,
+                |hash, _| (hash == last_hash).then(|| identity_at(foreign)),
+            )
+            .await;
+            assert!(
+                matches!(
+                    result,
+                    Err(InvitationError::KeysAlreadyRegistered { identity_id: Some(id), rejection: None })
+                        if id == foreign
+                ),
+                "got {result:?}"
+            );
+        }
+
+        /// With nothing registered the claim goes on to the submission and
+        /// fails only at the signer: the mock answers the lookups the two
+        /// tests above stopped at.
+        #[tokio::test]
+        async fn should_reach_the_submission_when_nothing_is_registered() {
+            let (result, _) = claim(|_| None, |_, _| None).await;
+            assert!(
+                matches!(
+                    &result,
+                    Err(InvitationError::Sdk(Error::Protocol(ProtocolError::Generic(message))))
+                        if message == "not signing in this test"
+                ),
+                "got {result:?}"
+            );
         }
     }
 }

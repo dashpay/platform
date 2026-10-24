@@ -53,6 +53,25 @@ impl MockDashPlatformSdk {
         self.dapi.lock().await.request_count(request)
     }
 
+    /// Expect a request that is not a proved fetch, such as a Core query, and
+    /// answer it with `response`.
+    #[cfg(test)]
+    pub(crate) async fn expect_request<R>(
+        &mut self,
+        request: &R,
+        response: R::Response,
+    ) -> Result<&mut Self, Error>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        self.dapi
+            .lock()
+            .await
+            .expect(request, &Ok(mock_execution_response(response)))?;
+        Ok(self)
+    }
+
     /// Returns true when requests should use proofs.
     ///
     /// ## Panics
@@ -534,11 +553,7 @@ impl MockDashPlatformSdk {
         let mut dapi_guard = self.dapi.lock().await;
         dapi_guard.expect(
             &wire_request,
-            &Ok(ExecutionResponse {
-                inner: Default::default(),
-                retries: 0,
-                address: "http://127.0.0.1".parse().expect("failed to parse address"),
-            }),
+            &Ok(mock_execution_response(Default::default())),
         )?;
 
         Ok(())
@@ -637,4 +652,13 @@ fn load_expectation<T: TransportRequest>(
         .deserialize();
     dapi_guard.expect(&data.0, &data.1)?;
     Ok(())
+}
+
+/// A transport answer from the mock DAPI client carrying `inner`.
+fn mock_execution_response<T>(inner: T) -> ExecutionResponse<T> {
+    ExecutionResponse {
+        inner,
+        retries: 0,
+        address: "http://127.0.0.1".parse().expect("failed to parse address"),
+    }
 }
