@@ -2058,7 +2058,7 @@ mod offers {
             self.executes(&freeze);
         }
 
-        fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
+        pub(super) fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
             self.platform
                 .drive
                 .fetch_credit_order_escrow(
@@ -2070,7 +2070,7 @@ mod offers {
                 .expect("expected to fetch the escrow")
         }
 
-        fn offer(&self, order_id: Identifier) -> Option<TokenOrder> {
+        pub(super) fn offer(&self, order_id: Identifier) -> Option<TokenOrder> {
             let platform_version = PlatformVersion::latest();
             let token_market_contract = self
                 .platform
@@ -2949,7 +2949,7 @@ mod history {
 
     impl Market {
         /// Every document of `document_type_name` in the token history contract.
-        fn history(&self, document_type_name: &str) -> Vec<Document> {
+        pub(super) fn history(&self, document_type_name: &str) -> Vec<Document> {
             let platform_version = PlatformVersion::latest();
             let token_history_contract = self
                 .platform
@@ -3358,5 +3358,527 @@ mod history {
         assert!(market.history("orderPlaced").is_empty());
         assert!(market.history("orderFilled").is_empty());
         assert!(market.history("orderCancelled").is_empty());
+    }
+}
+
+/// A frozen identity's open listings hold its tokens in escrow, out of its balance's reach: from
+/// protocol version 15 a `TokenDestroyFrozenFunds` destroys what they hold with the balance,
+/// at most `max_frozen_listings_destroyed_per_transition` of them, oldest first.
+mod frozen {
+    use super::*;
+    use dpp::document::DocumentV0Getters;
+    use dpp::fee::fee_result::FeeResult;
+    use drive::drive::RootTree;
+    use drive::grovedb::query_result_type::{QueryResultElement, QueryResultType};
+    use drive::grovedb::{PathQuery, Query, SizedQuery};
+    use std::collections::BTreeSet;
+
+    /// The contract owner (the seller) may freeze an account and destroy its frozen funds.
+    fn make_token_tradeable_and_freezable(token_configuration: &mut TokenConfiguration) {
+        make_token_tradeable(token_configuration);
+        let owner_rules = ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        });
+        token_configuration.set_freeze_rules(owner_rules.clone());
+        token_configuration.set_destroy_frozen_funds_rules(owner_rules);
+    }
+
+    impl Market {
+        /// The seller transfers `amount` to the buyer.
+        async fn give_buyer(&mut self, amount: u64) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let transfer = BatchTransition::new_token_transfer_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                amount,
+                self.buyer.id(),
+                None,
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the transfer");
+            self.assert_executes(&transfer, &BlockInfo::default());
+        }
+
+        /// A listing by the buyer at block time `time_ms`, and its order id.
+        async fn buyer_lists(&mut self, amount: u64, time_ms: u64) -> Identifier {
+            let platform_version = PlatformVersion::latest();
+            let decimals = self.token_decimals();
+            let nonce = self.buyer.take_nonce();
+            let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.buyer.id(), nonce);
+            let place = BatchTransition::new_token_place_ask_transition(
+                self.token_id,
+                self.buyer.id(),
+                self.contract.id(),
+                0,
+                amount,
+                PRICE,
+                decimals,
+                1,
+                &self.buyer.key,
+                nonce,
+                0,
+                &self.buyer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the listing");
+            self.assert_executes(&place, &at_time(time_ms));
+            order_id
+        }
+
+        /// The seller, the contract owner, freezes the buyer.
+        async fn freeze_buyer(&mut self) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let freeze = BatchTransition::new_token_freeze_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                self.buyer.id(),
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the freeze");
+            self.assert_executes(&freeze, &BlockInfo::default());
+        }
+
+        /// The seller destroys the buyer's frozen funds.
+        async fn destroy_buyers_frozen_funds(&mut self) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let destroy = BatchTransition::new_token_destroy_frozen_funds_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                self.buyer.id(),
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the destroy");
+            self.assert_executes(&destroy, &at_time(1_000_000));
+        }
+
+        fn supply(&self) -> u64 {
+            self.platform
+                .drive
+                .fetch_token_total_supply(
+                    self.token_id.to_buffer(),
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch the supply")
+                .expect("expected the token to have a supply")
+        }
+    }
+
+    /// The fee a processed batch charged its signer, which must have executed.
+    fn charged(processing_result: &StateTransitionsProcessingResult) -> FeeResult {
+        match processing_result.execution_results().as_slice() {
+            [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                fee_result.clone()
+            }
+            other => panic!("expected the batch to execute: {other:?}"),
+        }
+    }
+
+    impl Market {
+        /// Every tree and item under the token market contract's `ask` document type: its
+        /// documents and their index entries, by path.
+        fn ask_trees(&self) -> BTreeSet<Vec<Vec<u8>>> {
+            let platform_version = PlatformVersion::latest();
+            let root = vec![
+                vec![RootTree::DataContractDocuments as u8],
+                SystemDataContract::TokenMarket.id().to_vec(),
+                vec![1u8],
+                TokenOrderSide::Ask.document_type_name().as_bytes().to_vec(),
+            ];
+            let mut paths = BTreeSet::new();
+            let mut pending = vec![root];
+            while let Some(path) = pending.pop() {
+                let mut query = Query::new();
+                query.insert_all();
+                let (rows, _) = self
+                    .platform
+                    .drive
+                    .grove
+                    .query_raw(
+                        &PathQuery::new(path.clone(), SizedQuery::new(query, None, None)),
+                        true,
+                        true,
+                        true,
+                        QueryResultType::QueryKeyElementPairResultType,
+                        None,
+                        &platform_version.drive.grove_version,
+                    )
+                    .value
+                    .expect("expected to read the ask trees");
+                for row in rows.elements {
+                    let QueryResultElement::KeyElementPairResultItem((key, element)) = row else {
+                        panic!("expected a key and an element");
+                    };
+                    let mut child = path.clone();
+                    child.push(key);
+                    if element.is_any_tree() {
+                        pending.push(child.clone());
+                    }
+                    paths.insert(child);
+                }
+            }
+            paths
+        }
+
+        /// The seller destroys the buyer's frozen funds, and the fee it was charged.
+        async fn destroy_buyers_frozen_funds_charged(&mut self) -> FeeResult {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let destroy = BatchTransition::new_token_destroy_frozen_funds_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                self.buyer.id(),
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the destroy");
+            charged(&self.process_at(&destroy, &at_time(1_000_000)))
+        }
+    }
+
+    /// Two listings at one price placed in one block share their `ask` index trees: the price
+    /// bucket of `book` and `depth`, the `$createdAt` bucket of `book`, and the owner and token
+    /// buckets of `byOwner`. A destroy deletes both in one batch: each delete is built against
+    /// the other, so the trees they shared are removed. The `ask` trees left are the ones
+    /// cancelling the two listings one by one leaves, and the frozen owner gets back at least
+    /// the storage those cancels refund (the destroy also shrinks the balance it burns to 0, where
+    /// a cancel grows it). Built as separate deletes, 16 of the 24 trees stayed instead of 3, and
+    /// the refund was about half.
+    #[tokio::test]
+    async fn should_remove_and_refund_the_index_trees_destroyed_listings_shared() {
+        let mut destroyed = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        destroyed.give_buyer(10_000).await;
+        destroyed.buyer_lists(3_000, 1).await;
+        destroyed.buyer_lists(2_000, 1).await;
+        let trees_with_listings = destroyed.ask_trees();
+        destroyed.freeze_buyer().await;
+        let fee = destroyed.destroy_buyers_frozen_funds_charged().await;
+        let destroy_refund = fee
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(destroyed.buyer.id())
+            .unwrap_or_default();
+
+        let mut cancelled = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        cancelled.give_buyer(10_000).await;
+        let first = cancelled.buyer_lists(3_000, 1).await;
+        let second = cancelled.buyer_lists(2_000, 1).await;
+        assert_eq!(cancelled.ask_trees(), trees_with_listings);
+        let mut cancel_refunds = 0;
+        for order_id in [first, second] {
+            let cancel = cancelled.cancel(order_id, true).await;
+            let fee = charged(&cancelled.process(&cancel));
+            cancel_refunds += fee
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(cancelled.buyer.id())
+                .unwrap_or_default();
+        }
+
+        let trees_left = destroyed.ask_trees();
+        assert_eq!(trees_left, cancelled.ask_trees());
+        assert!(
+            trees_left.len() < trees_with_listings.len(),
+            "the shared trees are removed: {} left of {}",
+            trees_left.len(),
+            trees_with_listings.len()
+        );
+        assert!(
+            cancel_refunds > 0,
+            "the cancellation control must refund the listing owner's storage"
+        );
+        assert!(
+            destroy_refund >= cancel_refunds,
+            "the destroy refunds {destroy_refund}, the cancels {cancel_refunds}"
+        );
+    }
+
+    /// A listing partly sold before its maker is frozen: the destroy takes what is still in
+    /// escrow (`remaining`), not what was listed. 3,000 listed and 1,000 sold leave 2,000 in
+    /// escrow; with 5,000 in the balance the destroy lowers the supply by 7,000 and records
+    /// 7,000, and the seller keeps the 1,000 it bought.
+    #[tokio::test]
+    async fn should_destroy_what_is_left_of_a_partly_filled_listing() {
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(8_000).await;
+        let order_id = market.buyer_lists(3_000, 1).await;
+        let fill = market.seller_fills_ask(order_id, 1_000).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+        assert_eq!(market.escrow(order_id), Some(2_000));
+        assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
+        let seller_balance = market
+            .token_balance(market.seller.id())
+            .expect("expected the seller's balance");
+        let supply = market.supply();
+        market.freeze_buyer().await;
+
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(0));
+        assert_eq!(market.escrow(order_id), None);
+        assert_eq!(market.listing(order_id), None, "the listing is deleted");
+        assert_eq!(market.supply(), supply - 7_000);
+        assert_eq!(
+            market.token_balance(market.seller.id()),
+            Some(seller_balance),
+            "the seller keeps what it bought"
+        );
+        market.assert_supply_balanced();
+
+        let destroyed = market.history("destroyFrozenFunds");
+        assert_eq!(destroyed.len(), 1);
+        assert_eq!(
+            destroyed[0]
+                .properties()
+                .get("destroyedAmount")
+                .and_then(|amount| amount.to_integer::<u64>().ok()),
+            Some(7_000),
+            "the record counts the balance and what is left in escrow"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_destroy_a_frozen_identitys_listings_with_its_balance() {
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(10_000).await;
+        let first = market.buyer_lists(3_000, 1).await;
+        let second = market.buyer_lists(2_000, 2).await;
+        assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
+        market.freeze_buyer().await;
+
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(0));
+        for order_id in [first, second] {
+            assert_eq!(market.escrow(order_id), None);
+            assert_eq!(market.listing(order_id), None, "the listing is deleted");
+        }
+        assert_eq!(market.supply(), BASE_SUPPLY - 10_000);
+        market.assert_supply_balanced();
+
+        let destroyed = market.history("destroyFrozenFunds");
+        assert_eq!(destroyed.len(), 1);
+        assert_eq!(
+            destroyed[0]
+                .properties()
+                .get("destroyedAmount")
+                .and_then(|amount| amount.to_integer::<u64>().ok()),
+            Some(10_000),
+            "the record counts the balance and the escrow"
+        );
+    }
+
+    /// The destroy reads only the frozen identity's listings of the destroyed token: a listing
+    /// of that token by another holder, and the frozen identity's own listing of another token,
+    /// keep their documents and their escrow, and the other token's supply does not move.
+    #[tokio::test]
+    async fn should_leave_other_owners_listings_and_other_tokens_listings() {
+        let platform_version = PlatformVersion::latest();
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(10_000).await;
+        let frozen_listing = market.buyer_lists(3_000, 1).await;
+
+        // Another holder's listing of the same token.
+        let (place, sellers_listing) = market.place_ask(500, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+
+        // The frozen identity's listing of another token, of a contract it owns.
+        let (other_contract, other_token) = create_token_contract_with_owner_identity(
+            &mut market.platform,
+            market.buyer.id(),
+            Some(make_token_tradeable_and_freezable),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let other_nonce = 1;
+        let other_listing =
+            TokenOrderSide::Ask.order_id(other_token, market.buyer.id(), other_nonce);
+        let place = BatchTransition::new_token_place_ask_transition(
+            other_token,
+            market.buyer.id(),
+            other_contract.id(),
+            0,
+            400,
+            PRICE,
+            market.token_decimals(),
+            1,
+            &market.buyer.key,
+            other_nonce,
+            0,
+            &market.buyer.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the listing of the other token");
+        market.assert_executes(&place, &BlockInfo::default());
+        let other_escrow = |market: &Market| {
+            market
+                .platform
+                .drive
+                .fetch_token_order_escrow(
+                    other_token.to_buffer(),
+                    other_listing.to_buffer(),
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to fetch the escrow")
+        };
+        let other_supply = |market: &Market| {
+            market
+                .platform
+                .drive
+                .fetch_token_total_supply(other_token.to_buffer(), None, platform_version)
+                .expect("expected to fetch the supply")
+        };
+        let other_supply_before = other_supply(&market);
+        assert_eq!(other_escrow(&market), Some(400));
+
+        market.freeze_buyer().await;
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(
+            market.listing(frozen_listing),
+            None,
+            "the frozen listing is destroyed"
+        );
+        assert_eq!(market.escrow(frozen_listing), None);
+        assert_eq!(market.supply(), BASE_SUPPLY - 10_000);
+
+        assert!(
+            market.listing(sellers_listing).is_some(),
+            "another holder's listing of the token stays"
+        );
+        assert_eq!(market.escrow(sellers_listing), Some(500));
+
+        let token_market_contract = market
+            .platform
+            .drive
+            .token_market_contract_fetch_info(platform_version)
+            .expect("expected the token market contract");
+        let (document, _) = market
+            .platform
+            .drive
+            .fetch_token_order_document(
+                &token_market_contract.contract,
+                TokenOrderSide::Ask,
+                other_listing,
+                &BlockInfo::default().epoch,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the listing of the other token");
+        assert!(
+            document.is_some(),
+            "the frozen identity's listing of another token stays"
+        );
+        assert_eq!(other_escrow(&market), Some(400));
+        assert_eq!(other_supply(&market), other_supply_before);
+        market.assert_supply_balanced();
+    }
+
+    #[tokio::test]
+    async fn should_destroy_the_oldest_listings_up_to_the_limit_per_transition() {
+        let limit = PlatformVersion::latest()
+            .system_limits
+            .max_frozen_listings_destroyed_per_transition as u64;
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(10 * (limit + 1)).await;
+        let mut listings = vec![];
+        for time_ms in 1..=limit + 1 {
+            listings.push(market.buyer_lists(10, time_ms).await);
+        }
+        market.freeze_buyer().await;
+
+        market.destroy_buyers_frozen_funds().await;
+        let newest = listings.pop().expect("expected the newest listing");
+        for order_id in &listings {
+            assert_eq!(market.escrow(*order_id), None, "the oldest are destroyed");
+        }
+        assert_eq!(
+            market.escrow(newest),
+            Some(10),
+            "the newest waits for the next"
+        );
+        market.assert_supply_balanced();
+
+        market.destroy_buyers_frozen_funds().await;
+        assert_eq!(market.escrow(newest), None);
+        assert_eq!(market.supply(), BASE_SUPPLY - 10 * (limit + 1));
+        market.assert_supply_balanced();
+    }
+
+    /// An offer holds credits, which are not the token issuer's to destroy: it stays, and the
+    /// frozen identity can still withdraw it.
+    #[tokio::test]
+    async fn should_leave_a_frozen_identitys_offers() {
+        let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
+        market.give_buyer(100).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        market.freeze_buyer().await;
+
+        market.destroy_buyers_frozen_funds().await;
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(0));
+        assert_eq!(
+            market.offer(order_id).map(|offer| offer.escrow),
+            Some(10_000),
+            "the offer still holds its escrow"
+        );
+        assert_eq!(
+            market.credit_escrow(order_id),
+            Some(10_000),
+            "the offer's escrowed credits survive the token destroy"
+        );
     }
 }

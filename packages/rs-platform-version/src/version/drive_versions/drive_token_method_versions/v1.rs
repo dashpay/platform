@@ -83,5 +83,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         fetch_credits: None,
         estimated_costs_for_tokens: None,
         estimated_costs_for_credits: None,
+        fetch_frozen_listings: None,
     },
 };

@@ -285,7 +285,7 @@ impl TokenTransitionAction {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
-        self.associated_token_event()
+        self.associated_token_event(platform_version)?
             .build_historical_document_owned(
                 token_id,
                 owner_id,

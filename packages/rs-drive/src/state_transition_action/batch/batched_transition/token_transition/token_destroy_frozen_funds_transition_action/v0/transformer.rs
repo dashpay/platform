@@ -6,6 +6,7 @@ use dpp::consensus::state::token::IdentityDoesNotHaveEnoughTokenBalanceError;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::TokenDestroyFrozenFundsTransitionV0;
 use dpp::ProtocolError;
+use dpp::tokens::token_order::TokenOrder;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::v0::TokenDestroyFrozenFundsTransitionActionV0;
@@ -90,7 +91,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
         )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -148,12 +149,24 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
+        let (escrowed_listings, token_market_contract) = read_frozen_listings(
+            drive,
+            base.token_id(),
+            frozen_identity_id,
+            block_info,
+            &mut fee_result,
+            transaction,
+            platform_version,
+        )?;
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::DestroyFrozenFundsAction(
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id,
                     amount: token_amount,
+                    escrowed_listings,
+                    token_market_contract,
                     public_note: change_note.unwrap_or(public_note),
                 }
                 .into(),
@@ -237,7 +250,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
         )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -296,12 +309,24 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
+        let (escrowed_listings, token_market_contract) = read_frozen_listings(
+            drive,
+            base.token_id(),
+            *frozen_identity_id,
+            block_info,
+            &mut fee_result,
+            transaction,
+            platform_version,
+        )?;
+
         Ok((
             BatchedTransitionAction::TokenAction(TokenTransitionAction::DestroyFrozenFundsAction(
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id: *frozen_identity_id,
                     amount: token_amount,
+                    escrowed_listings,
+                    token_market_contract,
                     public_note: change_note.unwrap_or(public_note.clone()),
                 }
                 .into(),
@@ -310,6 +335,35 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             fee_result,
         ))
     }
+}
+
+/// The frozen identity's open listings a destroy takes with its balance and, when there are
+/// any, the token market contract their `ask` documents are deleted from. From protocol version
+/// 15 the listings are destroyed with the balance, as what they hold sits in escrow, out of the
+/// balance's reach; earlier versions read none. The read is billed to `fee_result`.
+fn read_frozen_listings(
+    drive: &Drive,
+    token_id: Identifier,
+    frozen_identity_id: Identifier,
+    block_info: &BlockInfo,
+    fee_result: &mut FeeResult,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(Vec<TokenOrder>, Option<Arc<DataContractFetchInfo>>), Error> {
+    let (listings, read_cost) = drive.fetch_frozen_token_listings(
+        token_id,
+        frozen_identity_id,
+        &block_info.epoch,
+        transaction,
+        platform_version,
+    )?;
+    fee_result.checked_add_assign(FeeResult::new_from_processing_fee(read_cost))?;
+    let token_market_contract = if listings.is_empty() {
+        None
+    } else {
+        Some(drive.token_market_contract_fetch_info(platform_version)?)
+    };
+    Ok((listings, token_market_contract))
 }
 
 #[cfg(test)]

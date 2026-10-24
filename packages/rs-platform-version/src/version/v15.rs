@@ -193,6 +193,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    it keeping the stored contract's storage ownership, as `transition_to_version_14` did for
 ///    v2. The marketplace transitions of a token that keeps transfer history write the matching
 ///    history document.
+///
+/// 10. **Frozen listings**: a `TokenDestroyFrozenFunds` also destroys what the frozen identity's
+///     open listings of the token hold in escrow, the oldest first and at most
+///     `max_frozen_listings_destroyed_per_transition` (16) per transition, and deletes their
+///     `ask` documents. `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads them
+///     (`order_escrow.fetch_frozen_listings` `Some(0)`, `None` before) and
+///     `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5` destroys them
+///     (`token_destroy_frozen_funds_transition` 1). The recorded amount is everything destroyed.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: the token marketplace escrow trees and calculate_total_tokens_balance 2

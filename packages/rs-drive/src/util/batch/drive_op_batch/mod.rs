@@ -296,6 +296,46 @@ impl DriveOperation<'_> {
         }
     }
 
+    /// Converts a member of a batch whose document TTL cleanup is complete against the operations
+    /// the batch built before it, and appends its own to them (protocol version 15): a document
+    /// operation is built with them as pending
+    /// ([`DocumentOperationType::append_low_level_drive_operations_after_ttl_drain`]), any other
+    /// as before.
+    pub(crate) fn append_low_level_drive_operations_after_ttl_drain(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match self {
+            Self::DocumentOperation(operation) => operation
+                .append_low_level_drive_operations_after_ttl_drain(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    batch_operations,
+                    transaction,
+                    platform_version,
+                ),
+            operation => {
+                let operations = operation.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+                Ok(())
+            }
+        }
+    }
+
     /// Convert a member of a batch whose document TTL cleanup is complete.
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
@@ -660,6 +700,24 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
             TokenBalanceKey::Holder(*token_id, *recipient_id),
             TokenBalanceKey::OrderEscrow(*token_id, *order_id),
         ],
+        // Destroying a frozen holding writes its balance, the escrow of each of its listings
+        // and the supply, once each.
+        TokenOperationType::TokenDestroyFrozenHolding {
+            token_id,
+            holder_id,
+            listings,
+            ..
+        } => [
+            TokenBalanceKey::Holder(*token_id, *holder_id),
+            TokenBalanceKey::Supply(*token_id),
+        ]
+        .into_iter()
+        .chain(
+            listings
+                .iter()
+                .map(|(order_id, _)| TokenBalanceKey::OrderEscrow(*token_id, *order_id)),
+        )
+        .collect(),
         // An offer's escrow holds credits, which its placement, fills and cancel move through
         // identity balance operations of their own.
         TokenOperationType::TokenHoldCreditsInOrderEscrow { order_id, .. }

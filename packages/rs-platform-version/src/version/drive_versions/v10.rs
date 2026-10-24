@@ -6,6 +6,7 @@ use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_ID
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
+use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
@@ -36,6 +37,9 @@ use crate::version::drive_versions::{
 ///   each operation of an estimated batch with layer descriptions of its own and merges them
 ///   keeping the deeper one, so no other write of the batch (a document, a nonce) lowers what
 ///   the escrows describe, whichever is built first.
+/// * **Frozen listings** — `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
+///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
+///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -43,7 +47,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         initialization: DriveInitializationMethodVersions {
             create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
         },
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active; a frozen identity's listings are read
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: TokenDestroyFrozenFunds also destroys the frozen identity's escrowed listings
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
@@ -60,8 +65,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed in v10: each operation is built against the batch's earlier ones
             apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions keeping the deeper
-            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description

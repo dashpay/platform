@@ -99,6 +99,10 @@ use crate::version::system_limits::SystemLimits;
 ///   the charters contract's `electedCharter.members` `maxItems`) and the declaration's
 ///   `maxAddedModerators`. It joined this table in place while protocol version 14 was
 ///   unreleased, and was backfilled into the earlier tables, whose parsers never read it.
+/// * Token marketplace (protocol version 15): a `TokenDestroyFrozenFunds` destroys at most 16
+///   open listings of the frozen identity with its balance
+///   (`max_frozen_listings_destroyed_per_transition`, in every table; nothing before 15 reads
+///   it).
 /// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
 ///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
 ///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
@@ -175,6 +179,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_added_moderators: 15,
     max_moderation_charter_elected_members: 15,
     max_contenders_per_contest: 1_000,
+    max_frozen_listings_destroyed_per_transition: 16,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
