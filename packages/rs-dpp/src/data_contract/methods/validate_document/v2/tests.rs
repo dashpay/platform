@@ -35,7 +35,8 @@ fn item_contract(properties: Value) -> DataContract {
     contract
 }
 
-/// What document validation has built of `item`'s native validator: nothing yet (`None`),
+/// What document validation has built of `item`'s native validator with builder generation 0,
+/// the one protocol version 15 selects: nothing yet (`None`),
 /// the validator (`Some(true)`), or the refusal of a schema without a validation schema
 /// (`Some(false)`).
 fn native_validator_state(contract: &DataContract) -> Option<bool> {
@@ -43,8 +44,8 @@ fn native_validator_state(contract: &DataContract) -> Option<bool> {
         .document_type_for_name("item")
         .expect("expected the document type")
         .json_schema_validator_ref()
-        .native()
-        .get()
+        .native(0)
+        .and_then(|slot| slot.get())
         .map(Result::is_ok)
 }
 
