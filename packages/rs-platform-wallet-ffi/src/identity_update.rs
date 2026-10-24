@@ -301,6 +301,20 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 /// Update an identity by adding new public keys and/or disabling
 /// existing key IDs, signing the resulting `IdentityUpdateTransition`
 /// with the supplied `signer_handle`.
+///
+/// `external_key_ids` names the added keys that do not come from the
+/// wallet's derivation (a key the caller generated or received, such as a
+/// browser session key): they are stored without derivation coordinates.
+/// Every other added key is stored as derived at the identity's index and
+/// the key's id. An id that names no added key is refused before anything
+/// is signed.
+///
+/// When `external_key_ids_count` is non-zero, `external_key_ids` must point
+/// at a valid, aligned `[u32; external_key_ids_count]` array. A null
+/// `external_key_ids` with a non-zero count is refused with
+/// `ErrorNullPointer` before the wallet is looked up or anything signed,
+/// never read as empty (that would store the caller's external keys as
+/// derived).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
@@ -308,6 +322,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
     add_public_keys_count: usize,
+    external_key_ids: *const u32,
+    external_key_ids_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
     signer_handle: *mut SignerHandle,
@@ -315,6 +331,11 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
+
+    let external_ids = unwrap_result_or_return!(read_external_key_ids(
+        external_key_ids,
+        external_key_ids_count
+    ));
 
     let add_keys: Vec<IdentityPublicKey> =
         if add_public_keys.is_null() || add_public_keys_count == 0 {
@@ -375,13 +396,44 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity_wallet
-                .update_identity_with_external_signer(&id, add_keys, disable_ids, signer, None)
+                .update_identity_with_external_signer(
+                    &id,
+                    add_keys,
+                    &external_ids,
+                    disable_ids,
+                    signer,
+                    None,
+                )
                 .await
         })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
+}
+
+/// Copies the caller's `[u32; count]` external key ids. A zero count reads
+/// as empty whatever the pointer; a null array with a non-zero count is
+/// refused, since reading it as empty would store the caller's external keys
+/// as derived.
+///
+/// # Safety
+/// When `count` is non-zero and `ids` is non-null, `ids` must point at a
+/// valid, aligned `[u32; count]` array.
+unsafe fn read_external_key_ids(
+    ids: *const u32,
+    count: usize,
+) -> Result<Vec<KeyID>, PlatformWalletFFIResult> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if ids.is_null() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "external_key_ids is null with a non-zero count",
+        ));
+    }
+    Ok(slice::from_raw_parts(ids, count).to_vec())
 }
 
 #[cfg(test)]
@@ -393,6 +445,7 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(
         "0089fd6ddba75136a4fea02dc7d89ef0ca5bcc32ccf12fb8da6a1a03740567ae72",
@@ -720,5 +773,199 @@ mod tests {
         assert!(out.disable_public_key_ids.is_null());
         assert_eq!(out.add_public_keys_count, 0);
         assert_eq!(out.disable_public_key_ids_count, 0);
+    }
+
+    /// Counts every call the update makes into a signer created through
+    /// `dash_sdk_signer_create_with_ctx`; `ctx` points at the counter.
+    unsafe extern "C" fn counting_sign_async(
+        ctx: *const std::ffi::c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+        _data: *const u8,
+        _data_len: usize,
+        completion_ctx: *mut std::ffi::c_void,
+        completion: rs_sdk_ffi::SignCompletionCallback,
+    ) {
+        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        let message = CString::new("counting signer").unwrap();
+        completion(completion_ctx, ptr::null(), 0, 0, message.as_ptr());
+    }
+
+    unsafe extern "C" fn counting_can_sign(
+        ctx: *const std::ffi::c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+    ) -> bool {
+        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    /// A signer handle whose every callback bumps `calls`. Destroy it with
+    /// `dash_sdk_signer_destroy` before `calls` goes out of scope.
+    fn counting_signer(calls: &AtomicUsize) -> *mut SignerHandle {
+        unsafe {
+            rs_sdk_ffi::dash_sdk_signer_create_with_ctx(
+                calls as *const AtomicUsize as *mut std::ffi::c_void,
+                counting_sign_async,
+                counting_can_sign,
+                None,
+            )
+        }
+    }
+
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(!result.message.is_null());
+        unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn added_row(key_id: u32, pubkey: &[u8; 33]) -> IdentityPubkeyFFI {
+        IdentityPubkeyFFI {
+            key_id,
+            key_type: KeyType::ECDSA_SECP256K1 as u8,
+            purpose: Purpose::AUTHENTICATION as u8,
+            security_level: SecurityLevel::HIGH as u8,
+            pubkey_bytes: pubkey.as_ptr(),
+            pubkey_len: pubkey.len(),
+            read_only: false,
+            contract_bounds_kind: 0,
+            contract_bounds_id: ptr::null(),
+            contract_bounds_document_type: ptr::null(),
+            has_total_budget: false,
+            total_budget: 0,
+            has_expires_at: false,
+            expires_at: 0,
+        }
+    }
+
+    /// A null `external_key_ids` with a non-zero count is refused before the
+    /// wallet is looked up (the handle names no wallet, which would surface
+    /// as `NotFound`) or the signer consulted: read as empty, it would store
+    /// the caller's external key as derived.
+    #[test]
+    fn should_refuse_null_external_key_ids_with_a_count_before_the_wallet_or_the_signer() {
+        let calls = AtomicUsize::new(0);
+        let signer = counting_signer(&calls);
+        let identity_id = [0x11u8; 32];
+        let pubkey = [0x02u8; 33];
+        let row = added_row(9, &pubkey);
+        let result = unsafe {
+            platform_wallet_update_identity_with_signer(
+                Handle::MAX,
+                identity_id.as_ptr(),
+                &row,
+                1,
+                ptr::null(),
+                1,
+                ptr::null(),
+                0,
+                signer,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "{}",
+            message_of(&result)
+        );
+        assert_eq!(
+            message_of(&result),
+            "external_key_ids is null with a non-zero count"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        unsafe { rs_sdk_ffi::dash_sdk_signer_destroy(signer) };
+    }
+
+    /// A zero count reads as empty whatever the pointer, so the refusal is
+    /// only for a null array that claims rows.
+    #[test]
+    fn should_read_a_zero_count_of_external_key_ids_as_empty() {
+        let ids = [7u32, 8];
+        assert_eq!(
+            unsafe { read_external_key_ids(ptr::null(), 0) }.ok(),
+            Some(vec![])
+        );
+        assert_eq!(
+            unsafe { read_external_key_ids(ids.as_ptr(), 0) }.ok(),
+            Some(vec![])
+        );
+        assert_eq!(
+            unsafe { read_external_key_ids(ids.as_ptr(), 2) }.ok(),
+            Some(vec![7, 8])
+        );
+    }
+
+    /// The export hands its external key ids to the wallet: one that names
+    /// no key the update adds comes back refused before the signer is
+    /// consulted.
+    #[test]
+    fn should_forward_external_key_ids_to_the_wallet() {
+        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::Identity;
+        use dpp::version::PlatformVersion;
+        use platform_wallet::test_support::test_platform_wallet_manager;
+
+        let identity_id = Identifier::from([0x21; 32]);
+        let (_manager, handle) = crate::runtime::runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+            let mut identity =
+                Identity::default_versioned(PlatformVersion::latest()).expect("identity");
+            identity.set_id(identity_id);
+            identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    data: vec![0x02; KeyType::ECDSA_SECP256K1.default_size()].into(),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            assert_eq!(identity.public_keys().len(), 1);
+            {
+                let mut wm = wallet.wallet_manager().write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(identity, 0, wallet_id, wallet.persister())
+                    .expect("add identity");
+            }
+            let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+            (manager, handle)
+        });
+
+        let calls = AtomicUsize::new(0);
+        let signer = counting_signer(&calls);
+        let id_bytes = identity_id.to_buffer();
+        let pubkey = [0x03u8; 33];
+        let row = added_row(1, &pubkey);
+        let external_ids = [9u32];
+        let result = unsafe {
+            platform_wallet_update_identity_with_signer(
+                handle,
+                id_bytes.as_ptr(),
+                &row,
+                1,
+                external_ids.as_ptr(),
+                external_ids.len(),
+                ptr::null(),
+                0,
+                signer,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            message_of(&result).contains("external key id 9 names no key this update adds"),
+            "{}",
+            message_of(&result)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        unsafe { rs_sdk_ffi::dash_sdk_signer_destroy(signer) };
+        PLATFORM_WALLET_STORAGE.remove(handle);
     }
 }
