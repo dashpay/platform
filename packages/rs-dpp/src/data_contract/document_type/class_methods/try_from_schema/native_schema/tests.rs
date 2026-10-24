@@ -1541,3 +1541,40 @@ fn should_admit_a_contains_that_is_no_schema_as_the_meta_schema_check_does() {
     assert_eq!(tally.both_accept, 1, "{tally:?}");
     assert_eq!(tally.parse_refusals, 1, "{tally:?}");
 }
+
+/// What the document meta-schema leaves unchecked, the native checks leave too: the value of
+/// a property's `const`, which the meta-schema reads through the schema `true`, and the
+/// schema of a system property, whose name the meta-schema admits without checking what it
+/// names.
+#[test]
+fn should_admit_any_const_and_any_system_property_schema_as_the_meta_schema_check_does() {
+    for (case, change) in [
+        (
+            "a number const",
+            Box::new(|root: &mut JsonValue| {
+                root["properties"]["score"]["const"] = json!(10);
+            }) as RootChange,
+        ),
+        (
+            "an unknown keyword on a system property schema",
+            Box::new(|root: &mut JsonValue| {
+                root["properties"]["$createdAt"] =
+                    json!({ "type": "integer", "unknownKeyword": 1 });
+            }) as RootChange,
+        ),
+        (
+            "a system property schema with a malformed bound",
+            Box::new(|root: &mut JsonValue| {
+                root["properties"]["$createdAt"] = json!({ "type": "integer", "minimum": "a" });
+            }) as RootChange,
+        ),
+    ] {
+        let root = profile_root_with(change);
+        assert_eq!(
+            meta_schema_refusal(&root),
+            None,
+            "{case}: the meta-schema check"
+        );
+        assert!(native_refusal(&root).is_none(), "{case}: the native checks");
+    }
+}
