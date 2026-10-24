@@ -495,25 +495,27 @@ fn seed_base_balances<P: AddressProvider>(
 /// address balance changes RPCs.
 ///
 /// The function queries recent changes **first** to obtain a GroveDB proof, then
-/// uses [`Drive::verify_key_exists_as_boundary`] to check whether the boundary
-/// height still exists in the recent address balances tree. If it does, the
-/// compacted phase is skipped entirely -- this is the common hot path for
-/// frequent 15-second re-syncs where only the recent zone has changed.
+/// reads the boundary nodes of the recent address balances tree from it. If a
+/// boundary at or above the checkpoint is present, the compacted phase is
+/// skipped entirely -- this is the common hot path for frequent 15-second
+/// re-syncs where only the recent zone has changed.
 ///
 /// When `last_known_recent_block > 0`, the recent query uses **exclusive start**
-/// (`RangeAfter`) with that height. This causes the height to appear as a
-/// **boundary node** in the proof, which `key_exists_as_boundary` can detect.
-/// When `last_known_recent_block == 0`, the query falls back to inclusive start
-/// (`RangeFrom` on `start_height`) and the boundary check is skipped (compacted
-/// phase always runs).
+/// (`RangeAfter`) with that height. While the height is still in the recent
+/// tree, it appears as a **boundary node** in the proof. Once compacted away,
+/// it does not. When `last_known_recent_block == 0`, the query falls back to
+/// inclusive start (`RangeFrom` on `start_height`), whose proof does not carry
+/// its start key as a boundary. A proof with no boundary cannot show that the
+/// recent zone covers the blocks since `start_height`, so the compacted phase
+/// runs.
 ///
 /// - **Phase 1 (recent, always first)**: Single non-paginated query via
 ///   `fetch_with_metadata_and_proof`. The recent (uncompacted) zone covers at
 ///   most 64 blocks, well under the server limit of 100 entries per request.
 ///
 /// - **Phase 2 (compacted, conditional)**: Paginated query (25-entry batches)
-///   covering the compacted range. Only runs when the boundary check detects that
-///   the cursor height was compacted away.
+///   covering the compacted range. Skipped only when the recent proof shows the
+///   recent zone reaches back to the checkpoint.
 ///
 /// - **Phase 3 (apply recent)**: The recent results fetched in Phase 1 are applied
 ///   after the (optional) compacted phase.
@@ -607,15 +609,19 @@ async fn incremental_catch_up<P: AddressProvider>(
     //
     // Based on three values:
     // 1. checkpoint_height: the tree scan snapshot height
-    // 2. last_recent_block: highest boundary in the recent proof (the actual
-    //    last block in the recent tree)
+    // 2. last_recent_block: highest boundary in the recent proof, a block
+    //    proven to still be in the recent tree
     // 3. Whether boundaries exist at all
     //
     // If last_recent_block >= checkpoint_height → recent covers the full range,
     //   no compacted data can exist in the gap. Skip compacted.
     // If last_recent_block < checkpoint_height → there's a gap that may contain
     //   compacted data. Query compacted.
-    // If no boundaries → recent tree is empty, nothing to compact. Skip.
+    // If no boundaries → nothing proves the recent tree reaches back to
+    //   start_height. A `RangeFrom` proof does not carry its start key as
+    //   one, and a `RangeAfter` start key compacted away leaves none, while
+    //   the blocks since start_height may sit in the compacted tree. Query
+    //   compacted.
     let need_compacted = needs_compacted_phase(&recent_proof, result.checkpoint_height);
 
     // Phase 2b — Compacted (historical) catch-up (conditional)
@@ -778,9 +784,8 @@ fn needs_compacted_phase(recent_proof: &Proof, checkpoint_height: u64) -> bool {
             }
         }
         Ok(None) => {
-            // No boundaries in recent tree → empty, nothing to compact
-            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
-            false
+            debug!("Address sync: recent proof has no boundary — need compacted");
+            true
         }
         Err(e) => {
             debug!(
@@ -1178,7 +1183,8 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
 ///
 /// Returns:
 /// - `Ok(Some(height))` — the highest block height found as a boundary
-/// - `Ok(None)` — no boundaries found (recent tree is empty)
+/// - `Ok(None)` — no boundaries found; this does not mean the recent tree is
+///   empty, only that the proof shows no block still in it
 /// - `Err(...)` — proof decoding failed
 fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error> {
     let path: [&[u8]; 2] = [
