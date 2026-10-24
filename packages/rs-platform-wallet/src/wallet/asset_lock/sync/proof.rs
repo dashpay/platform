@@ -3408,6 +3408,80 @@ mod chain_lock_wait_tests {
         assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
     }
 
+    /// The same with no funding record anywhere — evicted from memory, and a
+    /// persister that keeps none answers `Ok(None)`: the cleared row's
+    /// record-only proof wait finds nothing, and the IS-timeout outcome the
+    /// existing-lock resume reports hands it to the lookup, which rebuilds the
+    /// proof at the height it verifies.
+    #[tokio::test(start_paused = true)]
+    async fn should_rebuild_a_cleared_proof_through_the_lookup_when_no_record_is_kept() {
+        let locator = ScriptedLocator::new(vec![mined(140)]);
+        let rejected = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::new(Txid::from([0x5a; 32]), 0),
+        });
+        let ctx = ok_ctx(
+            TransactionContext::Mempool,
+            AssetLockStatus::ChainLocked,
+            Some(rejected.clone()),
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_ok_wallet_chain_lock(&ctx, 150).await;
+        {
+            let mut wm = ctx.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&ctx.wallet_id)
+                .expect("wallet must remain registered");
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .remove(&ctx.out_point.txid)
+                .expect("the fixture holds the funding record");
+        }
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &rejected, &height_rejection())
+            .await;
+        let cleared = ok_tracked_row(&ctx).await;
+        assert_eq!(cleared.status, AssetLockStatus::Broadcast);
+        assert!(cleared.proof.is_none());
+
+        let resolution = tokio::time::timeout(
+            Duration::from_secs(900),
+            ctx.manager.resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: ctx.out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &ctx.signer,
+            ),
+        )
+        .await
+        .expect("the record-only wait expires into the IS-timeout outcome")
+        .expect("resolution");
+
+        let out_point = match resolution {
+            FundingResolution::IsTimeout { out_point } => out_point,
+            FundingResolution::Resolved(_) => panic!("no record supports a proof"),
+        };
+        let (proof, _path) = ctx
+            .manager
+            .resolve_chain_proof_after_is_timeout(&out_point, None)
+            .await
+            .expect("the lookup rebuilds the proof");
+        assert_eq!(chain_proof_height(proof), 140);
+
+        let row = ok_tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::ChainLocked);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
+    }
+
     /// `wait_for_proof` refuses a record the SPV headers contradict, exactly
     /// as the ChainLock wait does.
     #[tokio::test(start_paused = true)]
