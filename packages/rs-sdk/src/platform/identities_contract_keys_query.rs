@@ -222,6 +222,7 @@ mod tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: true,
         };
         let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
@@ -243,6 +244,7 @@ mod tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: false,
         };
         let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
