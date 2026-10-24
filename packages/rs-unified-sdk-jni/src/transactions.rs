@@ -132,12 +132,27 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 
 // ── Identity update (add / disable keys) ──────────────────────────────
 
+/// The revision `updateIdentity` pins, or the message to throw: `None`
+/// without `hasRevision` (whatever `revision` holds), and a negative
+/// `revision` with it is refused rather than bit-cast to a huge one.
+fn update_revision_arg(has_revision: bool, revision: i64) -> Result<Option<u64>, &'static str> {
+    if !has_revision {
+        return Ok(None);
+    }
+    if revision < 0 {
+        return Err("revision must be non-negative");
+    }
+    Ok(Some(revision as u64))
+}
+
 /// Add public keys and/or disable existing key ids on an identity, signing
 /// the resulting `IdentityUpdateTransition` via the external `signerHandle`
 /// (the identity's MASTER auth key) — the exact call
 /// `AddIdentityKeyView.submit` makes through `wallet.updateIdentity(...)`.
 ///
-/// Thin marshaler over `platform_wallet_update_identity_with_signer`. The
+/// Thin marshaler over `platform_wallet_update_identity_with_signer` (or
+/// `platform_wallet_update_identity_with_signer_at_revision` with
+/// `hasRevision`). The
 /// derive + Keystore-persist of the new keys' private material happens on
 /// the Kotlin side BEFORE this call (mirroring the Swift flow); here we only
 /// carry the on-chain public rows.
@@ -168,8 +183,12 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 ///
 /// `disablePublicKeyIds` is a JVM `int[]` of key ids to disable (may be
 /// empty). At least one of add / disable must be non-empty for the FFI to
-/// build a transition. Returns nothing on success (throws on error) — Room
-/// learns of the change through the persistence changeset.
+/// build a transition. With `hasRevision`, the update must carry `revision`,
+/// and one the cached identity would give another revision is refused
+/// before anything is signed
+/// (`platform_wallet_update_identity_with_signer_at_revision`). Returns
+/// nothing on success (throws on error) — Room learns of the change through
+/// the persistence changeset.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentity(
     mut env: JNIEnv,
@@ -179,6 +198,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     add_pubkeys_blob: JByteArray,
     disable_public_key_ids: jni::objects::JIntArray,
     signer_handle: jlong,
+    has_revision: jni::sys::jboolean,
+    revision: jlong,
 ) {
     guard(&mut env, (), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
@@ -234,27 +255,51 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         }
 
+        let revision = match update_revision_arg(has_revision != 0, revision) {
+            Ok(revision) => revision,
+            Err(message) => {
+                throw_sdk_exception(env, 1, message);
+                return;
+            }
+        };
+
         // Build the FFI rows referencing the owned buffers in `decoded`.
         let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+        let rows = if ffi_rows.is_empty() {
+            ptr::null()
+        } else {
+            ffi_rows.as_ptr()
+        };
+        let disable = if disable_ids.is_empty() {
+            ptr::null()
+        } else {
+            disable_ids.as_ptr()
+        };
 
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_update_identity_with_signer(
-                wallet_handle as Handle,
-                id.as_ptr(),
-                if ffi_rows.is_empty() {
-                    ptr::null()
-                } else {
-                    ffi_rows.as_ptr()
-                },
-                ffi_rows.len(),
-                if disable_ids.is_empty() {
-                    ptr::null()
-                } else {
-                    disable_ids.as_ptr()
-                },
-                disable_ids.len(),
-                signer_handle as *mut SignerHandle,
-            )
+            match revision {
+                Some(revision) => {
+                    platform_wallet_ffi::platform_wallet_update_identity_with_signer_at_revision(
+                        wallet_handle as Handle,
+                        id.as_ptr(),
+                        rows,
+                        ffi_rows.len(),
+                        disable,
+                        disable_ids.len(),
+                        revision,
+                        signer_handle as *mut SignerHandle,
+                    )
+                }
+                None => platform_wallet_ffi::platform_wallet_update_identity_with_signer(
+                    wallet_handle as Handle,
+                    id.as_ptr(),
+                    rows,
+                    ffi_rows.len(),
+                    disable,
+                    disable_ids.len(),
+                    signer_handle as *mut SignerHandle,
+                ),
+            }
         };
         // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
@@ -951,4 +996,28 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_pin_a_revision_only_with_has_revision_and_refuse_a_negative_one() {
+        assert_eq!(update_revision_arg(false, 5), Ok(None));
+        // Without `hasRevision` the value is not read, negative or not.
+        assert_eq!(update_revision_arg(false, -1), Ok(None));
+        assert_eq!(update_revision_arg(true, 0), Ok(Some(0)));
+        assert_eq!(
+            update_revision_arg(true, i64::MAX),
+            Ok(Some(i64::MAX as u64))
+        );
+        for revision in [-1, i64::MIN] {
+            assert_eq!(
+                update_revision_arg(true, revision),
+                Err("revision must be non-negative"),
+                "{revision}"
+            );
+        }
+    }
 }

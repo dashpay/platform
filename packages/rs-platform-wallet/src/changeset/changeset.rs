@@ -40,6 +40,7 @@ use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identifier, Revision};
 
@@ -1006,8 +1007,10 @@ pub struct IdentityKeyDerivationIndices {
 
 /// A derivation breadcrumb as the raw `(wallet_id, identity_index,
 /// key_index)` triple passed to `ManagedIdentity::add_key` / `add_keys`.
-/// `Some` lets the client re-derive the private key from the wallet seed;
-/// `None` marks a watch-only key.
+/// `Some` lets the client re-derive the private key from the wallet seed.
+/// `None` gives no coordinates: a key the persister does not hold yet is
+/// watch-only, and one it holds keeps its breadcrumb (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 
 /// One public key paired with its derivation breadcrumb — the unit
@@ -1017,12 +1020,13 @@ pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 /// Discovery derives a candidate scalar, validates it against the on-chain
 /// key, and emits a breadcrumb (the DIP-9 coordinates) only when it matches.
 /// The scalar itself is never carried out — the client derives the key on
-/// demand from the Keychain seed at the breadcrumb path. `breadcrumb` is
-/// `None` for a watch-only key.
+/// demand from the Keychain seed at the breadcrumb path. A `None`
+/// `breadcrumb` gives no coordinates (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub struct KeyWithBreadcrumb {
     /// The DPP public-key record.
     pub key: dpp::identity::IdentityPublicKey,
-    /// Derivation coordinates for re-derivable keys; `None` for watch-only.
+    /// Derivation coordinates for re-derivable keys; `None` gives none.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
 }
 
@@ -1032,8 +1036,9 @@ pub struct KeyWithBreadcrumb {
 /// derivation that produced it. No private material crosses here: the client
 /// derives the key on demand from the Keychain seed at the breadcrumb path
 /// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). When
-/// `derivation_indices` is `None` the key is watch-only from this wallet's
-/// point of view.
+/// `derivation_indices` is `None`, the entry supplies no new coordinates;
+/// an update preserves any breadcrumb the persister already holds (see the
+/// field).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
@@ -1051,8 +1056,16 @@ pub struct IdentityKeyEntry {
     /// watched-only identities with no wallet association.
     pub wallet_id: Option<[u8; 32]>,
     /// DIP-9 `(identity_index, key_index)` pair the client needs to
-    /// re-derive the private key. `None` means "view-only, no
-    /// private key recoverable".
+    /// re-derive the private key.
+    ///
+    /// `None` gives no coordinates: for a row the persister does not hold
+    /// yet it means "view-only, no private key recoverable", but for an
+    /// update to a held row it means "no new coordinates", and the
+    /// persister keeps the breadcrumb (and its `wallet_id`) the row already
+    /// holds. A refresh emits such entries for keys a wallet derived, so a
+    /// persister that replaced the held breadcrumb with `None` would lose
+    /// the key's signing recovery. The SQLite writer, the Swift and the
+    /// Kotlin persisters all keep it, and changeset merges do the same.
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
@@ -1077,8 +1090,29 @@ impl Merge for IdentityKeysChangeSet {
         // Last-write-wins per composite key. Matches the discipline
         // used by other scalar-entry changesets in this module; the
         // "don't emit both upsert + remove for the same key in one
-        // mutation" invariant is enforced on the emitter side.
-        self.upserts.extend(other.upserts);
+        // mutation" invariant is enforced on the emitter side. A later
+        // entry without a derivation breadcrumb (a refresh, a limits
+        // update) keeps the earlier one's, as every persister keeps a
+        // stored one: a buffered write that only knows the key's new state
+        // must not turn a wallet-derived key watch-only. Only for the same
+        // public key in the same wallet scope (or none): the coordinates
+        // derive that key, not another one under the same row id.
+        for (id, mut entry) in other.upserts {
+            if entry.derivation_indices.is_none() {
+                if let Some(earlier) = self.upserts.get(&id) {
+                    let same_key = earlier.public_key_hash == entry.public_key_hash
+                        && earlier.public_key.key_type() == entry.public_key.key_type()
+                        && earlier.public_key.data() == entry.public_key.data();
+                    let same_scope =
+                        entry.wallet_id.is_none() || entry.wallet_id == earlier.wallet_id;
+                    if earlier.derivation_indices.is_some() && same_key && same_scope {
+                        entry.wallet_id = earlier.wallet_id;
+                        entry.derivation_indices = earlier.derivation_indices;
+                    }
+                }
+            }
+            self.upserts.insert(id, entry);
+        }
         self.removed.extend(other.removed);
     }
 
@@ -1114,7 +1148,8 @@ impl Merge for IdentityChangeSet {
         // IdentityEntry is a scalar-only snapshot via
         // `IdentityEntry::from_managed`; public keys / private keys
         // live in the sibling `IdentityKeysChangeSet`. "Later wins"
-        // for scalar fields, revision-gated for balance/revision.
+        // for scalar fields, revision-gated for balance/revision; the
+        // key watermark keeps the later block.
         for (id, entry) in other.identities {
             self.identities
                 .entry(id)
@@ -1129,7 +1164,11 @@ impl Merge for IdentityChangeSet {
                         existing.last_updated_balance_block_time =
                             entry.last_updated_balance_block_time;
                     }
-                    existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+                    // The key watermark only moves up, at any revision.
+                    existing.last_synced_keys_block_time = BlockTime::later_watermark(
+                        existing.last_synced_keys_block_time,
+                        entry.last_synced_keys_block_time,
+                    );
                     existing.status = entry.status;
                     // `wallet_id` is immutable per identity (SHA256 of
                     // root public key + chain code), so LWW and FWW are
@@ -2527,6 +2566,100 @@ mod tests {
         }
     }
 
+    /// A later key entry without a derivation breadcrumb keeps the earlier
+    /// one's and takes the rest; one with a breadcrumb replaces it whole.
+    #[test]
+    fn should_keep_an_earlier_breadcrumb_when_a_later_key_entry_has_none() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x54; 32]);
+        let entry = |disabled_at: Option<u64>, key_index: Option<u32>| IdentityKeyEntry {
+            identity_id: id,
+            key_id: 3,
+            public_key: IdentityPublicKeyV0 {
+                id: 3,
+                disabled_at,
+                ..Default::default()
+            }
+            .into(),
+            public_key_hash: [3; 20],
+            wallet_id: key_index.map(|_| [9; 32]),
+            derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index,
+            }),
+        };
+        let changeset = |entry: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts.insert((id, 3), entry);
+            cs
+        };
+
+        let mut merged = changeset(entry(None, Some(3)));
+        merged.merge(changeset(entry(Some(7), None)));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(7), Some(3)));
+
+        merged.merge(changeset(entry(Some(8), Some(4))));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(8), Some(4)));
+
+        // Nothing to keep: the later entry stands as it is.
+        let mut merged = changeset(entry(None, None));
+        merged.merge(changeset(entry(Some(9), None)));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(9), None));
+    }
+
+    /// A later entry without a breadcrumb takes the earlier one's only for
+    /// the same public key (data and hash) in the same wallet scope or none:
+    /// a replacement key under the same row id, or an entry scoped to
+    /// another wallet, stands as it is.
+    #[test]
+    fn should_lend_a_breadcrumb_only_to_the_same_public_key_in_the_same_scope() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x55; 32]);
+        let entry = |byte: u8, hash: u8, wallet_id: Option<[u8; 32]>, key_index: Option<u32>| {
+            IdentityKeyEntry {
+                identity_id: id,
+                key_id: 3,
+                public_key: IdentityPublicKeyV0 {
+                    id: 3,
+                    data: vec![byte; 33].into(),
+                    ..Default::default()
+                }
+                .into(),
+                public_key_hash: [hash; 20],
+                wallet_id,
+                derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index,
+                }),
+            }
+        };
+        let merged = |later: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts
+                .insert((id, 3), entry(1, 1, Some([9; 32]), Some(3)));
+            let mut next = IdentityKeysChangeSet::default();
+            next.upserts.insert((id, 3), later);
+            cs.merge(next);
+            cs.upserts[&(id, 3)].clone()
+        };
+
+        for later in [entry(1, 1, None, None), entry(1, 1, Some([9; 32]), None)] {
+            assert_eq!(merged(later), entry(1, 1, Some([9; 32]), Some(3)));
+        }
+        for later in [
+            // A replacement key: other data, other hash.
+            entry(2, 2, None, None),
+            // The same hash over other data.
+            entry(2, 1, None, None),
+            // The same data with another hash.
+            entry(1, 2, None, None),
+            // Another wallet's scope.
+            entry(1, 1, Some([8; 32]), None),
+        ] {
+            assert_eq!(merged(later.clone()), later);
+        }
+    }
+
     #[test]
     fn should_merge_balance_and_watermark_under_the_same_revision_gate() {
         let id = Identifier::from([0x53; 32]);
@@ -2556,6 +2689,39 @@ mod tests {
                 merged.last_updated_balance_block_time,
                 expected.last_updated_balance_block_time
             );
+        }
+    }
+
+    #[test]
+    fn should_merge_the_later_key_watermark() {
+        let id = Identifier::from([0x54; 32]);
+        let newer = Some(BlockTime::new(20, 50, 2000));
+        for (incoming, expected) in [
+            (None, newer),
+            (Some(BlockTime::new(10, 42, 1000)), newer),
+            (newer, newer),
+            (
+                Some(BlockTime::new(30, 60, 3000)),
+                Some(BlockTime::new(30, 60, 3000)),
+            ),
+        ] {
+            for revision in [6, 7, 8] {
+                let mut old = identity_entry_with_contested(id, &[]);
+                old.revision = 7;
+                old.last_synced_keys_block_time = newer;
+                let mut later_entry = old.clone();
+                later_entry.revision = revision;
+                later_entry.last_synced_keys_block_time = incoming;
+                let mut changes = IdentityChangeSet::default();
+                changes.identities.insert(id, old);
+                let mut later = IdentityChangeSet::default();
+                later.identities.insert(id, later_entry);
+                changes.merge(later);
+                assert_eq!(
+                    changes.identities[&id].last_synced_keys_block_time,
+                    expected
+                );
+            }
         }
     }
 

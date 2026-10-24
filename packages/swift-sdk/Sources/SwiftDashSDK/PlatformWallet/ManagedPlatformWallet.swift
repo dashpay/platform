@@ -3729,10 +3729,27 @@ extension ManagedPlatformWallet {
     /// otherwise subsequent operations that try to sign with the
     /// newly-added keys will fail. The signer here only signs the
     /// update transition itself with an existing MASTER key.
+    ///
+    /// The transition carries the cached identity's revision plus one,
+    /// read when the Rust side starts the update. With `revision` set, an
+    /// update that would carry another one throws before anything is
+    /// signed or broadcast (`PlatformWalletError.identityRevisionMismatch`,
+    /// whose message carries the expected and actual revisions),
+    /// so a caller that recorded `revision` beforehand knows the only
+    /// revision this update can land at: Drive takes an identity update
+    /// only at one above the identity's revision. Read the revision to
+    /// record from `nextIdentityUpdateRevision(identityId:)`. When Drive
+    /// refuses the update for its revision and proofs show the refused
+    /// transition's nonce spent and the identity below that revision, the
+    /// call throws `PlatformWalletError.identityRevisionRefused` and the
+    /// reader then gives the revision Drive takes. `nil` takes whatever the
+    /// cache gives, and on such a refusal is sent once more at one above the
+    /// proved revision.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
         disablePublicKeyIds: [UInt32] = [],
+        revision: UInt64? = nil,
         signer: KeychainSigner
     ) async throws {
         let handle = self.handle
@@ -3742,43 +3759,69 @@ extension ManagedPlatformWallet {
         }
         let addPubkeys = addPublicKeys
         let disableIds = disablePublicKeyIds
-        try await Task.detached(priority: .userInitiated) {
-            _ = signer
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        try await Task.detached(priority: .userInitiated) { [self] in
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
             // FFI sees stays valid for the call duration.
             let pubkeyBuffers: [Data] = addPubkeys.map { $0.pubkeyBytes }
-            let result = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                disableIds.withUnsafeBufferPointer { disableBp in
-                    if addPubkeys.isEmpty {
-                        return platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            nil,
-                            0,
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
-                    }
-                    return ManagedPlatformWallet.withPubkeyFFIArray(
-                        addPubkeys,
-                        buffers: pubkeyBuffers
-                    ) { ffiRowsPtr, ffiRowsCount in
-                        platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            ffiRowsPtr,
-                            UInt(ffiRowsCount),
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
+            // The Rust worker borrows the signer's vtable for the whole
+            // synchronous call, so the signer must outlive it.
+            let result = withExtendedLifetime((self, signer)) {
+                idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    disableIds.withUnsafeBufferPointer { disableBp -> PlatformWalletFFIResult in
+                        let update = { (rows: UnsafePointer<IdentityPubkeyFFI>?, count: Int) -> PlatformWalletFFIResult in
+                            let disable = disableIds.isEmpty ? nil : disableBp.baseAddress
+                            guard let revision else {
+                                return platform_wallet_update_identity_with_signer(
+                                    handle, idBp.baseAddress!, rows, UInt(count),
+                                    disable, UInt(disableIds.count), signerHandle)
+                            }
+                            return platform_wallet_update_identity_with_signer_at_revision(
+                                handle, idBp.baseAddress!, rows, UInt(count),
+                                disable, UInt(disableIds.count), revision, signerHandle)
+                        }
+                        if addPubkeys.isEmpty {
+                            return update(nil, 0)
+                        }
+                        return ManagedPlatformWallet.withPubkeyFFIArray(
+                            addPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            update(ffiRowsPtr, ffiRowsCount)
+                        }
                     }
                 }
             }
             try result.check()
+        }.value
+    }
+
+    /// The revision the next `updateIdentity` of `identityId` carries: one
+    /// above the cached identity's, or, after
+    /// `PlatformWalletError.identityRevisionRefused`, one above the revision
+    /// proved while the cache is still where it was then. Record it before
+    /// submitting and pass it as `updateIdentity(…, revision:)`. The note of
+    /// a refusal lives in memory: after a restart this gives one above the
+    /// cached identity's again.
+    public func nextIdentityUpdateRevision(identityId: Identifier) async throws -> UInt64 {
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> UInt64 in
+            try withExtendedLifetime(self) {
+                var revision: UInt64 = 0
+                let result = idBytes.withUnsafeBufferPointer { idBp in
+                    platform_wallet_identity_next_update_revision(
+                        handle, idBp.baseAddress!, &revision)
+                }
+                try result.check()
+                return revision
+            }
         }.value
     }
 

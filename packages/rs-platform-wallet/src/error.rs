@@ -3,6 +3,7 @@ use dash_sdk::platform::dashpay::InvitationError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
@@ -84,6 +85,38 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// An identity update was asked to carry a revision the cached identity
+    /// would not give it: the cache moved since the caller read the
+    /// revision, or the caller read it elsewhere. Raised before the
+    /// transition is signed, so nothing was broadcast.
+    #[error(
+        "identity {identity_id}: the update was asked to carry revision {expected}, \
+         but the cached identity would give it {actual}; nothing was broadcast"
+    )]
+    IdentityRevisionMismatch {
+        identity_id: Identifier,
+        expected: u64,
+        actual: u64,
+    },
+
+    /// Drive refused an identity update asked to carry `refused` for its
+    /// revision, and proofs show the refused transition's nonce spent and
+    /// the identity at `drive_revision`, below the revision it would take:
+    /// the cache is ahead of the chain. Drive charged a processing fee and
+    /// took the nonce, so the refused transition can never execute; nothing
+    /// else changed. The cache is left as it is; the next update may be
+    /// asked to carry `drive_revision + 1` while the cache has not moved
+    /// (`IdentityWallet::next_update_revision` gives it).
+    #[error(
+        "identity {identity_id}: Drive refused the update at revision {refused} and holds \
+         revision {drive_revision}, below the cached identity's"
+    )]
+    IdentityRevisionRefused {
+        identity_id: Identifier,
+        refused: u64,
+        drive_revision: u64,
+    },
 
     /// A DashPay invitation link's voucher key is for the other network (a
     /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
@@ -1215,6 +1248,21 @@ pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInval
     };
     match consensus_error {
         Some(ConsensusError::StateError(StateError::AddressInvalidNonceError(e))) => Some(e),
+        _ => None,
+    }
+}
+
+/// Extract the `InvalidIdentityRevisionError` (DPP consensus code 40203)
+/// when Platform rejected an identity update whose revision is not one above
+/// the identity's, exposing `identity_id()` and Drive's `current_revision()`;
+/// `None` otherwise.
+pub fn as_identity_revision_invalid(
+    error: &dash_sdk::Error,
+) -> Option<&InvalidIdentityRevisionError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match error.consensus_error() {
+        Some(ConsensusError::StateError(StateError::InvalidIdentityRevisionError(e))) => Some(e),
         _ => None,
     }
 }

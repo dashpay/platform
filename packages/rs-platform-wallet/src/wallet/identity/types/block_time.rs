@@ -37,6 +37,17 @@ impl BlockTime {
     pub fn is_older_than(&self, current_timestamp: TimestampMillis, max_age_millis: u64) -> bool {
         (current_timestamp - self.timestamp) > max_age_millis
     }
+
+    /// The later of two key watermarks, by Platform height. A watermark only
+    /// moves up: an older or absent one in a later snapshot must not reopen
+    /// the cache to key states from below the block it already took.
+    pub(crate) fn later_watermark(kept: Option<Self>, incoming: Option<Self>) -> Option<Self> {
+        match (kept, incoming) {
+            (Some(kept), Some(incoming)) if incoming.height <= kept.height => Some(kept),
+            (kept, None) => kept,
+            (_, incoming) => incoming,
+        }
+    }
 }
 
 impl From<dash_sdk::dapi_grpc::platform::v0::ResponseMetadata> for BlockTime {

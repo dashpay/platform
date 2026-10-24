@@ -1,6 +1,7 @@
 //! Synchronization and block time management for ManagedIdentity
 
 use super::ManagedIdentity;
+use crate::changeset::{IdentityKeysChangeSet, PersistenceError, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
@@ -87,6 +88,43 @@ impl ManagedIdentity {
         Ok(())
     }
 
+    /// Take a verified balance when its proof's block is above the cache's
+    /// balance watermark (see `balance_snapshot_is_newer`). Memory only: the
+    /// balance is queued, so the next store carries it (see
+    /// `store_keys_and_balance`) and a failed store keeps it queued.
+    pub(crate) fn take_fetched_balance(&mut self, balance: u64, block_time: BlockTime) {
+        if self.balance_snapshot_is_newer(block_time) {
+            self.identity.set_balance(balance);
+            self.last_updated_balance_block_time = Some(block_time);
+            self.pending_balance_snapshot = Some((balance, block_time));
+        }
+    }
+
+    /// Store `keys_cs` with the identity's scalar snapshot (status, revision
+    /// and any queued balance) as one changeset. The store's failure is
+    /// returned. A store that commits inline has committed the queued
+    /// balance, which is then cleared; a buffered one keeps it queued, so it
+    /// rides later snapshots until a balance write flushes it (see
+    /// `retry_pending_balance`), and no flush runs here.
+    pub(crate) fn store_keys_and_balance(
+        &mut self,
+        keys_cs: IdentityKeysChangeSet,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let (balance, block_time) = self.balance_snapshot_for_persistence();
+        persister.store(PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        })?;
+        if self.pending_balance_snapshot.is_some() && persister.store_commits_inline() {
+            self.identity.set_balance(balance);
+            self.last_updated_balance_block_time = block_time;
+            self.pending_balance_snapshot = None;
+        }
+        Ok(())
+    }
+
     pub(crate) fn persist_refreshed_balance(
         &mut self,
         balance: u64,
@@ -110,11 +148,7 @@ impl ManagedIdentity {
         block_time: BlockTime,
         persister: &WalletPersister,
     ) -> u64 {
-        if self.balance_snapshot_is_newer(block_time) {
-            self.identity.set_balance(balance);
-            self.last_updated_balance_block_time = Some(block_time);
-            self.pending_balance_snapshot = Some((balance, block_time));
-        }
+        self.take_fetched_balance(balance, block_time);
         // A transaction response can confirm the exact pending query snapshot
         // whose cache write failed. Publish that verified value now, while
         // retaining the same write obligation if storage is still unavailable.
@@ -144,15 +178,19 @@ impl ManagedIdentity {
         }
     }
 
-    /// Update the last keys sync block time.
-    ///
-    /// Persists the resulting changeset via `persister` and returns `()`.
+    /// Raise the key watermark (`last_synced_keys_block_time`) to
+    /// `block_time`, unless it is already at or above it, and persist the
+    /// scalar snapshot. A fetch at the cached revision then takes its key
+    /// states only from that block or a later one (see
+    /// `take_fetched_identity`), so raise it only from a block whose key
+    /// states the cache holds.
     pub fn update_keys_sync_block_time(
         &mut self,
         block_time: BlockTime,
         persister: &WalletPersister,
     ) {
-        self.last_synced_keys_block_time = Some(block_time);
+        self.last_synced_keys_block_time =
+            BlockTime::later_watermark(self.last_synced_keys_block_time, Some(block_time));
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);

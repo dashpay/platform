@@ -33,6 +33,34 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testIdentityRevisionMismatchFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_REVISION_MISMATCH),
+            .errorIdentityRevisionMismatch
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorIdentityRevisionMismatch.rawValue, 62)
+        let error = PlatformWalletError(code: .errorIdentityRevisionMismatch, message: "asked 5, would give 6")
+        guard case .identityRevisionMismatch(let detail) = error else {
+            return XCTFail("the revision refusal lost its typed case")
+        }
+        XCTAssertEqual(detail, "asked 5, would give 6")
+        XCTAssertEqual(error.errorDescription, "asked 5, would give 6")
+    }
+
+    func testIdentityRevisionRefusedFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_REVISION_REFUSED),
+            .errorIdentityRevisionRefused
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorIdentityRevisionRefused.rawValue, 63)
+        let error = PlatformWalletError(code: .errorIdentityRevisionRefused, message: "refused 7, Drive holds 5")
+        guard case .identityRevisionRefused(let detail) = error else {
+            return XCTFail("the Drive revision refusal lost its typed case")
+        }
+        XCTAssertEqual(detail, "refused 7, Drive holds 5")
+        XCTAssertEqual(error.errorDescription, "refused 7, Drive holds 5")
+    }
+
     func testAssetLockInsufficientFundsFFIResultMapping() {
         // The asset-lock coin-selection shortfall (dashpay/platform#4073).
         // Swift could not decode code 29 at all before this mirror existed —

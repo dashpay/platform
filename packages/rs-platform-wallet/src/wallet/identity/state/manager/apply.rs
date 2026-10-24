@@ -17,6 +17,7 @@
 use super::{IdentityLocation, IdentityManager};
 use crate::changeset::{IdentityEntry, IdentityKeyEntry};
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
+use crate::BlockTime;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::v0::IdentityV0;
@@ -38,7 +39,8 @@ impl IdentityManager {
     /// as applying it once. If the identity already exists in either
     /// bucket, the scalar fields are updated in place; balance/revision
     /// are gated on `entry.revision >= existing.identity.revision()`
-    /// matching the merge policy on `IdentityChangeSet`. DPNS labels and
+    /// matching the merge policy on `IdentityChangeSet`, and the key
+    /// watermark keeps the later of the two blocks. DPNS labels and
     /// contested DPNS labels are complete canonical snapshots and are
     /// assigned wholesale.
     pub(crate) fn apply_identity_entry(&mut self, entry: IdentityEntry) {
@@ -55,7 +57,10 @@ impl IdentityManager {
                 );
                 existing.identity.set_revision(entry.revision);
             }
-            existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
+            existing.last_synced_keys_block_time = BlockTime::later_watermark(
+                existing.last_synced_keys_block_time,
+                entry.last_synced_keys_block_time,
+            );
             existing.status = entry.status;
             *existing.dashpay_profile_mut() = entry.dashpay_profile;
             // DPNS names: wholesale assign, matching the changeset's
@@ -251,5 +256,44 @@ mod tests {
             .expect("identity must exist")
             .contested_dpns_names
             .is_empty());
+    }
+
+    #[test]
+    fn should_keep_the_later_key_watermark_on_replay() {
+        let id = Identifier::from([0x54; 32]);
+        let mut manager = IdentityManager::default();
+        let mut newer = entry(id, &[]);
+        newer.revision = 7;
+        newer.last_synced_keys_block_time = Some(BlockTime::new(20, 50, 2000));
+        manager.apply_identity_entry(newer);
+        for (revision, older) in [
+            (6, None),
+            (8, None),
+            (6, Some(BlockTime::new(10, 42, 1000))),
+            (8, Some(BlockTime::new(10, 42, 1000))),
+        ] {
+            let mut stale = entry(id, &[]);
+            stale.revision = revision;
+            stale.last_synced_keys_block_time = older;
+            manager.apply_identity_entry(stale);
+            assert_eq!(
+                manager
+                    .locate_mut(&id)
+                    .expect("identity must exist")
+                    .last_synced_keys_block_time,
+                Some(BlockTime::new(20, 50, 2000))
+            );
+        }
+        let mut later = entry(id, &[]);
+        later.revision = 6;
+        later.last_synced_keys_block_time = Some(BlockTime::new(30, 60, 3000));
+        manager.apply_identity_entry(later);
+        assert_eq!(
+            manager
+                .locate_mut(&id)
+                .expect("identity must exist")
+                .last_synced_keys_block_time,
+            Some(BlockTime::new(30, 60, 3000))
+        );
     }
 }

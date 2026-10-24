@@ -1,25 +1,34 @@
 //! Mutate an identity's public-key set.
 
 use async_trait::async_trait;
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::{IdentityBalanceAndRevision, IdentityNonceFetcher};
 use dpp::address_funds::AddressWitness;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::accessors::IdentitySettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_nonce::{validate_identity_nonce_update, MergeIdentityNonceResult};
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::BinaryData;
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::ProtocolError;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::error::PlatformWalletError;
+use crate::changeset::KeyWithBreadcrumb;
+use crate::error::{as_identity_revision_invalid, PlatformWalletError};
 
 use super::signing_key::AvailableSigningKey;
 use super::*;
@@ -77,21 +86,79 @@ impl IdentityWallet {
     /// in the typical case). The signer here only signs the update
     /// transition itself; it does not derive the new keys.
     ///
-    /// CACHE INVARIANT: this function does NOT refresh the in-process
-    /// `IdentityManager` after a successful broadcast. The local
-    /// cached `Identity` keeps the pre-update revision and key set
-    /// until the caller invokes [`Self::refresh_identity`] (or the
-    /// next sync round). A subsequent call to this function for the
-    /// same identity without an intervening refresh will reuse the
-    /// stale revision and Platform will reject the duplicate. It is
-    /// documented here rather than fixed because the refresh requires
-    /// a wallet-manager write lock that may already be held higher in
-    /// the call stack.
+    /// CACHE: after a successful broadcast the in-process
+    /// `IdentityManager` takes the update locally (see
+    /// `apply_landed_update`): the cached revision moves to the
+    /// transition's and the added and disabled keys are applied, so a
+    /// follow-up update needs no refresh in between. A cache already
+    /// refreshed to the transition or past it holds the update as Platform
+    /// has it and keeps it. A refresh that fetched the identity before the
+    /// update landed and finishes after this step does not take the cache
+    /// back: a fetched identity at a lower revision than the cache's keeps
+    /// the cache's revision, key set and every disable (see
+    /// `ManagedIdentity::take_fetched_identity`). When Drive refuses the
+    /// update for its revision (a cache an older build left ahead of the
+    /// chain, which no fetch heals since each comes back older), and proofs
+    /// show the refused transition's nonce spent and the identity below its
+    /// revision, the update is sent once more at one above the proved
+    /// revision; the cache is not lowered, and the landed update brings the
+    /// chain to the cache's revision (shipped builds leave a cache at most
+    /// one past the chain, since every later update is refused). Without
+    /// those proofs the refusal fails the call as it is. Drive charges for
+    /// each refused update. When the call
+    /// fails after the broadcast (the proof wait timed out, say), the update
+    /// may have landed without this step: refresh before the next update.
     pub async fn update_identity_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<u32>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        self.update_identity_with_external_signer_at_revision(
+            identity_id,
+            add_public_keys,
+            disable_public_keys,
+            None,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    /// [`Self::update_identity_with_external_signer`], with the revision
+    /// the transition must carry.
+    ///
+    /// The transition takes the cached identity's revision plus one, read
+    /// when the update starts (or, asked for it, one above the proved
+    /// revision after Drive refused the last update below the cache). A
+    /// caller that records the revision before
+    /// submitting (to tell later whether the update can still land: Drive
+    /// takes an identity update only at one above the identity's revision)
+    /// cannot see that read, and a refresh in between moves it. With
+    /// `revision` set, an update that would carry another one fails with
+    /// [`PlatformWalletError::IdentityRevisionMismatch`] before anything is
+    /// signed or broadcast, so the revision the caller recorded is the only
+    /// one this update can land at. Read the revision to record from
+    /// [`Self::next_update_revision`]. When Drive refuses the update for its
+    /// revision and proofs show the refused transition's nonce spent and the
+    /// identity below its revision, the update is not sent again at another
+    /// revision: it fails with [`PlatformWalletError::IdentityRevisionRefused`],
+    /// and [`Self::next_update_revision`] then gives the revision Drive
+    /// takes, which the next update may be asked to carry. `None` takes
+    /// whatever the cache gives, as
+    /// [`Self::update_identity_with_external_signer`] does, and is sent once
+    /// more on such a refusal.
+    pub async fn update_identity_with_external_signer_at_revision<S>(
+        &self,
+        identity_id: &Identifier,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<u32>,
+        revision: Option<u64>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError>
@@ -107,10 +174,10 @@ impl IdentityWallet {
         // for the derivation breadcrumb on the post-broadcast apply
         // pass below). Read lock only — the broadcast itself doesn't
         // touch local state.
-        let (mut identity, identity_index) = {
+        let (mut identity, identity_index, refused_at) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
+                PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
@@ -127,12 +194,15 @@ impl IdentityWallet {
             // identity_index, key_index)` derivation metadata for
             // the iOS Keychain re-derivation path.
             let index = manager.identity_index(identity_id);
-            (identity, index)
+            let refused_at = manager
+                .identity(identity_id)
+                .and_then(|m| m.revision_refused_at);
+            (identity, index, refused_at)
         };
 
-        // Increment revision for the update transition.
-        let original_revision = identity.revision();
-        identity.set_revision(original_revision + 1);
+        let built_from = identity.revision();
+        let mut transition_revision =
+            update_revision(identity_id, built_from, revision, refused_at)?;
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
@@ -151,119 +221,280 @@ impl IdentityWallet {
                 )
             })?;
 
-        let identity_nonce = self
-            .sdk
-            .get_identity_nonce(identity.id(), true, settings)
-            .await?;
-
         let user_fee_increase = settings
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
 
-        // `try_from_identity_with_signer` consumes the keys vec, so
-        // clone before handing it off — we need the originals to
-        // apply locally after the broadcast succeeds.
-        let added_keys_for_local_apply = add_public_keys.clone();
-        let disabled_ids_for_local_apply = disable_public_keys.clone();
+        // Drive refuses an update whose revision is not one above the
+        // identity's, and says which revision it holds. That word comes
+        // without a proof, so it only prompts two proved reads (see
+        // `prove_refusal`): the identity's nonce, which must show the
+        // refused transition's nonce spent so that transition can never
+        // execute, and the identity's revision. When that is below the
+        // refused transition's by more than one, an update asked to
+        // carry no revision is sent once more at one above the proved
+        // revision; the cache itself is never lowered. That re-send cannot
+        // land the update twice: the refused transition can no longer
+        // execute, and had it executed after all (a node that lied about
+        // the refusal), the chain is at its revision or above, and Drive
+        // refuses the re-send, whose revision is not above it. A proof that
+        // lags costs one more paid refusal, which is proved again; the note a
+        // pinned update reads keeps the highest revision proved, and goes
+        // once a proof shows Drive at or above the cache's.
+        let mut retried = false;
+        loop {
+            identity.set_revision(transition_revision);
+            let identity_nonce = self
+                .sdk
+                .get_identity_nonce(identity.id(), true, settings)
+                .await?;
 
-        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-            &identity,
-            &master_key_id,
-            add_public_keys,
-            disable_public_keys,
-            identity_nonce,
-            user_fee_increase,
-            &SignerRef(signer),
-            self.sdk.version(),
-            None,
-        )
-        .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to create identity update transition: {}",
-                e
-            ))
-        })?;
-
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
+            let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
+                &identity,
+                &master_key_id,
+                add_public_keys.clone(),
+                disable_public_keys.clone(),
+                identity_nonce,
+                user_fee_increase,
+                &SignerRef(signer),
+                self.sdk.version(),
+                None,
+            )
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to broadcast identity update: {}",
+                    "Failed to create identity update transition: {}",
                     e
                 ))
             })?;
 
-        // Post-broadcast local apply.
-        //
-        // Drive accepted the transition, so the on-chain identity
-        // now carries the new keys / disabled flags. If we leave
-        // the local `ManagedIdentity` cache untouched here:
-        //   - The next state transition for this identity reuses
-        //     the stale revision and Platform rejects it as a
-        //     duplicate.
-        //   - The Swift `PersistentPublicKey` rows never receive
-        //     the new keys (rows arrive via the
-        //     `IdentityKeysChangeSet` persister callback that
-        //     `add_key` fires).
-        //   - The Identity Keys list in the iOS app keeps showing
-        //     only the pre-update key set.
-        //
-        // `ManagedIdentity::add_key` handles both the in-memory
-        // mutation AND the `IdentityKeysChangeSet` upsert. Run it
-        // on each new key under a write lock; the breadcrumb lets
-        // the iOS Keychain re-derive the matching private bytes
-        // from the wallet seed + DIP-9 path.
-        if !added_keys_for_local_apply.is_empty() || !disabled_ids_for_local_apply.is_empty() {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                // Bump the cached revision so a subsequent update
-                // doesn't reuse the pre-broadcast value.
-                let cached_revision = managed.identity.revision();
-                managed.identity.set_revision(cached_revision + 1);
-
-                for key in added_keys_for_local_apply {
-                    let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-                    managed
-                        .add_key(key, breadcrumb, &self.persister)
-                        .map_err(|e| {
-                            PlatformWalletError::Persistence(format!(
-                                "identity key not persisted after update: {e}"
-                            ))
-                        })?;
+            let Err(e) = state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
+                .await
+            else {
+                break;
+            };
+            let proved = if is_revision_refusal(identity_id, &e) {
+                self.prove_refusal(identity_id, identity_nonce, settings)
+                    .await
+            } else {
+                None
+            };
+            if let Some(proved) = proved {
+                self.note_refused_revision(identity_id, built_from, proved)
+                    .await;
+            }
+            match after_refusal(proved, transition_revision, revision.is_some(), retried) {
+                AfterRefusal::Retry(next) => {
+                    retried = true;
+                    transition_revision = next;
                 }
-
-                if !disabled_ids_for_local_apply.is_empty() {
-                    // Disable-side counterpart to the `add_key` loop
-                    // above: stamp `disabled_at` on the matching cached
-                    // keys and fire the persister so the Swift
-                    // `PersistentPublicKey.disabledAt` rows flip without
-                    // a network re-fetch. The local wall-clock timestamp
-                    // is a placeholder — the next Platform refresh
-                    // reconciles it to the authoritative on-chain block
-                    // time. `disable_keys` reuses the same derivation
-                    // breadcrumb `add_key` carries, so the disabled key
-                    // keeps its private-key linkage.
-                    let disabled_at = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or_default();
-                    managed.disable_keys(
-                        &disabled_ids_for_local_apply,
-                        disabled_at,
-                        &self.persister,
-                    );
+                AfterRefusal::Refused(drive_revision) => {
+                    return Err(PlatformWalletError::IdentityRevisionRefused {
+                        identity_id: *identity_id,
+                        refused: transition_revision,
+                        drive_revision,
+                    });
+                }
+                AfterRefusal::Fail => {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to broadcast identity update: {}",
+                        e
+                    )));
                 }
             }
         }
 
-        Ok(())
+        self.apply_landed_update(
+            identity_id,
+            identity_index,
+            transition_revision,
+            add_public_keys,
+            disable_public_keys,
+        )
+        .await
+    }
+
+    /// Post-broadcast local apply of an update Drive accepted at
+    /// `transition_revision`.
+    ///
+    /// Drive accepted the transition, so the on-chain identity
+    /// now carries the new keys / disabled flags. If we leave
+    /// the local `ManagedIdentity` cache untouched here:
+    ///   - The next state transition for this identity reuses
+    ///     the stale revision and Platform rejects it as a
+    ///     duplicate.
+    ///   - The Swift `PersistentPublicKey` rows never receive
+    ///     the new keys (rows arrive via the
+    ///     `IdentityKeysChangeSet` persister callback).
+    ///   - The Identity Keys list in the iOS app keeps showing
+    ///     only the pre-update key set.
+    ///
+    /// A cache behind `transition_revision` moves to it. The update's keys
+    /// are then stored with the scalar snapshot, revision included, as one
+    /// fallible write under the write lock, so the stored revision never
+    /// runs ahead of or behind the stored keys, and the snapshot is stored
+    /// even when no key matched: an added key with the breadcrumb the update
+    /// gives it, which lets the iOS Keychain re-derive the matching private
+    /// bytes from the wallet seed + DIP-9 path, and a disabled key without
+    /// one (the persisters keep what the row holds).
+    ///
+    /// A cache already refreshed to `transition_revision` or past it (a
+    /// fetch answered between the update's snapshot and this step) holds the
+    /// update as Platform has it, on-chain `disabled_at` included, and
+    /// whatever later updates did: the payload is not applied over it. The
+    /// fetch that put it there may not have been stored (a failed mobile
+    /// round leaves the fold in memory), so the update's keys are stored
+    /// from the cache's own copies (a refresh stores its rows without a
+    /// breadcrumb). A cache an older build left ahead of the chain is past
+    /// the transition without holding it (the update was sent at the
+    /// revision Drive takes): an added key it lacks takes the update's copy.
+    /// Either way a disabled key the cache holds enabled is disabled with
+    /// the local placeholder time, which the next fetch at the update's
+    /// revision or above reconciles to the on-chain block time; a cache
+    /// that holds the update already shows both. Any note of a refused
+    /// revision goes: Drive took this one.
+    async fn apply_landed_update(
+        &self,
+        identity_id: &Identifier,
+        identity_index: Option<u32>,
+        transition_revision: u64,
+        added_keys: Vec<IdentityPublicKey>,
+        disabled_ids: Vec<u32>,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return Ok(());
+        };
+        // Landed: Drive took this revision, so a refusal noted before it
+        // says nothing any more.
+        managed.revision_refused_at = None;
+        if managed.identity.revision() < transition_revision {
+            // The identity is at the transition's revision now, so a
+            // subsequent update must not reuse the pre-broadcast value.
+            managed.identity.set_revision(transition_revision);
+        }
+
+        let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+        let mut keys: Vec<KeyWithBreadcrumb> = added_keys
+            .into_iter()
+            .map(|key| KeyWithBreadcrumb {
+                breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, key.id())),
+                key: managed
+                    .identity
+                    .public_keys()
+                    .get(&key.id())
+                    .cloned()
+                    .unwrap_or(key),
+            })
+            .collect();
+        keys.extend(
+            disabled_ids
+                .iter()
+                .filter(|id| !added_ids.contains(id))
+                .filter_map(|id| managed.identity.public_keys().get(id).cloned())
+                .map(|mut key| {
+                    if !key.is_disabled() {
+                        key.set_disabled_at(local_disable_time());
+                    }
+                    KeyWithBreadcrumb {
+                        key,
+                        breadcrumb: None,
+                    }
+                }),
+        );
+        managed
+            .store_keys_with_snapshot(keys, &self.persister)
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "identity key not persisted after update: {e}"
+                ))
+            })
+    }
+
+    /// Note the identity's `proved` revision after a refusal of an update
+    /// built on the cached revision `built_from`, while the cache is still
+    /// there (see [`noted_refusal`]).
+    async fn note_refused_revision(&self, identity_id: &Identifier, built_from: u64, proved: u64) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(managed) = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity_mut(identity_id))
+        else {
+            return;
+        };
+        if managed.identity.revision() == built_from {
+            managed.revision_refused_at =
+                noted_refusal(managed.revision_refused_at, built_from, proved);
+        }
+    }
+
+    /// The identity's proved revision after Drive refused an update of it
+    /// with `nonce` for its revision, or `None` unless a proof shows `nonce`
+    /// spent (see [`spent_refusal`]). A failed read counts as no proof.
+    async fn prove_refusal(
+        &self,
+        identity_id: &Identifier,
+        nonce: IdentityNonce,
+        settings: Option<PutSettings>,
+    ) -> Option<u64> {
+        let request_settings = settings.map(|s| s.request_settings).unwrap_or_default();
+        let stored_nonce =
+            IdentityNonceFetcher::fetch_with_settings(&self.sdk, *identity_id, request_settings)
+                .await
+                .ok()?
+                .map(|fetched| fetched.0);
+        let revision = IdentityBalanceAndRevision::fetch_with_settings(
+            &self.sdk,
+            *identity_id,
+            request_settings,
+        )
+        .await
+        .ok()?
+        .map(|(_, revision)| revision);
+        spent_refusal(identity_id, nonce, stored_nonce, revision)
+    }
+
+    /// The revision the next update of `identity_id` carries: one above the
+    /// cached identity's, or one above the proved revision after Drive
+    /// refused the last update for its revision, while the cache is still
+    /// where it was then ([`PlatformWalletError::IdentityRevisionRefused`]).
+    /// That note lives in memory: after a restart this is one above the
+    /// cache again, and an update asked for the noted revision fails before
+    /// signing with [`PlatformWalletError::IdentityRevisionMismatch`]; one
+    /// asked for this revision is refused once more, which notes the proved
+    /// revision again.
+    /// A caller that records the revision before submitting reads it here
+    /// and passes it to [`Self::update_identity_with_external_signer_at_revision`].
+    /// After such a refusal the cached revision is at or above the one
+    /// returned while the chain is below it, so settle a record of an update
+    /// sent at it against a proved revision (a fetch whose answer is at or
+    /// above the record), not against the cache.
+    pub async fn next_update_revision(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<u64, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?
+            .identity_manager
+            .identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        let cached = managed.identity.revision();
+        match managed.revision_refused_at {
+            Some((at, drive)) if at == cached => Ok(drive + 1),
+            _ => update_revision(identity_id, cached, None, None),
+        }
     }
 
     /// Update an identity using an externally-provided identity and signer.
@@ -332,3 +563,841 @@ impl IdentityWallet {
         Ok(result)
     }
 }
+
+/// The revision an update of an identity cached at `cached` carries: one
+/// above it. With `expected` set, any other value is refused, except one
+/// above the proved revision after Drive refused the last update below the
+/// cache, while the cache is still at `cached` (`refused_at`).
+fn update_revision(
+    identity_id: &Identifier,
+    cached: u64,
+    expected: Option<u64>,
+    refused_at: Option<(u64, u64)>,
+) -> Result<u64, PlatformWalletError> {
+    let next = cached.checked_add(1).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "identity {identity_id} is at the last revision"
+        ))
+    })?;
+    match expected {
+        Some(expected) if expected == next => Ok(next),
+        // Drive refused the last update and a proof showed a revision below
+        // the cache's, which is still where it was: the caller asks for the
+        // one Drive takes (`next_update_revision`).
+        Some(expected)
+            if refused_at.is_some_and(|(at, drive)| at == cached && drive + 1 == expected) =>
+        {
+            Ok(expected)
+        }
+        Some(expected) => Err(PlatformWalletError::IdentityRevisionMismatch {
+            identity_id: *identity_id,
+            expected,
+            actual: next,
+        }),
+        None => Ok(next),
+    }
+}
+
+/// What an update does after a failed broadcast.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterRefusal {
+    /// Send the update once more, at this revision.
+    Retry(u64),
+    /// Fail with `IdentityRevisionRefused`, Drive at this revision.
+    Refused(u64),
+    /// Fail with the broadcast's error.
+    Fail,
+}
+
+/// The step after a failed broadcast of an update at `transition`, `proved`
+/// being the identity's proved revision when a proof shows Drive refused the
+/// update for its revision (see [`spent_refusal`]). Only a revision below
+/// `transition` by more than one leads anywhere, since only then can
+/// another transition at a revision no higher than `transition`'s land: a
+/// pinned update fails with it, an update asked for no revision is sent
+/// once more at one above it.
+fn after_refusal(
+    proved: Option<u64>,
+    transition: u64,
+    pinned: bool,
+    retried: bool,
+) -> AfterRefusal {
+    let Some((drive, next)) = proved
+        .and_then(|drive| Some((drive, drive.checked_add(1)?)))
+        .filter(|&(_, next)| next < transition)
+    else {
+        return AfterRefusal::Fail;
+    };
+    if pinned {
+        AfterRefusal::Refused(drive)
+    } else if retried {
+        AfterRefusal::Fail
+    } else {
+        AfterRefusal::Retry(next)
+    }
+}
+
+/// Whether `error` is Drive's refusal of an update of `identity_id` for its
+/// revision (`InvalidIdentityRevisionError`). It comes without a proof, so
+/// the revision it carries is not read.
+fn is_revision_refusal(identity_id: &Identifier, error: &dash_sdk::Error) -> bool {
+    as_identity_revision_invalid(error)
+        .is_some_and(|rejection| rejection.identity_id() == identity_id)
+}
+
+/// The proved revision `revision` of an identity whose update with `nonce`
+/// Drive refused, or `None` unless its proved nonce word `stored_nonce`
+/// shows `nonce` spent by Drive's own merge rule
+/// (`validate_identity_nonce_update` finds it already present or too far in
+/// the past): then the refused transition can never execute, even one a
+/// node kept back while it reported the refusal.
+fn spent_refusal(
+    identity_id: &Identifier,
+    nonce: IdentityNonce,
+    stored_nonce: Option<IdentityNonce>,
+    revision: Option<u64>,
+) -> Option<u64> {
+    let spent = stored_nonce.is_some_and(|stored| {
+        matches!(
+            validate_identity_nonce_update(stored, nonce, *identity_id).first_error(),
+            Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(error)))
+                if !matches!(error.error(), MergeIdentityNonceResult::NonceTooFarInFuture)
+        )
+    });
+    revision.filter(|_| spent)
+}
+
+/// The refusal note after a proof showed the identity at `proved` once an
+/// update built on the cached revision `built_from` was refused: none when
+/// `proved` is at or above the cache's (the cache is not ahead after all),
+/// otherwise `(built_from, drive)` with `drive` the higher of `proved` and
+/// what `noted` holds for `built_from` (revisions only grow, so a lower
+/// proof lags).
+fn noted_refusal(noted: Option<(u64, u64)>, built_from: u64, proved: u64) -> Option<(u64, u64)> {
+    if proved >= built_from {
+        return None;
+    }
+    let drive = noted
+        .filter(|(at, _)| *at == built_from)
+        .map_or(proved, |(_, drive)| drive.max(proved));
+    Some((built_from, drive))
+}
+
+/// The local placeholder for a disable's `disabled_at`; the next fetch at
+/// the update's revision or above takes the on-chain block time.
+fn local_disable_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod update_revision_tests {
+    use super::*;
+
+    #[test]
+    fn should_carry_one_above_the_cached_revision() {
+        let id = Identifier::from([7u8; 32]);
+        assert_eq!(update_revision(&id, 4, None, None).unwrap(), 5);
+        assert_eq!(update_revision(&id, 4, Some(5), None).unwrap(), 5);
+    }
+
+    #[test]
+    fn should_refuse_an_update_asked_for_another_revision() {
+        let id = Identifier::from([7u8; 32]);
+        // The cache moved past the revision the caller read.
+        match update_revision(&id, 5, Some(5), None) {
+            Err(PlatformWalletError::IdentityRevisionMismatch {
+                expected, actual, ..
+            }) => assert_eq!((expected, actual), (5, 6)),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            update_revision(&id, 3, Some(5), None),
+            Err(PlatformWalletError::IdentityRevisionMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn should_take_drives_revision_asked_for_only_while_the_cache_is_where_it_was_refused() {
+        let id = Identifier::default();
+        // Cache at 6, Drive refused and holds 4: the caller may ask for 5.
+        assert_eq!(update_revision(&id, 6, Some(5), Some((6, 4))).unwrap(), 5);
+        // One above the cache still goes.
+        assert_eq!(update_revision(&id, 6, Some(7), Some((6, 4))).unwrap(), 7);
+        // The cache moved since the refusal, or the caller asks for another.
+        for (cached, expected, refused_at) in [(7, 5, (6, 4)), (6, 4, (6, 4)), (6, 5, (5, 4))] {
+            assert!(
+                matches!(
+                    update_revision(&id, cached, Some(expected), Some(refused_at)),
+                    Err(PlatformWalletError::IdentityRevisionMismatch { .. })
+                ),
+                "cached {cached}, asked {expected}, refused at {refused_at:?}"
+            );
+        }
+        // An update asked for no revision carries one above the cache.
+        assert_eq!(update_revision(&id, 6, None, Some((6, 4))).unwrap(), 7);
+    }
+
+    #[test]
+    fn should_send_once_more_at_the_proved_revision_only_once() {
+        // Update at 7, proofs show Drive at 5: sent once more at 6, or,
+        // pinned, refused with 5.
+        assert_eq!(
+            after_refusal(Some(5), 7, false, false),
+            AfterRefusal::Retry(6)
+        );
+        assert_eq!(
+            after_refusal(Some(5), 7, true, false),
+            AfterRefusal::Refused(5)
+        );
+        // The second send is refused too: no third.
+        assert_eq!(after_refusal(Some(4), 6, false, true), AfterRefusal::Fail);
+        // Drive would take the transition (6), is at it or above, or no
+        // proof shows the refusal.
+        for proved in [Some(6), Some(7), Some(9), Some(u64::MAX), None] {
+            assert_eq!(
+                after_refusal(proved, 7, false, false),
+                AfterRefusal::Fail,
+                "proved {proved:?}"
+            );
+            assert_eq!(
+                after_refusal(proved, 7, true, false),
+                AfterRefusal::Fail,
+                "proved {proved:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_take_a_refused_identity_s_revision_only_from_a_spent_nonce() {
+        let id = Identifier::default();
+        let missing_bit = |position: u64| {
+            1u64 << (position - 1
+                + dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES)
+        };
+        // Nonce 10 is spent: at the tip, merged below it, or past the window.
+        for stored in [10, 12, 40] {
+            assert_eq!(
+                spent_refusal(&id, 10, Some(stored), Some(5)),
+                Some(5),
+                "stored {stored}"
+            );
+        }
+        // The nonce can still execute: above the tip, missing below it, too
+        // far ahead, or no nonce stored.
+        for (nonce, stored) in [
+            (10, Some(9)),
+            (10, Some(12 | missing_bit(2))),
+            (30, Some(1)),
+            (10, None),
+        ] {
+            assert_eq!(
+                spent_refusal(&id, nonce, stored, Some(5)),
+                None,
+                "stored {stored:?}, nonce {nonce}"
+            );
+        }
+        assert_eq!(spent_refusal(&id, 10, Some(10), None), None);
+    }
+
+    #[test]
+    fn should_keep_the_highest_proved_revision_until_drive_reaches_the_cache() {
+        // Cache at 6, proved at 5: noted.
+        assert_eq!(noted_refusal(None, 6, 5), Some((6, 5)));
+        // A lagging proof does not take the note lower, a newer one raises it.
+        assert_eq!(noted_refusal(Some((6, 5)), 6, 4), Some((6, 5)));
+        assert_eq!(noted_refusal(Some((6, 4)), 6, 5), Some((6, 5)));
+        // A note against another cached revision says nothing.
+        assert_eq!(noted_refusal(Some((7, 5)), 6, 4), Some((6, 4)));
+        // Drive at the cache's revision or above: the cache is not ahead.
+        for proved in [6, 8] {
+            assert_eq!(noted_refusal(Some((6, 5)), 6, proved), None);
+        }
+    }
+
+    #[test]
+    fn should_tell_a_revision_refusal_only_of_this_identity() {
+        use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+
+        let id = Identifier::default();
+        let refusal = |identity_id, current| -> ConsensusError {
+            InvalidIdentityRevisionError::new(identity_id, current).into()
+        };
+        let wait_stream = dash_sdk::Error::StateTransitionBroadcastError(
+            dash_sdk::error::StateTransitionBroadcastError {
+                code: 40203,
+                message: String::new(),
+                cause: Some(refusal(id, 4)),
+            },
+        );
+        let bare =
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(refusal(id, 4))));
+        assert!(is_revision_refusal(&id, &wait_stream));
+        assert!(is_revision_refusal(&id, &bare));
+        let other = dash_sdk::Error::Protocol(ProtocolError::ConsensusError(Box::new(refusal(
+            Identifier::from([7; 32]),
+            4,
+        ))));
+        assert!(!is_revision_refusal(&id, &other));
+        assert!(!is_revision_refusal(
+            &id,
+            &dash_sdk::Error::Generic("timeout".to_string())
+        ));
+    }
+
+    #[test]
+    fn should_refuse_an_identity_at_the_last_revision() {
+        let id = Identifier::from([7u8; 32]);
+        assert!(matches!(
+            update_revision(&id, u64::MAX, None, None),
+            Err(PlatformWalletError::InvalidIdentityData(_))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod update_identity_at_revision_tests {
+    use super::super::signing_key::tests::{wallet_with_signing_keys_on, CapturingStore};
+    use super::*;
+    use crate::changeset::PlatformWalletPersistence;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::{BlockTime, PlatformWallet};
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Counts every call the update makes into it.
+    #[derive(Debug, Default)]
+    struct RecordingSigner(AtomicUsize);
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for RecordingSigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ProtocolError::Generic("recording signer".to_string()))
+        }
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ProtocolError::Generic("recording signer".to_string()))
+        }
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+    }
+
+    async fn cached_identity(wallet: &IdentityWallet, identity_id: &Identifier) -> Identity {
+        let wm = wallet.wallet_manager.read().await;
+        wm.get_wallet_info(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .identity(identity_id)
+            .unwrap()
+            .identity
+            .clone()
+    }
+
+    /// A wallet whose cached identity is at `revision` and also holds a
+    /// signable MASTER key (id 0), so an update that got past the revision
+    /// check would consult the signer and reach the mock SDK.
+    async fn wallet_at_revision(revision: u64) -> Arc<PlatformWallet> {
+        wallet_at_revision_on(revision, Arc::new(NoPlatformPersistence)).await
+    }
+
+    /// [`wallet_at_revision`] over a given store.
+    async fn wallet_at_revision_on<P: PlatformWalletPersistence + 'static>(
+        revision: u64,
+        persistence: Arc<P>,
+    ) -> Arc<PlatformWallet> {
+        let wallet = wallet_with_signing_keys_on(
+            dash_sdk::SdkBuilder::new_mock().build().unwrap(),
+            persistence,
+        )
+        .await;
+        {
+            let identity_wallet = wallet.identity();
+            let mut wm = identity_wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&identity_wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&Identifier::default())
+                .unwrap();
+            managed.identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    data: vec![0; KeyType::ECDSA_SECP256K1.default_size()].into(),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            managed.identity.set_revision(revision);
+        }
+        wallet
+    }
+
+    /// The mock SDK has no expectations, so the update fails if it gets as
+    /// far as the nonce fetch; the refusal must come before it and before
+    /// the signer is consulted.
+    #[tokio::test]
+    async fn should_refuse_another_revision_before_signing_or_reaching_platform() {
+        let identity_id = Identifier::default();
+        // Cache moved past the recorded revision (5 → 6), or is behind it (3 → 4).
+        for (cached, expected, actual) in [(5, 5, 6), (3, 5, 4)] {
+            let wallet = wallet_at_revision(cached).await;
+            let wallet = wallet.identity();
+            let before = cached_identity(wallet, &identity_id).await;
+            let signer = RecordingSigner::default();
+            let error = wallet
+                .update_identity_with_external_signer_at_revision(
+                    &identity_id,
+                    vec![],
+                    vec![1],
+                    Some(expected),
+                    &signer,
+                    None,
+                )
+                .await
+                .unwrap_err();
+            match error {
+                PlatformWalletError::IdentityRevisionMismatch {
+                    identity_id: id,
+                    expected: e,
+                    actual: a,
+                } => assert_eq!((id, e, a), (identity_id, expected, actual)),
+                other => panic!("unexpected: {other:?}"),
+            }
+            assert_eq!(signer.0.load(Ordering::SeqCst), 0);
+            assert_eq!(cached_identity(wallet, &identity_id).await, before);
+        }
+
+        // Control: at the matching revision the same update gets past the
+        // check, consults the signer and then fails at the mock SDK, so the
+        // zero count above comes from the refusal, not from the fixture.
+        let wallet = wallet_at_revision(4).await;
+        let signer = RecordingSigner::default();
+        let error = wallet
+            .identity()
+            .update_identity_with_external_signer_at_revision(
+                &identity_id,
+                vec![],
+                vec![1],
+                Some(5),
+                &signer,
+                Some(PutSettings {
+                    request_settings: dash_sdk::RequestSettings {
+                        retries: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+        assert!(signer.0.load(Ordering::SeqCst) > 0);
+    }
+
+    /// The key the landed-update tests add.
+    fn key_3() -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: vec![3; KeyType::ECDSA_SECP256K1.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    #[tokio::test]
+    async fn should_take_a_landed_update_only_into_a_cache_behind_it() {
+        let identity_id = Identifier::default();
+        let added = key_3();
+        // A transition at 5 landed and the cache is still at 4: it takes
+        // the revision and the payload.
+        let wallet = wallet_at_revision(4).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&added));
+
+        let wallet = wallet_at_revision(4).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert!(identity.public_keys()[&1].disabled_at().is_some());
+
+        // A cache refreshed to 5 or past it already holds the update (key 3
+        // added, key 1 disabled for good) and what came after, and is left
+        // as it is: one past the chain would get the next update refused.
+        for cached in [5, 6] {
+            let wallet = wallet_at_revision(cached).await;
+            let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap();
+                managed.identity.add_public_key(added.clone());
+                let mut key_1 = managed.identity.public_keys()[&1].clone();
+                key_1.set_disabled_at(42);
+                managed.identity.add_public_key(key_1);
+            }
+            let before = cached_identity(wallet, &identity_id).await;
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![1])
+                .await
+                .unwrap();
+            assert_eq!(
+                cached_identity(wallet, &identity_id).await,
+                before,
+                "cached at {cached}"
+            );
+        }
+    }
+
+    /// An update at 5 added key 3, a later one at 6 disabled it, and the
+    /// cache was refreshed to 6 before the confirmation of 5 came back: key
+    /// 3 stays disabled, and is stored that way with the breadcrumb the
+    /// update gives it (a refresh stores its rows without one). A cache at
+    /// the transition that lacks the added key takes the update's copy.
+    #[tokio::test]
+    async fn should_store_an_added_key_with_its_breadcrumb_when_the_cache_is_ahead() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet.identity();
+        let mut disabled = key_3();
+        disabled.set_disabled_at(1);
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap()
+                .identity
+                .add_public_key(disabled.clone());
+        }
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 6);
+        assert_eq!(identity.public_keys()[&3], disabled);
+        let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert_eq!(stored.public_key, disabled);
+        assert_eq!(stored.wallet_id, Some(wallet.wallet_id));
+        assert_eq!(
+            stored
+                .derivation_indices
+                .map(|indices| (indices.identity_index, indices.key_index)),
+            Some((0, 3))
+        );
+
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
+        let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert!(stored.derivation_indices.is_some());
+    }
+
+    /// A disable-only update at 5 whose confirmation finds the cache already
+    /// at 5 with the disable (a concurrent fetch's fold whose store failed):
+    /// the disabled key and the scalar snapshot are stored now, so a restart
+    /// does not bring the key back active. With no key matched, the snapshot
+    /// is still stored.
+    #[tokio::test]
+    async fn should_store_a_disable_the_cache_already_holds_when_the_confirmation_comes_back() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let mut key = managed.identity.public_keys()[&1].clone();
+            key.set_disabled_at(7);
+            managed.identity.add_public_key(key);
+        }
+        store.take();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap();
+        let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
+        assert_eq!(stored.public_key.disabled_at(), Some(7), "the cache's copy");
+        assert_eq!(stored.derivation_indices, None);
+        let changesets = store.take();
+        assert_eq!(changesets.len(), 1);
+        assert!(
+            changesets[0].identities.is_some(),
+            "with the scalar snapshot"
+        );
+
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![9])
+            .await
+            .unwrap();
+        let changesets = store.take();
+        assert_eq!(changesets.len(), 1, "the snapshot alone");
+        assert!(changesets[0].identities.is_some());
+    }
+
+    /// A cache at 4 takes an update landed at 5 and stores the revision with
+    /// the update's keys as one write, also when the disabled key is not in
+    /// the cache; a store that fails fails the call.
+    #[tokio::test]
+    async fn should_store_a_landed_revision_with_its_keys_in_one_write() {
+        let identity_id = Identifier::default();
+        let stored_revision = |changesets: &[crate::changeset::PlatformWalletChangeSet]| {
+            changesets[0]
+                .identities
+                .as_ref()
+                .and_then(|identities| identities.identities.get(&identity_id))
+                .map(|entry| entry.revision)
+        };
+        for (added, disabled) in [(vec![key_3()], vec![1]), (vec![], vec![9])] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(4, store.clone()).await;
+            let wallet = wallet.identity();
+            store.take();
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, added.clone(), disabled.clone())
+                .await
+                .unwrap();
+            let changesets = store.take();
+            assert_eq!(
+                changesets.len(),
+                1,
+                "added {added:?}, disabled {disabled:?}"
+            );
+            assert_eq!(stored_revision(&changesets), Some(5));
+            let rows = changesets[0]
+                .identity_keys
+                .as_ref()
+                .map_or(0, |keys| keys.upserts.len());
+            assert_eq!(rows, if added.is_empty() { 0 } else { 2 });
+        }
+
+        let store = Arc::new(FailingStore::default());
+        let wallet = wallet_at_revision_on(4, store.clone()).await;
+        store.0.store(true, Ordering::SeqCst);
+        let error = wallet
+            .identity()
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::Persistence(_)),
+            "{error:?}"
+        );
+    }
+
+    /// Refuses every store once set.
+    #[derive(Default)]
+    struct FailingStore(std::sync::atomic::AtomicBool);
+
+    impl PlatformWalletPersistence for FailingStore {
+        fn store(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+            _: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if self.0.load(Ordering::SeqCst) {
+                return Err(crate::changeset::PersistenceError::backend("store refused"));
+            }
+            Ok(())
+        }
+        fn flush(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    async fn refused_at(wallet: &IdentityWallet) -> Option<(u64, u64)> {
+        let wm = wallet.wallet_manager.read().await;
+        wm.get_wallet_info(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .identity(&Identifier::default())
+            .unwrap()
+            .revision_refused_at
+    }
+
+    /// A cache at 6 that an older build left one past the chain at 5. The
+    /// update asked for 7 is refused and Drive says 5; that is noted, the
+    /// cache is not lowered, and the next update may be asked for 6, which
+    /// gets past the revision check. Drive saying the cache is not ahead, or
+    /// a fetch the cache takes whole (one at its revision or above), clears
+    /// the note.
+    #[tokio::test]
+    async fn should_let_the_next_update_carry_drives_revision_without_lowering_the_cache() {
+        let identity_id = Identifier::default();
+        let wallet = wallet_at_revision(6).await;
+        let wallet = wallet.identity();
+        assert_eq!(wallet.next_update_revision(&identity_id).await.unwrap(), 7);
+
+        // A refusal noted against another revision than the cache's is not.
+        wallet.note_refused_revision(&identity_id, 5, 4).await;
+        assert_eq!(refused_at(wallet).await, None);
+
+        wallet.note_refused_revision(&identity_id, 6, 5).await;
+        assert_eq!(cached_identity(wallet, &identity_id).await.revision(), 6);
+        assert_eq!(wallet.next_update_revision(&identity_id).await.unwrap(), 6);
+
+        let signer = RecordingSigner::default();
+        let error = wallet
+            .update_identity_with_external_signer_at_revision(
+                &identity_id,
+                vec![],
+                vec![1],
+                Some(6),
+                &signer,
+                Some(PutSettings {
+                    request_settings: dash_sdk::RequestSettings {
+                        retries: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+        assert!(signer.0.load(Ordering::SeqCst) > 0);
+
+        // A fetch taken at the cache's revision or above clears it.
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let fetched = managed.identity.clone();
+            assert!(managed.take_fetched_identity(&fetched, BlockTime::new(1, 0, 0)));
+        }
+        assert_eq!(refused_at(wallet).await, None);
+    }
+
+    /// Drive's refusal of an update with nonce 10 gives the proved revision
+    /// only when both proved reads answer: the nonce word shows 10 spent and
+    /// the revision is 5. A read that fails counts as no proof.
+    #[tokio::test]
+    async fn should_prove_a_refusal_only_when_both_reads_answer() {
+        let identity_id = Identifier::default();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, Identifier>(
+                identity_id,
+                Some(IdentityNonceFetcher(10)),
+            )
+            .await
+            .unwrap();
+        let settings = Some(PutSettings {
+            request_settings: dash_sdk::RequestSettings {
+                retries: Some(0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let wallet =
+            wallet_with_signing_keys_on(sdk.clone(), Arc::new(NoPlatformPersistence)).await;
+        assert_eq!(
+            wallet
+                .identity()
+                .prove_refusal(&identity_id, 10, settings)
+                .await,
+            None
+        );
+
+        sdk.mock()
+            .expect_fetch::<IdentityBalanceAndRevision, Identifier>(identity_id, Some((0, 5)))
+            .await
+            .unwrap();
+        let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
+        assert_eq!(
+            wallet
+                .identity()
+                .prove_refusal(&identity_id, 10, settings)
+                .await,
+            Some(5)
+        );
+    }
+
+    /// The update asked for Drive's revision lands at 6 on a cache an older
+    /// build left at 6 without it: the cache is at the chain's revision now
+    /// and takes the update it lacks, key 3 added and key 1 disabled, and
+    /// the note of the refusal goes.
+    #[tokio::test]
+    async fn should_take_an_update_landed_at_drives_revision_into_a_cache_ahead_without_it() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet.identity();
+        wallet.note_refused_revision(&identity_id, 6, 5).await;
+        store.take();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 6, vec![key_3()], vec![1])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 6);
+        assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
+        assert!(identity.public_keys()[&1].is_disabled());
+        assert_eq!(refused_at(wallet).await, None);
+        let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
+        assert!(stored.public_key.is_disabled());
+        assert!(store.stored_key(identity_id, 3).is_some());
+    }
+}
+
+#[cfg(test)]
+#[path = "lagging_fetch_tests.rs"]
+mod lagging_fetch_tests;
