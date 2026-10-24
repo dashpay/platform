@@ -496,17 +496,86 @@ fn should_refuse_document_answers_without_a_signed_version() {
     }
 }
 
-/// Every signature check of a document query answer is guarded. A new document verifier
-/// added without the guard fails here, however its call is spelled or formatted:
-/// - a verifier module that uses document query types guards each of its signature checks;
-/// - `proof.rs`, where most verifiers are not for documents, guards each of its
-///   `GetDocumentsResponse` impls.
+/// Reads the proof bytes of a document query answer only after its version is checked.
+const CHECKED_PROOF_BYTES: &str = "document_query_proof_bytes(";
+/// The crate's quorum signature checks.
+const SIGNATURE_CHECKS: [&str; 2] = ["verify_tenderdash_proof(", "verify_tenderdash_signature("];
+/// Every way to reach proof bytes without the version check names the proof field or a
+/// helper named after it, such as `supported_grovedb_proof_bytes`.
+const UNCHECKED_PROOF_BYTES: &str = "grovedb_proof";
+
+/// Whether a line opens a top-level function or impl, whatever its visibility and qualifiers.
+fn opens_item(line: &str) -> bool {
+    if line.starts_with(char::is_whitespace) {
+        return false;
+    }
+    line.split_whitespace()
+        .find(|word| !(word.starts_with("pub") || ["async", "const", "unsafe"].contains(word)))
+        .is_some_and(|word| word == "fn" || word.starts_with("impl"))
+}
+
+/// The top-level items of a source file before its tests, without comments: each starts at a
+/// function or impl and runs to the next one. Test code starts at the first top-level
+/// `#[cfg(...)]` naming `test`; verifier modules keep their tests at the end.
+fn items(source: &str) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    for line in source.lines() {
+        if line.starts_with("#[cfg(") && line.contains("test") {
+            break;
+        }
+        if opens_item(line) || items.is_empty() {
+            items.push(String::new());
+        }
+        if !line.trim_start().starts_with("//") {
+            let item = items.last_mut().unwrap();
+            item.push_str(line);
+            item.push('\n');
+        }
+    }
+    items
+}
+
+/// Checks one verifier: it reads proof bytes only through [`CHECKED_PROOF_BYTES`], once per
+/// signature check and before it. Returns how many signature checks it makes.
+fn assert_checks_version_before_reading_the_proof(item: &str, at: &str) -> usize {
+    assert!(
+        !item.contains(UNCHECKED_PROOF_BYTES),
+        "{at} reads proof bytes without the version check"
+    );
+    let mut signature_checks: Vec<usize> = SIGNATURE_CHECKS
+        .iter()
+        .flat_map(|check| item.match_indices(check).map(|(at, _)| at))
+        .collect();
+    signature_checks.sort();
+    assert_eq!(
+        item.matches(CHECKED_PROOF_BYTES).count(),
+        signature_checks.len(),
+        "{at}"
+    );
+    for (nth, signature_check) in signature_checks.iter().enumerate() {
+        assert!(
+            item[..*signature_check]
+                .matches(CHECKED_PROOF_BYTES)
+                .count()
+                > nth,
+            "{at} checks a signature before reading its proof through the version check"
+        );
+    }
+    signature_checks.len()
+}
+
+/// Every document query verifier reads its proof only through the accessor that refuses an
+/// answer at another protocol version, and checks the signature only after that. A new
+/// document verifier written otherwise fails here, however it is formatted:
+/// - a verifier module that uses document query types reads no proof bytes another way, and
+///   each of its functions or impls that checks a signature reads the proof through the
+///   accessor first;
+/// - in `proof.rs`, where most verifiers are not for documents, each `GetDocumentsResponse`
+///   impl does the same.
 #[test]
-fn should_guard_every_document_query_signature_check() {
-    const GUARD: &str = "ensure_proof_signed_at_verifier_version(";
-    const SIGNATURE_CHECK: &str = "verify_tenderdash_proof(";
+fn should_read_every_document_query_proof_after_checking_its_version() {
     let source_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
-    let mut guarded = 0;
+    let mut checked = 0;
     for entry in std::fs::read_dir(format!("{source_dir}/proof")).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -514,16 +583,34 @@ fn should_guard_every_document_query_signature_check() {
         if !(source.contains("DriveDocument") || source.contains("GetDocumentsResponse")) {
             continue;
         }
-        let guards = source.matches(GUARD).count();
-        assert_eq!(guards, source.matches(SIGNATURE_CHECK).count(), "{name}");
-        guarded += guards;
+        for (index, item) in items(&source).iter().enumerate() {
+            checked +=
+                assert_checks_version_before_reading_the_proof(item, &format!("{name} #{index}"));
+        }
     }
     let proof = std::fs::read_to_string(format!("{source_dir}/proof.rs")).unwrap();
-    let document_impls = proof
-        .lines()
-        .filter(|line| line.contains("type Response") && line.contains("GetDocumentsResponse"))
-        .count();
-    assert_eq!(proof.matches(GUARD).count(), document_impls, "proof.rs");
-    guarded += document_impls;
-    assert_eq!(guarded, VERIFIERS.len());
+    let document_impls: Vec<String> = items(&proof)
+        .into_iter()
+        .filter(|item| {
+            item.lines()
+                .any(|line| line.contains("type Response") && line.contains("GetDocumentsResponse"))
+        })
+        .collect();
+    for (index, item) in document_impls.iter().enumerate() {
+        let checks = assert_checks_version_before_reading_the_proof(
+            item,
+            &format!("proof.rs impl #{index}"),
+        );
+        assert!(checks > 0, "proof.rs impl #{index} checks no signature");
+        checked += checks;
+    }
+    assert_eq!(
+        proof.matches(CHECKED_PROOF_BYTES).count(),
+        document_impls
+            .iter()
+            .map(|item| item.matches(CHECKED_PROOF_BYTES).count())
+            .sum::<usize>(),
+        "proof.rs reads checked document proof bytes outside its document impls"
+    );
+    assert_eq!(checked, VERIFIERS.len());
 }

@@ -59,6 +59,21 @@ pub(crate) fn supported_grovedb_proof_bytes(proof: &Proof) -> Result<&[u8], Erro
     Ok(&proof.grovedb_proof)
 }
 
+/// The GroveDB proof bytes of a document query answer, once its metadata names the protocol
+/// version the query is verified with and its envelope is supported.
+///
+/// Every verifier that rebuilds a document query to check a `GetDocumentsResponse` proof
+/// reads the proof bytes only through this function, so no proof is read before the version
+/// is checked. The quorum signature covers the version and is checked after the proof.
+pub(crate) fn document_query_proof_bytes<'a>(
+    proof: &'a Proof,
+    mtd: &ResponseMetadata,
+    platform_version: &PlatformVersion,
+) -> Result<&'a [u8], Error> {
+    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
+    supported_grovedb_proof_bytes(proof)
+}
+
 /// Refuse a document query answer whose metadata names a protocol version other than
 /// `platform_version`'s.
 ///
@@ -68,11 +83,7 @@ pub(crate) fn supported_grovedb_proof_bytes(proof: &Proof) -> Result<&[u8], Erro
 ///
 /// An answer signed at a version newer than any this build knows is verified with
 /// [`PlatformVersion::latest`], the newest rules there are for it.
-///
-/// Every verifier that rebuilds a document query to check a `GetDocumentsResponse` proof
-/// calls this before it verifies the proof. The quorum signature covers the version and is
-/// checked after this guard.
-pub(crate) fn ensure_proof_signed_at_verifier_version(
+fn ensure_proof_signed_at_verifier_version(
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
 ) -> Result<(), Error> {

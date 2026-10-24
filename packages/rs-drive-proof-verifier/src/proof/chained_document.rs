@@ -27,9 +27,7 @@
 //! chooses, but the canonical path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{
-    ensure_proof_signed_at_verifier_version, supported_grovedb_proof_bytes, verify_tenderdash_proof,
-};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -94,9 +92,11 @@ pub fn verify_chained_documents_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, ChainedDocuments), Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, result) = query
-        .verify_chained_documents_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+        .verify_chained_documents_proof(
+            document_query_proof_bytes(proof, mtd, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

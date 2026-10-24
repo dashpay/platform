@@ -22,9 +22,7 @@
 //! `DocumentAverageMode`.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{
-    ensure_proof_signed_at_verifier_version, supported_grovedb_proof_bytes, verify_tenderdash_proof,
-};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::version::PlatformVersion;
@@ -51,10 +49,9 @@ pub fn verify_point_lookup_count_and_sum_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<Vec<AverageEntry>, Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, entries) = query
         .verify_point_lookup_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -87,10 +84,9 @@ pub fn verify_distinct_count_and_sum_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<Vec<AverageEntry>, Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, entries) = query
         .verify_distinct_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,
@@ -163,10 +159,9 @@ pub fn verify_aggregate_count_and_sum_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, count, sum) = query
         .verify_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -200,9 +195,8 @@ pub fn verify_primary_key_count_sum_tree_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, count, sum) = DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof(
-        supported_grovedb_proof_bytes(proof)?,
+        document_query_proof_bytes(proof, mtd, platform_version)?,
         contract_id,
         document_type_name,
         platform_version,
@@ -246,10 +240,9 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<Vec<AverageEntry>, Error> {
-    ensure_proof_signed_at_verifier_version(mtd, platform_version)?;
     let (root_hash, per_key_count_sum) = query
         .verify_carrier_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,
