@@ -48,7 +48,7 @@ fn meta_schema_refusal(root: &JsonValue) -> Option<String> {
 
 /// The native check of `root`.
 fn native_refusal(root: &JsonValue) -> Option<JsonSchemaError> {
-    match Checker::default().root(root) {
+    match Checker::new(PlatformVersion::latest()).root(root) {
         Ok(()) => None,
         Err(ProtocolError::ConsensusError(error)) => match *error {
             ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => Some(error),

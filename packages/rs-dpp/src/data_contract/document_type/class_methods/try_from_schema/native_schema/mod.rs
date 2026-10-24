@@ -76,13 +76,16 @@ const TIMESTAMP_PROPERTIES: [&str; 9] = [
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema
 /// added and its property type shorthands expanded, against the rules of the document
 /// meta-schema, as full validation does under `check_document_type_schema` 1.
-pub(super) fn check_document_type_schema(root: &Value) -> Result<(), ProtocolError> {
+pub(super) fn check_document_type_schema(
+    root: &Value,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
     let root = root.try_to_validating_json().map_err(|e| {
         ProtocolError::ConsensusError(
             ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
         )
     })?;
-    Checker::default().root(&root)
+    Checker::new(platform_version).root(&root)
 }
 
 /// Requires the type whose expanded schema is `schema`, with the contract's expanded
@@ -111,13 +114,26 @@ pub(super) fn check_validation_schema(
 }
 
 /// A check of one value of a document schema, knowing where the value is.
-#[derive(Default)]
 struct Checker<'a> {
     /// The check of the value holding this one, and this value's key or index in it.
     parent: Option<(&'a Checker<'a>, String)>,
+    /// The longest index property name, in bytes (`max_index_property_name_bytes`).
+    max_index_property_name_bytes: usize,
 }
 
 type Checked = Result<(), ProtocolError>;
+
+impl Checker<'_> {
+    /// The check of a document schema, under the limits of `platform_version`.
+    fn new(platform_version: &PlatformVersion) -> Self {
+        Self {
+            parent: None,
+            max_index_property_name_bytes: usize::from(
+                platform_version.system_limits.max_index_property_name_bytes,
+            ),
+        }
+    }
+}
 
 impl Checker<'_> {
     /// Runs `check` on the member `segment` of the value in hand.
@@ -128,6 +144,7 @@ impl Checker<'_> {
     ) -> Result<T, ProtocolError> {
         check(&Checker {
             parent: Some((self, segment.to_string())),
+            max_index_property_name_bytes: self.max_index_property_name_bytes,
         })
     }
 

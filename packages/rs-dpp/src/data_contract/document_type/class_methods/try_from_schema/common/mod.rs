@@ -732,7 +732,7 @@ fn check_document_type_schema(
             json_schema_validator,
             ctx.platform_version,
         ),
-        1 => native_schema::check_document_type_schema(root_schema),
+        1 => native_schema::check_document_type_schema(root_schema, ctx.platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::check_document_type_schema".to_string(),
             known_versions: vec![0, 1],

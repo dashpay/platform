@@ -1,10 +1,8 @@
 //! The `indices` of a document schema. An index property name is held to the 255 bytes of a
-//! GroveDB key, where the meta-schema admitted 256 characters.
+//! GroveDB key (`max_index_property_name_bytes`), where the meta-schema admitted 256
+//! characters.
 
 use super::*;
-
-/// The longest key GroveDB stores, and so the longest index property name.
-const MAX_INDEX_PROPERTY_NAME_BYTES: usize = 255;
 
 /// The keys of an index.
 const INDEX_KEYS: [&str; 21] = [
@@ -102,14 +100,15 @@ impl Checker<'_> {
                         let property = c.object(item)?;
                         c.property_count(property, Some(1), Some(1))?;
                         for (name, order) in property {
-                            if name.len() > MAX_INDEX_PROPERTY_NAME_BYTES {
+                            if name.len() > self.max_index_property_name_bytes {
                                 return Err(c.name_error(
                                     name,
                                     "maxBytes",
-                                    json!({ "maxBytes": MAX_INDEX_PROPERTY_NAME_BYTES }),
+                                    json!({ "maxBytes": self.max_index_property_name_bytes }),
                                     format!(
                                         "the index property name \"{name}\" is longer than \
-                                         {MAX_INDEX_PROPERTY_NAME_BYTES} bytes"
+                                         {} bytes",
+                                        self.max_index_property_name_bytes
                                     ),
                                 ));
                             }
