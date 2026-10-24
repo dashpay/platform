@@ -560,6 +560,9 @@ impl Sdk {
     ///   following the network is banned: answers from nodes keeping up with the network
     ///   are fresh.
     ///
+    /// An answer naming no protocol version is malformed, whatever the network runs: it stays
+    /// [`Error::Proof`] and its node is banned.
+    ///
     /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
     /// it arrived.
     fn classify_verifier_error(
@@ -572,7 +575,10 @@ impl Sdk {
         if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
             error
         {
-            if signed < verifier
+            // An answer naming no protocol version is malformed whatever the network runs,
+            // so its node is not spared.
+            if signed != 0
+                && signed < verifier
                 && self.verified_protocol_version.load(Ordering::Relaxed) < verifier
             {
                 if let Some(metadata) = metadata {

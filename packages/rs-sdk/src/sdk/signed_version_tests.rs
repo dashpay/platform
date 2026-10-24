@@ -1107,6 +1107,44 @@ async fn should_spare_nodes_answering_below_a_version_the_network_has_not_shown(
     }
 }
 
+/// An answer whose metadata names no protocol version is malformed: no node on any version
+/// sends one, so it says nothing about an SDK set ahead of its network. Its node is banned
+/// as for any unusable proof, even before a verified answer has shown the SDK's version.
+#[tokio::test]
+async fn should_ban_nodes_answering_without_a_protocol_version() {
+    for path in [ProofPath::Network, ProofPath::Mock] {
+        let mut sdk = document_sdk(14, false, Some(tolerance_admitting_the_signed_answer()));
+        let mut unnamed = older_document_answer(now_ms(), 20);
+        let Some(DocumentsResponseVersion::V0(v0)) = unnamed.version.as_mut() else {
+            panic!("v0 answer")
+        };
+        v0.metadata.as_mut().unwrap().protocol_version = 0;
+        let error = verify_document_answer(&sdk, path, unnamed.clone())
+            .await
+            .expect_err("an answer without a protocol version is not verified");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(ProofError::ProofProtocolVersionMismatch {
+                    signed: 0,
+                    verifier: 14
+                })
+            ),
+            "{error:?}"
+        );
+        assert!(!error.spares_responder());
+        let (result, asked, bans) =
+            fetch_documents_from(&mut sdk, path, vec![unnamed, signed_document_answer()]).await;
+        assert_eq!(result.unwrap().unwrap().len(), 1);
+        assert_eq!(asked, [0, 1]);
+        assert_eq!(
+            bans,
+            [1, 0],
+            "the node without a protocol version is banned"
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Freshness {
     Fresh,
