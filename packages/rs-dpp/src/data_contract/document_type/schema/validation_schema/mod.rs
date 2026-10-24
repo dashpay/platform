@@ -71,7 +71,7 @@ use crate::util::json_schema::resolve_uri;
 use crate::ProtocolError;
 use once_cell::sync::Lazy;
 use platform_value::Value;
-use platform_version::version::PlatformVersion;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -362,19 +362,9 @@ impl ValidationSchema {
         root: &Value,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, BTreeMap<String, regex::Regex>), ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .validation_schema
-        {
-            Some(0) => Ok(Self::try_from_root_v0(root)?),
-            None => Err(ProtocolError::NotSupported(format!(
-                "protocol version {} checks no document against a validation schema",
-                platform_version.protocol_version
-            ))),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+        match builder_generation(platform_version)? {
+            0 => Ok(Self::try_from_root_v0(root)?),
+            version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ValidationSchema::build".to_string(),
                 known_versions: vec![0],
                 received: version,
@@ -438,8 +428,28 @@ impl DocumentSchemaValidator {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let (schema, patterns) = ValidationSchema::build(root, platform_version)?;
-        Ok(Self::with_patterns(schema, patterns)?)
+        Self::with_patterns(schema, patterns, builder_generation(platform_version)?)
     }
+}
+
+/// The generation of the validation schema's builder, and of the native validator it builds,
+/// that `platform_version` selects (`validation_schema`). Refuses a protocol version that
+/// selects none, whose document validation reads no validation schema.
+pub(crate) fn builder_generation(
+    platform_version: &PlatformVersion,
+) -> Result<FeatureVersion, ProtocolError> {
+    platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .validation_schema
+        .ok_or_else(|| {
+            ProtocolError::NotSupported(format!(
+                "protocol version {} checks no document against a validation schema",
+                platform_version.protocol_version
+            ))
+        })
 }
 
 impl SchemaNode {

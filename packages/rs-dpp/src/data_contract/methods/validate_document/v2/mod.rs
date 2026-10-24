@@ -4,7 +4,9 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
-use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
+use crate::data_contract::document_type::schema::validation_schema::{
+    builder_generation, DocumentSchemaValidator,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
@@ -94,18 +96,7 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
         // The slot of the builder generation this version selects
-        let generation = platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .validation_schema
-            .ok_or_else(|| {
-                ProtocolError::NotSupported(format!(
-                    "protocol version {} checks no document against a validation schema",
-                    platform_version.protocol_version
-                ))
-            })?;
+        let generation = builder_generation(platform_version)?;
         let slot = document_type
             .json_schema_validator_ref()
             .native(generation)

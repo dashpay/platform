@@ -1,4 +1,6 @@
-use super::super::tests::{existing_validator_accepts, generated_schema, generated_values, Cases};
+use super::super::super::tests::{
+    existing_validator_accepts, generated_schema, generated_values, Cases,
+};
 use super::*;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
