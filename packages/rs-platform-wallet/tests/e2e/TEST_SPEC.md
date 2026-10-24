@@ -2326,9 +2326,9 @@ always fails loudly.
 #### SH-036 — Identity creation from pool, then funding-note replay
 - **Priority**: P1.
 - **Status**: implemented; current assertions await live verification.
-- **Scenario**: bank-fund the smallest protocol denomination plus 1B transparent reserve; shield only the denomination; capture its note; create a new identity with four keys.
+- **Scenario**: bank-fund the smallest protocol denomination plus the versioned client fee reserve (`shield_fee_reserve_credits`) and the predicted 2-action shield fee; shield only the denomination; capture its note; create a new identity with four keys.
 - **Assertions**: non-nil ID, proof-verified identity and exact submitted key set, pool debit equals denomination, identity credit in `(0, denomination]` (fee tolerant). Rebuild a Type-17 spend of the captured Type-20 funding note, require backend code 40901 and zero replay-destination credit.
-- **Funding gate**: when the bank's effective Platform balance is below this case's denomination-plus-headroom budget, the case is an explicit `E2E-SKIP` (warn + stderr marker, the token-suite convention), never a silent green and never keyed to the unrelated 88.8B token-suite floor.
+- **Funding gate**: when the bank's effective Platform balance is below this case's computed budget (denomination + fee reserve + predicted shield fee), the case is an explicit `E2E-SKIP` (warn + stderr marker with required vs available, the token-suite convention), never a silent green and never keyed to the unrelated 88.8B token-suite floor.
 - **Coverage limit**: replay proves Type-20 funding nullifiers stay spent; malformed Type-20 proofs, duplicate identity creation, denomination errors and fallback paths are not covered.
 
 #### SH-037 — Identity → own shielded pool (Type 21)

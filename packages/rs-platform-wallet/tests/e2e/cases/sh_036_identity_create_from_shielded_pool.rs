@@ -14,7 +14,8 @@
 //! exit-denomination set; never hardcoded.
 //!
 //! Every assertion is fatal, including the funding-note replay check. A bank
-//! below this case's own denomination + headroom budget is an explicit
+//! below this case's computed budget (denomination + client fee reserve +
+//! predicted shield fee) is an explicit
 //! `E2E-SKIP`, never a silent green.
 
 use std::time::Duration;
@@ -25,9 +26,11 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
+use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::shielded::compute_shielded_identity_create_fee;
 use dpp::shielded::compute_shielded_unshield_fee;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use platform_wallet::wallet::shielded::operations::shield_fee_reserve_credits;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
@@ -42,9 +45,6 @@ use crate::framework::wait::{
 /// DIP-9 identity-registration slot the new identity occupies. Distinct from
 /// the bank identity's slot; a fresh-seed wallet has nothing else here.
 const IDENTITY_INDEX: u32 = 0;
-
-/// Transparent headroom retained for the shield input reserve and fee.
-const FEE_HEADROOM: u64 = 1_000_000_000;
 
 /// Per-step wait deadline.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -78,7 +78,13 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .iter()
         .min()
         .expect("protocol must define at least one shielded identity-create denomination");
-    let funding_credits = denomination + FEE_HEADROOM;
+    // Transparent budget, computed from the live version: the denomination,
+    // the client's fee reserve withheld on input 0, and the predicted 2-action
+    // shield fee on top.
+    let version = s.ctx.sdk().version();
+    let fee_reserve = shield_fee_reserve_credits(version).expect("shield fee reserve");
+    let shield_fee = compute_minimum_shielded_fee(2, version).expect("predicted shield fee");
+    let funding_credits = denomination + fee_reserve + shield_fee;
 
     // Case-specific funding gate. A drained live bank is a legitimate reason
     // not to run, but the skip must be loud (E2E-SKIP, the token-suite
@@ -97,19 +103,23 @@ async fn sh_036_identity_create_from_shielded_pool() {
             .to_bech32m_string(network);
         tracing::warn!(
             target: "platform_wallet::e2e::cases::sh_036",
-            bank_credits,
-            funding_credits,
+            available = bank_credits,
+            required = funding_credits,
+            denomination,
+            fee_reserve,
+            shield_fee,
             refill_address = %refill,
-            "E2E-SKIP: sh_036 did NOT run — bank Platform balance below this case's \
-             denomination + headroom budget; this is a SKIP reporting PASS, not a verified pass"
+            "E2E-SKIP: sh_036 did NOT run — bank Platform balance {bank_credits} below this \
+             case's required {funding_credits} (denomination + fee reserve + shield fee); \
+             this is a SKIP reporting PASS, not a verified pass"
         );
         eprintln!(
-            "E2E-SKIP: sh_036 did NOT run (bank {bank_credits} < required {funding_credits}); refill {refill}"
+            "E2E-SKIP: sh_036 did NOT run (available {bank_credits} < required {funding_credits}); refill {refill}"
         );
         return;
     }
 
-    // --- 1. Fund a fresh transparent address with DENOMINATION + headroom and
+    // --- 1. Fund a fresh transparent address with the computed budget and
     //        wait until the chain-confirmed view sees it. ---
     let funding_addr = s
         .test_wallet
@@ -140,11 +150,11 @@ async fn sh_036_identity_create_from_shielded_pool() {
         .await
         .expect("bind_shielded");
     // Shield only `denomination`, not `funding_credits`. `select_shield_inputs`
-    // withholds FEE_RESERVE_CREDITS (== FEE_HEADROOM) from the fee-bearing input
-    // to guarantee the shield fee can be paid from unshielded balance. Asking to
-    // shield the full `funding_credits` (denomination + FEE_HEADROOM) leaves no
-    // room for the reserve and hits the accumulated_claim < amount guard in
-    // `select_shield_inputs`. The FEE_HEADROOM stays transparent to cover the fee.
+    // withholds `shield_fee_reserve_credits` from the fee-bearing input to
+    // guarantee the shield fee can be paid from unshielded balance. Asking to
+    // shield the full `funding_credits` leaves no room for the reserve and hits
+    // the accumulated_claim < amount guard in `select_shield_inputs`. The
+    // reserve + shield fee stay transparent to cover the fee.
     s.test_wallet
         .platform_wallet()
         .shielded_shield_from_account(
