@@ -20,7 +20,8 @@ use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchr
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    apply_persisted_core_state, build_wallet, restore_contact_pool_claims,
+    restore_provider_platform_node_pool,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1835,6 +1836,20 @@ fn load_one_wallet(
     .map_err(|e| {
         PersistenceError::backend(format!(
             "core-state rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
+    let contact_claims = schema::core_pool::load_contact_pool_claims(conn, &wallet_id)
+        .map_err(PersistenceError::from)?;
+    restore_contact_pool_claims(
+        &mut wallet_info,
+        &account_manifest.ecdsa,
+        &contact_claims,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "contact-pool rehydration failed for {}: {e}",
             hex::encode(wallet_id)
         ))
     })?;
