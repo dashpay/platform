@@ -50,9 +50,11 @@
 //!
 //! From protocol version 15, document validation checks every document against its type's
 //! validation schema (`validate_document` 2), and refuses the documents of a type whose
-//! schema has none. It is built with the `validation-schema` feature, which `validation` enables, and does not need the JSON Schema validator it
-//! mirrors. It models the document validation of protocol version 14 and later, whose parser
-//! reads `maxBytes` and `encryptedFor`, and refuses an earlier protocol version.
+//! schema has none. It is built with the `validation-schema` feature, which `validation`
+//! enables, and does not need the JSON Schema validator it mirrors. Its builder is
+//! generation 0 of `validation_schema`, which protocol version 15 selects: it models the
+//! document validation of protocol version 14, whose parser reads `maxBytes` and
+//! `encryptedFor`, and refuses a protocol version that selects no generation.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -413,14 +415,17 @@ fn reached_through(error: DataContractError, reference: &str) -> DataContractErr
 
 impl DataContract {
     /// The validation schema of one of the contract's document types, built from the
-    /// schema the document validator compiles for it. Refuses a protocol version before 14,
-    /// whose document validation checks neither `maxBytes` nor `encryptedFor`, which the
-    /// validation schema holds where the parser of protocol version 14 reads them.
+    /// schema the document validator compiles for it by the builder `platform_version`
+    /// selects. Refuses a protocol version that selects none (`validation_schema`).
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
+        check_builder_generation(
+            platform_version,
+            "DataContract::document_type_validation_schema",
+        )?;
         let root = self.document_type_validated_schema(document_type_name, platform_version)?;
         Ok(ValidationSchema::try_from_root(&root)?)
     }
@@ -433,8 +438,7 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<DocumentSchemaValidator, ProtocolError> {
         let root = self.document_type_validated_schema(document_type_name, platform_version)?;
-        let (schema, patterns) = ValidationSchema::try_from_root_with_patterns(&root)?;
-        Ok(DocumentSchemaValidator::with_patterns(schema, patterns)?)
+        DocumentSchemaValidator::try_from_root(&root, platform_version)
     }
 
     /// The schema the document validator compiles for one of the contract's document types:
@@ -445,20 +449,6 @@ impl DataContract {
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError> {
-        if platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .methods
-            .validate_max_bytes
-            .is_none()
-        {
-            return Err(ProtocolError::NotSupported(format!(
-                "the validation schema models the document validation of protocol version 14 \
-                 and later, not of protocol version {}",
-                platform_version.protocol_version
-            )));
-        }
         let document_type = self.document_type_for_name(document_type_name)?;
         let root = DocumentType::enrich_with_base_schema(
             document_type.schema().clone(),
@@ -469,6 +459,47 @@ impl DataContract {
             DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
                 .unwrap_or(root),
         )
+    }
+}
+
+impl DocumentSchemaValidator {
+    /// The native validator of the document schema `root`, as the document validator of
+    /// `platform_version` compiles it, built by the builder that version selects
+    /// (`validation_schema`). Refuses a protocol version that selects none.
+    pub(crate) fn try_from_root(
+        root: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        check_builder_generation(platform_version, "DocumentSchemaValidator::try_from_root")?;
+        let (schema, patterns) = ValidationSchema::try_from_root_with_patterns(root)?;
+        Ok(Self::with_patterns(schema, patterns)?)
+    }
+}
+
+/// Checks that `platform_version` selects generation 0 of `validation_schema`, the builder
+/// this module holds: refuses a protocol version that selects none, whose document
+/// validation reads no validation schema, and a generation the module does not know.
+fn check_builder_generation(
+    platform_version: &PlatformVersion,
+    method: &str,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .validation_schema
+    {
+        Some(0) => Ok(()),
+        None => Err(ProtocolError::NotSupported(format!(
+            "protocol version {} checks no document against a validation schema",
+            platform_version.protocol_version
+        ))),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: method.to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
     }
 }
 

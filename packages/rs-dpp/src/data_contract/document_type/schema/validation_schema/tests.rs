@@ -1249,8 +1249,30 @@ fn should_skip_keys_the_validator_ignores_in_any_reference_target() {
 }
 
 #[test]
-fn should_refuse_a_protocol_version_before_14_and_accept_14() {
-    let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+fn should_build_only_at_a_protocol_version_selecting_the_builder() {
+    for protocol_version in [13, 14] {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected the version");
+        let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let name = contract
+            .document_types()
+            .keys()
+            .next()
+            .expect("expected a document type")
+            .clone();
+        let error = contract
+            .document_type_validation_schema(&name, platform_version)
+            .expect_err("expected the protocol version to be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("checks no document against a validation schema"),
+            "{error}"
+        );
+    }
+
+    let platform_version = PlatformVersion::latest();
     let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
         .data_contract_owned();
     let name = contract
@@ -1259,19 +1281,9 @@ fn should_refuse_a_protocol_version_before_14_and_accept_14() {
         .next()
         .expect("expected a document type")
         .clone();
-    let error = contract
+    contract
         .document_type_validation_schema(&name, platform_version)
-        .expect_err("expected protocol version 13 to be refused");
-    assert!(
-        error.to_string().contains("protocol version 14 and later"),
-        "{error}"
-    );
-
-    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-    get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-        .data_contract_owned()
-        .document_type_validation_schema(&name, platform_version)
-        .expect("expected protocol version 14 to be accepted");
+        .expect("expected the latest protocol version to be accepted");
 }
 
 #[test]

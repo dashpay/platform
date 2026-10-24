@@ -12,7 +12,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
-///   has its documents refused.
+///   has its documents refused;
+/// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
+///   and the native validator.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose documents the `jsonschema` crate checks.
@@ -27,6 +29,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     document_type_versions: DocumentTypeVersions {
         schema: DocumentTypeSchemaVersions {
             parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
+            // changed: documents are checked against the typed validation schema this builds
+            validation_schema: Some(0),
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

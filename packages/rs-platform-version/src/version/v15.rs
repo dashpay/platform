@@ -139,8 +139,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 6. **Documents checked natively**: `CONTRACT_VERSIONS_V7` selects
 ///    `validate_document` 2, which checks a document against its type's typed
-///    validation schema (`document_type::schema::validation_schema`) instead of
-///    the `jsonschema` crate, reaching the same verdicts and error codes but for
+///    validation schema (`document_type::schema::validation_schema`, built by
+///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
 ///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
 ///    value however long the list. A document type whose schema the validation
 ///    schema does not represent has its documents refused
