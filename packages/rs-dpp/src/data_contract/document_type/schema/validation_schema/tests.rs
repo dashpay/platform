@@ -2347,10 +2347,6 @@ fn should_refuse_an_id_that_may_move_a_reference() {
             platform_value!({ "type": "string", "examples": [{ "$id": "#/$defs/label" }] }),
         ),
         (
-            "an opaque URL in `const` data",
-            platform_value!({ "type": "object", "const": { "x": { "$id": "json-schema:opaque" } } }),
-        ),
-        (
             "a path",
             platform_value!({ "$id": "sub/", "type": "string" }),
         ),
@@ -2365,6 +2361,33 @@ fn should_refuse_an_id_that_may_move_a_reference() {
     ] {
         let message = refusal(with_value(value));
         assert!(message.contains("is not a plain name"), "{case}: {message}");
+    }
+}
+
+/// The values of `enum` and `const` are instance data, which the JSON Schema validator's
+/// resolver skips: an `$id` there is no scope, so the builder reads none.
+#[test]
+fn should_read_no_id_in_enum_or_const_data() {
+    for (case, value) in [
+        (
+            "an opaque URL in `const` data",
+            platform_value!({ "type": "object", "const": { "x": { "$id": "json-schema:opaque" } } }),
+        ),
+        (
+            "a fragment in an `enum` member",
+            platform_value!({ "enum": [{ "$id": "#/$defs/label" }, 1] }),
+        ),
+    ] {
+        let root = with_value(value);
+        assert!(
+            ValidationSchema::try_from_root(&root).is_ok(),
+            "{case}: expected the schema to build"
+        );
+        #[cfg(feature = "validation")]
+        assert!(
+            existing_validator_compiles(&validating_json(&root)),
+            "{case}: expected the existing validator to compile it"
+        );
     }
 }
 
