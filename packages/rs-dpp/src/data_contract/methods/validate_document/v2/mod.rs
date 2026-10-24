@@ -14,6 +14,9 @@ use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
+#[cfg(test)]
+mod tests;
+
 impl DataContract {
     /// Generation 1's checks ([`Self::validate_document_properties_v1_checks`]), with the
     /// document type's schema checked by its native validator

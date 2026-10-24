@@ -94,7 +94,7 @@ pub(super) fn existing_validator_accepts(
 /// document schema of a contract loaded from state. Registration compiles it under a
 /// smaller regex size limit.
 #[cfg(feature = "validation")]
-pub(super) fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
+fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
     JsonSchemaValidator::new()
         .compile_and_validate(schema, &serde_json::json!({}), PlatformVersion::latest())
         .is_ok()
@@ -102,7 +102,7 @@ pub(super) fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
 
 /// `root` as the JSON the existing validator compiles.
 #[cfg(feature = "validation")]
-pub(super) fn validating_json(root: &Value) -> serde_json::Value {
+fn validating_json(root: &Value) -> serde_json::Value {
     root.try_to_validating_json()
         .expect("expected the schema to convert")
 }
@@ -690,7 +690,7 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
 /// `defs` added to its `$defs`, registered with full validation at the latest protocol
 /// version.
 #[cfg(feature = "validation")]
-pub(super) fn registered(properties: Value, defs: Value) -> DataContract {
+fn registered(properties: Value, defs: Value) -> DataContract {
     let platform_version = PlatformVersion::latest();
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
@@ -2107,66 +2107,19 @@ fn should_name_the_reference_that_reached_a_refused_schema() {
     );
 }
 
-/// What the comparisons the documentation of [`SchemaNode::constant`],
-/// [`SchemaNode::enum_values`], [`ArrayConstraints::unique_items`] and
-/// [`NumberConstraints::multiple_of`] describes rest on.
+/// What the comparison the documentation of [`SchemaNode::enum_values`] describes rests on:
+/// objects compare key by key in the order the keys are written. The other comparisons the
+/// documentation describes are checked against both validators in the native validator's
+/// tests.
 #[cfg(feature = "validation")]
 #[test]
-fn should_match_the_existing_validator_on_the_comparisons_the_documentation_describes() {
+fn should_match_the_existing_validator_on_the_order_enum_compares_keys_in() {
     let accepts = |schema: serde_json::Value, value: serde_json::Value| {
         existing_validator_accepts(
             &serde_json::json!({ "type": "object", "properties": { "value": schema } }),
             &serde_json::json!({ "value": value }),
         )
     };
-
-    // A number `const` matches within an absolute f64::EPSILON
-    assert!(accepts(
-        serde_json::json!({ "const": 9007199254740993u64 }),
-        serde_json::json!(9007199254740992u64)
-    ));
-    assert!(accepts(
-        serde_json::json!({ "const": 0 }),
-        serde_json::json!(1e-300)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "const": 0 }),
-        serde_json::json!(1e-10)
-    ));
-
-    // A fractional `multipleOf` passes every negative quotient, and decides exactly when the
-    // quotient overflows
-    assert!(accepts(
-        serde_json::json!({ "multipleOf": 0.5 }),
-        serde_json::json!(-0.3)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "multipleOf": 0.5 }),
-        serde_json::json!(0.3)
-    ));
-    assert!(!accepts(
-        serde_json::json!({ "multipleOf": 0.3 }),
-        serde_json::json!(-8.98846567431158e307) // -2^1023
-    ));
-    assert!(accepts(
-        serde_json::json!({ "multipleOf": 0.1 }),
-        serde_json::json!(1.5e308)
-    ));
-
-    // `uniqueItems` compares up to 15 elements by value and more by their JSON form
-    let elements = |count: u64| {
-        let mut elements = vec![serde_json::json!(1), serde_json::json!(1.0)];
-        elements.extend((2..count).map(|element| serde_json::json!(element)));
-        serde_json::Value::Array(elements)
-    };
-    assert!(!accepts(
-        serde_json::json!({ "uniqueItems": true }),
-        elements(15)
-    ));
-    assert!(accepts(
-        serde_json::json!({ "uniqueItems": true }),
-        elements(16)
-    ));
 
     // `enum` compares objects key by key in the order the keys are written
     let enumerated = |member: Value| {
@@ -2475,11 +2428,11 @@ impl Cases {
         (self.next() % bound as u64) as usize
     }
 
-    pub(super) fn chance(&mut self, percent: u64) -> bool {
+    fn chance(&mut self, percent: u64) -> bool {
         self.next() % 100 < percent
     }
 
-    pub(super) fn pick(&mut self, values: &[serde_json::Value]) -> serde_json::Value {
+    fn pick(&mut self, values: &[serde_json::Value]) -> serde_json::Value {
         values[self.below(values.len())].clone()
     }
 }
