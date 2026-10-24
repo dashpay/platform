@@ -1527,7 +1527,17 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut guard = self.conn().map_err(PersistenceError::from)?;
+        // One read snapshot for the whole load. The mutex excludes only this
+        // process, so without it another process could commit between two
+        // reads: a rewound cursor plus its backfill coverage landing after
+        // the cursor read but before the coverage read would hand back the
+        // old cursor beside coverage that suppresses the rescan of the range
+        // it skipped. A deferred transaction takes no lock until its first
+        // read, which in WAL mode pins the snapshot every later read sees.
+        let conn = guard
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1617,6 +1627,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             unimplemented_rows = degradation.unimplemented_rows,
             "load() summary"
         );
+        // Read-only, so committing only releases the snapshot.
+        conn.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
         self.replace_load_degradation(degradation);
         Ok(state)
     }
