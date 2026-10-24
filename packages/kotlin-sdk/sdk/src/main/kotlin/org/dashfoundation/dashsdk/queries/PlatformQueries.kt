@@ -125,9 +125,11 @@ class Identities internal constructor(private val sdk: Sdk) {
     /**
      * Contract keys for many identities, as a JSON object keyed by base58
      * identity id. [identityIds] are base58 identity ids; [purposes] are the
-     * rs-sdk-ffi purpose discriminants (0 Authentication, 1 Encryption,
-     * 2 Decryption, 3 Transfer). [documentTypeName] may be null. Empty
-     * [identityIds] short-circuits to `"{}"`. Returns JSON, or null.
+     * key purpose numbers (0 authentication … 6 owner). [documentTypeName]
+     * may be null. The arguments are checked and answered by the Rust SDK
+     * (see `dash_sdk_identities_fetch_contract_keys`): no identity ids answer
+     * `"{}"` without a query, an unknown purpose is refused, and no purposes
+     * for some identities is refused (invalid parameter). Returns the JSON.
      */
     suspend fun fetchContractKeys(
         identityIds: List<String>,
@@ -135,8 +137,6 @@ class Identities internal constructor(private val sdk: Sdk) {
         purposes: List<Int>,
         documentTypeName: String? = null,
     ): String? = sdk.queryGate.op {
-        if (identityIds.isEmpty()) return@op "{}"
-        require(purposes.isNotEmpty()) { "at least one key purpose is required" }
         mapNativeErrors {
             QueriesNative.identitiesFetchContractKeys(
                 sdk.handle,

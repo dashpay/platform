@@ -252,7 +252,23 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and a number outside `"0"` to `"6"` throws, also when there are no identity
+    /// ids. An empty array asks for no purposes, which throws (invalid parameter) when there are
+    /// identity ids. An empty
+    /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
+    /// answer an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -266,7 +282,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(

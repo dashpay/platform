@@ -193,6 +193,140 @@ where
     )
 }
 
+mod zero_amount_tests {
+    use super::*;
+    use crate::error::PlatformWalletError;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use futures::FutureExt;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("zero-amount spends must not invoke the prover");
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Spend {
+        Transfer,
+        Unshield,
+        Withdraw,
+        IdentityTopUp,
+    }
+
+    async fn assert_zero_amount_rejected(spend: Spend) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let network = wallet.network();
+        let seed = [0x42; 64];
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let recipient = OrchardKeySet::from_seed(&[0x43; 64], network, 0)
+            .unwrap()
+            .default_address
+            .to_raw_address_bytes();
+        let platform_address = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network);
+        let core_address = dashcore::Address::dummy(network, 1).to_string();
+        let identity_id = Identifier::from([0x11; 32]);
+
+        // Exercise both the contended sync-store path and empty-wallet error precedence.
+        for locked in [true, false] {
+            let _guard = if locked {
+                Some(coordinator.store().write().await)
+            } else {
+                None
+            };
+            let result = async {
+                match spend {
+                    Spend::Transfer => {
+                        wallet
+                            .shielded_transfer_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &recipient,
+                                0,
+                                [0; 36],
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Unshield => {
+                        wallet
+                            .shielded_unshield_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &platform_address,
+                                0,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Withdraw => {
+                        wallet
+                            .shielded_withdraw_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &core_address,
+                                0,
+                                1,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::IdentityTopUp => wallet
+                        .shielded_identity_top_up_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            &identity_id,
+                            0,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
+                }
+            }
+            .now_or_never()
+            .unwrap_or_else(|| panic!("{spend:?} waited on the store (locked={locked})"));
+            assert!(
+                matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+                    if message == "amount must be > 0"),
+                "{spend:?} returned {result:?} (locked={locked})"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_transfer_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Transfer).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_unshield_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Unshield).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_withdraw_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Withdraw).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_identity_top_up_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityTopUp).await;
+    }
+}
+
 /// A shielded bind must not install ephemeral FVK state when the backend
 /// cannot persist and reload it. The capability gate runs before derivation,
 /// persistence, or coordinator registration.

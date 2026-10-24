@@ -2880,6 +2880,13 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
+    if amount == 0 {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "amount must be > 0".to_string(),
+        ));
+    }
+
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
