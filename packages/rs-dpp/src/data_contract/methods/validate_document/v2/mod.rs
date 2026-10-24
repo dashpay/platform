@@ -1,7 +1,6 @@
 use crate::consensus::basic::document::{
     DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError,
 };
-use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -11,9 +10,7 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
-use crate::data_contract::document_type::schema::validation_schema::{
-    DocumentSchemaValidator, SchemaViolation,
-};
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
@@ -128,10 +125,9 @@ impl DataContract {
             }
         };
 
-        let violations = validator.validate(&json_value)?;
-        if !violations.is_empty() {
-            return Ok(SimpleConsensusValidationResult::new_with_errors(
-                violations.into_iter().map(consensus_error).collect(),
+        if let Some(violation) = validator.validate(&json_value)? {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(BasicError::JsonSchemaError(violation)),
             ));
         }
         if !max_bytes_result.is_valid() {
@@ -184,17 +180,4 @@ impl DataContract {
         };
         Ok(built.as_ref())
     }
-}
-
-/// The consensus error of a violation: the JSON Schema error the `jsonschema` crate
-/// reports, whose code consensus depends on.
-fn consensus_error(violation: SchemaViolation) -> ConsensusError {
-    ConsensusError::BasicError(BasicError::JsonSchemaError(JsonSchemaError::new(
-        violation.message,
-        violation.keyword.to_string(),
-        violation.instance_path,
-        violation.schema_path,
-        serde_json::Value::Object(violation.params).into(),
-        violation.property_name,
-    )))
 }

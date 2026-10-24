@@ -34,7 +34,7 @@ fn agreed_verdict(root: &JsonValue, document: &JsonValue) -> bool {
     let native = validator_of(root)
         .validate(document)
         .expect("expected the check to run")
-        .is_empty();
+        .is_none();
     assert_eq!(
         native,
         existing_validator_accepts(root, document),
@@ -259,8 +259,9 @@ fn should_read_objects_and_references_as_the_existing_validator_does() {
 }
 
 #[test]
-fn should_report_where_a_value_fails() {
-    let violations = validator_of(&json!({
+fn should_report_the_first_violation_and_where_it_is() {
+    // The value also lacks the required `name`, which the walk does not reach
+    let violation = validator_of(&json!({
         "type": "object",
         "properties": {
             "tags": { "type": "array", "items": { "type": "string", "maxLength": 2 } },
@@ -268,43 +269,32 @@ fn should_report_where_a_value_fails() {
         "required": ["name"],
     }))
     .validate(&json!({ "tags": ["ok", "long"] }))
-    .expect("expected the check to run");
-    let found: Vec<_> = violations
-        .iter()
-        .map(|violation| {
-            (
-                violation.keyword,
-                violation.instance_path.as_str(),
-                violation.schema_path.as_str(),
-                violation.property_name.as_str(),
-            )
-        })
-        .collect();
+    .expect("expected the check to run")
+    .expect("expected a violation");
     assert_eq!(
-        found,
-        vec![
-            (
-                "maxLength",
-                "/tags/1",
-                "/properties/tags/items/maxLength",
-                ""
-            ),
-            ("required", "", "/required", "name"),
-        ]
+        (
+            violation.keyword(),
+            violation.instance_path(),
+            violation.schema_path(),
+            violation.property_name(),
+        ),
+        (
+            "maxLength",
+            "/tags/1",
+            "/properties/tags/items/maxLength",
+            ""
+        )
     );
 }
 
 #[test]
-fn should_list_the_violations_of_a_value_in_the_walks_order() {
+fn should_report_the_first_violation_in_the_walks_order() {
     // The JSON Schema validator lists `enum` first, as the schema writes it first
-    let violations = validator_of(&with_value(&json!({ "enum": ["a"], "type": "string" })))
+    let violation = validator_of(&with_value(&json!({ "enum": ["a"], "type": "string" })))
         .validate(&json!({ "value": 1 }))
-        .expect("expected the check to run");
-    let keywords: Vec<_> = violations
-        .iter()
-        .map(|violation| violation.keyword)
-        .collect();
-    assert_eq!(keywords, vec!["type", "enum"]);
+        .expect("expected the check to run")
+        .expect("expected a violation");
+    assert_eq!(violation.keyword(), "type");
 }
 
 #[test]
@@ -429,7 +419,7 @@ fn should_reach_the_existing_validators_verdict_on_generated_schemas() {
             let native_accepts = native
                 .validate(document)
                 .expect("expected the check to run")
-                .is_empty();
+                .is_none();
             assert_eq!(
                 native_accepts, existing_accepts,
                 "case {case}: {document} under {root}"
@@ -834,15 +824,13 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
         let violation = validator_of(&root)
             .validate(&document)
             .expect("expected the check to run")
-            .into_iter()
-            .next()
             .unwrap_or_else(|| panic!("{case}: the native validator accepts it"));
         let native = (
-            violation.keyword.to_string(),
-            violation.instance_path,
-            violation.schema_path,
-            Value::from(JsonValue::Object(violation.params)),
-            violation.property_name,
+            violation.keyword().to_string(),
+            violation.instance_path().to_string(),
+            violation.schema_path().to_string(),
+            violation.params().clone(),
+            violation.property_name().to_string(),
         );
         let existing = (
             expected.keyword().to_string(),
@@ -867,5 +855,5 @@ fn should_build_no_violation_when_only_asking_whether_a_value_matches() {
     walk.node(&validator.schema.root, &json!({ "value": 1 }), 0)
         .expect("expected the check to run");
     assert!(walk.failed);
-    assert!(walk.violations.is_empty());
+    assert!(walk.violation.is_none());
 }

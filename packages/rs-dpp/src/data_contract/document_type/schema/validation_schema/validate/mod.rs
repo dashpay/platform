@@ -13,21 +13,22 @@
 //! addresses). `maxBytes` and `encryptedFor` are not checked here: document validation
 //! checks them in steps of their own, on the properties the document type parser builds.
 //!
-//! The violations are listed in the order of a fixed walk, not in the order the schema
-//! writes its keywords, where the JSON Schema validator lists them. A node's `$ref` is
-//! followed first, then `type`, `enum` and `const`, then the keywords of the value's kind:
+//! The walk stops at the first violation it meets, the one consensus reports, and meets
+//! them in a fixed order, not in the order the schema writes its keywords, where the JSON
+//! Schema validator lists them. A node's `$ref` is followed first, then `type`, `enum` and `const`, then the keywords of the value's kind:
 //! an object's declared properties in declared order, `additionalProperties`, `required`,
 //! `minProperties`, `maxProperties` and `dependentRequired` by name; an array's `items`,
 //! `contains`, `minItems`, `maxItems` and `uniqueItems`; a string's `minLength`,
 //! `maxLength` and `pattern`; a number's bounds and `multipleOf`; then `format` and
 //! `byteArray`. A value breaking one keyword gets the violation the JSON Schema validator
 //! reports, and every violation is a `JsonSchemaError`, so the verdict and the error code
-//! are the same; a value breaking several can have another violation listed first.
+//! are the same; a value breaking several can get another violation first.
 
 use super::{
     structure_error, validator_regex, ArrayConstraints, JsonType, JsonTypes, NumberConstraints,
     ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema,
 };
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use fraction::{BigFraction, BigUint};
@@ -64,25 +65,6 @@ static TIME: Lazy<Regex> = Lazy::new(|| {
     )
     .expect("a literal pattern compiles")
 });
-
-/// Why a value fails the schema, in the terms a JSON Schema error reports it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SchemaViolation {
-    /// The keyword the value fails.
-    pub keyword: &'static str,
-    /// Where the failing value sits in the document, a JSON pointer.
-    pub instance_path: String,
-    /// Where the keyword sits in the schema, a JSON pointer from the document schema, as
-    /// the JSON Schema validator reports it: a `$ref` followed adds no segment, as if its
-    /// target sat in its place, and `byteArray`, Platform's keyword, reports none.
-    pub schema_path: String,
-    /// The keyword's parameters: a limit, the allowed values, a missing property.
-    pub params: JsonMap<String, JsonValue>,
-    /// The property a `required` violation names, empty for any other.
-    pub property_name: String,
-    /// What the violation is, in words.
-    pub message: String,
-}
 
 /// A document type's validation schema ready to check document values: its patterns
 /// compiled once.
@@ -145,35 +127,34 @@ impl DocumentSchemaValidator {
         Ok(Self { schema, patterns })
     }
 
-    /// The schema the validator checks against.
-    pub fn schema(&self) -> &ValidationSchema {
-        &self.schema
-    }
-
-    /// The violations of `instance`, the JSON the document validator converts a document's
-    /// properties to: none when it satisfies the schema. Errs only on a cycle of `$ref`s that
-    /// consumes nothing of the value, which [`Self::new`] refuses.
-    pub fn validate(&self, instance: &JsonValue) -> Result<Vec<SchemaViolation>, ProtocolError> {
+    /// The first violation of `instance`, the JSON the document validator converts a
+    /// document's properties to, as the JSON Schema error that reports it: none when it
+    /// satisfies the schema. Consensus reports only the first violation, so the walk stops
+    /// there. Errs only on a cycle of `$ref`s that consumes nothing of the value, which
+    /// [`Self::new`] refuses.
+    pub fn validate(&self, instance: &JsonValue) -> Result<Option<JsonSchemaError>, ProtocolError> {
         let mut walk = Walk::new(self, false);
         walk.node(&self.schema.root, instance, 0)?;
-        Ok(walk.violations)
+        Ok(walk.violation)
     }
 }
 
-/// One check of a value against the schema, collecting violations as it goes.
+/// One check of a value against the schema, stopping at the first failure it meets.
 struct Walk<'v> {
     validator: &'v DocumentSchemaValidator,
     /// Whether the walk only asks whether the value matches, as the JSON Schema validator
-    /// asks of each element against a `contains` schema: it builds no violation, stops at
-    /// the first failure, and skips `byteArray`, whose match check accepts every value.
+    /// asks of each element against a `contains` schema: it builds no violation, and skips
+    /// `byteArray`, whose match check accepts every value.
     matching_only: bool,
-    /// Whether a match check found a failure.
+    /// Whether the walk met a failure: it has its answer and checks nothing more.
     failed: bool,
     instance_path: Vec<Segment<'v>>,
     schema_path: Vec<Segment<'v>>,
     /// The length of `schema_path` at each `$ref` the walk is inside, innermost last.
     reference_sites: Vec<usize>,
-    violations: Vec<SchemaViolation>,
+    /// The failure met, as the JSON Schema error reporting it, unless the walk only asks
+    /// whether the value matches.
+    violation: Option<JsonSchemaError>,
 }
 
 /// A step of a path through the document or the schema, rendered only when a violation is
@@ -193,17 +174,17 @@ impl<'v> Walk<'v> {
             instance_path: Vec::new(),
             schema_path: Vec::new(),
             reference_sites: Vec::new(),
-            violations: Vec::new(),
+            violation: None,
         }
     }
 
-    /// Whether a match check has its answer.
+    /// Whether the walk has its answer.
     fn done(&self) -> bool {
-        self.matching_only && self.failed
+        self.failed
     }
 
     /// A violation of `keyword`, whose parameters and message `details` gives: built only
-    /// when the walk reports violations, not when it only asks whether the value matches.
+    /// for the first failure, and only when the walk reports it.
     fn fail(
         &mut self,
         keyword: &'static str,
@@ -222,8 +203,11 @@ impl<'v> Walk<'v> {
         property_name: &str,
         details: impl FnOnce() -> (JsonValue, String),
     ) {
+        if self.failed {
+            return;
+        }
+        self.failed = true;
         if self.matching_only {
-            self.failed = true;
             return;
         }
         self.schema_path.push(Segment::Name(schema_keyword));
@@ -241,17 +225,15 @@ impl<'v> Walk<'v> {
         property_name: &str,
         message: String,
     ) {
-        self.violations.push(SchemaViolation {
-            keyword,
-            instance_path: pointer(&self.instance_path),
-            schema_path,
-            params: match params {
-                JsonValue::Object(params) => params,
-                _ => JsonMap::new(),
-            },
-            property_name: property_name.to_string(),
+        self.failed = true;
+        self.violation = Some(JsonSchemaError::new(
             message,
-        });
+            keyword.to_string(),
+            pointer(&self.instance_path),
+            schema_path,
+            params.into(),
+            property_name.to_string(),
+        ));
     }
 
     /// Checks `instance` against `node`, reached through `references_in_a_row` `$ref`s
@@ -289,17 +271,17 @@ impl<'v> Walk<'v> {
             if !types_admit(types, instance) {
                 self.fail("type", "", || {
                     let names = match types {
-                        JsonTypes::One(json_type) => json!(json_type_name(*json_type)),
+                        JsonTypes::One(json_type) => json!(json_type.name()),
                         // A list of one type reads as that type
                         JsonTypes::AnyOf(json_types) => match json_types.as_slice() {
-                            [json_type] => json!(json_type_name(*json_type)),
+                            [json_type] => json!(json_type.name()),
                             // Each type once, in alphabetical order, as the JSON Schema
                             // validator lists them: `["string", "string"]` reads as
                             // `["string"]`
                             json_types => {
                                 let mut names: Vec<&str> = json_types
                                     .iter()
-                                    .map(|json_type| json_type_name(*json_type))
+                                    .map(|json_type| json_type.name())
                                     .collect();
                                 names.sort_unstable();
                                 names.dedup();
@@ -312,6 +294,9 @@ impl<'v> Walk<'v> {
                 });
             }
         }
+        if self.done() {
+            return Ok(());
+        }
         if let Some(values) = &node.enum_values {
             if !values.iter().any(|value| equal_value(instance, value)) {
                 self.fail("enum", "", || {
@@ -320,6 +305,9 @@ impl<'v> Walk<'v> {
                     (json!({ "enum": options }), message)
                 });
             }
+        }
+        if self.done() {
+            return Ok(());
         }
         if let Some(constant) = &node.constant {
             if !const_admits(constant, instance) {
@@ -348,6 +336,9 @@ impl<'v> Walk<'v> {
                 if let Some(constraints) = node.string.as_deref() {
                     self.string(constraints, string)?;
                 }
+                if self.done() {
+                    return Ok(());
+                }
                 if let Some(format) = node.format.as_deref().and_then(|f| f.format.as_deref()) {
                     if !format_admits(format, string) {
                         self.fail("format", "", || {
@@ -366,7 +357,10 @@ impl<'v> Walk<'v> {
             }
             JsonValue::Null | JsonValue::Bool(_) => {}
         }
-        if !self.matching_only && node.array.as_deref().is_some_and(|array| array.byte_array) {
+        if !self.matching_only
+            && !self.done()
+            && node.array.as_deref().is_some_and(|array| array.byte_array)
+        {
             self.byte_array(instance);
         }
         Ok(())
@@ -416,6 +410,9 @@ impl<'v> Walk<'v> {
                 (json!({ "additionalProperties": unexpected }), message)
             });
         }
+        if self.done() {
+            return Ok(());
+        }
         for name in object.required.iter().flatten() {
             if !map.contains_key(name) {
                 self.fail("required", name, || {
@@ -424,6 +421,7 @@ impl<'v> Walk<'v> {
                         format!("\"{name}\" is a required property"),
                     )
                 });
+                return Ok(());
             }
         }
         let count = map.len() as u64;
@@ -447,6 +445,9 @@ impl<'v> Walk<'v> {
                 });
             }
         }
+        if self.done() {
+            return Ok(());
+        }
         for (name, dependents) in object.dependent_required.iter().flatten() {
             if !map.contains_key(name) {
                 continue;
@@ -459,6 +460,7 @@ impl<'v> Walk<'v> {
                             format!("\"{dependent}\" is a required property"),
                         )
                     });
+                    return Ok(());
                 }
             }
         }
@@ -502,6 +504,7 @@ impl<'v> Walk<'v> {
                         "none of the items are valid under the given schema".to_string(),
                     )
                 });
+                return Ok(());
             }
         }
         let count = items.len() as u64;
@@ -539,45 +542,58 @@ impl<'v> Walk<'v> {
     /// carries only the path of the `$ref`s the walk followed to it, which the JSON Schema
     /// validator adds as it returns through each.
     fn byte_array(&mut self, instance: &JsonValue) {
-        let schema_path = match self.reference_sites.last() {
-            Some(&site) => pointer(&self.schema_path[..site]),
-            None => String::new(),
-        };
-        let JsonValue::Array(items) = instance else {
-            self.report(
+        let failure = match instance {
+            JsonValue::Array(items) => {
+                items
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, item)| match item.as_u64() {
+                        Some(byte) if byte > u64::from(u8::MAX) => Some((
+                            Some(index),
+                            "maximum",
+                            json!({ "maximum": u8::MAX }),
+                            format!("{item} is greater than the maximum of {}", u8::MAX),
+                        )),
+                        Some(_) => None,
+                        None => Some((
+                            Some(index),
+                            "type",
+                            json!({ "type": "integer" }),
+                            format!("{item} is not of type \"integer\""),
+                        )),
+                    })
+            }
+            _ => Some((
+                None,
                 "type",
-                schema_path,
                 json!({ "type": "array" }),
-                "",
                 format!("{instance} is not of type \"array\""),
-            );
+            )),
+        };
+        let Some((index, keyword, params, message)) = failure else {
             return;
         };
-        for (index, item) in items.iter().enumerate() {
-            let failure = match item.as_u64() {
-                Some(byte) if byte > u64::from(u8::MAX) => Some((
-                    "maximum",
-                    json!({ "maximum": u8::MAX }),
-                    format!("{item} is greater than the maximum of {}", u8::MAX),
-                )),
-                Some(_) => None,
-                None => Some((
-                    "type",
-                    json!({ "type": "integer" }),
-                    format!("{item} is not of type \"integer\""),
-                )),
-            };
-            if let Some((keyword, params, message)) = failure {
-                self.instance_path.push(Segment::Index(index));
-                self.report(keyword, schema_path, params, "", message);
-                self.instance_path.pop();
-                return;
-            }
+        let schema_path = self
+            .reference_sites
+            .last()
+            .and_then(|&site| self.schema_path.get(..site))
+            .map(pointer)
+            .unwrap_or_default();
+        if let Some(index) = index {
+            self.instance_path.push(Segment::Index(index));
+        }
+        self.report(keyword, schema_path, params, "", message);
+        if index.is_some() {
+            self.instance_path.pop();
         }
     }
 
     fn string(&mut self, string: &StringConstraints, value: &str) -> Result<(), ProtocolError> {
-        let length = value.chars().count() as u64;
+        let length = if string.min_length.is_some() || string.max_length.is_some() {
+            value.chars().count() as u64
+        } else {
+            0
+        };
         if let Some(minimum) = string.min_length {
             if length < minimum {
                 self.fail("minLength", "", || {
@@ -597,6 +613,9 @@ impl<'v> Walk<'v> {
                     )
                 });
             }
+        }
+        if self.done() {
+            return Ok(());
         }
         if let Some(pattern) = &string.pattern {
             let regex = self.validator.patterns.get(pattern).ok_or_else(|| {
@@ -659,6 +678,7 @@ impl<'v> Walk<'v> {
                     let message = format!("{value} is {relation} {limit}");
                     (json!({ keyword: limit }), message)
                 });
+                return Ok(());
             }
         }
         if let Some(divisor) = &number.multiple_of {
@@ -702,18 +722,6 @@ fn pointer(segments: &[Segment]) -> String {
             Segment::Index(index) => format!("/{index}"),
         })
         .collect()
-}
-
-fn json_type_name(json_type: JsonType) -> &'static str {
-    match json_type {
-        JsonType::Null => "null",
-        JsonType::Boolean => "boolean",
-        JsonType::Object => "object",
-        JsonType::Array => "array",
-        JsonType::Number => "number",
-        JsonType::String => "string",
-        JsonType::Integer => "integer",
-    }
 }
 
 /// Whether `instance` is of one of `types`: a number is an integer when it reads as one or

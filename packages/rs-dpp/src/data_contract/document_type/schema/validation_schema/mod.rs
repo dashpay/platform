@@ -85,7 +85,7 @@ pub use keyword::{
     ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
     StringKeyword,
 };
-pub use validate::{DocumentSchemaValidator, SchemaViolation};
+pub use validate::DocumentSchemaValidator;
 
 /// A JSON Schema simple type.
 #[derive(
