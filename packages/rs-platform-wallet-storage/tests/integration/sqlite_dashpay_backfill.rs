@@ -11,7 +11,8 @@
 
 use crate::common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use common::{
     ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, store_and_flush, wid,
@@ -31,6 +32,7 @@ use platform_wallet_storage::sqlite::schema::{blob, contacts, dashpay_backfill};
 use platform_wallet_storage::{
     FlushMode, LoadCtx, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
 };
+use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{params, Connection, ErrorCode, OptionalExtension};
 
 fn covered(owner: u8, contact: u8, account_index: u32, from: u32) -> DashPayBackfillCoveredContact {
@@ -449,6 +451,104 @@ fn should_restore_the_rewound_cursor_beside_its_record() {
     assert_eq!(
         wallet.wallet_info.metadata.synced_height, 1_000,
         "a relaunch must resume the climb from the lowered cursor"
+    );
+}
+
+/// The concurrent write [`commit_rewind_mid_load`] makes: where it goes, and
+/// what it reported once it ran. A trace callback is a plain `fn`, so its
+/// state is a static; only this file's snapshot test arms it.
+static MID_LOAD_WRITE: Mutex<MidLoadWrite> = Mutex::new(MidLoadWrite::Disarmed);
+
+enum MidLoadWrite {
+    Disarmed,
+    Armed(PathBuf, WalletId),
+    Done(Result<(), String>),
+}
+
+/// Trace callback on the loading connection. On the first `asset_locks`
+/// read — after `load()` has read the cursor, before it reads the coverage —
+/// another connection commits a rewind to 1 000 and the coverage that
+/// vouches for it, as a second process would. Errors are reported through
+/// the static, since rusqlite swallows a panic raised inside the callback.
+fn commit_rewind_mid_load(event: TraceEvent<'_>) {
+    let TraceEvent::Stmt(_, sql) = event else {
+        return;
+    };
+    if !sql.contains("FROM asset_locks") {
+        return;
+    }
+    let mut state = MID_LOAD_WRITE.lock().unwrap_or_else(|p| p.into_inner());
+    let MidLoadWrite::Armed(path, wallet_id) = &*state else {
+        return;
+    };
+    let result = Connection::open(path)
+        .and_then(|mut other| {
+            let tx = other.transaction()?;
+            tx.execute(
+                "UPDATE core_sync_state SET synced_height = 1000, \
+                    dashpay_backfill_floor = 1000, dashpay_backfill_rewound_from = 5000 \
+                 WHERE wallet_id = ?1",
+                params![wallet_id.as_slice()],
+            )?;
+            tx.execute(
+                "UPDATE account_registrations SET dashpay_covered_from = 1000 \
+                 WHERE wallet_id = ?1 AND account_type = 'dashpay_receiving'",
+                params![wallet_id.as_slice()],
+            )?;
+            tx.commit()
+        })
+        .map_err(|e| e.to_string());
+    *state = MidLoadWrite::Done(result);
+}
+
+/// `load()` reads the cursor and the coverage that suppresses the rescan
+/// below it from one snapshot. Another process committing a rewind plus its
+/// coverage between those two reads must not hand back the old cursor beside
+/// the new coverage: the contact would read as covered, the rescan would be
+/// skipped, and the range below the old cursor never checked.
+#[test]
+fn should_load_the_cursor_and_its_coverage_from_one_snapshot() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x5D);
+    ensure_wallet_meta(&persister, &w);
+    let entry = covered(0x01, 0x02, 0, 1_000);
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            account_registrations: vec![receiving_account(&entry, 0x01)],
+            core: cursor_cs(5_000, false).core,
+            ..Default::default()
+        },
+    );
+
+    *MID_LOAD_WRITE.lock().unwrap() = MidLoadWrite::Armed(path.clone(), w);
+    persister.lock_conn_for_test().trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(commit_rewind_mid_load),
+    );
+    let mut state = persister.load().expect("load");
+    persister
+        .lock_conn_for_test()
+        .trace_v2(TraceEventCodes::empty(), None);
+
+    match std::mem::replace(&mut *MID_LOAD_WRITE.lock().unwrap(), MidLoadWrite::Disarmed) {
+        MidLoadWrite::Done(result) => result.expect("the concurrent rewind must commit"),
+        _ => panic!("load() must have read asset_locks, where the rewind is injected"),
+    }
+    assert_eq!(
+        stored_cursor(&persister, &w),
+        Some(1_000),
+        "the concurrent rewind is on disk"
+    );
+    let wallet = state.wallets.remove(&w).expect("the seeded wallet");
+    assert_eq!(
+        (
+            wallet.wallet_info.metadata.synced_height,
+            wallet.dashpay_backfill
+        ),
+        (5_000, DashPayBackfillRecord::default()),
+        "load() must see the state from before the rewind, cursor and coverage alike"
     );
 }
 
