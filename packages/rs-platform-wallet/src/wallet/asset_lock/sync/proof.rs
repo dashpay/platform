@@ -3532,6 +3532,116 @@ mod chain_lock_wait_tests {
             .expect("the fixture holds the funding record");
     }
 
+    /// A `RecoveredFromChain` row whose Chain proof Platform refused for its
+    /// height takes the record's different Chain proof and keeps its status.
+    #[tokio::test]
+    async fn should_replace_a_recovered_rows_rejected_proof_with_the_records_and_keep_its_status() {
+        let ctx = ok_ctx(
+            TransactionContext::InChainLockedBlock(BlockInfo::new(140, BlockHash::all_zeros(), 0)),
+            AssetLockStatus::RecoveredFromChain,
+            None,
+            None,
+        )
+        .await;
+        let rejected = recovered_chain_proof(&ctx, 100).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &rejected, &height_rejection())
+            .await;
+
+        let row = ok_tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
+    }
+
+    /// Put a Chain proof at `height` on `ctx`'s `RecoveredFromChain` row.
+    async fn recovered_chain_proof(ctx: &OkCtx, height: u32) -> AssetLockProof {
+        let proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: height,
+            out_point: ctx.out_point,
+        });
+        ctx.manager
+            .advance_asset_lock_status(
+                &ctx.out_point,
+                AssetLockStatus::RecoveredFromChain,
+                Some(proof.clone()),
+            )
+            .await
+            .expect("advance");
+        proof
+    }
+
+    /// With no other Chain proof in the record (an InstantSend record, or one
+    /// at the refused height), the refused proof is cleared off the
+    /// `RecoveredFromChain` row, which keeps its status.
+    #[tokio::test]
+    async fn should_clear_a_recovered_rows_rejected_proof_when_the_record_offers_no_other() {
+        for (context, label) in [
+            (instant_send_context(), "InstantSend record"),
+            (
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    100,
+                    BlockHash::all_zeros(),
+                    0,
+                )),
+                "record at the refused height",
+            ),
+        ] {
+            let ctx = ok_ctx(context, AssetLockStatus::RecoveredFromChain, None, None).await;
+            let rejected = recovered_chain_proof(&ctx, 100).await;
+
+            ctx.manager
+                .invalidate_rejected_chain_proof(&ctx.out_point, &rejected, &height_rejection())
+                .await;
+
+            let row = ok_tracked_row(&ctx).await;
+            assert_eq!(row.status, AssetLockStatus::RecoveredFromChain, "{label}");
+            assert!(
+                row.proof.is_none(),
+                "{label}: the refused proof must not survive"
+            );
+        }
+    }
+
+    /// A cleared `RecoveredFromChain` row whose record cannot prove it is
+    /// rebuilt through the lookup on the next resume and keeps its status.
+    #[tokio::test(start_paused = true)]
+    async fn should_rebuild_a_recovered_rows_rejected_proof_through_the_lookup() {
+        let locator = ScriptedLocator::new(vec![mined(140)]);
+        let ctx = ok_ctx(
+            TransactionContext::Mempool,
+            AssetLockStatus::RecoveredFromChain,
+            None,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_ok_wallet_chain_lock(&ctx, 150).await;
+        let rejected = recovered_chain_proof(&ctx, 100).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &rejected, &height_rejection())
+            .await;
+        let cleared = ok_tracked_row(&ctx).await;
+        assert_eq!(cleared.status, AssetLockStatus::RecoveredFromChain);
+        assert!(
+            cleared.proof.is_none(),
+            "the refused proof must not survive"
+        );
+
+        let (proof, _path) = tokio::time::timeout(
+            Duration::from_secs(900),
+            ctx.manager.resume_asset_lock(&ctx.out_point, None),
+        )
+        .await
+        .expect("the lookup settles the resume")
+        .expect("the lookup places the transaction");
+        assert_eq!(chain_proof_height(proof), 140);
+
+        let row = ok_tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
+    }
+
     /// A row whose rejected ChainLock proof the invalidator cleared, with no
     /// funding record anywhere: evicted from memory, and a persister that
     /// keeps none answers `Ok(None)`. The wallet's ChainLock is at 150.
