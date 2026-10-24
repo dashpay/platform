@@ -13,6 +13,8 @@
 
 use rusqlite::{params, Connection, Transaction};
 
+use super::accounts::dashpay_external_label;
+
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -346,17 +348,18 @@ pub(crate) fn owning_account_for_script(
     // identities of one wallet that are each other's contacts — resolves to
     // the receiving account, agreeing with `load_used_addresses_with_ctx`,
     // which leaves it out; a row of its own still names it, so a legacy
-    // contact UTXO is reported as orphaned. The literal is
-    // `accounts::account_type_db_label` of `DashpayExternalAccount`.
-    let mut stmt = conn.prepare_cached(
+    // contact UTXO is reported as orphaned.
+    let mut stmt = conn.prepare_cached(concat!(
         "SELECT account_type, account_index, length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
          WHERE wallet_id = ?1 AND script = ?2 \
-         ORDER BY account_type = 'dashpay_external', account_type, account_index, key_class, user_identity_id, \
+         ORDER BY account_type = '",
+        dashpay_external_label!(),
+        "', account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index ASC \
          LIMIT 1",
-    )?;
+    ))?;
     let mut rows = stmt.query(params![wallet_id.as_slice(), script])?;
     let Some(row) = rows.next()? else {
         return Ok(None);
@@ -432,8 +435,12 @@ pub fn load_used_addresses_with_ctx(
     // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
     blob::check_max_column_len(
         conn,
-        "SELECT MAX(length(script)) FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 AND account_type <> 'dashpay_external'",
+        concat!(
+            "SELECT MAX(length(script)) FROM core_address_pool \
+             WHERE wallet_id = ?1 AND used = 1 AND account_type <> '",
+            dashpay_external_label!(),
+            "'",
+        ),
         wallet_id,
     )?;
     // Order by script then the pool PK so the first row per script is the
@@ -443,17 +450,18 @@ pub fn load_used_addresses_with_ctx(
     // account), and one winning over a `dashpay_receiving` row with the same
     // script would cost that account its guard. `owning_account_for_script`
     // ranks them last too, so neither source names the external account for
-    // a script it shares with one of this wallet's own rows. The literal is
-    // `accounts::account_type_db_label` of `DashpayExternalAccount`.
-    let mut stmt = conn.prepare(
+    // a script it shares with one of this wallet's own rows.
+    let mut stmt = conn.prepare(concat!(
         "SELECT script, account_type, account_index, \
                 length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 AND account_type <> 'dashpay_external' \
+         WHERE wallet_id = ?1 AND used = 1 AND account_type <> '",
+        dashpay_external_label!(),
+        "' \
          ORDER BY script, account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index",
-    )?;
+    ))?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -535,29 +543,33 @@ pub fn load_contact_pool_claims(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<ContactPoolClaim>, WalletStorageError> {
-    // The `dashpay_external` literal is `accounts::account_type_db_label` of
-    // `DashpayExternalAccount`; SQL here stays static.
     blob::check_max_column_len(
         conn,
-        "SELECT MAX(length(script)) FROM core_address_pool \
-         WHERE wallet_id = ?1 AND account_type = 'dashpay_external' \
+        concat!(
+            "SELECT MAX(length(script)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = '",
+            dashpay_external_label!(),
+            "' \
            AND (used = 1 OR reserved_at IS NOT NULL \
              OR script IN (SELECT script FROM core_utxos \
                           WHERE wallet_id = ?1 AND is_sweep_placeholder = 0))",
+        ),
         wallet_id,
     )?;
-    let mut stmt = conn.prepare_cached(
+    let mut stmt = conn.prepare_cached(concat!(
         "SELECT account_index, length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id, pool_type, \
                 address_index, script \
          FROM core_address_pool \
-         WHERE wallet_id = ?1 AND account_type = 'dashpay_external' \
+         WHERE wallet_id = ?1 AND account_type = '",
+        dashpay_external_label!(),
+        "' \
            AND (used = 1 OR reserved_at IS NOT NULL \
              OR script IN (SELECT script FROM core_utxos \
                           WHERE wallet_id = ?1 AND is_sweep_placeholder = 0)) \
          ORDER BY account_index, user_identity_id, friend_identity_id, pool_type, \
                   address_index",
-    )?;
+    ))?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
@@ -647,7 +659,7 @@ mod tests {
             assert_eq!(owner.account_type, label);
             let used = load_used_addresses(&conn, &wallet, dashcore::Network::Testnet).unwrap();
             // A contact's external rows are read by `load_contact_pool_claims`.
-            if label == "dashpay_external" {
+            if label == dashpay_external_label!() {
                 assert!(used.is_empty());
                 continue;
             }

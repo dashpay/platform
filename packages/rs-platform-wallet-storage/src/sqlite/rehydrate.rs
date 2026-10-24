@@ -21,7 +21,7 @@ use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
-use crate::sqlite::schema::accounts::{self, AccountManifest};
+use crate::sqlite::schema::accounts::{self, dashpay_external_label, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
 
@@ -603,14 +603,7 @@ pub fn restore_contact_pool_claims(
 
 /// Whether `owner` names a DashPay contact's external account.
 fn is_contact_external(owner: Option<&OwningAccount>) -> bool {
-    owner.is_some_and(|owner| {
-        owner.account_type
-            == accounts::account_type_db_label(&AccountType::DashpayExternalAccount {
-                index: owner.account_index,
-                user_identity_id: owner.user_identity_id,
-                friend_identity_id: owner.friend_identity_id,
-            })
-    })
+    owner.is_some_and(|owner| owner.account_type == dashpay_external_label!())
 }
 
 /// Resolve an owning account to its position among `account_keys`, or fall
@@ -1030,10 +1023,11 @@ fn refill_gap_window(
 /// What a `maintain_gap_limit` call on a pool would cost, costed before it
 /// runs.
 ///
-/// Mirrors the target upstream computes internally (key-wallet rev
-/// 393b612) — a private formula, so an upstream change would silently
-/// mis-estimate here until `AddressPool` exposes a read-only
-/// `refill_target()` (upstream work, out of scope). Upstream computes that
+/// Mirrors the private target upstream `maintain_gap_limit` computes;
+/// `implied_refill_matches_what_maintain_gap_limit_derives` checks the two
+/// agree, so an upstream change fails that test rather than mis-costing a
+/// refill here. The one known difference over-estimates: an empty pool with
+/// a gap limit of 1 is costed one address, which upstream does not derive. Upstream computes that
 /// target with raw arithmetic — a panic with debug assertions on, a wrapped
 /// target without — so the same formula is applied checked here; the cost
 /// derived from it still saturates, because over-estimating fails closed.
@@ -3159,6 +3153,57 @@ mod tests {
             generated_before,
             "a refused refill must derive nothing"
         );
+    }
+
+    /// The pre-flight mirrors a target key-wallet keeps private, so it is
+    /// checked against what `maintain_gap_limit` actually derives: an
+    /// upstream change to that formula fails here instead of silently
+    /// mis-costing every refill.
+    #[test]
+    fn implied_refill_matches_what_maintain_gap_limit_derives() {
+        use key_wallet::bip32::DerivationPath;
+
+        let wallet = Wallet::from_seed_bytes(
+            [9u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let key_source = KeySource::Public(manifest_for(&wallet)[0].account_xpub);
+        // (addresses generated before the refill, index marked used)
+        for (generated, used) in [
+            (0, None),
+            (1, None),
+            (5, Some(2)),
+            (30, Some(29)),
+            (40, Some(3)),
+        ] {
+            let mut pool = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                20,
+                Network::Testnet,
+            );
+            if generated > 0 {
+                pool.generate_addresses(generated, &key_source, true)
+                    .unwrap();
+            }
+            if let Some(index) = used {
+                let address = pool.address_at_index(index).unwrap();
+                assert!(pool.mark_used(&address));
+            }
+            let before = pool.highest_generated;
+            let refill = ImpliedRefill::of(pool.highest_used, before, pool.gap_limit)
+                .expect("a representable target");
+            let derived = pool.maintain_gap_limit(&key_source).unwrap();
+            let state = format!("{generated} generated, used {used:?}");
+            assert_eq!(derived.len() as u32, refill.implied, "{state}");
+            assert_eq!(
+                pool.highest_generated,
+                before.max(Some(refill.target)),
+                "{state}"
+            );
+        }
     }
 
     /// `highest_generated` is an index, so `None` means the pool holds no
