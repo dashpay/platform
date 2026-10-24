@@ -1578,3 +1578,32 @@ fn should_admit_any_const_and_any_system_property_schema_as_the_meta_schema_chec
         assert!(native_refusal(&root).is_none(), "{case}: the native checks");
     }
 }
+
+/// A `tokenCost` `contractId` holding a float with no fractional part: the meta-schema checks
+/// the bytes with `byteArray`, which reads each as an unsigned integer and refuses a float, so
+/// the native checks refuse it too.
+#[test]
+fn should_refuse_a_float_token_cost_contract_id_byte_as_the_meta_schema_check_does() {
+    let contract_id = |first: JsonValue| {
+        let mut bytes = vec![json!(0); 32];
+        bytes[0] = first;
+        JsonValue::Array(bytes)
+    };
+    for (first, refused) in [(json!(1), false), (json!(1.0), true), (json!(256), true)] {
+        let root = profile_root_with(|root| {
+            root["tokenCost"] = json!({
+                "create": { "contractId": contract_id(first.clone()), "tokenPosition": 0, "amount": 1 }
+            });
+        });
+        assert_eq!(
+            meta_schema_refusal(&root).is_some(),
+            refused,
+            "{first}: the meta-schema check"
+        );
+        assert_eq!(
+            native_refusal(&root).is_some(),
+            refused,
+            "{first}: the native checks"
+        );
+    }
+}
