@@ -346,13 +346,45 @@ impl ValidationSchema {
     /// name (see [`ResolutionKeyword::Id`]); a `$ref` that is not a JSON pointer into the document
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
+    ///
+    /// This is generation 0 of the builder ([`Self::try_from_root_v0`]), with no version
+    /// check: consensus builds through [`Self::build`].
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
-        Self::try_from_root_with_patterns(root).map(|(schema, _)| schema)
+        Self::try_from_root_v0(root).map(|(schema, _)| schema)
     }
 
-    /// [`Self::try_from_root`], with every `pattern` the schema holds compiled as the
-    /// builder compiled it to check it, for the native validator to reuse.
-    pub(crate) fn try_from_root_with_patterns(
+    /// The validation schema of `root` and the patterns it compiled, built by the generation
+    /// of the builder `platform_version` selects (`validation_schema`). Refuses a protocol
+    /// version that selects none, whose document validation reads no validation schema, and
+    /// a generation this module does not know.
+    pub(crate) fn build(
+        root: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, BTreeMap<String, regex::Regex>), ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .validation_schema
+        {
+            Some(0) => Ok(Self::try_from_root_v0(root)?),
+            None => Err(ProtocolError::NotSupported(format!(
+                "protocol version {} checks no document against a validation schema",
+                platform_version.protocol_version
+            ))),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ValidationSchema::build".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Generation 0 of the builder: [`Self::try_from_root`], with every `pattern` the schema
+    /// holds compiled as the builder compiled it to check it, for the native validator to
+    /// reuse.
+    fn try_from_root_v0(
         root: &Value,
     ) -> Result<(Self, BTreeMap<String, regex::Regex>), DataContractError> {
         // The document validator converts the whole schema before it compiles it, so a value
@@ -422,12 +454,9 @@ impl DataContract {
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
-        check_builder_generation(
-            platform_version,
-            "DataContract::document_type_validation_schema",
-        )?;
         let root = self.document_type_validated_schema(document_type_name, platform_version)?;
-        Ok(ValidationSchema::try_from_root(&root)?)
+        let (schema, _) = ValidationSchema::build(&root, platform_version)?;
+        Ok(schema)
     }
 
     /// The native validator of one of the contract's document types: its validation schema
@@ -470,36 +499,8 @@ impl DocumentSchemaValidator {
         root: &Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        check_builder_generation(platform_version, "DocumentSchemaValidator::try_from_root")?;
-        let (schema, patterns) = ValidationSchema::try_from_root_with_patterns(root)?;
+        let (schema, patterns) = ValidationSchema::build(root, platform_version)?;
         Ok(Self::with_patterns(schema, patterns)?)
-    }
-}
-
-/// Checks that `platform_version` selects generation 0 of `validation_schema`, the builder
-/// this module holds: refuses a protocol version that selects none, whose document
-/// validation reads no validation schema, and a generation the module does not know.
-fn check_builder_generation(
-    platform_version: &PlatformVersion,
-    method: &str,
-) -> Result<(), ProtocolError> {
-    match platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .validation_schema
-    {
-        Some(0) => Ok(()),
-        None => Err(ProtocolError::NotSupported(format!(
-            "protocol version {} checks no document against a validation schema",
-            platform_version.protocol_version
-        ))),
-        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-            method: method.to_string(),
-            known_versions: vec![0],
-            received: version,
-        }),
     }
 }
 
