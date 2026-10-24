@@ -715,6 +715,21 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
             json!({ "a": 1 }),
         ),
         (
+            "additionalProperties false with no properties",
+            json!({ "type": "object", "additionalProperties": false }),
+            json!({ "a": 1, "b": 2 }),
+        ),
+        (
+            "a required name a JSON string escapes",
+            json!({ "type": "object", "required": ["a\"b"] }),
+            json!({}),
+        ),
+        (
+            "a dependent required name a JSON string escapes",
+            json!({ "type": "object", "dependentRequired": { "a": ["b\\c"] } }),
+            json!({ "a": 1 }),
+        ),
+        (
             "an element",
             json!({ "type": "array", "items": { "type": "string" } }),
             json!(["a", 1]),
@@ -856,4 +871,27 @@ fn should_build_no_violation_when_only_asking_whether_a_value_matches() {
         .expect("expected the check to run");
     assert!(walk.failed);
     assert!(walk.violation.is_none());
+}
+
+#[test]
+fn should_refuse_a_property_declared_twice() {
+    let object = ObjectConstraints {
+        properties: Some(vec![
+            ("a".to_string(), SchemaNode::default()),
+            ("a".to_string(), SchemaNode::default()),
+        ]),
+        additional_properties: Some(false),
+        ..Default::default()
+    };
+    let schema = ValidationSchema {
+        root: SchemaNode {
+            object: Some(Box::new(object)),
+            ..Default::default()
+        },
+        references: BTreeMap::new(),
+    };
+    assert!(matches!(
+        DocumentSchemaValidator::new(schema),
+        Err(DataContractError::InvalidContractStructure(_))
+    ));
 }

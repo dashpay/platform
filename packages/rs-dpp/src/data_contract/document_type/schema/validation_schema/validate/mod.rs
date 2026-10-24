@@ -38,7 +38,7 @@ use platform_value::Value;
 use regex::Regex;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -76,8 +76,8 @@ pub struct DocumentSchemaValidator {
 
 impl DocumentSchemaValidator {
     /// The validator of `schema`. Refuses a `pattern` the JSON Schema validator does not
-    /// compile, which the builder refuses already, and a chain of `$ref`s that returns to
-    /// where it started without entering the value.
+    /// compile and a property declared twice, which the builder refuses already, and a chain
+    /// of `$ref`s that returns to where it started without entering the value.
     pub fn new(schema: ValidationSchema) -> Result<Self, DataContractError> {
         let mut patterns = BTreeMap::new();
         {
@@ -95,7 +95,16 @@ impl DocumentSchemaValidator {
                     }
                 }
                 if let Some(object) = node.object.as_deref() {
-                    nodes.extend(object.properties.iter().flatten().map(|(_, node)| node));
+                    // The walk counts the declared properties a value holds against its keys
+                    let mut names = BTreeSet::new();
+                    for (name, property) in object.properties.iter().flatten() {
+                        if !names.insert(name) {
+                            return Err(structure_error(format!(
+                                "the property `{name}` is declared twice"
+                            )));
+                        }
+                        nodes.push(property);
+                    }
                 }
                 if let Some(array) = node.array.as_deref() {
                     nodes.extend(array.items.as_deref());
@@ -391,31 +400,33 @@ impl<'v> Walk<'v> {
             }
         }
         // Fewer declared keys than keys: the value holds a key it does not declare, which
-        // the violation lists only when it is reported
+        // the violation lists only when it is reported. Without `properties` the JSON Schema
+        // validator compiles `additionalProperties: false` as a false schema, whose one
+        // violation carries no parameters.
         if object.additional_properties == Some(false) && declared_keys < map.len() {
-            self.fail("additionalProperties", "", || {
-                let unexpected: Vec<&String> = map
-                    .keys()
-                    .filter(|key| {
-                        !object
-                            .properties
-                            .iter()
-                            .flatten()
-                            .any(|(name, _)| name == *key)
-                    })
-                    .collect();
-                let message = format!(
-                    "additional properties are not allowed ({unexpected:?} were unexpected)"
-                );
-                (json!({ "additionalProperties": unexpected }), message)
-            });
+            match &object.properties {
+                None => self.fail_under("additionalProperties", "falseSchema", "", || {
+                    let message = format!("False schema does not allow {}", json!(map));
+                    (json!({}), message)
+                }),
+                Some(properties) => self.fail("additionalProperties", "", || {
+                    let unexpected: Vec<&String> = map
+                        .keys()
+                        .filter(|key| !properties.iter().any(|(name, _)| name == *key))
+                        .collect();
+                    let message = format!(
+                        "additional properties are not allowed ({unexpected:?} were unexpected)"
+                    );
+                    (json!({ "additionalProperties": unexpected }), message)
+                }),
+            }
         }
         if self.done() {
             return Ok(());
         }
         for name in object.required.iter().flatten() {
             if !map.contains_key(name) {
-                self.fail("required", name, || {
+                self.fail("required", &reported_property_name(name), || {
                     (
                         json!({ "missingProperty": name }),
                         format!("\"{name}\" is a required property"),
@@ -454,7 +465,8 @@ impl<'v> Walk<'v> {
             }
             for dependent in dependents {
                 if !map.contains_key(dependent) {
-                    self.fail_under("dependentRequired", "required", dependent, || {
+                    let reported = reported_property_name(dependent);
+                    self.fail_under("dependentRequired", "required", &reported, || {
                         (
                             json!({ "missingProperty": dependent }),
                             format!("\"{dependent}\" is a required property"),
@@ -711,6 +723,15 @@ fn not_a_number(keyword: &str) -> ProtocolError {
     ProtocolError::CorruptedCodeExecution(format!(
         "the validation schema holds a `{keyword}` that is not a number"
     ))
+}
+
+/// A property name as the JSON Schema validator's error names it: written as a JSON string,
+/// without its quotes.
+fn reported_property_name(name: &str) -> String {
+    JsonValue::String(name.to_string())
+        .to_string()
+        .trim_matches('"')
+        .to_string()
 }
 
 /// A JSON pointer of `segments`.
