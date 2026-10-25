@@ -45,6 +45,21 @@ mod tests {
             .errors
     }
 
+    /// An offer for a token with 39 or more decimals is worth one credit at most, so terms at
+    /// their bounds pass the structure validation there too.
+    #[test]
+    fn should_accept_an_offer_for_a_token_with_39_or_more_decimals() {
+        for decimals in [39, 255] {
+            let TokenPlaceBidTransition::V0(mut v0) =
+                order(MAX_TOKEN_ORDER_TERM, MAX_TOKEN_ORDER_TERM, 1);
+            v0.decimals = decimals;
+            assert!(
+                errors(TokenPlaceBidTransition::V0(v0)).is_empty(),
+                "decimals {decimals}"
+            );
+        }
+    }
+
     #[test]
     fn should_accept_an_order_within_its_bounds() {
         assert!(errors(order(1_000, 1, 1_000)).is_empty());
