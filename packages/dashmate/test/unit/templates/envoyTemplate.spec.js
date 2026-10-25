@@ -43,9 +43,9 @@ describe('envoy template', () => {
     expect(grpcWeb).to.be.greaterThan(compressor);
 
     // Native gRPC must never be HTTP-compressed: rs-dapi compresses its messages.
-    const contentTypes = envoyConfig
+    const contentTypes = (envoyConfig
       .slice(compressor, grpcWeb)
-      .match(/^\s+- application\/[\w+-]+$/gm)
+      .match(/^\s+- application\/[\w+-]+$/gm) ?? [])
       .map((line) => line.trim().slice(2));
 
     expect(contentTypes).to.have.members([

@@ -134,6 +134,7 @@ const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
 /// client's `max_decoding_message_size`. The limit is the client's own, so every node
 /// would fail the same way: this must not ban nodes like other `ResourceExhausted`
 /// statuses (an uncompressed oversized response is `OutOfRange`, also not retried).
+/// The text comes from tonic 0.14's `codec::decode`; re-check it on tonic upgrades.
 const DECOMPRESS_LIMIT_ERROR: &str = "Error decompressing: size limit";
 
 impl CanRetry for dapi_grpc::tonic::Status {
