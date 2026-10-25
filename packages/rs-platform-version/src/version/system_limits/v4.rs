@@ -140,6 +140,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
+    max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
