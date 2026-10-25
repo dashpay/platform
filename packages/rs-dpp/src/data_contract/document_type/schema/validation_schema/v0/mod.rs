@@ -754,7 +754,7 @@ fn build_node(
                 match keyword {
                     FormatKeyword::Format => {
                         let format_name = text(value, name)?;
-                        let Ok(validator_format) = format_name.parse::<ValidatorFormat>() else {
+                        let Some(validator_format) = validator_format(format_name) else {
                             return Err(structure_error(format!(
                                 "the JSON Schema validator knows no format `{format_name}` and \
                                  compiles no schema that names it"
@@ -778,6 +778,25 @@ fn build_node(
         }
     }
     Ok(node)
+}
+
+/// The format named `name` among those generation 0 admits: the draft 2020-12 formats the
+/// pinned fork compiles. Listed here rather than read off [`ValidatorFormat`], so a format a
+/// later generation adds to the enum is not admitted by this one.
+fn validator_format(name: &str) -> Option<ValidatorFormat> {
+    Some(match name {
+        "date" => ValidatorFormat::Date,
+        "date-time" => ValidatorFormat::DateTime,
+        "email" => ValidatorFormat::Email,
+        "hostname" => ValidatorFormat::Hostname,
+        "idn-email" => ValidatorFormat::IdnEmail,
+        "ipv4" => ValidatorFormat::Ipv4,
+        "ipv6" => ValidatorFormat::Ipv6,
+        "regex" => ValidatorFormat::Regex,
+        "time" => ValidatorFormat::Time,
+        "uri" => ValidatorFormat::Uri,
+        _ => return None,
+    })
 }
 
 /// Resolves a `$ref` to the schema at its JSON pointer in the document schema, where the
@@ -837,3 +856,6 @@ fn array_index(segment: &str) -> Option<usize> {
         segment.parse().ok()
     }
 }
+
+#[cfg(test)]
+mod tests;
