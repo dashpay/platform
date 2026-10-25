@@ -163,6 +163,10 @@ pub struct SystemLimits {
     ///   the order as the batch found it, release more than its escrow held, and write a stale
     ///   `remaining`. Raising the cap needs fills transformed against a batch-local order state
     ///   (or a refusal of an order filled or cancelled twice in a batch).
+    ///   The marketplace's token history records (`orderPlaced`, `orderFilled`,
+    ///   `orderCancelled`) are keyed by the token, the signer, the event's kind and the signer's
+    ///   identity contract nonce, so two transitions of one kind by one signer in a batch would
+    ///   write the same record; raising the cap needs the order id in that key.
     ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite specify the group drain this cap
     /// guards against; they run at protocol version 15, whose batch application removes the

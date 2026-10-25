@@ -144,6 +144,11 @@ impl TokenTransitionAction {
     /// The operation recording this transition in the token history contract when its token
     /// keeps the history of its kind (`keeps_history`): the event `associated_token_event`
     /// describes, owned by the signer and keyed by the signer's identity contract nonce.
+    ///
+    /// The record's id is derived from the token, the signer, the event's kind and that nonce,
+    /// not from the order. Two marketplace transitions of one kind by one signer under one nonce
+    /// would share it, which only a batch of more than one transition could produce: sound while
+    /// a batch carries one (`SystemLimits::max_transitions_in_documents_batch`).
     fn token_history_operation<'b>(
         &self,
         owner_id: Identifier,
