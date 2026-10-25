@@ -57,6 +57,25 @@ mod tests {
         .errors
     }
 
+    /// A listing of a token with 39 or more decimals is worth one credit at most, so terms at
+    /// their bounds pass the structure validation there too.
+    #[test]
+    fn should_accept_a_listing_of_a_token_with_39_or_more_decimals() {
+        for decimals in [39, 255] {
+            let errors = TokenPlaceAskTransition::V0(TokenPlaceAskTransitionV0 {
+                base: Default::default(),
+                amount: SIGNED_MAX,
+                price: SIGNED_MAX,
+                decimals,
+                min_fill: 1,
+            })
+            .validate_structure(PlatformVersion::latest())
+            .expect("expected the structure validation to run")
+            .errors;
+            assert!(errors.is_empty(), "decimals {decimals}: {errors:?}");
+        }
+    }
+
     /// A listing's amount and price are stored as signed 8-byte values, so each is 1 to
     /// `i64::MAX`. At 8 decimals, `i64::MAX + 1` base units at 1 credit and 1 base unit at
     /// `i64::MAX + 1` credits are both worth what an order holds, so only these bounds refuse

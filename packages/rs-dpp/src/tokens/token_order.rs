@@ -56,19 +56,24 @@ pub struct TokenOrder {
     pub decimals: u8,
 }
 
-fn unit(decimals: u8) -> Result<u128, ProtocolError> {
-    10u128.checked_pow(decimals as u32).ok_or_else(|| {
-        ProtocolError::Overflow("10 to the power of the token's decimals overflows u128")
-    })
+/// 10 to the power of `decimals`, the base units in one whole token, or `None` above
+/// `u128::MAX` (39 decimals or more). A token's decimals are a `u8`, so the unit may not fit.
+fn unit(decimals: u8) -> Option<u128> {
+    10u128.checked_pow(decimals as u32)
 }
 
-fn total_at(filled: TokenAmount, price: Credits, unit: u128, round_up: bool) -> u128 {
+/// What `filled` base units at `price` credits per whole token cost, rounded up or down, with
+/// `unit` base units in a whole token (`None` when that is more than `u128` holds).
+fn total_at(filled: TokenAmount, price: Credits, unit: Option<u128>, round_up: bool) -> u128 {
     // At most `i64::MAX * i64::MAX`, under `u128::MAX`.
     let value = filled as u128 * price as u128;
-    if round_up {
-        value.div_ceil(unit)
-    } else {
-        value / unit
+    match unit {
+        Some(unit) if round_up => value.div_ceil(unit),
+        Some(unit) => value / unit,
+        // A whole token is more base units than `u128` holds, so more than `value`: a nonzero
+        // total is under one credit, 1 rounded up and 0 rounded down.
+        None if round_up => u128::from(value > 0),
+        None => 0,
     }
 }
 
@@ -110,7 +115,7 @@ impl TokenOrder {
     /// what an offer's seller receives, rounded down, as the change in the order's running total
     /// at the order's own `decimals`.
     pub fn fill_credits(&self, fill_amount: TokenAmount) -> Result<Credits, ProtocolError> {
-        let unit = unit(self.decimals)?;
+        let unit = unit(self.decimals);
         let filled = self.filled();
         let filled_after = filled
             .checked_add(fill_amount)
@@ -128,8 +133,7 @@ impl TokenOrder {
     /// up, for a token with `decimals` decimals: everything its buyers pay for a listing, and the
     /// escrow an offer holds. `None` when it is more credits than an order holds (`i64::MAX`).
     pub fn order_value(amount: TokenAmount, price: Credits, decimals: u8) -> Option<Credits> {
-        let unit = unit(decimals).ok()?;
-        let value = total_at(amount, price, unit, true);
+        let value = total_at(amount, price, unit(decimals), true);
         if value > i64::MAX as u128 {
             None
         } else {
@@ -355,6 +359,36 @@ mod tests {
         assert_eq!(
             TokenOrder::order_value(i64::MAX as u64, 1, 0),
             Some(i64::MAX as u64)
+        );
+    }
+
+    /// A token's decimals are a \`u8\`. From 39 decimals a whole token is more base units than
+    /// \`u128\` holds, and more than any amount times any price, so an order is worth one credit
+    /// rounded up (a listing's first fill pays it) and nothing rounded down (an offer's sales
+    /// are paid nothing).
+    #[test]
+    fn should_price_orders_of_tokens_with_39_or_more_decimals() {
+        let max = i64::MAX as u64;
+        for decimals in [39, 255] {
+            assert_eq!(TokenOrder::order_value(1, 1, decimals), Some(1));
+            assert_eq!(TokenOrder::order_value(max, max, decimals), Some(1));
+
+            let mut listing = order(TokenOrderSide::Ask, 1_000, 1_000, 1);
+            listing.decimals = decimals;
+            listing.price = max;
+            assert_eq!(listing.fill_credits(400).ok(), Some(1));
+            listing.remaining = 600;
+            assert_eq!(listing.fill_credits(600).ok(), Some(0));
+
+            let mut offer = order(TokenOrderSide::Bid, 1_000, 1_000, 1);
+            offer.decimals = decimals;
+            offer.price = max;
+            assert_eq!(offer.fill_credits(1_000).ok(), Some(0));
+        }
+        // 38 decimals still fit: 10^38 base units in a whole token.
+        assert_eq!(
+            TokenOrder::order_value(max, max, 38),
+            Some((max as u128 * max as u128).div_ceil(10u128.pow(38)) as u64)
         );
     }
 
