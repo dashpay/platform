@@ -5,15 +5,21 @@ use crate::platform::trunk_branch_sync::{
 };
 use crate::Error;
 use dapi_grpc::platform::v0::get_epochs_info_response::Version as EpochResponseVersion;
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version as WaitResponseVersion;
 use dapi_grpc::platform::v0::{
-    GetDataContractRequest, GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
+    BroadcastStateTransitionRequest, GetDataContractRequest, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, Proof, ResponseMetadata, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use drive::grovedb::{GroveBranchQueryResult, GroveTrunkQueryResult, LeafInfo, MerkProofNode};
 use drive_proof_verifier::{Error as ProofError, FromProof};
 use platform_version::version::PlatformVersion;
@@ -603,4 +609,225 @@ async fn should_not_warn_about_unauthenticated_protocol_versions() {
         "{warning}"
     );
     assert_eq!(sdk.protocol_version_number(), 13);
+}
+
+fn document_outcome_vector(name: &str) -> Vec<u8> {
+    std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs-drive-proof-verifier/tests/vectors/document-outcome")
+            .join(name),
+    )
+    .expect("signed document-outcome fixture")
+}
+
+struct DocumentOutcomeProvider {
+    contract: Arc<DataContract>,
+}
+
+impl DocumentOutcomeProvider {
+    fn new(version: u32) -> Self {
+        Self {
+            contract: Arc::new(
+                DataContract::versioned_deserialize_trusted(
+                    &document_outcome_vector(&format!("pv{version}-contract.bin")),
+                    true,
+                    PlatformVersion::get(version).unwrap(),
+                )
+                .expect("locally generated contract fixture"),
+            ),
+        }
+    }
+}
+
+impl ContextProvider for DocumentOutcomeProvider {
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok((*id == self.contract.id()).then(|| self.contract.clone()))
+    }
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+    fn get_quorum_public_key(
+        &self,
+        kind: u32,
+        quorum: [u8; 32],
+        _: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        assert_eq!((kind, quorum), (106, [2; 32]));
+        Ok(std::fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../rs-drive-proof-verifier/tests/vectors/document-outcome/quorum-key.bin"),
+        )
+        .unwrap()
+        .try_into()
+        .unwrap())
+    }
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+fn document_outcome_response(
+    version: u32,
+) -> (
+    BroadcastStateTransitionRequest,
+    WaitForStateTransitionResultResponse,
+) {
+    document_outcome_vectors(&format!("pv{version}"))
+}
+
+fn document_outcome_vectors(
+    prefix: &str,
+) -> (
+    BroadcastStateTransitionRequest,
+    WaitForStateTransitionResultResponse,
+) {
+    (
+        BroadcastStateTransitionRequest::decode(
+            document_outcome_vector(&format!("{prefix}-request.bin")).as_slice(),
+        )
+        .unwrap(),
+        WaitForStateTransitionResultResponse::decode(
+            document_outcome_vector(&format!("{prefix}-response.bin")).as_slice(),
+        )
+        .unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn should_verify_signed_document_outcome_layouts_without_lowering_security_or_pins() {
+    for pinned in [false, true] {
+        for producer in [13, 14] {
+            let provider = DocumentOutcomeProvider::new(producer);
+            let builder = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .with_time_tolerance(None)
+                .with_height_tolerance(Some(1))
+                .with_trusted_initial_height(10);
+            let latest = PlatformVersion::latest();
+            let sdk = if pinned {
+                builder.with_version(latest)
+            } else {
+                builder.with_initial_version(latest)
+            }
+            .build()
+            .unwrap();
+            let (request, response) = document_outcome_response(producer);
+            let (outcome, _, _) = sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(request, response, &provider, "wait_for_state_transition_result").await.expect("signed producer layout with retained current security");
+            let outcome = outcome.unwrap();
+            assert!(outcome.is_execution_proved());
+            assert_eq!(outcome.owner_balance().is_some(), producer >= 14);
+            assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_not_learn_document_outcome_versions_from_stale_or_tampered_responses() {
+    for stale in [false, true] {
+        let provider = DocumentOutcomeProvider::new(13);
+        // Seeded below both the signed version and the tampered one, so learning either
+        // would show.
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_initial_version(PlatformVersion::get(11).unwrap())
+            .with_time_tolerance(None)
+            .with_height_tolerance(Some(1))
+            .with_trusted_initial_height(if stale { 100 } else { 10 })
+            .build()
+            .unwrap();
+        let (request, mut response) = document_outcome_response(13);
+        if !stale {
+            let Some(WaitResponseVersion::V0(v0)) = &mut response.version else {
+                panic!("v0")
+            };
+            v0.metadata.as_mut().unwrap().protocol_version = 12;
+        }
+        let error = sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(request, response, &provider, "wait_for_state_transition_result").await.unwrap_err();
+        if stale {
+            assert!(matches!(error, Error::StaleNode(_)), "{error}");
+        } else {
+            assert!(
+                matches!(error, Error::Proof(ProofError::InvalidSignature { .. })),
+                "{error}"
+            );
+        }
+        assert_eq!(sdk.protocol_version_number(), 11);
+    }
+}
+
+#[tokio::test]
+async fn should_learn_document_outcome_versions_monotonically_from_signed_producers() {
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .with_initial_version(PlatformVersion::get(12).unwrap())
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(10)
+        .build()
+        .unwrap();
+    let older_provider = DocumentOutcomeProvider::new(13);
+    let newer_provider = DocumentOutcomeProvider::new(14);
+    let (older_request, older_response) = document_outcome_response(13);
+    let (newer_request, newer_response) = document_outcome_response(14);
+    // Newer first: a later, older outcome must still verify but never lower the version.
+    sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+        newer_request,
+        newer_response,
+        &newer_provider,
+        "wait_for_state_transition_result",
+    )
+    .await
+    .unwrap();
+    assert_eq!(sdk.protocol_version_number(), 14);
+    sdk.verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+        older_request,
+        older_response,
+        &older_provider,
+        "wait_for_state_transition_result",
+    )
+    .await
+    .unwrap();
+    assert_eq!(sdk.protocol_version_number(), 14);
+}
+
+/// After a newer protocol activates, this SDK still verifies document outcomes with the
+/// newest known rules, which keep requiring the owner balance, and does not learn the
+/// unknown version.
+#[tokio::test]
+async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
+    let latest = PlatformVersion::latest();
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .with_initial_version(latest)
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(10)
+        .build()
+        .unwrap();
+    let provider = DocumentOutcomeProvider::new(14);
+    let (request, response) = document_outcome_vectors("newer");
+    let (outcome, metadata, _) = sdk
+        .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+            request,
+            response,
+            &provider,
+            "wait_for_state_transition_result",
+        )
+        .await
+        .expect("newest known rules verify the newer producer's outcome");
+    assert!(
+        metadata.protocol_version > latest.protocol_version,
+        "the vector must stay signed by a version this build does not know"
+    );
+    let outcome = outcome.unwrap();
+    assert!(outcome.is_execution_proved());
+    assert!(outcome.owner_balance().is_some());
+    assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
 }
