@@ -5,16 +5,14 @@ use dpp::identifier::Identifier;
 use dpp::tokens::token_order::TokenOrder;
 use std::sync::Arc;
 
+mod destroyed_amount;
 /// transformer module for token destroy_frozen_funds transition action
 pub mod transformer;
 mod v0;
 
 pub use v0::*; // re-export the v0 module items (including TokenIssuanceTransitionActionV0)
 
-use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
-use platform_version::version::PlatformVersion;
 
 /// Token destroy_frozen_funds transition action
 #[derive(Debug, Clone, From)]
@@ -89,39 +87,6 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
     fn set_public_note(&mut self, public_note: Option<String>) {
         match self {
             TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.public_note = public_note,
-        }
-    }
-}
-
-impl TokenDestroyFrozenFundsTransitionAction {
-    /// What the transition's history and group-action events record as destroyed, as the
-    /// converter generation `platform_version` selects
-    /// (`token_destroy_frozen_funds_transition`): the frozen balance alone in generation 0, and
-    /// the balance with what the listings hold in escrow from generation 1 (protocol version
-    /// 15). The converter and the shared builders (`associated_token_event`,
-    /// `build_historical_document`) all read it, so they record the same amount.
-    pub fn destroyed_amount(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<TokenAmount, Error> {
-        match platform_version
-            .drive
-            .methods
-            .state_transitions
-            .convert_to_high_level_operations
-            .token_destroy_frozen_funds_transition
-        {
-            0 => Ok(self.amount()),
-            1 => self
-                .total_destroyed()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a frozen holding is more tokens than a u64 holds",
-                ))),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "TokenDestroyFrozenFundsTransitionAction::destroyed_amount".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
         }
     }
 }
