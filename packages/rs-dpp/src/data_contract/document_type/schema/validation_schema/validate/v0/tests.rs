@@ -289,6 +289,36 @@ fn should_report_the_first_violation_in_the_walks_order() {
     assert_eq!(violation.keyword(), "type");
 }
 
+/// A rule of protocol version 15: in a `uniqueItems` list, `0.0` and `-0.0` are one value at
+/// every length, on both sides of the 15 elements up to which elements compare pairwise.
+#[test]
+fn should_hold_zero_and_negative_zero_as_one_value_at_every_length() {
+    let validator = validator_of(&with_value(&json!({ "uniqueItems": true })));
+    // The two numbers given, then distinct integers up to `length` elements
+    let list = |length: usize, first: f64, second: f64| {
+        let mut items = vec![json!(first), json!(second)];
+        items.extend((1..=length - 2).map(|item| json!(item)));
+        JsonValue::Array(items)
+    };
+    for length in [2, 15, 16, 17] {
+        let violation = validator
+            .validate(&json!({ "value": list(length, 0.0, -0.0) }))
+            .expect("expected the check to run");
+        assert_eq!(
+            violation.as_ref().map(|violation| violation.keyword()),
+            Some("uniqueItems"),
+            "{length} elements holding 0.0 and -0.0"
+        );
+        assert!(
+            validator
+                .validate(&json!({ "value": list(length, 0.0, 0.5) }))
+                .expect("expected the check to run")
+                .is_none(),
+            "{length} distinct elements"
+        );
+    }
+}
+
 #[test]
 fn should_refuse_a_cycle_of_references_that_consumes_nothing() {
     // Reached at the value, and through `contains`, whose candidates are only matched
