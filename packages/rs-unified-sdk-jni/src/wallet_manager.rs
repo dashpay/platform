@@ -3848,27 +3848,70 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 &mut held,
             )
         };
+        // From here every exit — an error, a failed write, a panic that
+        // `guard` catches — frees the guard, until Kotlin owns it.
+        let held = UnsentHeldVerdicts::new(
+            held,
+            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
+        );
         // `scripts` must outlive the call above; this keeps that explicit
         // against a future reorder.
         drop(scripts);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        // The guard reaches Kotlin only with answers it can apply; on any
-        // failure from here it is released at once rather than leaked.
-        let answers = env.byte_array_from_slice(&classes).map(|a| a.into_raw());
+        let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
+            return ptr::null_mut();
+        };
         // SAFETY: Kotlin allocates `outHeld` as a LongArray(1).
         let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
-        match answers {
-            Ok(answers) if env.set_long_array_region(&out, 0, &[held as jlong]).is_ok() => answers,
-            _ => {
-                unsafe {
-                    platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free(held)
-                };
-                ptr::null_mut()
-            }
+        if env
+            .set_long_array_region(&out, 0, &[held.as_ptr() as jlong])
+            .is_err()
+        {
+            return ptr::null_mut();
         }
+        held.hand_over();
+        answers
     })
+}
+
+/// A held-verdicts guard `walletManagerTxoReconcileClassifyOutpoints` has
+/// not handed to Kotlin yet. Dropped before [`Self::hand_over`] — an early
+/// return, or a panic unwinding into `guard` — it frees the guard at once.
+/// Left to `walletManagerTxoReconcileFinish` instead, it would be released
+/// only by a call that resolves the manager handle in the native registry
+/// while the guard is still held, the registry/engine lock cycle the token
+/// exists to avoid.
+struct UnsentHeldVerdicts<T> {
+    held: *mut T,
+    free: unsafe extern "C" fn(*mut T),
+}
+
+impl<T> UnsentHeldVerdicts<T> {
+    fn new(held: *mut T, free: unsafe extern "C" fn(*mut T)) -> Self {
+        Self { held, free }
+    }
+
+    fn as_ptr(&self) -> *mut T {
+        self.held
+    }
+
+    /// Kotlin owns the guard now and frees it with
+    /// `txoReconcileHeldVerdictsFree`.
+    fn hand_over(mut self) {
+        self.held = ptr::null_mut();
+    }
+}
+
+impl<T> Drop for UnsentHeldVerdicts<T> {
+    fn drop(&mut self) {
+        if !self.held.is_null() {
+            // SAFETY: `held` came from the native classify and was never
+            // handed over, so nothing else frees it.
+            unsafe { (self.free)(self.held) };
+        }
+    }
 }
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
 /// wrong length or a JNI error.
@@ -5091,6 +5134,64 @@ mod tests {
                 Some(expected),
                 "{key} must be rejected"
             );
+        }
+    }
+
+    mod unsent_held_verdicts {
+        use std::ptr::NonNull;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use super::super::UnsentHeldVerdicts;
+
+        /// A stand-in guard: the frees below only count, never dereference.
+        fn token() -> *mut u8 {
+            NonNull::<u8>::dangling().as_ptr()
+        }
+
+        #[test]
+        fn an_unsent_guard_is_freed_once_on_drop() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            drop(UnsentHeldVerdicts::new(token(), free));
+            assert_eq!(FREED.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn a_guard_handed_to_kotlin_is_not_freed() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            let held = UnsentHeldVerdicts::new(token(), free);
+            assert_eq!(held.as_ptr(), token());
+            held.hand_over();
+            assert_eq!(FREED.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn a_panic_before_the_hand_over_frees_the_guard() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            let unwound = std::panic::catch_unwind(|| {
+                let _held = UnsentHeldVerdicts::new(token(), free);
+                panic!("writing outHeld failed");
+            });
+            assert!(unwound.is_err());
+            assert_eq!(FREED.load(Ordering::SeqCst), 1, "freed while unwinding");
+        }
+
+        #[test]
+        fn nothing_held_is_nothing_freed() {
+            static FREED: AtomicUsize = AtomicUsize::new(0);
+            unsafe extern "C" fn free(_: *mut u8) {
+                FREED.fetch_add(1, Ordering::SeqCst);
+            }
+            drop(UnsentHeldVerdicts::new(std::ptr::null_mut(), free));
+            assert_eq!(FREED.load(Ordering::SeqCst), 0);
         }
     }
 }

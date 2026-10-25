@@ -1435,25 +1435,20 @@ class PlatformWalletManager(
                     ran = true
                     TxoReconcileOutcome.Reconciled(report)
                 } finally {
-                    // The guard first, without the native registry: `finish`
-                    // resolves the manager handle there, which must never be
-                    // waited for while a guard is held.
-                    freeHeldVerdicts(heldVerdicts)
                     // Released even when the run threw or was cancelled: a
                     // claim left behind would refuse every later run of the
                     // wallet as ALREADY_RUNNING. The teardown borrow is still
                     // held, so the handle is live.
                     withContext(NonCancellable + Dispatchers.IO) {
-                        runCatching {
-                            mapNativeErrors {
-                                WalletManagerNative.walletManagerTxoReconcileFinish(managerHandle, walletId, ran)
-                            }
-                        }.onFailure { t ->
-                            android.util.Log.w(
-                                "PlatformWalletManager",
-                                "txos reconcile: release failed error=${t.javaClass.simpleName} wallet=$walletRef",
-                            )
-                        }
+                        endTxoReconcileRun(
+                            walletRef = walletRef,
+                            freeHeldVerdicts = { freeHeldVerdicts(heldVerdicts) },
+                            finish = {
+                                mapNativeErrors {
+                                    WalletManagerNative.walletManagerTxoReconcileFinish(managerHandle, walletId, ran)
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -3053,6 +3048,30 @@ internal suspend fun isGenuineWatchOnly(
     if (hasMnemonic(walletId)) return false
     updateUnlockStatus(walletId.toHex()) { it.copy(seedMismatch = false) }
     return true
+}
+
+/**
+ * End a TXO-store reconcile run: free the engine guard its last page may
+ * still hold, then release its native claim. The guard goes first and
+ * without the native registry — `finish` resolves the manager handle
+ * there, which must never be waited for while a guard is held. Neither
+ * step can skip the other: a failure is logged by exception type and
+ * [walletRef] only, and a claim left behind would refuse every later run
+ * of the wallet as ALREADY_RUNNING.
+ */
+internal fun endTxoReconcileRun(walletRef: String, freeHeldVerdicts: () -> Unit, finish: () -> Unit) {
+    runCatching(freeHeldVerdicts).onFailure { t ->
+        android.util.Log.w(
+            "PlatformWalletManager",
+            "txos reconcile: verdict release failed error=${t.javaClass.simpleName} wallet=$walletRef",
+        )
+    }
+    runCatching(finish).onFailure { t ->
+        android.util.Log.w(
+            "PlatformWalletManager",
+            "txos reconcile: release failed error=${t.javaClass.simpleName} wallet=$walletRef",
+        )
+    }
 }
 
 /**
