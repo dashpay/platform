@@ -26,6 +26,7 @@
 //! that keep its persistence callbacks and teardown out of a run's writes.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -350,6 +351,51 @@ fn lock_schedule(schedule: &Mutex<TxoReconcileSchedule>) -> MutexGuard<'_, TxoRe
     schedule.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A claim [`TxoReconciler::begin`] took and has not handed to its caller
+/// yet. Dropped while still armed — the gate refused, or the `begin`
+/// future was dropped mid-await — it releases the claim as a run that did
+/// not go ahead, so no caller is left owing a [`TxoReconciler::finish`]
+/// it was never told about.
+struct ProvisionalClaim<'a> {
+    schedule: &'a Mutex<TxoReconcileSchedule>,
+    wallet_id: WalletId,
+    armed: bool,
+}
+
+impl<'a> ProvisionalClaim<'a> {
+    /// Claim `wallet_id`; `None` when a run is already in flight.
+    fn take(
+        schedule: &'a Mutex<TxoReconcileSchedule>,
+        wallet_id: WalletId,
+        now: Instant,
+    ) -> Option<Self> {
+        // Built only once the claim is taken: an armed value dropped on the
+        // refusal would release the claim of the run already in flight.
+        if !lock_schedule(schedule).try_begin(wallet_id, now) {
+            return None;
+        }
+        Some(Self {
+            schedule,
+            wallet_id,
+            armed: true,
+        })
+    }
+
+    /// The caller now holds the claim and releases it with
+    /// [`TxoReconciler::finish`].
+    fn hand_over(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProvisionalClaim<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            lock_schedule(self.schedule).finish(&self.wallet_id, None);
+        }
+    }
+}
+
 /// A manager's reconcile schedule together with the state its gates read.
 /// Cheap to clone; obtained from [`PlatformWalletManager::txo_reconciler`]
 /// so a caller can wait on SPV without borrowing the manager.
@@ -379,16 +425,24 @@ impl TxoReconciler {
     /// [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip. Returns the scan tip
     /// the run's heal verdicts are measured against ([`txo_heal_page`]).
     /// On `Ok` the claim holds until [`Self::finish`]; a refusal releases
-    /// it.
+    /// it, and so does dropping this future before it completes.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<u32, TxoReconcileSkip> {
-        if !lock_schedule(&self.schedule).try_begin(*wallet_id, Instant::now()) {
-            return Err(TxoReconcileSkip::AlreadyRunning);
-        }
-        let gate = self.gate(wallet_id).await;
-        if gate.is_err() {
-            lock_schedule(&self.schedule).finish(wallet_id, None);
-        }
-        gate
+        self.claim_across(wallet_id, self.gate(wallet_id)).await
+    }
+
+    /// Claim `wallet_id`, then await `gate` holding the claim provisionally:
+    /// it passes to the caller only with `gate`'s `Ok`. `gate` is not
+    /// polled before the claim is taken.
+    async fn claim_across(
+        &self,
+        wallet_id: &WalletId,
+        gate: impl Future<Output = Result<u32, TxoReconcileSkip>>,
+    ) -> Result<u32, TxoReconcileSkip> {
+        let claim = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now())
+            .ok_or(TxoReconcileSkip::AlreadyRunning)?;
+        let tip = gate.await?;
+        claim.hand_over();
+        Ok(tip)
     }
 
     /// Release the claim [`Self::begin`] granted. `ran` is whether the run
@@ -445,6 +499,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::future::pending;
+    use std::pin::pin;
+    use std::task::{Context, Waker};
 
     use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Txid};
@@ -928,6 +986,50 @@ mod tests {
         assert_eq!(
             reconciler.begin(&A).await,
             Err(TxoReconcileSkip::NotSteadyState)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_begin_dropped_mid_gate_releases_its_claim() {
+        let reconciler = reconciler();
+        {
+            let mut blocked = pin!(reconciler.claim_across(&A, pending()));
+            let mut cx = Context::from_waker(Waker::noop());
+            assert!(blocked.as_mut().poll(&mut cx).is_pending());
+            assert!(
+                !lock_schedule(&reconciler.schedule).try_begin(A, Instant::now()),
+                "the gate is awaited holding the claim"
+            );
+        }
+        assert!(
+            lock_schedule(&reconciler.schedule).try_begin(A, Instant::now()),
+            "dropping the blocked begin released it"
+        );
+    }
+
+    #[tokio::test]
+    async fn only_a_gate_that_passes_hands_the_claim_over() {
+        let reconciler = reconciler();
+        assert_eq!(
+            reconciler
+                .claim_across(&A, async { Err(TxoReconcileSkip::WalletBehindTip) })
+                .await,
+            Err(TxoReconcileSkip::WalletBehindTip)
+        );
+        assert_eq!(
+            reconciler.claim_across(&A, async { Ok(TIP) }).await,
+            Ok(TIP),
+            "the refusal released its claim"
+        );
+        assert_eq!(
+            reconciler.claim_across(&A, async { Ok(TIP) }).await,
+            Err(TxoReconcileSkip::AlreadyRunning),
+            "the granted claim outlives the begin that took it"
+        );
+        reconciler.finish(&A, true);
+        assert_eq!(
+            reconciler.claim_across(&A, async { Ok(TIP) }).await,
+            Ok(TIP)
         );
     }
 }
