@@ -292,6 +292,7 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: v0_pv,
+        verified_protocol_version: 0,
         prove: true,
     };
     let q = build_basic_document_query();
@@ -306,6 +307,7 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     let latest_settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: true,
     };
     let q = build_basic_document_query();
@@ -368,6 +370,7 @@ fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: pv_v3_0,
+        verified_protocol_version: 0,
         prove: true,
     };
     let q = build_basic_document_query();
