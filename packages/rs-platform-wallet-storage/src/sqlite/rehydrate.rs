@@ -325,10 +325,16 @@ pub fn apply_persisted_core_state(
     // rather than silently reconstructing a zero balance.
     let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
         core.spent_utxos.iter().map(|u| u.outpoint).collect();
+    // A coin on a script only a contact's external account owns is the
+    // contact's, not this wallet's: it stays out of every funds account and
+    // the balance, and `restore_contact_pool_claims` keeps its slot used.
     let unspent: Vec<&key_wallet::Utxo> = core
         .new_utxos
         .iter()
-        .filter(|u| !spent_outpoints.contains(&u.outpoint))
+        .filter(|u| {
+            !spent_outpoints.contains(&u.outpoint)
+                && !is_contact_external(utxo_accounts.get(&u.outpoint))
+        })
         .collect();
 
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();

@@ -717,10 +717,24 @@ fn contact_address_with_a_stored_utxo_reloads_used() {
         .unwrap();
     drop(persister);
 
-    let (_, reloaded) = fixture.pool(&reopen(&fixture.path));
+    let reopened = reopen(&fixture.path);
+    let (_, reloaded) = fixture.pool(&reopened);
     assert!(
         matches!(state_at(&reloaded, 3), AddressState::Used),
         "a contact address with a stored coin must not reload as fresh"
     );
     assert!(matches!(state_at(&reloaded, 2), AddressState::Available));
+    let state = reopened.load().expect("load");
+    let info = &state
+        .wallets
+        .get(&fixture.w)
+        .expect("wallet slice")
+        .wallet_info;
+    assert!(
+        info.accounts
+            .all_funding_accounts()
+            .iter()
+            .all(|account| account.utxos.is_empty()),
+        "the contact's coin is not this wallet's to spend or count"
+    );
 }
