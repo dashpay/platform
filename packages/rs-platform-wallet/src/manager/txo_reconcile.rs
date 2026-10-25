@@ -25,7 +25,7 @@
 //! resolving the account that owns each, its transactions, and the fences
 //! that keep its persistence callbacks and teardown out of a run's writes.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -258,8 +258,18 @@ pub struct TxoReconcileSchedule {
     /// no non-steady read was seen in between (a stop and restart quicker
     /// than the host's poll).
     steady_session: Option<u64>,
-    in_flight: BTreeSet<WalletId>,
+    in_flight: BTreeMap<WalletId, ReconcileClaim>,
     last_run: BTreeMap<WalletId, Instant>,
+}
+
+/// One run in flight.
+#[derive(Debug, Default)]
+struct ReconcileClaim {
+    /// The wallet was removed while the run was in flight
+    /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
+    /// until it finishes, but its finish records nothing: the cadence it
+    /// would restart belongs to a wallet that no longer exists.
+    forgotten: bool,
 }
 
 impl TxoReconcileSchedule {
@@ -287,7 +297,7 @@ impl TxoReconcileSchedule {
         self.steady_session = Some(spv_session);
         wallets
             .into_iter()
-            .filter(|wallet_id| !self.in_flight.contains(wallet_id))
+            .filter(|wallet_id| !self.in_flight.contains_key(wallet_id))
             .filter(|wallet_id| {
                 rising
                     || self.last_run.get(wallet_id).is_none_or(|last| {
@@ -302,27 +312,35 @@ impl TxoReconcileSchedule {
     /// run goes ahead, so a run its gate refuses is not retried on every
     /// poll.
     pub fn try_begin(&mut self, wallet_id: WalletId, now: Instant) -> bool {
-        if !self.in_flight.insert(wallet_id) {
+        if self.in_flight.contains_key(&wallet_id) {
             return false;
         }
+        self.in_flight.insert(wallet_id, ReconcileClaim::default());
         self.last_run.insert(wallet_id, now);
         true
     }
 
     /// Release the claim [`Self::try_begin`] took. `ran_at` is when a run
     /// that went ahead finished, which restarts the wallet's cadence from
-    /// then; `None` for one that did not.
+    /// then; `None` for one that did not. A claim whose wallet was
+    /// forgotten meanwhile records nothing.
     pub fn finish(&mut self, wallet_id: &WalletId, ran_at: Option<Instant>) {
-        self.in_flight.remove(wallet_id);
-        if let Some(at) = ran_at {
+        let Some(claim) = self.in_flight.remove(wallet_id) else {
+            return;
+        };
+        if let Some(at) = ran_at.filter(|_| !claim.forgotten) {
             self.last_run.insert(*wallet_id, at);
         }
     }
 
     /// Forget a removed wallet's cadence, so one re-added under the same id
-    /// is due at once.
+    /// is due at once. A run still in flight keeps the wallet until it
+    /// finishes, but cannot bring the cadence back.
     pub fn forget(&mut self, wallet_id: &WalletId) {
         self.last_run.remove(wallet_id);
+        if let Some(claim) = self.in_flight.get_mut(wallet_id) {
+            claim.forgotten = true;
+        }
     }
 }
 
@@ -831,6 +849,38 @@ mod tests {
             schedule.due_wallets(true, 1, [A], t0 + Duration::from_secs(1)),
             vec![A],
             "a re-added wallet is due at once"
+        );
+    }
+
+    #[test]
+    fn a_run_finishing_after_its_wallet_was_forgotten_restores_no_cadence() {
+        // The wallet is removed mid-run; the host stops the run and still
+        // reports it as having gone ahead. The same wallet id, re-added
+        // while SPV stays steady, must not wait out the old run's cadence.
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        let second = Duration::from_secs(1);
+        assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        assert!(schedule.try_begin(A, t0));
+        schedule.forget(&A);
+        assert!(
+            !schedule.try_begin(A, t0 + second),
+            "the old run holds the wallet until it exits"
+        );
+        assert!(schedule.due_wallets(true, 1, [A], t0 + second).is_empty());
+        schedule.finish(&A, Some(t0 + 2 * second));
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A], t0 + 3 * second),
+            vec![A],
+            "the forgotten lifecycle's finish brought no history back"
+        );
+        assert!(schedule.try_begin(A, t0 + 3 * second));
+        schedule.finish(&A, Some(t0 + 4 * second));
+        assert!(
+            schedule
+                .due_wallets(true, 1, [A], t0 + 5 * second)
+                .is_empty(),
+            "the new lifecycle's own run restarts its cadence"
         );
     }
 
