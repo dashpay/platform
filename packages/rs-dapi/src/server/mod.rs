@@ -3,6 +3,8 @@ mod jsonrpc;
 mod metrics;
 mod state;
 
+pub(crate) use grpc::MAX_RESPONSE_BYTES;
+
 #[cfg(test)]
 pub(crate) use grpc::platform_server;
 

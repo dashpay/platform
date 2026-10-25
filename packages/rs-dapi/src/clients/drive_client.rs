@@ -17,6 +17,8 @@ use tower_http::{
 };
 use tracing::{Level, debug, error, info, trace, warn};
 
+use crate::server::MAX_RESPONSE_BYTES;
+
 /// gRPC client factory for interacting with Dash Platform Drive
 ///
 /// ## Cloning
@@ -60,9 +62,10 @@ impl DriveClient {
         info!("Creating Drive client for: {}", uri);
         let channel = Self::create_channel(uri)?;
 
-        // Configure clients with larger message sizes. Drive is local, so this hop
-        // is not compressed; responses to DAPI clients are (see `server::grpc`).
-        const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+        // Drive is local, so this hop is not compressed; responses to DAPI clients
+        // are. Their size limit applies after compression, so a Drive response is
+        // bounded here, before DAPI encodes or compresses it.
+        const MAX_DECODING_BYTES: usize = MAX_RESPONSE_BYTES;
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let client = Self {
@@ -165,10 +168,10 @@ impl DriveClient {
     pub(crate) fn from_test_channel(channel: DriveChannel) -> Self {
         Self {
             client: PlatformClient::new(channel.clone())
-                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_decoding_message_size(MAX_RESPONSE_BYTES)
                 .max_encoding_message_size(32 * 1024 * 1024),
             internal_client: DriveInternalClient::new(channel)
-                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_decoding_message_size(MAX_RESPONSE_BYTES)
                 .max_encoding_message_size(32 * 1024 * 1024),
             base_url: Arc::new("http://drive.in-memory".to_owned()),
         }
