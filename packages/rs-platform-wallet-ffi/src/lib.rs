@@ -84,6 +84,8 @@ pub mod shielded_types;
 pub mod shielded_wallet_drain;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 pub mod token_persistence;
 pub mod tokens;
 pub mod tracked_masternode;

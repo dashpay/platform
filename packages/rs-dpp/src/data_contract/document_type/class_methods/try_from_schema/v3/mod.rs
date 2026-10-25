@@ -1965,6 +1965,8 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod byte_array_aggregate_key_tests;
+#[cfg(all(test, feature = "validation"))]
 mod byte_array_reads_tests;
 #[cfg(all(test, feature = "validation"))]
 mod choose_first_tests;

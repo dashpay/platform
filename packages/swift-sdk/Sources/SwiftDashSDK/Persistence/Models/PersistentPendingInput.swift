@@ -116,17 +116,17 @@ public final class PersistentPendingInput {
     /// `collectFinalizedSweptTombstones` deletes the tombstone exactly when
     /// the finality boundary `min(chainlockHeight, syncedHeight)` reaches
     /// this stamp (upstream's `prune_finalized_observed_spends` condition
-    /// verbatim, no margin): every BIP158 filter at or below the boundary
-    /// has been matched with no false negatives, so the funding transaction
-    /// of the guarded outpoint — necessarily mined at or below the spend's
-    /// own height — has either been delivered (draining the row) or
-    /// provably never will be. A mempool-context sweep (IS-locked winner,
-    /// unmined) writes its tombstone with this NIL on purpose: under
-    /// DIP-10 the lock alone settles the input, but the winner has no
-    /// mining deadline, so no boundary can ever prove its funding output
-    /// delivered-or-never — the collector never touches an unstamped row,
-    /// and the hold lasts until the funding TXO drains it, a later
-    /// block-context sweep stamps it, or a release deletes it.
+    /// over applied chainlocks, no margin): every BIP158 filter at or below
+    /// the boundary has been matched with no false negatives, so the
+    /// funding transaction of the guarded outpoint — necessarily mined at
+    /// or below the spend's own height — has either been delivered
+    /// (draining the row) or provably never will be. A mempool-context
+    /// sweep (IS-locked winner, unmined) writes its tombstone with this NIL
+    /// on purpose: under DIP-10 the lock alone settles the input, but the
+    /// winner has no mining deadline, so no boundary can ever prove its
+    /// funding output delivered-or-never — the collector never touches an
+    /// unstamped row, and the hold lasts until the funding TXO drains it, a
+    /// later block-context sweep stamps it, or a release deletes it.
     /// Re-pointing an existing tombstone on a mempool-context sweep keeps
     /// the earlier block-context stamp untouched (upstream never retracts
     /// an observed-spend entry for an unconfirmed conflict).

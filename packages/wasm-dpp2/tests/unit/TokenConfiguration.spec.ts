@@ -420,4 +420,31 @@ describe('TokenConfiguration', () => {
       })).to.throw(/hasShieldedPool/);
     });
   });
+
+  describe('tradeMode', () => {
+    it('should name both trade modes', () => {
+      expect(wasm.TokenTradeMode.NotTradeable().value).to.equal('NotTradeable');
+      expect(wasm.TokenTradeMode.Tradeable().value).to.equal('Tradeable');
+    });
+
+    it('should keep a tradeable mode in the marketplace rules', () => {
+      const changeRules = new wasm.ChangeControlRules({
+        authorizedToMakeChange: wasm.AuthorizedActionTakers.ContractOwner(),
+        adminActionTakers: wasm.AuthorizedActionTakers.NoOne(),
+        isChangingAuthorizedActionTakersToNoOneAllowed: false,
+        isChangingAdminActionTakersToNoOneAllowed: false,
+        isSelfChangingAdminActionTakersAllowed: false,
+      });
+      const marketplaceRules = new wasm.TokenMarketplaceRules(
+        wasm.TokenTradeMode.Tradeable(),
+        changeRules,
+      );
+
+      expect(marketplaceRules.tradeMode.value).to.equal('Tradeable');
+
+      marketplaceRules.tradeMode = wasm.TokenTradeMode.NotTradeable();
+
+      expect(marketplaceRules.tradeMode.value).to.equal('NotTradeable');
+    });
+  });
 });

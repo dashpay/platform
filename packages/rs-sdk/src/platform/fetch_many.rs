@@ -30,7 +30,6 @@ use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, block::finalized_epoch_info::FinalizedEpochInfo,
-    voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{data_contract::DataContract, tokens::token_pricing_schedule::TokenPricingSchedule};
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
@@ -41,7 +40,7 @@ use drive_proof_verifier::types::{
     AddressInfos, Contenders, ContestedResource, ContestedResources, DataContracts, Elements,
     ExtendedEpochInfos, FinalizedEpochInfos, IdentityBalances, IdentityPublicKeys,
     MasternodeProtocolVote, MasternodeProtocolVotes, ProposerBlockCountById,
-    ProposerBlockCountByRange, ProposerBlockCounts, ProtocolVersionUpgrades,
+    ProposerBlockCountByRange, ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVoteWithCount,
     ResourceVotesByIdentity, TokenDirectPurchasePrices, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
@@ -522,12 +521,20 @@ impl FetchMany<usize, Voters> for Voter {
 }
 
 //   GetContestedResourceIdentityVoteStatus
-/// Fetch votes of some identity for a contested document resource vote poll.
+/// Fetch votes of some identity for a contested document resource vote poll, each with the
+/// number of times the identity has voted on that poll.
+///
+/// A masternode may change its vote on a vote poll a limited number of times
+/// (`votes_allowed_per_masternode`). Platform keeps that count next to the masternode's current
+/// vote and proves both together, so [`ResourceVoteWithCount::vote_count`] is proof-verified.
+/// A vote poll id inside the range of ids a page covers and without an entry is a poll the
+/// identity has not voted on.
 ///
 /// ## Supported query types
 ///
 /// * [`ContestedResourceVotesGivenByIdentityQuery`](drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery)
-impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
+/// * [`ProTxHash`](dpp::dashcore::ProTxHash)
+impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVoteWithCount {
     type Query = GetContestedResourceIdentityVotesRequest;
     type Request = GetContestedResourceIdentityVotesRequest;
 

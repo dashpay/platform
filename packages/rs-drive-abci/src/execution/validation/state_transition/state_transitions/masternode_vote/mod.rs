@@ -190,7 +190,14 @@ mod tests {
 
         mod contests_requests_query {
             use super::*;
+            use crate::config::PlatformConfig;
             use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
+            use dpp::dashcore::Network;
+            use dpp::data_contract::TokenConfiguration;
+            use dpp::prelude::CoreBlockHeight;
+            use drive::config::DEFAULT_QUERY_LIMIT;
+            use drive_proof_verifier::types::{ContestedResources, VotePollsGroupedByTimestamp};
+            use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
 
             #[tokio::test]
             async fn test_not_proved_contests_request() {
@@ -391,6 +398,234 @@ mod tests {
                     .expect("expected to verify proof");
 
                 assert_eq!(contests.len(), 2);
+            }
+
+            /// Serves the DPNS contract and no quorum keys, so `FromProof` checks the Drive part
+            /// of a proof and then stops at the quorum key the signature check asks for
+            struct DpnsOnlyContextProvider(Arc<DataContract>);
+
+            impl ContextProvider for DpnsOnlyContextProvider {
+                fn get_data_contract(
+                    &self,
+                    id: &Identifier,
+                    _platform_version: &PlatformVersion,
+                ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                    Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+                }
+
+                fn get_token_configuration(
+                    &self,
+                    _token_id: &Identifier,
+                ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                    Ok(None)
+                }
+
+                fn get_quorum_public_key(
+                    &self,
+                    _quorum_type: u32,
+                    _quorum_hash: [u8; 32],
+                    _core_chain_locked_height: u32,
+                ) -> Result<[u8; 48], ContextProviderError> {
+                    Err(ContextProviderError::Config(
+                        "no quorum keys in this test".to_string(),
+                    ))
+                }
+
+                fn get_platform_activation_height(
+                    &self,
+                ) -> Result<CoreBlockHeight, ContextProviderError> {
+                    Ok(1)
+                }
+            }
+
+            fn assert_drive_part_of_proof_verified(error: drive_proof_verifier::Error) {
+                assert!(
+                    matches!(
+                        error,
+                        drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
+                    ),
+                    "expected the Drive part of the proof to verify and the signature check to \
+                     stop at the quorum key, got {error:?}"
+                );
+            }
+
+            /// Drive answers a proved request naming no limit with a page of the node's
+            /// `default_query_limit` and proves that page. On a node keeping the default (100),
+            /// the proof of a full page verifies only as that page
+            #[tokio::test]
+            async fn should_verify_a_full_default_page_of_contests_requested_with_no_limit() {
+                verify_101_contests_requested_with_no_limit(DEFAULT_QUERY_LIMIT).await;
+            }
+
+            /// On a node configured with a larger default page, every contest fits it and the
+            /// proof verifies only as the whole range
+            #[tokio::test]
+            async fn should_verify_every_contest_requested_with_no_limit_from_a_node_with_a_larger_default(
+            ) {
+                verify_101_contests_requested_with_no_limit(200).await;
+            }
+
+            /// Creates 101 contests on a node whose `default_query_limit` is
+            /// `node_default_query_limit`, and checks that `FromProof` verifies the Drive part of
+            /// the proofs of a contested resources request and a vote polls by end date request
+            /// naming no limit
+            async fn verify_101_contests_requested_with_no_limit(node_default_query_limit: u16) {
+                let platform_version = PlatformVersion::latest();
+                let mut config = PlatformConfig::default_testnet();
+                config.drive.default_query_limit = node_default_query_limit;
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(config)
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                // One contest more than the standard default page (100). The suffix leaves out the letters
+                // DPNS normalizes to digits (i, l and o), which would merge two names into one contest
+                const SUFFIX_LETTERS: &[u8] = b"abcdefghjkmnpqrstuvwxyz";
+                let mut dpns_contract = None;
+                for n in 0..=DEFAULT_QUERY_LIMIT as u64 {
+                    let letter = |i: u64| SUFFIX_LETTERS[i as usize % SUFFIX_LETTERS.len()] as char;
+                    let name = format!(
+                        "contested{}{}",
+                        letter(n / SUFFIX_LETTERS.len() as u64),
+                        letter(n)
+                    );
+                    let (_, _, contract) = create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        1_000 + n,
+                        &name,
+                        platform_version,
+                    )
+                    .await;
+                    dpns_contract = Some(contract);
+                }
+                let dpns_contract = dpns_contract.expect("expected the dpns contract");
+                let provider = DpnsOnlyContextProvider(Arc::clone(&dpns_contract));
+
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected the domain document type");
+                let index_name = "parentNameAndLabel".to_string();
+                let dash_encoded = bincode::encode_to_vec(
+                    Value::Text("dash".to_string()),
+                    bincode::config::standard()
+                        .with_big_endian()
+                        .with_no_limit(),
+                )
+                .expect("expected to encode value");
+
+                let request = GetContestedResourcesRequest {
+                    version: Some(get_contested_resources_request::Version::V0(
+                        GetContestedResourcesRequestV0 {
+                            contract_id: dpns_contract.id().to_vec(),
+                            document_type_name: domain.name().clone(),
+                            index_name: index_name.clone(),
+                            start_index_values: vec![dash_encoded],
+                            end_index_values: vec![],
+                            start_at_value_info: None,
+                            count: None,
+                            order_ascending: true,
+                            prove: true,
+                        },
+                    )),
+                };
+                let response = platform
+                    .query_contested_resources(request.clone(), &platform_state, platform_version)
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let Some(get_contested_resources_response::Version::V0(
+                    GetContestedResourcesResponseV0 {
+                        result: Some(get_contested_resources_response_v0::Result::Proof(proof)),
+                        ..
+                    },
+                )) = response.version.clone()
+                else {
+                    panic!("expected a proof")
+                };
+
+                // Drive proved a page of the node's default: checked against the whole range and
+                // against a page of the standard default, only the check matching that page holds
+                let contests_count = DEFAULT_QUERY_LIMIT as usize + 1;
+                let mut query = ResolvedVotePollsByDocumentTypeQuery {
+                    contract: DataContractResolvedInfo::BorrowedDataContract(
+                        dpns_contract.as_ref(),
+                    ),
+                    document_type_name: domain.name(),
+                    index_name: &index_name,
+                    start_index_values: &vec!["dash".into()],
+                    end_index_values: &vec![],
+                    limit: None,
+                    order_ascending: true,
+                    start_at_value: &None,
+                };
+                let whole_range =
+                    query.verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version);
+                query.limit = Some(DEFAULT_QUERY_LIMIT);
+                let standard_page =
+                    query.verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version);
+                if (node_default_query_limit as usize) < contests_count {
+                    whole_range
+                        .expect_err("expected the proof of a full page to fail with no limit");
+                    let (_, contests) =
+                        standard_page.expect("expected the proof to verify as a default page");
+                    assert_eq!(contests.len(), DEFAULT_QUERY_LIMIT as usize);
+                } else {
+                    let (_, contests) =
+                        whole_range.expect("expected the proof to verify as the whole range");
+                    assert_eq!(contests.len(), contests_count);
+                    standard_page
+                        .expect_err("expected the proof of every contest to fail as a 100 page");
+                }
+
+                let error = <ContestedResources as FromProof<GetContestedResourcesRequest>>::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    Network::Testnet,
+                    platform_version,
+                    &provider,
+                )
+                .expect_err("expected no quorum key");
+                assert_drive_part_of_proof_verified(error);
+
+                // The same contests read by end date: they all end at once
+                let request = GetVotePollsByEndDateRequest {
+                    version: Some(get_vote_polls_by_end_date_request::Version::V0(
+                        GetVotePollsByEndDateRequestV0 {
+                            start_time_info: None,
+                            end_time_info: None,
+                            limit: None,
+                            offset: None,
+                            ascending: true,
+                            prove: true,
+                        },
+                    )),
+                };
+                let response = platform
+                    .query_vote_polls_by_end_date_query(
+                        request.clone(),
+                        &platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let error = <VotePollsGroupedByTimestamp as FromProof<
+                    GetVotePollsByEndDateRequest,
+                >>::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    Network::Testnet,
+                    platform_version,
+                    &provider,
+                )
+                .expect_err("expected no quorum key");
+                assert_drive_part_of_proof_verified(error);
             }
 
             #[tokio::test]
@@ -3632,6 +3867,8 @@ mod tests {
                     .expect("expected all voters to be identifiers")
             }
 
+            /// Reads the votes an identity has given from a proof of them, each with the
+            /// number of times the identity has voted on its vote poll, by vote poll id.
             fn get_proved_identity_given_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
                 platform_state: &PlatformState,
@@ -3643,7 +3880,7 @@ mod tests {
                     get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo,
                 >,
                 platform_version: &PlatformVersion,
-            ) -> Vec<ResourceVote> {
+            ) -> BTreeMap<Identifier, (ResourceVote, u16)> {
                 let query_validation_result = platform
                     .query_contested_resource_identity_votes(
                         GetContestedResourceIdentityVotesRequest {
@@ -3706,8 +3943,6 @@ mod tests {
                     )
                     .expect("expected to verify proof")
                     .1
-                    .into_values()
-                    .collect()
             }
 
             #[tokio::test]
@@ -3975,7 +4210,7 @@ mod tests {
                 )
                 .await;
 
-                let mut votes = get_proved_identity_given_votes(
+                let mut votes: Vec<ResourceVote> = get_proved_identity_given_votes(
                     &platform,
                     &platform_state,
                     &dpns_contract,
@@ -3984,7 +4219,10 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                );
+                )
+                .into_values()
+                .map(|(vote, _vote_count)| vote)
+                .collect();
 
                 assert_eq!(votes.len(), 3);
 
@@ -4044,6 +4282,178 @@ mod tests {
                         ),
                         resource_vote_choice: TowardsIdentity(contender_1_quantum.id())
                     })
+                );
+            }
+
+            /// A first vote is proved with a count of 1 and a changed vote with one more,
+            /// each poll counted on its own; a poll without a vote has no entry.
+            #[tokio::test]
+            async fn should_prove_identity_given_votes_with_counts() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
+
+                let (contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "cooldog",
+                        platform_version,
+                    )
+                    .await;
+
+                // A contest the masternode never votes on
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "superman",
+                        platform_version,
+                    )
+                    .await;
+
+                let (pro_tx_hash, _masternode, signer, voting_key) =
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
+
+                let counted_vote = |name: &str, choice: ResourceVoteChoice, vote_count: u16| {
+                    let vote_poll = VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: dpns_contract.id(),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text(convert_to_homograph_safe_chars(name)),
+                            ],
+                        },
+                    );
+                    (
+                        vote_poll.unique_id().expect("expected a vote poll id"),
+                        (
+                            ResourceVote::V0(ResourceVoteV0 {
+                                vote_poll,
+                                resource_vote_choice: choice,
+                            }),
+                            vote_count,
+                        ),
+                    )
+                };
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::new()
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_quantum.id()),
+                    "quantum",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_2_cooldog.id()), 1),
+                    ])
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    3,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_1_cooldog.id()), 2),
+                    ])
                 );
             }
         }

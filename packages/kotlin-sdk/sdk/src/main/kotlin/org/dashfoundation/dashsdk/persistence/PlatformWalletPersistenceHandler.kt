@@ -916,11 +916,11 @@ class PlatformWalletPersistenceHandler(
      * store's `collect_finalized_tombstones`. Delete this wallet's swept
      * tombstones whose winner's mined height the chainlock finality
      * boundary `min(chainlockHeight, syncedHeight)` has reached —
-     * key-wallet's `prune_finalized_observed_spends` condition verbatim.
-     * Both halves must be on record: without a numeric chainlock height
-     * nothing is provably final, and without filter coverage up to the
-     * winner's height the funding output could still be delivered by the
-     * unscanned range.
+     * key-wallet's `prune_finalized_observed_spends` condition over applied
+     * chainlocks. Both halves must be on record: without a numeric
+     * chainlock height nothing is provably final, and without filter
+     * coverage up to the winner's height the funding output could still be
+     * delivered by the unscanned range.
      *
      * Runs ONCE per round, at the end — from [onChangesetEnd], after every
      * account slice and after every sweep batch, gated by
