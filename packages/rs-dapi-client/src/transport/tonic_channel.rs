@@ -3,6 +3,7 @@ use super::TransportError;
 use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
+use dapi_grpc::tonic::codec::CompressionEncoding;
 use dapi_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use std::error::Error as _;
 use std::sync::Arc;
@@ -12,6 +13,19 @@ use std::time::Duration;
 pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
+
+/// Create a Platform client over `channel` that accepts gzip-compressed responses.
+///
+/// Nodes that don't compress ignore the `grpc-accept-encoding` header, so this
+/// is safe against every DAPI version.
+pub fn new_platform_client(channel: Channel) -> PlatformGrpcClient {
+    PlatformClient::new(channel).accept_compressed(CompressionEncoding::Gzip)
+}
+
+/// Create a Core client over `channel` that accepts gzip-compressed responses.
+pub fn new_core_client(channel: Channel) -> CoreGrpcClient {
+    CoreClient::new(channel).accept_compressed(CompressionEncoding::Gzip)
+}
 
 /// backon::Sleeper
 // #[derive(Default, Clone, Debug)]
