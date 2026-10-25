@@ -77,6 +77,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
             document_type_schema: 3, // changed: v3 document meta-schema — v2 plus the ranked index keywords, and the gate the index parser reads
+            check_document_type_schema: 0,
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
             find_identifier_and_binary_paths: 1, // changed: a typed array's identifier and byte array elements are registered as `path[]` conversion paths

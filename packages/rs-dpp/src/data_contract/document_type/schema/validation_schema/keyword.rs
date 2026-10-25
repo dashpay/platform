@@ -186,8 +186,8 @@ pub enum ResolutionKeyword {
     /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
     /// schemas named this way before it follows the pointer, and against the `$id`s above
     /// it, which the validation schema does not represent. The builder refuses a document
-    /// schema `$id`, and any other that is not a plain name (ASCII letters, digits, `_`, `-`
-    /// and `.`), which leaves every `$ref` resolving to the schema at its pointer.
+    /// schema `$id`, and any other that is not a plain name (ASCII letters, digits, `_`, `-`,
+    /// `.` and `$`), which leaves every `$ref` resolving to the schema at its pointer.
     #[strum(serialize = "$id")]
     Id,
 }

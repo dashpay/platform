@@ -13,6 +13,11 @@ use std::collections::BTreeMap;
 
 mod v0;
 
+/// Registration's native schema checks compare values and read list uniqueness as
+/// generation 0 does.
+#[cfg(feature = "validation")]
+pub(crate) use v0::{equal_json, is_unique};
+
 /// A document type's validation schema ready to check document values: its patterns
 /// compiled once, and the generation of `validation_schema` that built it, which checks them.
 #[derive(Debug)]

@@ -917,8 +917,9 @@ fn equal_value(instance: &JsonValue, expected: &Value) -> bool {
     }
 }
 
-/// Whether two values of the document are equal as [`equal_value`] compares.
-fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
+/// Whether two values of the document are equal as [`equal_value`] compares: numbers
+/// exactly across their unsigned, signed and float readings.
+pub(crate) fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
     match (left, right) {
         (JsonValue::String(left), JsonValue::String(right)) => left == right,
         (JsonValue::Bool(left), JsonValue::Bool(right)) => left == right,
@@ -951,7 +952,7 @@ fn equal_json(left: &JsonValue, right: &JsonValue) -> bool {
 /// JSON value, where numbers of one reading compare by value, `1` and `1.0` differ, and
 /// objects with the same entries are equal whatever their order. `0.0` and `-0.0` are one
 /// value at every length, a rule of protocol version 15.
-fn is_unique(items: &[JsonValue]) -> bool {
+pub(crate) fn is_unique(items: &[JsonValue]) -> bool {
     if items.len() <= UNIQUE_ITEMS_PAIRWISE_LIMIT {
         return items.iter().enumerate().all(|(index, item)| {
             items
