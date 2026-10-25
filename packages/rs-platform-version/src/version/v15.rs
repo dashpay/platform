@@ -211,7 +211,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    escrow and every sale into it are priced at them. Their
 ///    validations and converters are 0 in every table.
 ///
-/// 9. **Token marketplace history**: `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token history
+/// 11. **Token marketplace history**: `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token history
 ///    contract v3, v2 plus the `orderPlaced`, `orderFilled` and `orderCancelled` document types.
 ///    A chain born at this version stores it at genesis, and `transition_to_version_15` applies
 ///    it keeping the stored contract's storage ownership, as `transition_to_version_14` did for
