@@ -89,6 +89,10 @@ pub use keyword::{
     StringKeyword,
 };
 pub use validate::DocumentSchemaValidator;
+/// Registration's native schema checks compare values and read list uniqueness as the
+/// document validator does.
+#[cfg(feature = "validation")]
+pub(crate) use validate::{equal_json, is_unique};
 
 /// A JSON Schema simple type.
 #[derive(
@@ -653,6 +657,16 @@ static CONTROL_ESCAPE: Lazy<regex::Regex> =
 /// limit, so every pattern the document schema reaches directly also compiles here; one a
 /// `$ref` target holds is compiled only when a document reaches it, under the default.
 fn validator_regex(pattern: &str) -> Option<regex::Regex> {
+    validator_regex_within(pattern, None)
+}
+
+/// `pattern` compiled as the JSON Schema validator compiles it under a regex size limit:
+/// `None` for the `regex` crate's default, as for a contract loaded from state, or the
+/// smaller one registration compiles a schema under. `None` when it does not compile.
+pub(crate) fn validator_regex_within(
+    pattern: &str,
+    size_limit: Option<usize>,
+) -> Option<regex::Regex> {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
         captures
@@ -687,5 +701,9 @@ fn validator_regex(pattern: &str) -> Option<regex::Regex> {
             None => converted.push(current),
         }
     }
-    regex::Regex::new(&converted).ok()
+    let mut builder = regex::RegexBuilder::new(&converted);
+    if let Some(size_limit) = size_limit {
+        builder.size_limit(size_limit);
+    }
+    builder.build().ok()
 }
