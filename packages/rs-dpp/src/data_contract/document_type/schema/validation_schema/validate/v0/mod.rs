@@ -414,9 +414,11 @@ impl<'v> Walk<'v> {
                     (json!({}), message)
                 }),
                 Some(properties) => self.fail("additionalProperties", "", || {
+                    let declared: BTreeSet<&str> =
+                        properties.iter().map(|(name, _)| name.as_str()).collect();
                     let unexpected: Vec<&String> = map
                         .keys()
-                        .filter(|key| !properties.iter().any(|(name, _)| name == *key))
+                        .filter(|key| !declared.contains(key.as_str()))
                         .collect();
                     let message = format!(
                         "additional properties are not allowed ({unexpected:?} were unexpected)"
