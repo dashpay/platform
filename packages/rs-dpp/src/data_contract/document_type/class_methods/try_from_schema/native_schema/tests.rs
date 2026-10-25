@@ -1542,6 +1542,80 @@ fn should_admit_a_contains_that_is_no_schema_as_the_meta_schema_check_does() {
     assert_eq!(tally.parse_refusals, 1, "{tally:?}");
 }
 
+/// A `pattern` the document meta-schema leaves unchecked, inside a `contains` or in a system
+/// property's schema, that compiles under the `regex` crate's default size limit but not
+/// under the 5 MiB one the JSON Schema validator compiled the whole schema under at
+/// registration once the meta-schema check passed. Neither the meta-schema nor the
+/// validation schema's builder refuses it alone; registration refuses it with the native
+/// checks as it did with the meta-schema check, with the same error.
+#[test]
+fn should_refuse_an_unchecked_pattern_over_the_registration_size_limit_as_the_compile_did() {
+    let pattern = "\\pL{200}";
+    assert!(super::validator_regex_within(pattern, Some(5 * (1 << 20))).is_none());
+    assert!(super::validator_regex_within(pattern, None).is_some());
+    for (place, property, schema) in [
+        (
+            "inside `contains`",
+            "tags",
+            json!({
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "integer" },
+                "contains": { "pattern": pattern },
+            }),
+        ),
+        (
+            "in a property nested inside `contains`",
+            "tags",
+            json!({
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "integer" },
+                "contains": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string", "pattern": pattern } },
+                },
+            }),
+        ),
+        (
+            "in a system property's schema",
+            "$createdAt",
+            json!({ "type": "integer", "pattern": pattern }),
+        ),
+    ] {
+        let mut case = written_cases()
+            .into_iter()
+            .find(|case| case.name == "profile")
+            .expect("expected the profile case");
+        let mut schema = schema;
+        if !property.starts_with('$') {
+            schema["position"] = json!(case.schema["properties"]
+                .as_object()
+                .map_or(0, |properties| properties.len()));
+        }
+        case.schema["properties"][property] = schema;
+        let root = case
+            .validating_root(PlatformVersion::latest())
+            .expect("expected a root");
+        assert_eq!(meta_schema_refusal(&root), None, "{place}: the meta-schema");
+        assert!(!case.refused_by_the_builder(), "{place}: the builder");
+        for native in [false, true] {
+            let refusal = match case.parse(native).expect("expected definitions") {
+                Ok(_) => panic!("{place}: registration admits it (native checks: {native})"),
+                Err(refusal) => refusal,
+            };
+            let error = json_schema_error(&refusal).unwrap_or_else(|| {
+                panic!("{place}: expected a JSON Schema error (native checks: {native}), got {refusal:?}")
+            });
+            assert_eq!(
+                error.keyword(),
+                "format",
+                "{place} (native checks: {native})"
+            );
+        }
+    }
+}
+
 /// What the document meta-schema leaves unchecked, the native checks leave too: the value of
 /// a property's `const`, which the meta-schema reads through the schema `true`, and the
 /// schema of a system property, whose name the meta-schema admits without checking what it

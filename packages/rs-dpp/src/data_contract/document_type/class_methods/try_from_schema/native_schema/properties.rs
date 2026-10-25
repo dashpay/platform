@@ -3,7 +3,8 @@
 
 use super::*;
 
-/// The regex size limit the meta-schema check read a `pattern` under.
+/// The regex size limit the meta-schema check read a `pattern` under, and the JSON Schema
+/// validator compiled the schema's patterns under at registration.
 const PATTERN_SIZE_LIMIT: usize = 5 * (1 << 20);
 
 /// The content media type of an identifier.
@@ -114,7 +115,8 @@ impl Checker<'_> {
             "items" => self.array_item(value),
             "encryptedFor" => self.encrypted_for(value),
             "refersTo" => self.refers_to(value),
-            "contains" | "const" => Ok(()),
+            "contains" => self.compiled_patterns(value),
+            "const" => Ok(()),
             "additionalProperties" => {
                 self.boolean(value)?;
                 self.constant(value, &json!(false))
@@ -147,6 +149,35 @@ impl Checker<'_> {
             "examples" => self.array(value).map(drop),
             key => self.value_keyword(key, value),
         }
+    }
+
+    /// A schema the document meta-schema leaves unchecked, a `contains` or a system
+    /// property's, whose patterns the JSON Schema validator still compiled at registration
+    /// through protocol version 14, under [`PATTERN_SIZE_LIMIT`]: each `pattern` it holds must
+    /// compile under that limit, down the keywords the validation schema holds a schema
+    /// under (`properties`, `items` and `contains`). The validation schema's builder compiles
+    /// patterns under the `regex` crate's default limit, which a contract loaded from state
+    /// is compiled under, and refuses any other keyword that holds a schema. The validator
+    /// compiled the schema a `$ref` reaches only when a document reached it, so a reference
+    /// is not followed.
+    pub(super) fn compiled_patterns(&self, value: &JsonValue) -> Checked {
+        let Some(map) = value.as_object() else {
+            return Ok(());
+        };
+        for (key, keyword) in map {
+            self.at(key, |c| match key.as_str() {
+                "pattern" => c.value_keyword(key, keyword),
+                "items" | "contains" => c.compiled_patterns(keyword),
+                "properties" => match keyword.as_object() {
+                    Some(properties) => properties
+                        .iter()
+                        .try_for_each(|(name, schema)| c.at(name, |c| c.compiled_patterns(schema))),
+                    None => Ok(()),
+                },
+                _ => Ok(()),
+            })?;
+        }
+        Ok(())
     }
 
     /// The keywords a property schema and an array element share, as the draft 2020-12

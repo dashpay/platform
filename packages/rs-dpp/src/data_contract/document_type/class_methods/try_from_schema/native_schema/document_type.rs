@@ -3,7 +3,8 @@
 
 use super::*;
 
-/// The system properties a document schema's `properties` may name, each with any schema.
+/// The system properties a document schema's `properties` may name, each with any schema
+/// whose patterns compile ([`Checker::compiled_patterns`]).
 const SYSTEM_PROPERTIES: [&str; 12] = [
     "$id",
     "$ownerId",
@@ -202,6 +203,7 @@ impl Checker<'_> {
         let map = self.object(value)?;
         for (name, schema) in map {
             if SYSTEM_PROPERTIES.contains(&name.as_str()) {
+                self.at(name, |c| c.compiled_patterns(schema))?;
                 continue;
             }
             if !is_word(name) {

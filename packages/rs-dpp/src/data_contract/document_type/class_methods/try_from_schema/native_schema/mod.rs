@@ -8,7 +8,10 @@
 //! form, with the crate's readings of an integer (a float with no fractional part is one),
 //! a number bound (exact across integer and float readings), a `const` number (within
 //! `f64::EPSILON`) and an array of unique items. A schema breaking one is refused with the
-//! [`JsonSchemaError`] the meta-schema check returned, so the error code stays.
+//! [`JsonSchemaError`] the meta-schema check returned, so the error code stays. Where the
+//! meta-schema leaves a schema unchecked, a `contains` or a system property's, it also refuses
+//! a `pattern` that does not compile under the regex size limit the crate compiled the whole
+//! schema under once the meta-schema check passed.
 //!
 //! Two rules are protocol version 15's own. An index property name is at most 255 bytes, the
 //! longest key GroveDB stores, where the meta-schema took 256 characters. And in a list that
