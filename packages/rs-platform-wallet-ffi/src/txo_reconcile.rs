@@ -63,8 +63,10 @@ pub struct TxoHealRowFFI {
 
 /// The wallets whose reconcile is due now. Call on every SPV progress poll,
 /// running or not: the poll is the schedule's clock, and a stopped client
-/// arms the next steady-state edge. Each returned wallet counts as
-/// scheduled now. `*out_wallet_ids` is released by
+/// arms the next steady-state edge. Reporting a wallet consumes nothing —
+/// its cadence restarts when `platform_wallet_manager_txo_reconcile_begin`
+/// claims it — so one the host skips is reported again on the next poll.
+/// `*out_wallet_ids` is released by
 /// `platform_wallet_identifier_array_free`.
 ///
 /// # Safety
@@ -90,7 +92,8 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_due_wallets(
 /// `TXO_RECONCILE_SKIP_*` reasons; on `RUN`, `*out_tip_height` is the scan
 /// tip to pass to `platform_wallet_txo_reconcile_heal_page`, and the claim
 /// holds until `platform_wallet_manager_txo_reconcile_finish`. A skip holds
-/// no claim.
+/// no claim. Either way the wallet's cadence restarts now, unless another
+/// run already held it.
 ///
 /// # Safety
 /// `wallet_id` points at 32 readable bytes; the out-pointers are writable.

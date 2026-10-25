@@ -269,8 +269,9 @@ impl TxoReconcileSchedule {
     /// to run now — all of `wallets` on the rising edge into steady state,
     /// and afterwards each wallet whose last run is at least
     /// [`TXO_RECONCILE_CADENCE`] old or that never ran — never one already
-    /// in flight. Each returned wallet is stamped `now`, so the next poll
-    /// does not schedule it again while this run is still gating.
+    /// in flight. Reporting a wallet consumes nothing: its cadence restarts
+    /// only when a run claims it ([`Self::try_begin`]), so a wallet the host
+    /// cannot run yet is reported again on the next poll.
     pub fn due_wallets(
         &mut self,
         steady: bool,
@@ -284,32 +285,33 @@ impl TxoReconcileSchedule {
         }
         let rising = self.steady_session != Some(spv_session);
         self.steady_session = Some(spv_session);
-        let mut due = Vec::new();
-        for wallet_id in wallets {
-            if self.in_flight.contains(&wallet_id) {
-                continue;
-            }
-            let cadence_elapsed = self
-                .last_run
-                .get(&wallet_id)
-                .is_none_or(|last| now.saturating_duration_since(*last) >= TXO_RECONCILE_CADENCE);
-            if rising || cadence_elapsed {
-                self.last_run.insert(wallet_id, now);
-                due.push(wallet_id);
-            }
-        }
-        due
+        wallets
+            .into_iter()
+            .filter(|wallet_id| !self.in_flight.contains(wallet_id))
+            .filter(|wallet_id| {
+                rising
+                    || self.last_run.get(wallet_id).is_none_or(|last| {
+                        now.saturating_duration_since(*last) >= TXO_RECONCILE_CADENCE
+                    })
+            })
+            .collect()
     }
 
-    /// Claim the wallet for one run; `false` when a run is already in
-    /// flight.
-    pub fn try_begin(&mut self, wallet_id: WalletId) -> bool {
-        self.in_flight.insert(wallet_id)
+    /// Claim the wallet for one run at `now`; `false` when a run is already
+    /// in flight. The claim restarts the wallet's cadence whether or not the
+    /// run goes ahead, so a run its gate refuses is not retried on every
+    /// poll.
+    pub fn try_begin(&mut self, wallet_id: WalletId, now: Instant) -> bool {
+        if !self.in_flight.insert(wallet_id) {
+            return false;
+        }
+        self.last_run.insert(wallet_id, now);
+        true
     }
 
     /// Release the claim [`Self::try_begin`] took. `ran_at` is when a run
-    /// that went ahead finished, which restarts the wallet's cadence;
-    /// `None` for one that did not.
+    /// that went ahead finished, which restarts the wallet's cadence from
+    /// then; `None` for one that did not.
     pub fn finish(&mut self, wallet_id: &WalletId, ran_at: Option<Instant>) {
         self.in_flight.remove(wallet_id);
         if let Some(at) = ran_at {
@@ -361,7 +363,7 @@ impl TxoReconciler {
     /// On `Ok` the claim holds until [`Self::finish`]; a refusal releases
     /// it.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<u32, TxoReconcileSkip> {
-        if !lock_schedule(&self.schedule).try_begin(*wallet_id) {
+        if !lock_schedule(&self.schedule).try_begin(*wallet_id, Instant::now()) {
             return Err(TxoReconcileSkip::AlreadyRunning);
         }
         let gate = self.gate(wallet_id).await;
@@ -373,7 +375,7 @@ impl TxoReconciler {
 
     /// Release the claim [`Self::begin`] granted. `ran` is whether the run
     /// went ahead (even if it stopped early): that restarts the wallet's
-    /// cadence.
+    /// cadence from now.
     pub fn finish(&self, wallet_id: &WalletId, ran: bool) {
         lock_schedule(&self.schedule).finish(wallet_id, ran.then(Instant::now));
     }
@@ -657,12 +659,22 @@ mod tests {
     const A: WalletId = [0xA1; 32];
     const B: WalletId = [0xB2; 32];
 
+    /// What a host does with the wallets it is told are due: claims each at
+    /// `at` and finishes it there.
+    fn run(schedule: &mut TxoReconcileSchedule, due: &[WalletId], at: Instant) {
+        for wallet_id in due {
+            assert!(schedule.try_begin(*wallet_id, at));
+            schedule.finish(wallet_id, Some(at));
+        }
+    }
+
     #[test]
     fn every_wallet_runs_on_the_rising_edge_into_steady_state() {
         let mut schedule = TxoReconcileSchedule::default();
         let t0 = Instant::now();
         assert!(schedule.due_wallets(false, 1, [A, B], t0).is_empty());
         assert_eq!(schedule.due_wallets(true, 1, [A, B], t0), vec![A, B]);
+        run(&mut schedule, &[A, B], t0);
         assert!(
             schedule
                 .due_wallets(true, 1, [A, B], t0 + Duration::from_secs(1))
@@ -677,20 +689,24 @@ mod tests {
         let t0 = Instant::now();
         let half = TXO_RECONCILE_CADENCE / 2;
         assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        run(&mut schedule, &[A], t0);
         // A wallet loaded while steady never ran: it is due at once, on its
         // own clock.
         assert_eq!(schedule.due_wallets(true, 1, [A, B], t0 + half), vec![B]);
+        run(&mut schedule, &[B], t0 + half);
         assert_eq!(
             schedule.due_wallets(true, 1, [A, B], t0 + TXO_RECONCILE_CADENCE),
             vec![A]
         );
+        run(&mut schedule, &[A], t0 + TXO_RECONCILE_CADENCE);
         assert_eq!(
             schedule.due_wallets(true, 1, [A, B], t0 + half + TXO_RECONCILE_CADENCE),
             vec![B]
         );
-        // A finished run restarts that wallet's cadence.
+        run(&mut schedule, &[B], t0 + half + TXO_RECONCILE_CADENCE);
+        // A finished run restarts that wallet's cadence from its finish.
         let a_ran = t0 + TXO_RECONCILE_CADENCE + half + half / 2;
-        assert!(schedule.try_begin(A));
+        assert!(schedule.try_begin(A, a_ran - Duration::from_secs(60)));
         schedule.finish(&A, Some(a_ran));
         assert!(schedule
             .due_wallets(true, 1, [A, B], t0 + 2 * TXO_RECONCILE_CADENCE)
@@ -704,18 +720,63 @@ mod tests {
     #[test]
     fn a_wallet_with_a_run_in_flight_is_never_scheduled_or_started_again() {
         let mut schedule = TxoReconcileSchedule::default();
-        assert!(schedule.try_begin(A));
+        let t0 = Instant::now();
+        assert!(schedule.try_begin(A, t0));
         assert!(
-            !schedule.try_begin(A),
+            !schedule.try_begin(A, t0),
             "a second run for the same wallet is refused"
         );
         assert_eq!(
-            schedule.due_wallets(true, 1, [A, B], Instant::now()),
+            schedule.due_wallets(true, 1, [A, B], t0),
             vec![B],
             "not even on the rising edge"
         );
         schedule.finish(&A, None);
-        assert!(schedule.try_begin(A));
+        assert!(schedule.try_begin(A, t0));
+    }
+
+    #[test]
+    fn a_wallet_the_host_skips_is_due_again_on_the_next_poll() {
+        // The host learns of a wallet the engine already holds before it
+        // can run it (its own wrapper is still being built), and skips it.
+        // Being reported spent none of its cadence.
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        let second = Duration::from_secs(1);
+        assert_eq!(schedule.due_wallets(true, 1, [A, B], t0), vec![A, B]);
+        run(&mut schedule, &[A], t0);
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A, B], t0 + second),
+            vec![B],
+            "the skipped wallet is reported again"
+        );
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A, B], t0 + 2 * second),
+            vec![B],
+            "and again, until a run claims it"
+        );
+        run(&mut schedule, &[B], t0 + 2 * second);
+        assert!(schedule
+            .due_wallets(true, 1, [A, B], t0 + 3 * second)
+            .is_empty());
+    }
+
+    #[test]
+    fn a_claim_the_gate_refuses_still_restarts_the_cadence() {
+        // A refused run is not retried on every poll: the claim itself
+        // restarts the cadence.
+        let mut schedule = TxoReconcileSchedule::default();
+        let t0 = Instant::now();
+        assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        assert!(schedule.try_begin(A, t0));
+        schedule.finish(&A, None);
+        assert!(schedule
+            .due_wallets(true, 1, [A], t0 + Duration::from_secs(1))
+            .is_empty());
+        assert_eq!(
+            schedule.due_wallets(true, 1, [A], t0 + TXO_RECONCILE_CADENCE),
+            vec![A]
+        );
     }
 
     #[test]
@@ -723,6 +784,7 @@ mod tests {
         let mut schedule = TxoReconcileSchedule::default();
         let t0 = Instant::now();
         assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        run(&mut schedule, &[A], t0);
         assert!(schedule
             .due_wallets(false, 1, [A], t0 + Duration::from_secs(1))
             .is_empty());
@@ -740,6 +802,7 @@ mod tests {
         let mut schedule = TxoReconcileSchedule::default();
         let t0 = Instant::now();
         assert_eq!(schedule.due_wallets(true, 1, [A, B], t0), vec![A, B]);
+        run(&mut schedule, &[A, B], t0);
         assert!(schedule
             .due_wallets(true, 1, [A, B], t0 + Duration::from_secs(1))
             .is_empty());
@@ -748,6 +811,7 @@ mod tests {
             vec![A, B],
             "the first steady read after the restart is a new steady state"
         );
+        run(&mut schedule, &[A, B], t0 + Duration::from_secs(2));
         assert!(
             schedule
                 .due_wallets(true, 2, [A, B], t0 + Duration::from_secs(3))
@@ -761,6 +825,7 @@ mod tests {
         let mut schedule = TxoReconcileSchedule::default();
         let t0 = Instant::now();
         assert_eq!(schedule.due_wallets(true, 1, [A], t0), vec![A]);
+        run(&mut schedule, &[A], t0);
         schedule.forget(&A);
         assert_eq!(
             schedule.due_wallets(true, 1, [A], t0 + Duration::from_secs(1)),
@@ -804,7 +869,7 @@ mod tests {
     #[tokio::test]
     async fn a_granted_claim_holds_until_finish() {
         let reconciler = reconciler();
-        assert!(lock_schedule(&reconciler.schedule).try_begin(A));
+        assert!(lock_schedule(&reconciler.schedule).try_begin(A, Instant::now()));
         assert_eq!(
             reconciler.begin(&A).await,
             Err(TxoReconcileSkip::AlreadyRunning)

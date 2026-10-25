@@ -3475,8 +3475,10 @@ impl OutpointQuery {
 /// The wallets whose TXO-store reconcile is due now, as a flat `byte[]` of
 /// concatenated 32-byte ids. Bridges
 /// `platform_wallet_manager_txo_reconcile_due_wallets`: the steady-state
-/// edge and the 30-minute cadence live there. Called on every SPV progress
-/// poll, running or not. Backs `PlatformWalletManager`'s progress poll.
+/// edge and the 30-minute cadence live there. Reporting a wallet consumes
+/// none of its cadence, so one the host skips is reported again. Called on
+/// every SPV progress poll, running or not. Backs `PlatformWalletManager`'s
+/// progress poll.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileDueWallets(
     mut env: JNIEnv,

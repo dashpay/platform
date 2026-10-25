@@ -2399,11 +2399,15 @@ class PlatformWalletManager(
      * native schedule reports due
      * ([WalletManagerNative.walletManagerTxoReconcileDueWallets], which owns
      * the steady-state edge and the 30-minute cadence) — never inline, so
-     * the poll tick stays cheap. Lives here rather than in the host apps so
-     * every host gets the repair without wiring anything. A run that throws
-     * is logged (exception type and wallet reference only) and retried when
-     * the schedule next reports it due — never allowed to kill the progress
-     * poll.
+     * the poll tick stays cheap. A wallet the engine already holds but this
+     * manager has not wrapped yet (creation and restore publish the native
+     * wallet first) is skipped; being reported spent none of its cadence —
+     * only the native claim in [reconcileTxoStore] restarts it — so it is
+     * reported again on the next tick. Lives here rather than in the host
+     * apps so every host gets the repair without wiring anything. A run
+     * that throws is logged (exception type and wallet reference only) and
+     * retried when the schedule next reports it due — never allowed to kill
+     * the progress poll.
      */
     private suspend fun maybeReconcileTxoStores() {
         if (isClosed) return
