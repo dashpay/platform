@@ -3226,8 +3226,10 @@ fn core_selection_strategy(
 // Each export bridges exactly ONE platform-wallet call: the schedule
 // (`platform_wallet_manager_txo_reconcile_due_wallets`), the start gate and
 // its release (`…_txo_reconcile_begin` / `…_finish`), the heal page
-// (`platform_wallet_txo_reconcile_heal_page`), the outpoint classifier
-// (`platform_wallet_classify_outpoints`) and the stale-page retry
+// (`platform_wallet_txo_reconcile_heal_page`), the spend verdicts and the
+// engine guard they are held under
+// (`platform_wallet_txo_reconcile_classify_outpoints` /
+// `…_txo_reconcile_release_verdicts`) and the stale-page retry
 // (`platform_wallet_txo_reconcile_retry_stale_page`). The cadence, the
 // gates, the account ordering, the cursor semantics, the page bound, the
 // heal verdicts and every classification rule live in `platform-wallet`.
@@ -3549,8 +3551,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
-/// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted;
-/// [ran] is whether the run went ahead. Bridges
+/// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted,
+/// and any engine guard its classification still holds; [ran] is whether
+/// the run went ahead. Bridges
 /// `platform_wallet_manager_txo_reconcile_finish`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileFinish(
@@ -3569,6 +3572,30 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 manager_handle as Handle,
                 wid.as_ptr(),
                 ran != JNI_FALSE,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Release the engine guard `walletManagerTxoReconcileClassifyOutpoints`
+/// kept for the wallet's reconcile run, once its page is applied. Bridges
+/// `platform_wallet_manager_txo_reconcile_release_verdicts`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileReleaseVerdicts(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_release_verdicts(
+                manager_handle as Handle,
+                wid.as_ptr(),
             )
         };
         let _ = take_pwffi_error(env, result);
@@ -3740,8 +3767,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// `OUTPOINT_CLASS_*` constants (0 unknown, 1 unspent, 2 known-uncredited,
 /// 3 not-owned). A query whose account tag this build cannot map keeps
 /// `unknown` and the rest are still answered.
+///
+/// The answers come back with the engine's wallet-manager read lock still
+/// held for the wallet's reconcile run, so no fork can drop a spender they
+/// name before the page is applied; release it with
+/// `walletManagerTxoReconcileReleaseVerdicts`. Call outside the persistence
+/// callback exclusion. Bridges
+/// `platform_wallet_txo_reconcile_classify_outpoints`.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerClassifyOutpoints(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileClassifyOutpoints(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
@@ -3803,7 +3837,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         // Caller-allocated answers, one byte per query.
         let mut classes = vec![platform_wallet_ffi::OUTPOINT_CLASS_UNKNOWN; queries.len()];
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_classify_outpoints(
+            platform_wallet_ffi::platform_wallet_txo_reconcile_classify_outpoints(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 queries.as_ptr(),

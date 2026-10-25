@@ -1575,6 +1575,10 @@ mod tests {
     fn classify_outpoints_answers_unknown_for_an_unmappable_account_tag() {
         use crate::core_wallet_types::{OutPointFFI, OutpointOwnershipQueryFFI};
         use crate::manager_diagnostics::platform_wallet_classify_outpoints;
+        use crate::txo_reconcile::{
+            platform_wallet_manager_txo_reconcile_release_verdicts,
+            platform_wallet_txo_reconcile_classify_outpoints,
+        };
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_cbs = event_callbacks();
@@ -1628,6 +1632,27 @@ mod tests {
             [0, 0, 0],
             "every slot is answered, Unknown where nothing can be said"
         );
+        // The reconcile's classifier shares the marshalling; it answers only
+        // a wallet that holds a run claim, and holds nothing otherwise.
+        let mut out = [0xFFu8; 3];
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                out.as_mut_ptr(),
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(out, [0, 0, 0]);
+        let result = unsafe {
+            platform_wallet_manager_txo_reconcile_release_verdicts(handle, wallet_id.as_ptr())
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
     }

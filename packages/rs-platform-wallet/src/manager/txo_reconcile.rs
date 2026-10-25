@@ -16,16 +16,51 @@
 //!   [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip;
 //! - **which engine coins may be healed into the store** — [`txo_heal_page`]
 //!   tags each inventory row with a [`TxoHealVerdict`];
+//! - **which store rows to mark spent** — [`TxoReconciler::classify_held`]:
+//!   [`classify_outpoints`]'s verdicts, with the engine held still until
+//!   the host has written them;
 //! - **how long to retry a page a persistence round staled** —
 //!   [`txo_reconcile_retry_stale_page`].
 //!
-//! Which store rows to mark spent is
-//! [`classify_outpoints`](crate::manager::accessors::classify_outpoints)'s
-//! verdict. The host keeps only what needs its store: paging its rows,
-//! resolving the account that owns each, its transactions, and the fences
-//! that keep its persistence callbacks and teardown out of a run's writes.
+//! The host keeps only what needs its store: paging its rows, resolving the
+//! account that owns each, its transactions, and the fences that keep its
+//! persistence callbacks and teardown out of a run's writes.
+//!
+//! # Lock order
+//!
+//! A run touches, in this order and never the other way round:
+//!
+//! 1. the wallet manager's `RwLock`, read side only, taken by
+//!    [`TxoReconciler::classify_held`] and kept until the host's apply has
+//!    committed;
+//! 2. the host's callback exclusion (Kotlin's `callbackExclusion`), taken
+//!    for the apply;
+//! 3. the host's store transaction (one Room transaction for one page).
+//!
+//! The engine calls the persistence callbacks, which take the callback
+//! exclusion, while it holds the wallet manager's write lock — the same
+//! order, 1 before 2. So a host must take the guard before the exclusion
+//! (never wait for the engine while holding the exclusion), must never
+//! classify from inside a persistence callback, and must release the guard
+//! after the exclusion. The schedule mutex is a leaf: held only for a few
+//! map operations, never across an await or another lock, so it orders
+//! with nothing. SPV progress is read only by [`TxoReconciler::due_wallets`]
+//! and [`TxoReconciler::begin`], before a run holds anything.
+//!
+//! tokio's `RwLock` is fair: a writer waiting behind the held guard (a fork
+//! in `truncate_above`, a block being applied) queues every later reader
+//! behind it. That cannot close a cycle here. The writer holds nothing the
+//! guard holder waits for — the guard holder waits only for the callback
+//! exclusion and the store, and whatever holds the exclusion is either a
+//! callback that already holds its engine lock (a read lock taken before
+//! the writer queued; a write lock cannot be held beside the guard) or the
+//! host's own code, which makes no engine call under it. The one reader
+//! that could queue behind such a writer while holding a guard is the same
+//! run asking for its next page, which is why [`TxoReconciler::classify_held`]
+//! drops a run's previous guard before it waits for a new one.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -33,10 +68,13 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use key_wallet_manager::WalletManager;
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 use crate::changeset::PlatformWalletPersistence;
-use crate::manager::accessors::{wallet_utxos_page, WalletUtxoCursor, WalletUtxoRow};
+use crate::manager::accessors::{
+    classify_outpoints, wallet_utxos_page, OutpointClass, OutpointOwnershipQuery, WalletUtxoCursor,
+    WalletUtxoRow,
+};
 use crate::manager::PlatformWalletManager;
 use crate::spv::{ProgressPercentage, SpvRuntime, SyncProgress, SyncState};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -263,14 +301,31 @@ pub struct TxoReconcileSchedule {
     last_run: BTreeMap<WalletId, Instant>,
 }
 
+/// The read side of the wallet manager's lock, owned so it can outlive the
+/// call that took it — see [`TxoReconciler::classify_held`].
+type EngineReadGuard = OwnedRwLockReadGuard<WalletManager<PlatformWalletInfo>>;
+
 /// One run in flight.
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ReconcileClaim {
     /// The wallet was removed while the run was in flight
     /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
     /// until it finishes, but its finish records nothing: the cadence it
     /// would restart belongs to a wallet that no longer exists.
     forgotten: bool,
+    /// The engine read guard the run's last classification is held under
+    /// until its host has applied the verdicts. Dropped with the claim, so
+    /// [`TxoReconcileSchedule::finish`] releases it on every path.
+    held: Option<EngineReadGuard>,
+}
+
+impl fmt::Debug for ReconcileClaim {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReconcileClaim")
+            .field("forgotten", &self.forgotten)
+            .field("holds_engine", &self.held.is_some())
+            .finish()
+    }
 }
 
 impl TxoReconcileSchedule {
@@ -445,9 +500,66 @@ impl TxoReconciler {
         Ok(tip)
     }
 
-    /// Release the claim [`Self::begin`] granted. `ran` is whether the run
-    /// went ahead (even if it stopped early): that restarts the wallet's
-    /// cadence from now.
+    /// [`classify_outpoints`] for the run `wallet_id` holds a claim for
+    /// ([`Self::begin`]), answered under a read guard on the wallet manager
+    /// that is kept when this returns. The host writes the verdicts to its
+    /// store and then calls [`Self::release_held`]; [`Self::finish`] and
+    /// the manager's shutdown release it too. Only
+    /// [`OutpointClass::KnownUncredited`] marks a row spent, and a mempool
+    /// spend never earns it.
+    ///
+    /// The guard is what makes a verdict safe to write. The host's own
+    /// fences see its persistence rounds, not the engine, and the engine
+    /// can move with no round at all: dash-spv follows a fork through
+    /// `WalletManager::truncate_above` under the write lock, which drops the
+    /// spenders above the fork and restores the coins they spent, and the
+    /// truncation reaches no persistence round (the wider gap of
+    /// truncations no host persists is dashpay/platform#5380). Marking the
+    /// row spent after such a fork would retire a live coin for good: no
+    /// later run looks at a spent row, and the restore stops handing it
+    /// back. With the guard held no writer gets in, so the spender a
+    /// verdict names is still there when the host writes it, whether or not
+    /// a ChainLock covers it.
+    ///
+    /// The guard is held for one page's apply, so it must not wait on
+    /// anything slow; see the module's lock order for what a host may do
+    /// while holding it. A run holds one guard at a time: the guard of its
+    /// previous page is released before this waits for the next.
+    ///
+    /// `None` — nothing classified, nothing held — when the wallet holds no
+    /// run claim, or its claim was released while this waited.
+    pub async fn classify_held(
+        &self,
+        wallet_id: &WalletId,
+        queries: &[OutpointOwnershipQuery],
+    ) -> Option<Vec<OutpointClass>> {
+        let previous = lock_schedule(&self.schedule)
+            .in_flight
+            .get_mut(wallet_id)?
+            .held
+            .take();
+        drop(previous);
+        let engine = Arc::clone(&self.wallet_manager).read_owned().await;
+        let classes = classify_outpoints(&engine, wallet_id, queries);
+        let mut schedule = lock_schedule(&self.schedule);
+        schedule.in_flight.get_mut(wallet_id)?.held = Some(engine);
+        Some(classes)
+    }
+
+    /// Release the engine read guard [`Self::classify_held`] kept for
+    /// `wallet_id`'s run, once the host has applied its verdicts. Nothing
+    /// to do when none is held.
+    pub fn release_held(&self, wallet_id: &WalletId) {
+        let held = lock_schedule(&self.schedule)
+            .in_flight
+            .get_mut(wallet_id)
+            .and_then(|claim| claim.held.take());
+        drop(held);
+    }
+
+    /// Release the claim [`Self::begin`] granted, and the engine guard it
+    /// may still hold. `ran` is whether the run went ahead (even if it
+    /// stopped early): that restarts the wallet's cadence from now.
     pub fn finish(&self, wallet_id: &WalletId, ran: bool) {
         lock_schedule(&self.schedule).finish(wallet_id, ran.then(Instant::now));
     }
@@ -490,9 +602,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
     }
 
-    /// Drop a removed wallet's reconcile cadence.
+    /// Drop a removed wallet's reconcile cadence. A run still applying
+    /// keeps its engine guard: the removal waits for that one page.
     pub(super) fn forget_txo_reconcile(&self, wallet_id: &WalletId) {
         lock_schedule(&self.txo_reconcile_schedule).forget(wallet_id);
+    }
+
+    /// Release every engine guard a reconcile run still holds, so a host
+    /// that failed to release one cannot hold teardown's writers off.
+    pub(super) fn release_txo_reconcile_holds(&self) {
+        let held: Vec<EngineReadGuard> = lock_schedule(&self.txo_reconcile_schedule)
+            .in_flight
+            .values_mut()
+            .filter_map(|claim| claim.held.take())
+            .collect();
+        drop(held);
     }
 }
 
@@ -504,11 +628,18 @@ mod tests {
     use std::pin::pin;
     use std::task::{Context, Waker};
 
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet_manager::WalletInterface;
+    use tokio::time::timeout;
 
     use crate::events::PlatformEventManager;
+    use crate::manager::accessors::txo_inventory_tests::{
+        bip44_account_0, collateral_burn, funding, in_block, manager_with, query,
+    };
 
     const TIP: u32 = 2_535_898;
 
@@ -943,9 +1074,13 @@ mod tests {
     }
 
     fn reconciler() -> TxoReconciler {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+        reconciler_over(WalletManager::<PlatformWalletInfo>::new(
             dashcore::Network::Testnet,
-        )));
+        ))
+    }
+
+    fn reconciler_over(wallet_manager: WalletManager<PlatformWalletInfo>) -> TxoReconciler {
+        let wallet_manager = Arc::new(RwLock::new(wallet_manager));
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
             Arc::new(PlatformEventManager::new(Vec::new())),
@@ -1031,5 +1166,174 @@ mod tests {
             reconciler.claim_across(&A, async { Ok(TIP) }).await,
             Ok(TIP)
         );
+    }
+
+    /// The ChainLock the fork tests park on the wallet.
+    const CHAIN_LOCKED: u32 = 100_010;
+
+    /// A wallet with three coins, each spent by a mined record: one block
+    /// below the ChainLock, at it, and one block above it. The ChainLock is
+    /// parked on the wallet without the promotion pass, which in a default
+    /// build (`keep-finalized-transactions` off) would drop the records it
+    /// covers.
+    async fn wallet_with_three_spent_coins() -> (
+        WalletManager<PlatformWalletInfo>,
+        WalletId,
+        Vec<OutpointOwnershipQuery>,
+    ) {
+        let mut ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let mut queries = Vec::new();
+        for (seed, spender_height) in [
+            (31u8, CHAIN_LOCKED - 1),
+            (32, CHAIN_LOCKED),
+            (33, CHAIN_LOCKED + 1),
+        ] {
+            let funded = funding(script.clone(), seed, 7_000);
+            assert!(
+                ctx.check_transaction(&funded, in_block(100_000))
+                    .await
+                    .is_relevant
+            );
+            let coin = OutPoint {
+                txid: funded.txid(),
+                vout: 0,
+            };
+            assert!(
+                ctx.check_transaction(&collateral_burn(coin), in_block(spender_height))
+                    .await
+                    .is_relevant
+            );
+            queries.push(query(bip44_account_0(), coin, &script));
+        }
+        let (mut wm, wallet_id) = manager_with(ctx);
+        wm.update_wallet_last_processed_height(&wallet_id, CHAIN_LOCKED + 10);
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .metadata
+            .last_applied_chain_lock = Some(ChainLock::dummy(CHAIN_LOCKED));
+        (wm, wallet_id, queries)
+    }
+
+    /// A fork at the ChainLock, as dash-spv's `handle_fork` runs it: the
+    /// write lock, then `truncate_above`.
+    fn spawn_fork(reconciler: &TxoReconciler) -> tokio::task::JoinHandle<()> {
+        let engine = Arc::clone(&reconciler.wallet_manager);
+        tokio::spawn(async move {
+            engine
+                .write()
+                .await
+                .truncate_above(CHAIN_LOCKED)
+                .expect("a fork at the ChainLock is followed");
+        })
+    }
+
+    /// How long a test waits to see that a fork has NOT gone ahead. A fork
+    /// that could go ahead would do so at once; one that cannot never
+    /// does, however long this is.
+    const BLOCKED: Duration = Duration::from_millis(50);
+    /// How long a test waits for a fork it expects to finish.
+    const PROCEEDS: Duration = Duration::from_secs(10);
+
+    #[tokio::test]
+    async fn a_classification_needs_the_runs_claim() {
+        let reconciler = reconciler();
+        assert_eq!(reconciler.classify_held(&A, &[]).await, None);
+        assert!(lock_schedule(&reconciler.schedule).try_begin(A, Instant::now()));
+        assert_eq!(reconciler.classify_held(&A, &[]).await, Some(Vec::new()));
+        assert!(lock_schedule(&reconciler.schedule).in_flight[&A]
+            .held
+            .is_some());
+        reconciler.release_held(&A);
+        assert!(lock_schedule(&reconciler.schedule).in_flight[&A]
+            .held
+            .is_none());
+    }
+
+    /// The race the guard closes: verdicts read, then a fork drops a
+    /// spender and restores its coin before the host writes them, with no
+    /// persistence round for the host's fences to see. The fork now waits
+    /// for the write.
+    #[tokio::test]
+    async fn a_fork_waits_until_the_held_verdicts_are_released() {
+        use OutpointClass::{KnownUncredited, Unspent};
+        let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
+
+        assert_eq!(
+            reconciler.classify_held(&wallet_id, &queries).await,
+            Some(vec![KnownUncredited; 3]),
+            "a spender above the ChainLock is acted on: the guard keeps it in place"
+        );
+        let mut fork = spawn_fork(&reconciler);
+        assert!(
+            timeout(BLOCKED, &mut fork).await.is_err(),
+            "the fork waits while the verdicts are held"
+        );
+
+        reconciler.release_held(&wallet_id);
+        timeout(PROCEEDS, fork)
+            .await
+            .expect("the fork proceeds once they are released")
+            .expect("fork task");
+        let wm = reconciler.wallet_manager.read().await;
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, &queries),
+            vec![KnownUncredited, KnownUncredited, Unspent],
+            "the fork restored the coin whose spender sat above the ChainLock"
+        );
+    }
+
+    #[tokio::test]
+    async fn finishing_the_run_releases_its_held_verdicts() {
+        let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
+        assert!(reconciler
+            .classify_held(&wallet_id, &queries)
+            .await
+            .is_some());
+        let mut fork = spawn_fork(&reconciler);
+        assert!(timeout(BLOCKED, &mut fork).await.is_err());
+
+        reconciler.finish(&wallet_id, true);
+        timeout(PROCEEDS, fork)
+            .await
+            .expect("the fork proceeds once the run finished")
+            .expect("fork task");
+    }
+
+    /// tokio's `RwLock` queues a reader behind a waiting writer. A run that
+    /// asked for its next page while still holding the last one would wait
+    /// behind a fork that waits for it. The previous guard is released
+    /// first, so the fork goes ahead and the next page sees its outcome.
+    #[tokio::test]
+    async fn the_next_page_does_not_deadlock_behind_a_waiting_fork() {
+        use OutpointClass::{KnownUncredited, Unspent};
+        let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
+        assert!(reconciler
+            .classify_held(&wallet_id, &queries)
+            .await
+            .is_some());
+        let mut fork = spawn_fork(&reconciler);
+        assert!(timeout(BLOCKED, &mut fork).await.is_err());
+
+        let next = timeout(PROCEEDS, reconciler.classify_held(&wallet_id, &queries))
+            .await
+            .expect("the next page is classified, not deadlocked");
+        assert_eq!(
+            next,
+            Some(vec![KnownUncredited, KnownUncredited, Unspent]),
+            "the queued fork went first"
+        );
+        timeout(PROCEEDS, fork)
+            .await
+            .expect("fork finished")
+            .expect("fork task");
+        reconciler.release_held(&wallet_id);
     }
 }

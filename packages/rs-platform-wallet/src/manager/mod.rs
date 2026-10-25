@@ -1140,6 +1140,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // A reconcile's engine guard is held across one host write and
+        // released by the host; one it failed to release must not hold the
+        // writers below off.
+        self.release_txo_reconcile_holds();
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the

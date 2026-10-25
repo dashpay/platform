@@ -7063,6 +7063,7 @@ class PlatformWalletPersistenceHandlerTest {
             pageSize = pageSize,
             isCancelled = isCancelled,
             engineUtxoPage = engine::page,
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
         )
 
@@ -7133,6 +7134,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = {
                 classifyCalls++
                 if (classifyCalls == 1) {
@@ -7157,6 +7159,181 @@ class PlatformWalletPersistenceHandlerTest {
         )
     }
 
+    /**
+     * The engine's read guard on its wallet lock, as the native
+     * classification takes it and the release drops it. A fork (dash-spv's
+     * `truncate_above`) needs the lock for writing, so one requested while
+     * the guard is held runs only once it is dropped.
+     */
+    private class EngineGuardProbe {
+        var held = false
+            private set
+        var acquired = 0
+            private set
+        var releaseCalls = 0
+            private set
+        private var pendingFork: (() -> Unit)? = null
+
+        fun acquire() {
+            assertFalse("a run never asks for a page while still holding the last", held)
+            held = true
+            acquired++
+        }
+
+        fun release() {
+            releaseCalls++
+            held = false
+            pendingFork?.invoke()
+            pendingFork = null
+        }
+
+        /** A fork: it runs at once if no guard is held, else on release. */
+        fun fork(truncate: () -> Unit) {
+            if (held) pendingFork = truncate else truncate()
+        }
+    }
+
+    @Test
+    fun aForkRequestedBetweenTheVerdictAndTheApplyWaitsUntilTheFlipIsWritten() = runTest {
+        // The fences above see this store's rounds only. The engine can
+        // follow a fork with none: the truncation drops the spender,
+        // restores the coin, and opens no round (dashpay/platform#5380).
+        // The verdicts are therefore answered under a read guard on the
+        // engine's wallet lock, held until the page is applied: a fork
+        // requested after the answer (it needs that lock for writing) runs
+        // only after the flip is committed and the guard released. What the
+        // flip wrote was true when it was written; the fork afterwards is
+        // the same truncation gap any persisted spend has.
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x7a }
+        seedUnspentTxo(txid)
+        val engine = EngineGuardProbe()
+        var spenderInEngine = true
+        var spentAtRelease: Boolean? = null
+        var heldAtRelease: Boolean? = null
+
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = {
+                engine.acquire()
+                val verdict = if (spenderInEngine) {
+                    PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED
+                } else {
+                    PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT
+                }
+                // The fork arrives now, between the answer and the apply.
+                engine.fork { spenderInEngine = false }
+                byteArrayOf(verdict)
+            },
+            releaseVerdicts = {
+                heldAtRelease = engine.held
+                spentAtRelease = db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent
+                engine.release()
+            },
+        )
+
+        assertTrue(report.completed)
+        assertEquals(1, report.flipped)
+        assertEquals(0, report.staleRetries)
+        assertEquals("the guard was still held when the release came", true, heldAtRelease)
+        assertEquals("the flip was committed under the guard", true, spentAtRelease)
+        assertFalse("the fork ran, but only after the release", spenderInEngine)
+        assertFalse(engine.held)
+        assertEquals(1, engine.acquired)
+    }
+
+    @Test
+    fun theEngineGuardIsReleasedOnEveryPath() = runTest {
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x7b }
+        seedUnspentTxo(txid)
+
+        // A stale page: released before the page is classified again.
+        val stale = EngineGuardProbe()
+        var calls = 0
+        val staleReport = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = {
+                stale.acquire()
+                calls++
+                if (calls == 1) {
+                    handler.onChangesetBegin(walletId)
+                    handler.onChangesetEnd(walletId, success = true)
+                    byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED)
+                } else {
+                    byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT)
+                }
+            },
+            releaseVerdicts = { stale.release() },
+        )
+        assertEquals(1, staleReport.staleRetries)
+        assertEquals("one guard per classification", 2, stale.acquired)
+        assertEquals(2, stale.releaseCalls)
+        assertFalse(stale.held)
+
+        // The run stopped between the answer and the apply.
+        val stopped = EngineGuardProbe()
+        var stop = false
+        val stoppedReport = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            isCancelled = { stop },
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = {
+                stopped.acquire()
+                stop = true
+                byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED)
+            },
+            releaseVerdicts = { stopped.release() },
+        )
+        assertFalse(stoppedReport.completed)
+        assertEquals(0, stoppedReport.flipped)
+        assertFalse(stopped.held)
+
+        // A failed transport: nothing held, and the release is harmless.
+        val failed = EngineGuardProbe()
+        val failedReport = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = { null },
+            releaseVerdicts = { failed.release() },
+        )
+        assertEquals(1, failedReport.transportFailures)
+        assertEquals(1, failed.releaseCalls)
+
+        // An exception, and a cancellation, after the guard was taken.
+        for (thrown in listOf(
+            IllegalStateException("engine read failed"),
+            kotlinx.coroutines.CancellationException("run cancelled"),
+        )) {
+            val probe = EngineGuardProbe()
+            val caught = runCatching {
+                handler.reconcileTxos(
+                    walletId = walletId,
+                    retryStalePage = retryStale,
+                    engineUtxoPage = { _, _ -> emptyEnginePage },
+                    classifyOutpoints = {
+                        probe.acquire()
+                        throw thrown
+                    },
+                    releaseVerdicts = { probe.release() },
+                )
+            }.exceptionOrNull()
+            assertTrue(caught === thrown)
+            assertFalse("released after ${thrown.javaClass.simpleName}", probe.held)
+        }
+
+        assertFalse(
+            "no path flipped the row",
+            db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent,
+        )
+    }
+
     @Test
     fun aPageThatKeepsGoingStaleStopsTheRunIncomplete() = runTest {
         // A round commits between every read and apply: the page is
@@ -7171,6 +7348,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = {
                 classifyCalls++
                 handler.onChangesetBegin(walletId)
@@ -7215,6 +7393,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = {
                 classifyCalls++
                 if (classifyCalls == 1) {
@@ -7256,6 +7435,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = { ByteArray(2) { PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT } },
         )
         assertTrue(after.completed)
@@ -7495,6 +7675,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
         )
 
@@ -7544,6 +7725,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
         )
 
@@ -7941,6 +8123,7 @@ class PlatformWalletPersistenceHandlerTest {
             engineUtxoPage = { cursor, limit ->
                 if (cursor == null) engine.page(cursor, limit) else null
             },
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
         )
 
@@ -7989,6 +8172,7 @@ class PlatformWalletPersistenceHandlerTest {
             retryStalePage = retryStale,
             pageSize = 1,
             engineUtxoPage = engine::page,
+            releaseVerdicts = {},
             classifyOutpoints = { null },
         )
 
@@ -8008,6 +8192,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = { _, _ -> null },
+            releaseVerdicts = {},
             classifyOutpoints = { queriesJson ->
                 classifyCalls++
                 ByteArray(
@@ -8123,6 +8308,7 @@ class PlatformWalletPersistenceHandlerTest {
             engineUtxoPage = { cursor, limit ->
                 engine.page(cursor, limit).also { cancelled = true }
             },
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
         )
 
@@ -8171,6 +8357,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             retryStalePage = retryStale,
             engineUtxoPage = engine::page,
+            releaseVerdicts = {},
             classifyOutpoints = { null },
         )
 
@@ -8269,6 +8456,7 @@ class PlatformWalletPersistenceHandlerTest {
                 walletId = walletId,
                 retryStalePage = retryStale,
                 engineUtxoPage = { _, _ -> malformed },
+                releaseVerdicts = {},
                 classifyOutpoints = { queriesJson ->
                     ByteArray(
                         kotlinx.serialization.json.Json
@@ -8477,6 +8665,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId = walletId,
             pageSize = pageSize,
             engineUtxoPage = engine::page,
+            releaseVerdicts = {},
             classifyOutpoints = engine::classify,
             retryStalePage = retryStale,
         )

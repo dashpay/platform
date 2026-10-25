@@ -1859,7 +1859,7 @@ mod computed_balance_tests {
 }
 
 #[cfg(test)]
-mod txo_inventory_tests {
+pub(crate) mod txo_inventory_tests {
     //! Coverage for [`wallet_utxos_page`] and [`classify_outpoints`] — the
     //! two engine reads a store reconcile is built on. Drives a real
     //! `ManagedWalletInfo` through `check_core_transaction` in the exact
@@ -1883,14 +1883,14 @@ mod txo_inventory_tests {
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
-    fn bip44_account_0() -> AccountType {
+    pub(crate) fn bip44_account_0() -> AccountType {
         AccountType::Standard {
             index: 0,
             standard_account_type: StandardAccountType::BIP44Account,
         }
     }
 
-    fn in_block(height: u32) -> TransactionContext {
+    pub(crate) fn in_block(height: u32) -> TransactionContext {
         TransactionContext::InBlock(BlockInfo::new(
             height,
             BlockHash::from_slice(&[6u8; 32]).expect("valid block hash"),
@@ -1907,7 +1907,7 @@ mod txo_inventory_tests {
         }
     }
 
-    fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
+    pub(crate) fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1924,7 +1924,7 @@ mod txo_inventory_tests {
     }
 
     /// The rust-dashcore#992 shape: one input, one zero-value `OP_RETURN`.
-    fn collateral_burn(coin: OutPoint) -> Transaction {
+    pub(crate) fn collateral_burn(coin: OutPoint) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1950,7 +1950,9 @@ mod txo_inventory_tests {
         dashcore::Address::p2pkh(&pubkey, key_wallet::Network::Testnet).script_pubkey()
     }
 
-    fn manager_with(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
+    pub(crate) fn manager_with(
+        ctx: TestWalletContext,
+    ) -> (WalletManager<PlatformWalletInfo>, WalletId) {
         let info = PlatformWalletInfo {
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
@@ -1966,7 +1968,7 @@ mod txo_inventory_tests {
         (wm, wallet_id)
     }
 
-    fn query(
+    pub(crate) fn query(
         account_type: AccountType,
         outpoint: OutPoint,
         script: &ScriptBuf,

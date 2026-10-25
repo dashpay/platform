@@ -1,19 +1,22 @@
 //! C ABI over `platform_wallet::manager::txo_reconcile`: the schedule,
-//! start gate, heal verdicts and stale-page retry of the host TXO-store
-//! reconcile (dashpay/platform#4638). Each export forwards to one Rust
-//! operation; the decisions, thresholds and cadence live in
-//! `platform-wallet`. Which store rows to mark spent is
-//! `platform_wallet_classify_outpoints`'s answer.
+//! start gate, heal verdicts, spend verdicts and stale-page retry of the
+//! host TXO-store reconcile (dashpay/platform#4638). Each export forwards
+//! to one Rust operation; the decisions, thresholds, cadence and the lock
+//! that keeps a spend verdict true until it is written live in
+//! `platform-wallet`.
 
 use platform_wallet::manager::accessors::WalletUtxoCursor;
 use platform_wallet::manager::txo_reconcile::{txo_heal_page, txo_reconcile_retry_stale_page};
 
 use crate::check_ptr;
-use crate::core_wallet_types::{WalletUtxoCursorFFI, WalletUtxoEntryFFI};
+use crate::core_wallet_types::{
+    OutpointOwnershipQueryFFI, WalletUtxoCursorFFI, WalletUtxoEntryFFI,
+};
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
 use crate::manager_diagnostics::{
-    release_wallet_utxo_entry, wallet_utxo_cursor_from_ffi, wallet_utxo_entry_ffi,
+    classify_outpoint_rows, invalid_manager_handle, release_wallet_utxo_entry,
+    wallet_utxo_cursor_from_ffi, wallet_utxo_entry_ffi,
 };
 use crate::runtime::block_on_worker;
 use crate::types::IdentifierArray;
@@ -123,9 +126,10 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_begin(
 }
 
 /// Release the claim a `RUN` from
-/// `platform_wallet_manager_txo_reconcile_begin` granted. `ran` is whether
-/// the run went ahead (even if it stopped early), which restarts the
-/// wallet's cadence.
+/// `platform_wallet_manager_txo_reconcile_begin` granted, and the engine
+/// guard `platform_wallet_txo_reconcile_classify_outpoints` may still hold
+/// for it. `ran` is whether the run went ahead (even if it stopped early),
+/// which restarts the wallet's cadence.
 ///
 /// # Safety
 /// `wallet_id` points at 32 readable bytes.
@@ -237,6 +241,66 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count));
 }
 
+/// Classify `count` store rows of `wallet_id` for the spend pass of the
+/// reconcile run it holds a claim for — `platform_wallet_classify_outpoints`'s
+/// answers and marshalling — and keep the engine's wallet-manager read
+/// lock held when this returns, so no fork can drop a spender these
+/// answers name before the host has written them. Only
+/// `OUTPOINT_CLASS_KNOWN_UNCREDITED` marks a row spent. Release with
+/// `platform_wallet_manager_txo_reconcile_release_verdicts` once the page
+/// is applied (`platform_wallet_manager_txo_reconcile_finish` releases it
+/// too). Call it outside the host's persistence-callback exclusion and
+/// never from inside a persistence callback: the engine calls those
+/// callbacks under its write lock. Fails with nothing held when the wallet
+/// holds no run claim.
+///
+/// # Safety
+/// As `platform_wallet_classify_outpoints`: `wallet_id` points at 32
+/// readable bytes; `queries` points at `count` live entries whose script
+/// pointers are valid for the call; `out_classes` is writable for `count`
+/// bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    queries: *const OutpointOwnershipQueryFFI,
+    count: usize,
+    out_classes: *mut u8,
+) -> PlatformWalletFFIResult {
+    classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
+        let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(manager_handle, |m| m.txo_reconciler())
+            .ok_or_else(invalid_manager_handle)?;
+        block_on_worker(async move { reconciler.classify_held(&wid, &owned).await }).ok_or_else(
+            || {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "the wallet holds no reconcile run claim".to_string(),
+                )
+            },
+        )
+    })
+}
+
+/// Release the engine guard `platform_wallet_txo_reconcile_classify_outpoints`
+/// kept for `wallet_id`'s reconcile run, once the host has applied that
+/// page. Nothing to do when none is held.
+///
+/// # Safety
+/// `wallet_id` points at 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_release_verdicts(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |m| m.txo_reconciler().release_held(&wid));
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Whether a reconcile run classifies a page again after it came back
 /// stale for the `stale_in_a_row`-th time in a row (counting this one), or
 /// stops incomplete.
@@ -250,6 +314,8 @@ mod tests {
     use super::*;
 
     use platform_wallet::manager::txo_reconcile::{TxoHealVerdict, TxoReconcileSkip};
+
+    use crate::core_wallet_types::{OutPointFFI, OUTPOINT_CLASS_UNKNOWN};
 
     #[test]
     fn the_c_codes_match_the_rust_enums() {
@@ -340,5 +406,39 @@ mod tests {
         assert!(rows.is_null());
         assert_eq!(count, 0);
         assert!(!has_more);
+
+        let script = [0x76u8, 0xa9, 0x14];
+        let query = OutpointOwnershipQueryFFI {
+            type_tag: 0,
+            standard_tag: 0,
+            index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0; 32],
+            friend_identity_id: [0; 32],
+            outpoint: OutPointFFI {
+                txid: [0x22; 32],
+                vout: 0,
+            },
+            script_pubkey: script.as_ptr(),
+            script_pubkey_len: script.len(),
+        };
+        let mut classes = [0xFFu8; 1];
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                Handle::MAX,
+                wallet_id.as_ptr(),
+                &query,
+                1,
+                classes.as_mut_ptr(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(classes, [OUTPOINT_CLASS_UNKNOWN]);
+
+        let result = unsafe {
+            platform_wallet_manager_txo_reconcile_release_verdicts(Handle::MAX, wallet_id.as_ptr())
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
     }
 }

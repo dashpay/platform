@@ -1,5 +1,5 @@
 {
-  "_about": "Golden TXO-reconcile transport payloads, read by rs-unified-sdk-jni (wallet_manager::tests) and the Kotlin PlatformWalletPersistenceHandlerTest. inventoryPage is exactly what walletManagerTxoHealPageJson emits for the four heal-page rows the Rust test builds; outpointQueries is exactly what the Kotlin reconcile sends walletManagerClassifyOutpoints for the same four coins. Change both sides together.",
+  "_about": "Golden TXO-reconcile transport payloads, read by rs-unified-sdk-jni (wallet_manager::tests) and the Kotlin PlatformWalletPersistenceHandlerTest. inventoryPage is exactly what walletManagerTxoHealPageJson emits for the four heal-page rows the Rust test builds; outpointQueries is exactly what the Kotlin reconcile sends walletManagerTxoReconcileClassifyOutpoints for the same four coins. Change both sides together.",
   "inventoryPage": {
     "utxos": [
       {

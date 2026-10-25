@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
@@ -1418,11 +1420,12 @@ class PlatformWalletPersistenceHandler(
     )
 
     /**
-     * One store row handed to `walletManagerClassifyOutpoints`: the account
-     * tuple the STORE files the coin under, its outpoint, and the script
-     * the store recorded for it. The account and script are the store's
-     * claim — the engine checks both against its own pools rather than
-     * trusting them, which is why a bare outpoint cannot ask the question.
+     * One store row handed to `walletManagerTxoReconcileClassifyOutpoints`:
+     * the account tuple the STORE files the coin under, its outpoint, and
+     * the script the store recorded for it. The account and script are the
+     * store's claim — the engine checks both against its own pools rather
+     * than trusting them, which is why a bare outpoint cannot ask the
+     * question.
      * Serialized against the same field names the Rust `OutpointQuery`
      * deserializes.
      *
@@ -1644,6 +1647,9 @@ class PlatformWalletPersistenceHandler(
      *    [OUTPOINT_CLASS_KNOWN_UNCREDITED] — the owning account recorded the
      *    funding transaction, owns the script, does not hold the coin, AND a
      *    funds account holds a mined record spending it — marks a row spent.
+     *    The engine answers under a read guard on its wallet lock and keeps
+     *    it until [releaseVerdicts], so the page is applied before any fork
+     *    can drop the spender a verdict names.
      *
      * Every decision is the engine's (`platform_wallet::manager::txo_reconcile`
      * and `classify_outpoints`): which coins may be healed, which rows to
@@ -1663,6 +1669,17 @@ class PlatformWalletPersistenceHandler(
      * each, after re-checking [isCancelled]: the manager bumps its epoch on
      * close and on wallet deletion, and the run stops between pages,
      * reporting `completed = false`.
+     *
+     * Lock order, the same as the engine's own: the engine's wallet lock,
+     * then [callbackExclusion], then the Room transaction. The engine calls
+     * persistence callbacks — which take [callbackExclusion] — while it
+     * holds its wallet lock for writing; [classifyOutpoints] takes that
+     * lock for reading and keeps it until [releaseVerdicts]. So a
+     * classification is only ever asked for outside [callbackExclusion]
+     * (never wait for the engine while holding it), never from inside a
+     * persistence callback, and its guard is released after the apply step
+     * has let go of [callbackExclusion]. The guard covers one page: the
+     * apply is one Room transaction.
      *
      * A failed engine read stops the run and is counted, the first page
      * included (Swift's contract: the report says the run did not
@@ -1685,6 +1702,7 @@ class PlatformWalletPersistenceHandler(
         isCancelled: () -> Boolean = { false },
         engineUtxoPage: suspend (cursor: String?, limit: Int) -> String?,
         classifyOutpoints: suspend (queriesJson: String) -> ByteArray?,
+        releaseVerdicts: suspend () -> Unit,
         retryStalePage: (staleInARow: Int) -> Boolean,
     ): TxoReconcileReport {
         val limit = pageSize.coerceAtLeast(1)
@@ -1695,7 +1713,9 @@ class PlatformWalletPersistenceHandler(
         // engine never offers one to heal and never gives one a verdict, so
         // neither pass excludes them here.
         if (healMissingTxos(walletId, limit, isCancelled, engineUtxoPage, tally, walletRef)) {
-            classifyStoreRows(walletId, limit, isCancelled, classifyOutpoints, retryStalePage, tally, walletRef)
+            classifyStoreRows(
+                walletId, limit, isCancelled, classifyOutpoints, releaseVerdicts, retryStalePage, tally, walletRef,
+            )
         }
         val report = tally.toReport()
         logReconcileSummary(report, walletRef)
@@ -1904,6 +1924,18 @@ class PlatformWalletPersistenceHandler(
      * re-delivery keeps the flag of a row with a spender link (see
      * [upsertUtxoRow]), and no later run looks at a spent row again.
      *
+     * Those fences see this store's rounds, not the engine, and the engine
+     * can move with no round at all: dash-spv follows a fork by truncating
+     * the wallet, which drops the spender and restores the coin it spent,
+     * and a truncation reaches no persistence round (the wider gap is
+     * dashpay/platform#5380). Flipping the row after such a fork would
+     * retire a live coin for good. So [classifyOutpoints] answers under a
+     * read guard on the engine's wallet lock, which a truncation needs for
+     * writing, and keeps it until [releaseVerdicts]: the verdicts are
+     * applied while the spenders they name are still there. The guard is
+     * released in a `finally` — after a flip, a stale page, a failed or
+     * cancelled step, or an exception — before the next page is read.
+     *
      * The walk is keyed by outpoint (`outpoint > after`, the primary-key
      * order), not by offset, so the flips themselves never disturb it: a
      * flipped row leaves the `isSpent = 0` predicate behind the cursor,
@@ -1915,6 +1947,7 @@ class PlatformWalletPersistenceHandler(
         limit: Int,
         isCancelled: () -> Boolean,
         classifyOutpoints: suspend (queriesJson: String) -> ByteArray?,
+        releaseVerdicts: suspend () -> Unit,
         retryStalePage: (staleInARow: Int) -> Boolean,
         tally: ReconcileTally,
         walletRef: String,
@@ -1936,40 +1969,46 @@ class PlatformWalletPersistenceHandler(
             tally.unresolvedAccount += page.unresolvedAccount
 
             if (page.rows.isNotEmpty()) {
-                val verdicts = classifyOutpoints(encodeOutpointQueries(page.queries))
-                if (verdicts == null || verdicts.size != page.rows.size) {
-                    // No verdicts, no classification: stop rather than guess.
-                    tally.transportFailures++
-                    tally.completed = false
-                    return
-                }
-                val counts = reconcileStoreStep(tally, walletRef, "flip", isCancelled) {
-                    if (committedRoundGeneration != page.generation || openRound(walletId) != null) {
-                        FlipCounts().apply { staleGeneration = true }
-                    } else {
-                        database.withTransaction { applyEngineClasses(page.rows, verdicts) }
-                    }
-                } ?: return
-                if (counts.staleGeneration) {
-                    staleInARow++
-                    tally.staleRetries++
-                    if (!retryStalePage(staleInARow)) {
+                // The engine guard is held from the classification to the
+                // `finally`, across the apply only — see above.
+                try {
+                    val verdicts = classifyOutpoints(encodeOutpointQueries(page.queries))
+                    if (verdicts == null || verdicts.size != page.rows.size) {
+                        // No verdicts, no classification: stop rather than guess.
+                        tally.transportFailures++
                         tally.completed = false
                         return
                     }
-                    // Same cursor: nothing was written, so the page is read
-                    // again and classified against the store as it is now.
-                    tally.storeRows -= page.rows.size
-                    tally.unresolvedAccount -= page.unresolvedAccount
-                    continue
+                    val counts = reconcileStoreStep(tally, walletRef, "flip", isCancelled) {
+                        if (committedRoundGeneration != page.generation || openRound(walletId) != null) {
+                            FlipCounts().apply { staleGeneration = true }
+                        } else {
+                            database.withTransaction { applyEngineClasses(page.rows, verdicts) }
+                        }
+                    } ?: return
+                    if (counts.staleGeneration) {
+                        staleInARow++
+                        tally.staleRetries++
+                        if (!retryStalePage(staleInARow)) {
+                            tally.completed = false
+                            return
+                        }
+                        // Same cursor: nothing was written, so the page is read
+                        // again and classified against the store as it is now.
+                        tally.storeRows -= page.rows.size
+                        tally.unresolvedAccount -= page.unresolvedAccount
+                        continue
+                    }
+                    staleInARow = 0
+                    tally.flipped += counts.flipped
+                    tally.flippedDuffs += counts.flippedDuffs
+                    tally.unspent += counts.unspent
+                    tally.unknown += counts.unknown
+                    tally.notOwned += counts.notOwned
+                    for (outpoint in counts.flippedOutpoints) logReconcileItem("flipped_spent", outpoint, walletRef)
+                } finally {
+                    withContext(NonCancellable) { releaseVerdicts() }
                 }
-                staleInARow = 0
-                tally.flipped += counts.flipped
-                tally.flippedDuffs += counts.flippedDuffs
-                tally.unspent += counts.unspent
-                tally.unknown += counts.unknown
-                tally.notOwned += counts.notOwned
-                for (outpoint in counts.flippedOutpoints) logReconcileItem("flipped_spent", outpoint, walletRef)
             }
             after = page.lastOutpoint ?: return
             if (page.fetched < limit) return
@@ -5128,8 +5167,9 @@ class PlatformWalletPersistenceHandler(
         internal fun decodeEngineUtxoPage(pageJson: String): EngineUtxoPage =
             engineJson.decodeFromString(EngineUtxoPage.serializer(), pageJson)
 
-        /** One classification batch, as `walletManagerClassifyOutpoints`
-         *  deserializes it (rs-unified-sdk-jni `OutpointQuery`). */
+        /** One classification batch, as
+         *  `walletManagerTxoReconcileClassifyOutpoints` deserializes it
+         *  (rs-unified-sdk-jni `OutpointQuery`). */
         internal fun encodeOutpointQueries(queries: List<OutpointQuery>): String =
             engineJson.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(OutpointQuery.serializer()),

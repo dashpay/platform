@@ -259,12 +259,33 @@ internal object WalletManagerNative {
      * 0 unknown, 1 unspent, 2 known-uncredited, 3 not-owned. A query whose
      * account tag this build cannot map keeps `unknown`; the rest are
      * still answered.
+     *
+     * Only for the wallet's claimed reconcile run (between
+     * [walletManagerTxoReconcileBegin] and [walletManagerTxoReconcileFinish]).
+     * The answers come back with the engine's wallet lock still held for
+     * reading, so no fork can drop a spender they name before the page is
+     * applied; release it with [walletManagerTxoReconcileReleaseVerdicts]
+     * (finish releases it too). Call it outside the persistence handler's
+     * callback exclusion and never from inside a persistence callback: the
+     * engine calls those callbacks while it holds its wallet lock for
+     * writing.
      */
-    external fun walletManagerClassifyOutpoints(
+    external fun walletManagerTxoReconcileClassifyOutpoints(
         managerHandle: Long,
         walletId: ByteArray,
         queriesJson: String,
     ): ByteArray?
+
+    /**
+     * Release the engine wallet-lock guard
+     * [walletManagerTxoReconcileClassifyOutpoints] kept for the wallet's
+     * reconcile run, once its page is applied. Nothing to do when none is
+     * held.
+     */
+    external fun walletManagerTxoReconcileReleaseVerdicts(
+        managerHandle: Long,
+        walletId: ByteArray,
+    )
 
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //

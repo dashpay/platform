@@ -1354,8 +1354,9 @@ class PlatformWalletManager(
      * a wallet this manager has not loaded, checked here first.
      *
      * The run holds a [teardownGate] borrow, so the native manager is not
-     * destroyed under an engine read, and releases its native claim when it
-     * ends ([WalletManagerNative.walletManagerTxoReconcileFinish]).
+     * destroyed under an engine read, and releases its native claim — and
+     * any engine guard a classification still holds — when it ends
+     * ([WalletManagerNative.walletManagerTxoReconcileFinish]).
      * [closeSuspending] and [removeWallet] move [txoReconcileEpoch] first,
      * and the run stops between pages, reporting `completed = false`.
      *
@@ -1411,8 +1412,25 @@ class PlatformWalletManager(
                         },
                         classifyOutpoints = { queriesJson ->
                             reconcileEngineRead("outpoint classification", walletRef) {
-                                WalletManagerNative.walletManagerClassifyOutpoints(
+                                WalletManagerNative.walletManagerTxoReconcileClassifyOutpoints(
                                     managerHandle, walletId, queriesJson,
+                                )
+                            }
+                        },
+                        releaseVerdicts = {
+                            // Drops the engine guard only; it never waits on
+                            // the engine. A failure leaves it to `finish`.
+                            runCatching {
+                                mapNativeErrors {
+                                    WalletManagerNative.walletManagerTxoReconcileReleaseVerdicts(
+                                        managerHandle, walletId,
+                                    )
+                                }
+                            }.onFailure { t ->
+                                android.util.Log.w(
+                                    "PlatformWalletManager",
+                                    "txos reconcile: verdict release failed " +
+                                        "error=${t.javaClass.simpleName} wallet=$walletRef",
                                 )
                             }
                         },

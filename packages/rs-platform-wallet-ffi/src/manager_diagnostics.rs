@@ -17,9 +17,10 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 
 use platform_wallet::manager::accessors::{
-    AccountAddressInfoSnapshot, AccountAddressPoolSnapshot, AccountMetadataSnapshot,
-    AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
-    CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
+    classify_outpoints, AccountAddressInfoSnapshot, AccountAddressPoolSnapshot,
+    AccountMetadataSnapshot, AccountTransactionSnapshot, AccountUtxoSnapshot,
+    AddressBanInfoSnapshot, CoreWalletStateSnapshot, IdentitySyncConfigSnapshot,
+    IdentityWalletStateSnapshot, OutpointClass, OutpointOwnershipQuery,
     PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
     TrackedAssetLockSnapshot, WalletIdentityRowSnapshot, WalletUtxoCursor, WalletUtxoRow,
 };
@@ -28,9 +29,9 @@ use crate::check_ptr;
 use crate::core_wallet_types::{
     AccountAddressPoolEntryFFI, AccountMetadataFFI, AccountTransactionEntryFFI,
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
-    IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
-    PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
-    WalletUtxoCursorFFI, WalletUtxoEntryFFI,
+    IdentitySyncConfigFFI, IdentityWalletStateFFI, OutpointOwnershipQueryFFI,
+    PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI,
+    WalletIdentityRowFFI, WalletUtxoCursorFFI, WalletUtxoEntryFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -1163,12 +1164,45 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page_free(
 pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     manager_handle: Handle,
     wallet_id: *const u8,
-    queries: *const crate::core_wallet_types::OutpointOwnershipQueryFFI,
+    queries: *const OutpointOwnershipQueryFFI,
     count: usize,
     out_classes: *mut u8,
 ) -> PlatformWalletFFIResult {
-    use platform_wallet::manager::accessors::{classify_outpoints, OutpointOwnershipQuery};
+    classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
+        let wallet_manager = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(manager_handle, |m| m.wallet_manager_arc())
+            .ok_or_else(invalid_manager_handle)?;
+        let wm = wallet_manager.blocking_read();
+        Ok(classify_outpoints(&wm, &wid, &owned))
+    })
+}
 
+/// The error for a manager handle that is not live.
+pub(crate) fn invalid_manager_handle() -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorInvalidHandle,
+        "Manager handle invalid".to_string(),
+    )
+}
+
+/// The marshalling `platform_wallet_classify_outpoints` and
+/// `platform_wallet_txo_reconcile_classify_outpoints` share: read `count`
+/// store rows, hand the ones this build can map to `classify`, which makes
+/// the one engine call, and write its answers back to their positions in
+/// `out_classes`. An `Err` from `classify` is returned as is.
+///
+/// # Safety
+/// As `platform_wallet_classify_outpoints`.
+pub(crate) unsafe fn classify_outpoint_rows(
+    wallet_id: *const u8,
+    queries: *const OutpointOwnershipQueryFFI,
+    count: usize,
+    out_classes: *mut u8,
+    classify: impl FnOnce(
+        [u8; 32],
+        Vec<OutpointOwnershipQuery>,
+    ) -> Result<Vec<OutpointClass>, PlatformWalletFFIResult>,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id);
     if count == 0 {
         return PlatformWalletFFIResult::ok();
@@ -1184,7 +1218,7 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     // behind it is durable, so a batch failure would repeat on every run,
     // and the caller already leaves `Unknown` alone.
     let out = std::slice::from_raw_parts_mut(out_classes, count);
-    out.fill(platform_wallet::manager::accessors::OutpointClass::Unknown.as_u8());
+    out.fill(OutpointClass::Unknown.as_u8());
     let mut owned: Vec<OutpointOwnershipQuery> = Vec::with_capacity(count);
     let mut positions: Vec<usize> = Vec::with_capacity(count);
     for (i, q) in std::slice::from_raw_parts(queries, count)
@@ -1217,17 +1251,9 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
         });
     }
 
-    let Some(wallet_manager) =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
-    else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "Manager handle invalid".to_string(),
-        );
-    };
-    let classes = {
-        let wm = wallet_manager.blocking_read();
-        classify_outpoints(&wm, &wid, &owned)
+    let classes = match classify(wid, owned) {
+        Ok(classes) => classes,
+        Err(error) => return error,
     };
     for (position, class) in positions.into_iter().zip(classes) {
         out[position] = class.as_u8();
