@@ -10,6 +10,13 @@ use dpp::version::PlatformVersion;
 
 impl YesNoVotePollStateDriveQuery {
     /// Verifies a proof of the state of a yes/no vote poll: its stored info and its tallies.
+    ///
+    /// # Parameters
+    /// - `proof`: the proof.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The root hash and the poll's proved state.
     pub fn verify_yes_no_vote_poll_state_proof(
         &self,
         proof: &[u8],

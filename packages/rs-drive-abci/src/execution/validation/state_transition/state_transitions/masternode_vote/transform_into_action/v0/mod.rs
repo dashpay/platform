@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -9,7 +8,7 @@ use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVo
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
-use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
 use dpp::identifier::Identifier;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -100,7 +99,10 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
             Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
         };
 
-        let strength = masternode_vote_strength(&masternode.node_type);
+        let strength = match masternode.node_type {
+            MasternodeType::Regular => 1,
+            MasternodeType::Evo => 4,
+        };
 
         Ok(ConsensusValidationResult::new_with_data(
             MasternodeVoteTransitionAction::transform_from_transition(

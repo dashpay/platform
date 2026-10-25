@@ -16,7 +16,19 @@ impl Drive {
     /// balance the votes are paid from is the caller's to fund, under the poll's
     /// `specialized_balance_id`.
     ///
-    /// Refuses parameters no poll can run with, and a poll that already exists.
+    /// Refuses parameters no poll can run with, an end date that is not after the opening block
+    /// (or past `i64::MAX`), and a poll that already exists. Not active before protocol version
+    /// 15.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll to open.
+    /// - `end_date`: when the poll closes, in milliseconds.
+    /// - `block_info`: the block that opens it.
+    /// - `transaction`: the transaction to read and write in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the poll is open, or the error refusing it.
     pub fn open_yes_no_vote_poll(
         &self,
         vote_poll: &YesNoVotePoll,
@@ -32,26 +44,51 @@ impl Drive {
             .yes_no
             .open_yes_no_vote_poll
         {
-            0 => self.open_yes_no_vote_poll_v0(
+            Some(0) => self.open_yes_no_vote_poll_v0(
                 vote_poll,
                 end_date,
                 block_info,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "open_yes_no_vote_poll".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "open_yes_no_vote_poll".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
 
     /// The operations of [`Self::open_yes_no_vote_poll`], added to `batch_operations`.
     ///
+    /// Operations already queued in the same batch, earlier openings and contests included,
+    /// go in `previous_batch_operations`, with `batch_operations` fresh, as for document
+    /// operations: that is how an opening refuses a poll the batch already opens and queues a
+    /// tree the batch already holds once. A contest that shares the poll's end date must come
+    /// before the opening: the contested end date insert skips only an identical insert, so a
+    /// contest after it would queue the end date's tree again. Two openings converted with no
+    /// view of each other can list one poll under two end dates; it then closes at the first and
+    /// its later entry is only removed.
+    ///
     /// They are stateful and have no estimated-costs path: a poll opens as a system action,
     /// outside any fee estimate. A caller that runs them inside a fee estimate must first give
     /// them one.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll to open.
+    /// - `end_date`: when the poll closes, in milliseconds.
+    /// - `block_info`: the block that opens it.
+    /// - `previous_batch_operations`: the operations the batch already holds.
+    /// - `batch_operations`: where the opening's operations are added.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the operations are added, or the error refusing the poll.
     #[allow(clippy::too_many_arguments)]
     pub fn open_yes_no_vote_poll_operations(
         &self,
@@ -70,7 +107,7 @@ impl Drive {
             .yes_no
             .open_yes_no_vote_poll
         {
-            0 => self.open_yes_no_vote_poll_operations_v0(
+            Some(0) => self.open_yes_no_vote_poll_operations_v0(
                 vote_poll,
                 end_date,
                 block_info,
@@ -79,10 +116,14 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "open_yes_no_vote_poll_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "open_yes_no_vote_poll_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -91,8 +132,10 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::votes::paths::{
-        vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+        vote_decisions_tree_path, vote_end_date_queries_tree_path, ACTIVE_POLLS_TREE_KEY,
+        IDENTITY_VOTES_TREE_KEY,
     };
+    use crate::util::common::encode::encode_u64;
     use crate::util::grove_operations::DirectQueryType;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_yes_no_vote_poll as poll;
@@ -100,6 +143,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
+    use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::vote_polls::VotePoll;
 
     #[test]
     fn should_refuse_to_open_a_poll_a_batch_already_opens() {
@@ -118,14 +163,15 @@ mod tests {
                 platform_version,
             )
             .expect("expected to open the poll");
-        // The same poll with another end date: the end date is not part of its id.
+        // The same poll with another end date (the end date is not part of its id), with the
+        // batch so far as the previous operations.
         drive
             .open_yes_no_vote_poll_operations(
                 &vote_poll,
                 2_000,
                 &BlockInfo::default(),
-                &mut None,
-                &mut batch_operations,
+                &mut Some(&mut batch_operations),
+                &mut vec![],
                 None,
                 platform_version,
             )
@@ -195,10 +241,11 @@ mod tests {
             time_ms: 1_000,
             ..Default::default()
         };
-        for end_date in [999, 1_000] {
+        // The last two would sort before every block time in the end date index.
+        for end_date in [999, 1_000, i64::MAX as u64 + 1, u64::MAX] {
             drive
                 .open_yes_no_vote_poll(&poll(), end_date, &block_info, None, platform_version)
-                .expect_err("expected a poll ending by the opening block to be refused");
+                .expect_err("expected a poll that ends at once to be refused");
         }
         drive
             .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
@@ -220,17 +267,19 @@ mod tests {
             .push(BinaryData::new(b"other".to_vec()));
         let mut batch_operations = vec![];
         for vote_poll in [poll(), other_poll.clone()] {
+            let mut opening_operations = vec![];
             drive
                 .open_yes_no_vote_poll_operations(
                     &vote_poll,
                     1_000,
                     &BlockInfo::default(),
-                    &mut None,
-                    &mut batch_operations,
+                    &mut Some(&mut batch_operations),
+                    &mut opening_operations,
                     None,
                     platform_version,
                 )
                 .expect("expected to open the poll");
+            batch_operations.append(&mut opening_operations);
         }
         drive
             .apply_batch_low_level_drive_operations(
@@ -252,5 +301,74 @@ mod tests {
             .into_iter()
             .collect()
         );
+    }
+
+    #[test]
+    fn should_keep_the_flags_of_a_contest_end_date_tree_the_batch_already_queues() {
+        // A contest created earlier in the batch queues the end date's tree with its
+        // contender's storage flags; the opening adds only its entry, and the tree keeps them.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contested_poll = VotePoll::ContestedDocumentResourceVotePoll(
+            ContestedDocumentResourceVotePoll::default(),
+        );
+        let mut batch_operations = vec![];
+        drive
+            .add_vote_poll_end_date_query_operations(
+                Some([7; 32]),
+                contested_poll.clone(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                &mut None,
+                &mut batch_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected the contest's end date entry");
+        let mut opening_operations = vec![];
+        drive
+            .open_yes_no_vote_poll_operations(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                &mut Some(&mut batch_operations),
+                &mut opening_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        batch_operations.append(&mut opening_operations);
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+
+        let end_dates = vote_poll_end_dates(&drive, platform_version);
+        assert_eq!(
+            end_dates[&1_000],
+            [
+                contested_poll.unique_id().expect("id"),
+                poll().unique_id().expect("id")
+            ]
+            .into_iter()
+            .collect()
+        );
+        let end_date_tree = drive
+            .grove
+            .get(
+                &vote_end_date_queries_tree_path(),
+                encode_u64(1_000).as_slice(),
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected the end date's tree");
+        assert!(end_date_tree.get_flags().is_some());
     }
 }

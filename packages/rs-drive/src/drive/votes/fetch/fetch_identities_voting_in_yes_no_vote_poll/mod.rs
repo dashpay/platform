@@ -11,6 +11,14 @@ use grovedb::TransactionArg;
 impl Drive {
     /// The masternodes that voted on a yes/no poll: the yes voters, then the no voters, then
     /// the abstaining ones.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The voters' pro tx hashes.
     pub fn fetch_identities_voting_in_yes_no_vote_poll(
         &self,
         vote_poll: &YesNoVotePoll,

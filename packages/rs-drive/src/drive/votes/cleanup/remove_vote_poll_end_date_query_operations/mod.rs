@@ -14,6 +14,15 @@ impl Drive {
     /// and each end date's tree once nothing is left under it. Whether an end date is left empty
     /// is read from the tree, since it can still hold a poll of either kind that this batch does
     /// not remove. The yes/no clean-up removes its polls with it.
+    ///
+    /// # Parameters
+    /// - `vote_polls`: the finished polls' unique ids, each with its end date.
+    /// - `batch_operations`: where the removals are added.
+    /// - `transaction`: the transaction to read the end dates in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the removals are added.
     pub fn remove_vote_poll_end_date_query_operations(
         &self,
         vote_polls: &[(Identifier, TimestampMillis)],

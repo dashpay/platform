@@ -29,6 +29,20 @@ export interface VotePollOptions {
 }
 
 /**
+ * A yes/no poll's minimum yes plus no voting power, the same as a plain object
+ * and as JSON: a fixed voting power, or a share of the masternode list's total
+ * voting power when the poll closes.
+ */
+export type YesNoMinimumVotingPowerObject =
+    | { $type: "absolute"; votingPower: number }
+    | {
+          $type: "fractionOfTotal";
+          numerator: number;
+          denominator: number;
+          rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
+      };
+
+/**
  * A yes/no poll's fields as a plain object. A yes/no vote carries its poll
  * like this, without a `$type` tag. The minimum is a fixed voting power or a
  * share of the masternode list's total voting power when the poll closes.
@@ -37,14 +51,7 @@ export interface YesNoVotePollFieldsObject {
     resourcePath: Uint8Array[];
     supermajorityNumerator: number;
     supermajorityDenominator: number;
-    minimumVotingPower:
-        | { $type: "absolute"; votingPower: number }
-        | {
-              $type: "fractionOfTotal";
-              numerator: number;
-              denominator: number;
-              rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
-          };
+    minimumVotingPower: YesNoMinimumVotingPowerObject;
 }
 
 /**
@@ -54,14 +61,7 @@ export interface YesNoVotePollFieldsJSON {
     resourcePath: string[];
     supermajorityNumerator: number;
     supermajorityDenominator: number;
-    minimumVotingPower:
-        | { $type: "absolute"; votingPower: number }
-        | {
-              $type: "fractionOfTotal";
-              numerator: number;
-              denominator: number;
-              rounding: "up" | "down" | "downPlusOne" | "upMinusOne";
-          };
+    minimumVotingPower: YesNoMinimumVotingPowerObject;
 }
 
 /**
@@ -157,15 +157,16 @@ impl VotePollWasm {
         self.0.to_string()
     }
 
-    /// The kind of poll: `contestedDocumentResourceVotePoll` or `yesNoVotePoll`.
+    /// The kind of poll: `contestedDocumentResourceVotePoll` or `yesNoVotePoll`, the `$type`
+    /// tag the poll's serde writes, so it always matches `toJSON()`.
     #[wasm_bindgen(getter = "kind")]
-    pub fn kind(&self) -> String {
-        match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(_) => {
-                "contestedDocumentResourceVotePoll".to_string()
-            }
-            VotePoll::YesNoVotePoll(_) => "yesNoVotePoll".to_string(),
-        }
+    pub fn kind(&self) -> WasmDppResult<String> {
+        serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .get("$type")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| WasmDppError::serialization("a vote poll without a $type".to_string()))
     }
 
     #[wasm_bindgen(getter = "contractId")]

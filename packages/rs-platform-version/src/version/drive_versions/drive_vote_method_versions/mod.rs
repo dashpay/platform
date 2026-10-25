@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -18,11 +18,12 @@ pub struct DriveVoteMethodVersions {
 }
 
 /// The methods of the yes/no poll kind. All of them are new in protocol version 15 and
-/// unreachable before it: opening a poll is refused before 15, and a vote naming a yes/no poll
-/// does not decode before 15.
+/// unreachable before it: opening a poll is not active before 15, and a vote naming a yes/no
+/// poll does not decode before 15.
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteYesNoMethodVersions {
-    pub open_yes_no_vote_poll: FeatureVersion,
+    /// `None` before protocol version 15, where no yes/no poll may be opened.
+    pub open_yes_no_vote_poll: OptionalFeatureVersion,
     pub register_yes_no_identity_vote: FeatureVersion,
     pub insert_stored_info_for_yes_no_vote_poll: FeatureVersion,
     pub fetch_yes_no_vote_poll_stored_info: FeatureVersion,

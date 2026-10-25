@@ -21,20 +21,18 @@ impl Drive {
     ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousVoteCount)>, Error> {
         let path =
             vote_decisions_identity_votes_tree_path_for_identity(masternode_pro_tx_hash.as_bytes());
-        let maybe_element = self.grove_get_raw_optional(
+        self.grove_get_raw_optional_item(
             (&path).into(),
             vote_poll_id.as_slice(),
             DirectQueryType::StatefulDirectQuery,
             transaction,
             drive_operations,
             &platform_version.drive,
-        )?;
-        maybe_element
-            .map(|element| {
-                let bytes = element.into_item_bytes()?;
-                let storage_form = YesNoVoteReferenceStorageForm::deserialize_stored(&bytes)?;
-                Ok((storage_form.vote_choice, storage_form.identity_vote_times))
-            })
-            .transpose()
+        )?
+        .map(|bytes| {
+            let storage_form = YesNoVoteReferenceStorageForm::deserialize(&bytes)?;
+            Ok((storage_form.vote_choice, storage_form.identity_vote_times))
+        })
+        .transpose()
     }
 }

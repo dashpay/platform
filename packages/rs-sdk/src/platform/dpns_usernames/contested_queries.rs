@@ -465,24 +465,13 @@ impl Sdk {
             if current_start_time == Some((last_ts, true)) && polls_in_page >= query_limit as usize
             {
                 // This end date alone filled the page, so the limit may have cut it, and a
-                // proved query cannot continue within one end date: read it alone at the
+                // proved query cannot continue within one end date: read it again at the
                 // largest limit, or refuse rather than leave contests out.
                 if query_limit >= DEFAULT_QUERY_LIMIT {
                     return Err(too_many_vote_polls_at_end_date(last_ts));
                 }
-                let whole_end_date = self
-                    .fetch_vote_polls_by_end_date(
-                        Some((last_ts, true)),
-                        Some(last_ts),
-                        DEFAULT_QUERY_LIMIT,
-                    )
-                    .await?;
-                let polls_at_end_date: usize =
-                    whole_end_date.0.iter().map(|(_, polls)| polls.len()).sum();
-                if polls_at_end_date >= DEFAULT_QUERY_LIMIT as usize {
-                    return Err(too_many_vote_polls_at_end_date(last_ts));
-                }
-                record_dpns_contests(&mut name_to_end_time, dpns_contract_id, whole_end_date);
+                query_limit = DEFAULT_QUERY_LIMIT;
+                continue;
             }
 
             match next_vote_polls_page_start(current_start_time, last_ts, end_time) {

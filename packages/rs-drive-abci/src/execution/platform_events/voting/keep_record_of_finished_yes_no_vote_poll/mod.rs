@@ -18,6 +18,17 @@ where
     /// Decides a finished yes/no poll from its tallies and the total voting power of the
     /// masternode list in the closing block, and writes the result into its stored info, which
     /// stays as the record of the decision after the votes are cleaned up.
+    ///
+    /// # Parameters
+    /// - `block_info`: the block that closes the poll.
+    /// - `vote_poll`: the poll that ended.
+    /// - `tally`: its tallies and stored info.
+    /// - `total_voting_power`: the masternode list's total voting power in the closing block, 0 for a fixed minimum.
+    /// - `transaction`: the transaction to read and write in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The poll's result, as recorded.
     pub(in crate::execution) fn keep_record_of_finished_yes_no_vote_poll(
         &self,
         block_info: &BlockInfo,

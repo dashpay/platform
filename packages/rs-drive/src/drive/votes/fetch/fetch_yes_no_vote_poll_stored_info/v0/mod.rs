@@ -16,20 +16,16 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Option<YesNoVotePollStoredInfo>, Error> {
         let path = vote_poll.poll_path_vec()?;
-        let maybe_element = self.grove_get_raw_optional(
+        self.grove_get_raw_optional_item(
             path.as_slice().into(),
             &[YES_NO_VOTE_POLL_STORED_INFO_KEY],
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut vec![],
             &platform_version.drive,
-        )?;
-        let Some(element) = maybe_element else {
-            return Ok(None);
-        };
-        let bytes = element.into_item_bytes()?;
-        Ok(Some(
-            YesNoVotePollStoredInfo::deserialize_from_bytes_trusted(&bytes)?,
-        ))
+        )?
+        .map(|bytes| YesNoVotePollStoredInfo::deserialize_from_bytes_trusted(&bytes))
+        .transpose()
+        .map_err(Error::from)
     }
 }

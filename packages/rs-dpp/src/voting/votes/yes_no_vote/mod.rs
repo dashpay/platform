@@ -62,7 +62,7 @@ mod json_convertible_tests_yes_no_vote {
                 resource_path: vec![BinaryData::new(vec![0xc1; 4])],
                 supermajority_numerator: 2,
                 supermajority_denominator: 3,
-                minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+                minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
             },
             vote_choice: YesNoAbstainVoteChoice::Yes,
         })

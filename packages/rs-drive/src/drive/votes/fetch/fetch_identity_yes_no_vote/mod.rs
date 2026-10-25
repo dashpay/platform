@@ -13,6 +13,16 @@ use grovedb::TransactionArg;
 impl Drive {
     /// A masternode's current answer to a yes/no poll and how many times it voted on it, or
     /// `None` when it never did.
+    ///
+    /// # Parameters
+    /// - `masternode_pro_tx_hash`: the masternode.
+    /// - `vote_poll_id`: the poll's unique id.
+    /// - `transaction`: the transaction to read in.
+    /// - `drive_operations`: where the read's cost is added.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The answer and how many times the masternode voted on the poll, or `None`.
     pub fn fetch_identity_yes_no_vote(
         &self,
         masternode_pro_tx_hash: Identifier,

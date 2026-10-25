@@ -4,15 +4,23 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 
 impl Drive {
     /// Removes the votes of finished yes/no polls with the three sum trees that hold them. The
     /// polls' stored info stays as the record of the decision.
+    ///
+    /// # Parameters
+    /// - `vote_poll_ids`: the unique ids of the finished polls.
+    /// - `batch_operations`: where the removals are added.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the removals are added.
     pub fn remove_yes_no_vote_poll_votes_operations(
         &self,
-        vote_polls: &[&YesNoVotePoll],
+        vote_poll_ids: &[Identifier],
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -24,7 +32,7 @@ impl Drive {
             .remove_yes_no_vote_poll_votes_operations
         {
             0 => self.remove_yes_no_vote_poll_votes_operations_v0(
-                vote_polls,
+                vote_poll_ids,
                 batch_operations,
                 platform_version,
             ),

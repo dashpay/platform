@@ -11,6 +11,16 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Removes a masternode's entries for these yes/no polls from the identity votes index of
     /// the decisions branch.
+    ///
+    /// # Parameters
+    /// - `masternode_pro_tx_hash`: the masternode.
+    /// - `vote_poll_ids`: the polls whose entries go.
+    /// - `batch_operations`: where the removals are added.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the removals are added.
     pub fn remove_yes_no_vote_references_given_by_identity_operations(
         &self,
         masternode_pro_tx_hash: &Identifier,

@@ -41,7 +41,7 @@ impl Drive {
             .grove_get_path_query(
                 &path_query,
                 transaction,
-                QueryResultType::QueryPathKeyElementTrioResultType,
+                QueryResultType::QueryKeyElementPairResultType,
                 &mut vec![],
                 &platform_version.drive,
             )?

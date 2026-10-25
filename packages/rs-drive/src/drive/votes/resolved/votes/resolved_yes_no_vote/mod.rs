@@ -28,16 +28,6 @@ impl ResolvedYesNoVote {
             previous_vote_choice_to_remove: None,
         }
     }
-
-    /// The vote as it came in, owned, with no previous answer attached.
-    pub fn from_vote_owned(vote: YesNoVote) -> Self {
-        let vote_choice = vote.vote_choice();
-        ResolvedYesNoVote {
-            vote_poll: vote.vote_poll_owned(),
-            vote_choice,
-            previous_vote_choice_to_remove: None,
-        }
-    }
 }
 
 impl From<ResolvedYesNoVote> for YesNoVote {

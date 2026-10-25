@@ -56,14 +56,12 @@ pub enum VotingPowerRounding {
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(
-        into = "YesNoMinimumVotingPowerRepr",
-        from = "YesNoMinimumVotingPowerRepr"
-    )
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 pub enum YesNoMinimumVotingPower {
     /// A fixed voting power, at most `max_yes_no_vote_poll_minimum_voting_power`.
-    Absolute(VotingPower),
+    #[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
+    Absolute { voting_power: VotingPower },
     /// A share of the total voting power of the masternode list (masternode 1, evonode 4) in
     /// the block that closes the poll, rounded as asked, at most
     /// `max_yes_no_vote_poll_minimum_voting_power_percent_of_total` percent of it.
@@ -74,65 +72,13 @@ pub enum YesNoMinimumVotingPower {
     },
 }
 
-// Internal-`$type` serde shape: `Absolute` is a tuple variant, which internal tagging cannot
-// carry, so this struct-variant helper names its field. Bincode, and with it the poll id, still
-// encodes the outer enum directly.
-#[cfg(feature = "serde-conversion")]
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "$type", rename_all = "camelCase")]
-enum YesNoMinimumVotingPowerRepr {
-    #[serde(rename_all = "camelCase")]
-    Absolute { voting_power: VotingPower },
-    FractionOfTotal {
-        numerator: u8,
-        denominator: u8,
-        rounding: VotingPowerRounding,
-    },
-}
-
-#[cfg(feature = "serde-conversion")]
-impl From<YesNoMinimumVotingPower> for YesNoMinimumVotingPowerRepr {
-    fn from(minimum: YesNoMinimumVotingPower) -> Self {
-        match minimum {
-            YesNoMinimumVotingPower::Absolute(voting_power) => Self::Absolute { voting_power },
-            YesNoMinimumVotingPower::FractionOfTotal {
-                numerator,
-                denominator,
-                rounding,
-            } => Self::FractionOfTotal {
-                numerator,
-                denominator,
-                rounding,
-            },
-        }
-    }
-}
-
-#[cfg(feature = "serde-conversion")]
-impl From<YesNoMinimumVotingPowerRepr> for YesNoMinimumVotingPower {
-    fn from(repr: YesNoMinimumVotingPowerRepr) -> Self {
-        match repr {
-            YesNoMinimumVotingPowerRepr::Absolute { voting_power } => Self::Absolute(voting_power),
-            YesNoMinimumVotingPowerRepr::FractionOfTotal {
-                numerator,
-                denominator,
-                rounding,
-            } => Self::FractionOfTotal {
-                numerator,
-                denominator,
-                rounding,
-            },
-        }
-    }
-}
-
 impl YesNoMinimumVotingPower {
     /// The minimum as a voting power, given the total voting power of the masternode list when
     /// the poll closes. A fraction with a zero denominator (refused when the poll opens) needs
     /// more than any poll can gather.
     pub fn resolve(&self, total_voting_power: VotingPower) -> VotingPower {
         match *self {
-            YesNoMinimumVotingPower::Absolute(voting_power) => voting_power,
+            YesNoMinimumVotingPower::Absolute { voting_power } => voting_power,
             YesNoMinimumVotingPower::FractionOfTotal {
                 numerator,
                 denominator,
@@ -160,7 +106,7 @@ impl YesNoMinimumVotingPower {
 impl fmt::Display for YesNoMinimumVotingPower {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            YesNoMinimumVotingPower::Absolute(voting_power) => write!(f, "{}", voting_power),
+            YesNoMinimumVotingPower::Absolute { voting_power } => write!(f, "{}", voting_power),
             YesNoMinimumVotingPower::FractionOfTotal {
                 numerator,
                 denominator,
@@ -223,8 +169,8 @@ impl fmt::Display for YesNoMinimumVotingPower {
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[platform_serialize(unversioned)]
-#[platform_serialize(limit = 100000)]
+// One attribute: the derives read only the first `platform_serialize` attribute.
+#[platform_serialize(limit = 100000, unversioned)]
 pub struct YesNoVotePoll {
     /// What the poll decides on, as opaque segments chosen by the feature that opened it.
     pub resource_path: Vec<BinaryData>,
@@ -307,7 +253,7 @@ impl YesNoVotePoll {
             )));
         }
         match self.minimum_voting_power {
-            YesNoMinimumVotingPower::Absolute(voting_power) => {
+            YesNoMinimumVotingPower::Absolute { voting_power } => {
                 let max_voting_power = platform_version
                     .system_limits
                     .max_yes_no_vote_poll_minimum_voting_power;
@@ -395,7 +341,7 @@ mod tests {
             ],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
         }
     }
 
@@ -403,7 +349,7 @@ mod tests {
     fn should_pass_strictly_above_two_thirds_and_fail_at_or_below_it() {
         // The minimum is met by every tally below; only the share decides.
         let poll = YesNoVotePoll {
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(300),
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 300 },
             ..poll()
         };
         // 300 cast: two thirds is 200, so 201 passes and 200 does not.
@@ -450,7 +396,10 @@ mod tests {
         assert_eq!(majority.resolve(10), 6);
         assert_eq!(majority.resolve(9), 5);
         assert_eq!(majority.resolve(u32::MAX), u32::MAX / 2 + 1);
-        assert_eq!(YesNoMinimumVotingPower::Absolute(400).resolve(10), 400);
+        assert_eq!(
+            YesNoMinimumVotingPower::Absolute { voting_power: 400 }.resolve(10),
+            400
+        );
         // No overflow on the largest total.
         let half = YesNoMinimumVotingPower::FractionOfTotal {
             numerator: 1,
@@ -495,8 +444,10 @@ mod tests {
             rounding: VotingPowerRounding::Up,
         };
         for accepted in [
-            YesNoMinimumVotingPower::Absolute(0),
-            YesNoMinimumVotingPower::Absolute(max_voting_power),
+            YesNoMinimumVotingPower::Absolute { voting_power: 0 },
+            YesNoMinimumVotingPower::Absolute {
+                voting_power: max_voting_power,
+            },
             share(0, 1),
             share(1, 3),
             share(1, 2),
@@ -510,7 +461,9 @@ mod tests {
             );
         }
         for refused in [
-            YesNoMinimumVotingPower::Absolute(max_voting_power + 1),
+            YesNoMinimumVotingPower::Absolute {
+                voting_power: max_voting_power + 1,
+            },
             share(1, 0),
             share(51, 100),
             share(2, 3),
@@ -628,7 +581,7 @@ mod tests {
             ..poll()
         };
         let other_minimum = YesNoVotePoll {
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(401),
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 401 },
             ..poll()
         };
         for other in [other_path, other_rule, other_minimum] {
@@ -671,7 +624,7 @@ mod json_convertible_tests {
             ],
             supermajority_numerator: 2,
             supermajority_denominator: 3,
-            minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
         }
     }
 

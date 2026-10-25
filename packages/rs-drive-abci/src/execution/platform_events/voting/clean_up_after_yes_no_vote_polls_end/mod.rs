@@ -22,6 +22,16 @@ where
     ///
     /// `leftover_end_date_entries` are the end date entries, by poll id, of polls an earlier
     /// entry already closed: only the entries go.
+    ///
+    /// # Parameters
+    /// - `block_info`: the block that closes the polls, whose epoch gets what is left of their funds.
+    /// - `vote_polls`: the polls that ended, each with its end date and its voters.
+    /// - `leftover_end_date_entries`: the end date entries, by poll id, of polls an earlier entry already closed.
+    /// - `transaction`: the transaction to read and write in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the clean-up is applied.
     pub(in crate::execution) fn clean_up_after_yes_no_vote_polls_end(
         &self,
         block_info: &BlockInfo,

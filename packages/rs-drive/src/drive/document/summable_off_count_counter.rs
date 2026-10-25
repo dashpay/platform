@@ -30,7 +30,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
-use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
+use crate::util::grove_operations::pending_grove_operations::grove_operation_queued;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, DirectQueryType,
@@ -504,6 +504,5 @@ fn counter_queued(
     path: &KeyInfoPath,
     key: &KeyInfo,
 ) -> bool {
-    pending_grove_operations(operations)
-        .any(|operation| operation.path == *path && operation.key.as_ref() == Some(key))
+    grove_operation_queued(operations, path, key)
 }

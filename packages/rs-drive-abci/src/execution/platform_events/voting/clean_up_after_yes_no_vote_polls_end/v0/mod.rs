@@ -47,12 +47,8 @@ where
         )?;
 
         // The three vote trees of every poll.
-        let polls: Vec<&YesNoVotePoll> = vote_polls
-            .iter()
-            .map(|(vote_poll, _, _)| vote_poll)
-            .collect();
         self.drive.remove_yes_no_vote_poll_votes_operations(
-            polls.as_slice(),
+            vote_poll_ids.as_slice(),
             &mut operations,
             platform_version,
         )?;

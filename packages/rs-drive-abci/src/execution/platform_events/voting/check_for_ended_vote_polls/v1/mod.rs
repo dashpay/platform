@@ -81,22 +81,22 @@ where
                 platform_version,
             )?;
 
-        // The yes/no polls this block closes, with their voters, and the end date entries of
-        // yes/no polls an earlier entry already closed. Both stay empty before protocol
-        // version 15.
+        // Yes/no polls need no resolution: they close here, before the contested polls, which
+        // keep the loop below as it was. Reached from protocol version 15 only: at 14, which
+        // also selects this generation, no yes/no poll is in the end date index, since opening
+        // one (`Drive::open_yes_no_vote_poll`) is not active before 15, and the contested polls
+        // are the polls the index returned, in the same order. The yes/no polls this block
+        // closes keep their voters for the clean-up; the end date entries of yes/no polls an
+        // earlier entry already closed are only removed.
         let mut finished_yes_no_vote_polls: Vec<(YesNoVotePoll, TimestampMillis, Vec<Identifier>)> =
             vec![];
         let mut leftover_yes_no_end_date_entries: Vec<(Identifier, TimestampMillis)> = vec![];
-
-        // Check if awarding is disabled
-        let vote_polls_with_info = vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
-                let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
-                    // Reached from protocol version 15 only. At 14, which also selects this
-                    // generation, no yes/no poll is in the end date index: it enters only
-                    // through `Drive::open_yes_no_vote_poll`, which refuses to open one before
-                    // protocol version 15. A yes/no poll needs no resolution, and is cleaned up
-                    // apart from the contested polls below.
-                    if let VotePoll::YesNoVotePoll(yes_no_vote_poll) = vote_poll {
+        let mut contested_vote_polls_by_timestamp: BTreeMap<TimestampMillis, Vec<VotePoll>> =
+            BTreeMap::new();
+        for (end_date, vote_polls) in vote_polls_by_timestamp {
+            for vote_poll in vote_polls {
+                match vote_poll {
+                    VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
                         match self.finish_yes_no_vote_poll(
                             block_platform_state,
                             block_info,
@@ -104,14 +104,26 @@ where
                             transaction,
                             platform_version,
                         )? {
-                            Some(voters) => {
-                                finished_yes_no_vote_polls.push((yes_no_vote_poll, end_date, voters))
-                            }
+                            Some(voters) => finished_yes_no_vote_polls.push((
+                                yes_no_vote_poll,
+                                end_date,
+                                voters,
+                            )),
                             None => leftover_yes_no_end_date_entries
                                 .push((yes_no_vote_poll.unique_id()?, end_date)),
                         }
-                        return Ok(None);
                     }
+                    contested_vote_poll => contested_vote_polls_by_timestamp
+                        .entry(end_date)
+                        .or_default()
+                        .push(contested_vote_poll),
+                }
+            }
+        }
+
+        // Check if awarding is disabled
+        let vote_polls_with_info = contested_vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
+                let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
                     let resolved_vote_poll =
                         vote_poll.resolve(&self.drive, transaction, platform_version)?;
                     match resolved_vote_poll {
@@ -241,10 +253,10 @@ where
                                 transaction,
                                 platform_version,
                             )?;
-                            Ok(Some(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders)))
+                            Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                         }
                     }
-                }).collect::<Result<Vec<Option<ResolvedVotePollWithVotes>>, Error>>()?.into_iter().flatten().collect::<Vec<_>>();
+                }).collect::<Result<Vec<ResolvedVotePollWithVotes>, Error>>()?;
                 Ok((end_date, vote_polls_with_votes))
             }).collect::<Result<BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>, Error>>()
 ?;
@@ -291,20 +303,20 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<Identifier>>, Error> {
-        let already_finished = self
-            .drive
-            .fetch_yes_no_vote_poll_stored_info(vote_poll, transaction, platform_version)?
-            .is_some_and(|stored_info| stored_info.result().is_some());
-        if already_finished {
-            return Ok(None);
-        }
         let tally =
             self.tally_votes_for_yes_no_vote_poll(vote_poll, transaction, platform_version)?;
+        if tally
+            .stored_info
+            .as_ref()
+            .is_some_and(|stored_info| stored_info.result().is_some())
+        {
+            return Ok(None);
+        }
         // A minimum given as a share of the total is measured against the masternode list of
         // the closing block, each masternode weighed as its vote is. A fixed minimum reads no
         // total.
         let total_voting_power = match vote_poll.minimum_voting_power {
-            YesNoMinimumVotingPower::Absolute(_) => 0,
+            YesNoMinimumVotingPower::Absolute { .. } => 0,
             YesNoMinimumVotingPower::FractionOfTotal { .. } => block_platform_state
                 .full_masternode_list()
                 .values()

@@ -10,8 +10,17 @@ use dpp::voting::votes::yes_no_vote::YesNoVote;
 impl Drive {
     /// Verifies a proof of a masternode's vote on a yes/no poll.
     ///
-    /// Returns the root hash and the proved vote, `None` when the proof shows the masternode
-    /// has not voted on the poll. A proved vote whose answer differs from `vote` is an error.
+    /// A proved vote whose answer differs from `vote` is an error.
+    ///
+    /// # Parameters
+    /// - `proof`: the proof.
+    /// - `masternode_pro_tx_hash`: the masternode.
+    /// - `vote`: the vote the proof is checked against.
+    /// - `verify_subset_of_proof`: whether the proof may hold more than this vote.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The root hash and the proved vote, `None` when the masternode has not voted on the poll.
     pub fn verify_masternode_yes_no_vote(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],

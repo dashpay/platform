@@ -1690,7 +1690,9 @@ mod tests {
                         resource_path: vec![BinaryData::new(vec![1; 32])],
                         supermajority_numerator: 2,
                         supermajority_denominator: 3,
-                        minimum_voting_power: YesNoMinimumVotingPower::Absolute(400),
+                        minimum_voting_power: YesNoMinimumVotingPower::Absolute {
+                            voting_power: 400
+                        },
                     },
                     YesNoVotePollStatus::Started(BlockInfo::default())
                 )

@@ -83,7 +83,9 @@ async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one
     end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(PlatformVersion::latest()).await;
 }
 
-/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+/// Protocol version 14 runs the same end of block generations on this path as 15 today
+/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
+/// 14, so a later change to 15's tables cannot leave 14 untested.
 #[tokio::test]
 async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left_at_protocol_version_14(
 ) {
@@ -198,7 +200,9 @@ async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block() {
     end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(PlatformVersion::latest()).await;
 }
 
-/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+/// Protocol version 14 runs the same end of block generations on this path as 15 today
+/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
+/// 14, so a later change to 15's tables cannot leave 14 untested.
 #[tokio::test]
 async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block_at_protocol_version_14(
 ) {

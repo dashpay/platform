@@ -749,7 +749,9 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
         .await;
 }
 
-/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+/// Protocol version 14 runs the same end of block generations on this path as 15 today
+/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
+/// 14, so a later change to 15's tables cannot leave 14 untested.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves_at_protocol_version_14(
 ) {
@@ -861,7 +863,9 @@ async fn should_end_a_contest_behind_end_dates_left_empty() {
     end_a_contest_behind_end_dates_left_empty(PlatformVersion::latest()).await;
 }
 
-/// Protocol version 14 ends contests through the vote poll clean-up v0, which version 15 replaced.
+/// Protocol version 14 runs the same end of block generations on this path as 15 today
+/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
+/// 14, so a later change to 15's tables cannot leave 14 untested.
 #[tokio::test]
 async fn should_end_a_contest_behind_end_dates_left_empty_at_protocol_version_14() {
     end_a_contest_behind_end_dates_left_empty(

@@ -11,6 +11,15 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Writes the stored info of a yes/no vote poll, replacing what was there.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll.
+    /// - `stored_info`: its stored info.
+    /// - `transaction`: the transaction to write in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the stored info is written.
     pub fn insert_stored_info_for_yes_no_vote_poll(
         &self,
         vote_poll: &YesNoVotePoll,
@@ -40,6 +49,14 @@ impl Drive {
     }
 
     /// The operations of [`Self::insert_stored_info_for_yes_no_vote_poll`].
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll.
+    /// - `stored_info`: its stored info.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The operations that write it.
     pub fn insert_stored_info_for_yes_no_vote_poll_operations(
         &self,
         vote_poll: &YesNoVotePoll,

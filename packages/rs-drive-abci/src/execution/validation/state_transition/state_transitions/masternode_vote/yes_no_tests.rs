@@ -44,7 +44,9 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
 use dpp::voting::votes::Vote;
-use drive::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
+use drive::query::yes_no_vote_poll_state_query::{
+    YesNoVotePollState, YesNoVotePollStateDriveQuery,
+};
 use drive::util::test_helpers::vote_poll_end_dates;
 use simple_signer::signer::SimpleSigner;
 use std::ops::Deref;
@@ -63,7 +65,9 @@ fn two_thirds_poll(purpose: &[u8], minimum_voting_power: u32) -> YesNoVotePoll {
         ],
         supermajority_numerator: 2,
         supermajority_denominator: 3,
-        minimum_voting_power: YesNoMinimumVotingPower::Absolute(minimum_voting_power),
+        minimum_voting_power: YesNoMinimumVotingPower::Absolute {
+            voting_power: minimum_voting_power,
+        },
     }
 }
 
@@ -338,7 +342,7 @@ fn poll_state(
     platform: &TempPlatform<MockCoreRPCLike>,
     vote_poll: &YesNoVotePoll,
     platform_version: &PlatformVersion,
-) -> drive::query::yes_no_vote_poll_state_query::YesNoVotePollState {
+) -> YesNoVotePollState {
     YesNoVotePollStateDriveQuery {
         vote_poll: vote_poll.clone(),
     }

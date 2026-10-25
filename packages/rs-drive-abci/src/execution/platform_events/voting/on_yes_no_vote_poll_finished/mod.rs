@@ -17,6 +17,16 @@ where
     /// Acts on the result of a yes/no poll that just finished, in the same block, before its
     /// votes are cleaned up. The feature that opened the poll recognises it by its resource
     /// path. Nothing opens a yes/no poll yet, so version 0 acts on nothing.
+    ///
+    /// # Parameters
+    /// - `block_info`: the block that closes the poll.
+    /// - `vote_poll`: the poll that finished.
+    /// - `result`: its result.
+    /// - `transaction`: the transaction to read and write in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the feature that opened the poll acted on its result.
     pub(in crate::execution) fn on_yes_no_vote_poll_finished(
         &self,
         block_info: &BlockInfo,

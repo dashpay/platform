@@ -19,22 +19,18 @@ impl YesNoVoteReferenceStorageForm {
         bincode::encode_to_vec(self, bincode::config::standard().with_big_endian())
     }
 
-    /// Decodes a stored form.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, bincode::error::DecodeError> {
-        bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
-            .map(|(form, _)| form)
-    }
-
     /// Decodes the form stored in the identity votes index, a stored form that does not
     /// decode being corrupted state.
-    pub fn deserialize_stored(bytes: &[u8]) -> Result<Self, Error> {
-        Self::deserialize(bytes).map_err(|e| {
-            Error::Drive(DriveError::CorruptedSerialization(format!(
-                "serialization of yes/no vote reference {} is corrupted: {}",
-                hex::encode(bytes),
-                e
-            )))
-        })
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
+            .map(|(form, _)| form)
+            .map_err(|e| {
+                Error::Drive(DriveError::CorruptedSerialization(format!(
+                    "serialization of yes/no vote reference {} is corrupted: {}",
+                    hex::encode(bytes),
+                    e
+                )))
+            })
     }
 }
 

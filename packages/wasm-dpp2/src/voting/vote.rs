@@ -4,7 +4,6 @@ use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
-use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::Vote;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -17,6 +16,11 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
+/**
+ * A yes/no vote's answer, the same as a plain object and as JSON.
+ */
+export type YesNoAbstainVoteChoiceName = "yes" | "no" | "abstain";
+
 /**
  * Vote serialized as a plain object.
  *
@@ -35,7 +39,7 @@ export type VoteObject =
           $type: "yesNoVote";
           $formatVersion: string;
           votePoll: YesNoVotePollFieldsObject;
-          voteChoice: "yes" | "no" | "abstain";
+          voteChoice: YesNoAbstainVoteChoiceName;
       };
 
 /**
@@ -52,7 +56,7 @@ export type VoteJSON =
           $type: "yesNoVote";
           $formatVersion: string;
           votePoll: YesNoVotePollFieldsJSON;
-          voteChoice: "yes" | "no" | "abstain";
+          voteChoice: YesNoAbstainVoteChoiceName;
       };
 "#;
 
@@ -120,11 +124,14 @@ impl VoteWasm {
             Vote::ResourceVote(_) => Err(WasmDppError::invalid_argument(
                 "this vote is a resource vote, not a yes/no vote".to_string(),
             )),
-            Vote::YesNoVote(vote) => Ok(match vote.vote_choice() {
-                YesNoAbstainVoteChoice::Yes => "yes".to_string(),
-                YesNoAbstainVoteChoice::No => "no".to_string(),
-                YesNoAbstainVoteChoice::Abstain => "abstain".to_string(),
-            }),
+            // The name the choice's serde writes, so it always matches `toJSON()`.
+            Vote::YesNoVote(vote) => serde_json::to_value(vote.vote_choice())
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    WasmDppError::serialization("a yes/no vote choice without a name".to_string())
+                }),
         }
     }
 

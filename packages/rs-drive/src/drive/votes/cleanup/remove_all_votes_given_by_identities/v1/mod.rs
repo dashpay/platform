@@ -7,18 +7,20 @@ use crate::drive::votes::paths::{
     vote_decisions_tree_path, IDENTITY_VOTES_TREE_KEY,
 };
 use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use dpp::dashcore::Network;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
-use grovedb::{MaybeTree, TransactionArg};
+use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
+use grovedb::{MaybeTree, TransactionArg, TreeType};
 
 impl Drive {
     /// Version 1 (protocol version 15) removes the contested resource votes of the removed
     /// masternodes through version 0, unchanged, then their yes/no votes in a batch of its own:
-    /// the vote under the poll's choice sum tree and the entry in the decisions identity votes
-    /// index. The two batches touch different subtrees, so applying them one after the other
-    /// leaves the same state as one batch would.
+    /// the vote under the poll's choice sum tree, and each removed masternode's tree in the
+    /// decisions identity votes index, entries included. The two batches touch different
+    /// subtrees, so applying them one after the other leaves the same state as one batch would.
     pub(super) fn remove_all_votes_given_by_identities_v1(
         &self,
         identity_ids_as_byte_arrays: Vec<Vec<u8>>,
@@ -55,16 +57,13 @@ impl Drive {
         let mut deletion_batch = vec![];
         for (identifier_bytes, votes_to_remove) in self.identity_vote_entries_of_identities_v0(
             vote_decisions_identity_votes_tree_path_vec(),
-            identity_ids_as_byte_arrays,
+            identity_ids_as_byte_arrays.clone(),
             transaction,
             platform_version,
         )? {
-            let identity_id = Identifier::from_vec(identifier_bytes.clone())?;
-            let mut vote_poll_ids = Vec::with_capacity(votes_to_remove.len());
             for (vote_poll_id, vote_to_remove) in votes_to_remove {
-                let storage_form = YesNoVoteReferenceStorageForm::deserialize_stored(
-                    &vote_to_remove.into_item_bytes()?,
-                )?;
+                let storage_form =
+                    YesNoVoteReferenceStorageForm::deserialize(&vote_to_remove.into_item_bytes()?)?;
                 let vote_poll_id = Identifier::from_vec(vote_poll_id)?;
                 let votes_path = vote_decisions_poll_choice_votes_tree_path_vec(
                     vote_poll_id.as_bytes(),
@@ -80,16 +79,34 @@ impl Drive {
                     &mut deletion_batch,
                     &platform_version.drive,
                 )?;
-                vote_poll_ids.push(vote_poll_id);
             }
-            let vote_poll_ids: Vec<&Identifier> = vote_poll_ids.iter().collect();
-            self.remove_yes_no_vote_references_given_by_identity_operations(
-                &identity_id,
-                vote_poll_ids.as_slice(),
-                &mut deletion_batch,
+        }
+
+        // Then each removed masternode's tree in the identity votes index, emptied or not: the
+        // close of a poll removes the poll's entries but keeps the tree, which no one else
+        // removes. It holds only items, so it is dropped flat with them (GroveDB's flat drop,
+        // which the grove version of protocol version 15 accepts in a batch).
+        let identity_votes_path = vote_decisions_identity_votes_tree_path_vec();
+        for identifier_bytes in identity_ids_as_byte_arrays {
+            let has_identity_votes_tree = self.grove_has_raw(
+                identity_votes_path.as_slice().into(),
+                identifier_bytes.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
                 transaction,
-                platform_version,
+                &mut vec![],
+                &platform_version.drive,
             )?;
+            if has_identity_votes_tree {
+                deletion_batch.push(LowLevelDriveOperation::GroveOperation(
+                    QualifiedGroveDbOp::delete_tree_op(
+                        identity_votes_path.clone(),
+                        identifier_bytes,
+                        TreeType::NormalTree,
+                        SubelementsDeletionBehavior::DropFlat,
+                    )
+                    .dont_check_for_backwards_references(),
+                ));
+            }
         }
 
         if !deletion_batch.is_empty() {

@@ -10,6 +10,14 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// The stored info of a yes/no vote poll, `None` when the poll was never opened.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The stored info, or `None`.
     pub fn fetch_yes_no_vote_poll_stored_info(
         &self,
         vote_poll: &YesNoVotePoll,

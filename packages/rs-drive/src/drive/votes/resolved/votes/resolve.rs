@@ -1,7 +1,7 @@
 use crate::drive::votes::resolved::votes::resolved_resource_vote::resolve::ResourceVoteResolver;
-use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::voting::votes::Vote;
 use grovedb::TransactionArg;
@@ -43,6 +43,12 @@ pub trait VoteResolver {
     ) -> Result<ResolvedVote, Error>;
 }
 
+/// A yes/no vote is not resolved here: transform_into_action v1 builds its action itself, with
+/// the masternode's previous answer, which a resolution from the vote alone would lose (and
+/// with it the removal of the previous answer's vote and the count of vote changes).
+const YES_NO_VOTE_NOT_RESOLVED: &str =
+    "a yes/no vote is resolved with its previous answer, by transform_into_action";
+
 impl VoteResolver for Vote {
     fn resolve(
         &self,
@@ -54,9 +60,9 @@ impl VoteResolver for Vote {
             Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
                 resource_vote.resolve(drive, transaction, platform_version)?,
             )),
-            Vote::YesNoVote(yes_no_vote) => Ok(ResolvedVote::YesNoVote(
-                ResolvedYesNoVote::from_vote(yes_no_vote),
-            )),
+            Vote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                YES_NO_VOTE_NOT_RESOLVED,
+            ))),
         }
     }
 
@@ -70,9 +76,9 @@ impl VoteResolver for Vote {
             Vote::ResourceVote(resource_vote) => Ok(ResolvedVote::ResolvedResourceVote(
                 resource_vote.resolve_owned(drive, transaction, platform_version)?,
             )),
-            Vote::YesNoVote(yes_no_vote) => Ok(ResolvedVote::YesNoVote(
-                ResolvedYesNoVote::from_vote_owned(yes_no_vote),
-            )),
+            Vote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                YES_NO_VOTE_NOT_RESOLVED,
+            ))),
         }
     }
 }

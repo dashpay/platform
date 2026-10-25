@@ -14,6 +14,14 @@ where
     C: CoreRPCLike,
 {
     /// The tallies of a yes/no poll, read from its vote sum trees, with its stored info.
+    ///
+    /// # Parameters
+    /// - `vote_poll`: the poll to tally.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The poll's state: its stored info and the voting power cast for each answer.
     pub(in crate::execution) fn tally_votes_for_yes_no_vote_poll(
         &self,
         vote_poll: &YesNoVotePoll,
