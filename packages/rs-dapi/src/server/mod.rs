@@ -3,6 +3,9 @@ mod jsonrpc;
 mod metrics;
 mod state;
 
+#[cfg(test)]
+pub(crate) use grpc::platform_server;
+
 use futures::FutureExt;
 use std::sync::Arc;
 use tracing::{error, info};

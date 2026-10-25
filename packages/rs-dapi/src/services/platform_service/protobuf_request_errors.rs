@@ -5,6 +5,7 @@ use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
 use crate::clients::drive_client::{DriveChannel, DriveClient};
 use crate::config::Config;
+use crate::server::platform_server;
 use crate::services::streaming_service::SubscriberManager;
 use crate::sync::Workers;
 use bytes::{BufMut, Bytes};
@@ -16,7 +17,6 @@ use dapi_grpc::platform::v0::get_data_contracts_response::{
     DataContractEntry, DataContracts, GetDataContractsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
-use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::platform::v0::{GetDataContractsRequest, GetDataContractsResponse};
 use dapi_grpc::tonic::client::Grpc;
 use dapi_grpc::tonic::codec::{BufferSettings, Codec, EncodeBuf, Encoder};
@@ -29,6 +29,7 @@ use dapi_grpc::tonic_prost::{ProstCodec, ProstDecoder};
 use hyper_util::rt::TokioIo;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
+    new_platform_client,
 };
 use rs_dapi_client::{
     AddressList, CanRetry, ConnectionPool, DapiClient, DapiClientError, DapiRequestExecutor,
@@ -46,6 +47,8 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone, Copy)]
 enum DriveReply {
     Valid,
+    /// A valid response whose contract bytes compress almost to nothing.
+    Compressible,
     Corrupt,
     Fault(Code),
 }
@@ -123,14 +126,16 @@ impl Harness {
                     let mut stream = response
                         .send_response(headers.body(()).expect("response"), false)
                         .expect("send headers");
+                    let data_contract =
+                        matches!(reply, DriveReply::Compressible).then(|| vec![0; 32 * 1024]);
                     let payload = match reply {
                         DriveReply::Corrupt => vec![0],
-                        DriveReply::Valid => GetDataContractsResponse {
+                        DriveReply::Valid | DriveReply::Compressible => GetDataContractsResponse {
                             version: Some(Version::V0(GetDataContractsResponseV0 {
                                 result: Some(ContractsResult::DataContracts(DataContracts {
                                     data_contract_entries: vec![DataContractEntry {
                                         identifier: vec![1; 32],
-                                        data_contract: None,
+                                        data_contract,
                                     }],
                                 })),
                                 metadata: None,
@@ -176,7 +181,7 @@ impl Harness {
             let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
                 .chain(tokio_stream::pending());
             Server::builder()
-                .add_service(PlatformServer::new(service).max_decoding_message_size(128 * 1024))
+                .add_service(platform_server(service))
                 .serve_with_incoming(incoming)
                 .await
                 .expect("serve actual DAPI service");
@@ -206,12 +211,16 @@ impl Harness {
 
     async fn valid_request(&self) -> Result<Response<GetDataContractsResponse>, Status> {
         PlatformClient::new(self.channel.clone())
-            .get_data_contracts(GetDataContractsRequest::from(GetDataContractsRequestV0 {
-                ids: vec![vec![1; 32]],
-                prove: false,
-            }))
+            .get_data_contracts(valid_contracts_request())
             .await
     }
+}
+
+fn valid_contracts_request() -> GetDataContractsRequest {
+    GetDataContractsRequest::from(GetDataContractsRequestV0 {
+        ids: vec![vec![1; 32]],
+        prove: false,
+    })
 }
 
 struct PayloadCodec<T>(PhantomData<T>);
@@ -316,6 +325,45 @@ async fn should_preserve_actual_dapi_request_cap_and_node_faults() {
         assert_eq!(status.code(), code);
         assert_node_failover(status).await;
     }
+}
+
+#[tokio::test]
+async fn should_gzip_responses_only_for_clients_that_accept_gzip() {
+    let harness = Harness::new(DriveReply::Valid).await;
+    let plain = harness
+        .valid_request()
+        .await
+        .expect("client without grpc-accept-encoding");
+    assert_eq!(plain.metadata().get("grpc-encoding"), None);
+
+    let compressed = new_platform_client(harness.channel.clone())
+        .get_data_contracts(valid_contracts_request())
+        .await
+        .expect("rs-dapi-client accepts gzip");
+    assert_eq!(
+        compressed
+            .metadata()
+            .get("grpc-encoding")
+            .expect("gzip response"),
+        "gzip"
+    );
+    assert_eq!(compressed.into_inner(), plain.into_inner());
+}
+
+#[tokio::test]
+async fn should_not_ban_nodes_for_a_gzip_response_over_the_client_limit() {
+    let harness = Harness::new(DriveReply::Compressible).await;
+    // The compressed frame fits the limit; the decompressed message does not.
+    let status = new_platform_client(harness.channel.clone())
+        .max_decoding_message_size(1024)
+        .get_data_contracts(valid_contracts_request())
+        .await
+        .expect_err("response decompresses past the client limit");
+    assert_eq!(status.code(), Code::ResourceExhausted);
+    assert!(
+        !status.can_retry(),
+        "the limit is the client's own, every node fails alike: {status:?}"
+    );
 }
 
 #[derive(Debug)]

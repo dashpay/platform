@@ -10,11 +10,13 @@ use axum::http::{HeaderMap, Request, Response};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::tonic::Status;
+use dapi_grpc::tonic::codec::CompressionEncoding;
 use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
 use tower::{Layer, Service};
 
 use super::DapiServer;
+use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 
 /// Timeouts for regular requests - sync with envoy config if changed there
 const UNARY_TIMEOUT_SECS: u64 = 15;
@@ -22,6 +24,42 @@ const UNARY_TIMEOUT_SECS: u64 = 15;
 const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
 const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
+
+// Coarse DoS backstop on the *encoded* Platform request. Must stay
+// strictly above every per-method app-layer budget plus protobuf
+// envelope overhead, so that oversized-but-parseable requests reach
+// the app-layer validators and get their precise errors instead of
+// dying here with tonic's generic decode-limit status. The largest
+// legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
+// 64 KiB of raw components, ~65 KiB encoded) and broadcast state
+// transitions (`max_state_transition_size`, 20 KiB).
+const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
+// Same principle for Core: sized above the largest app-layer budget
+// (raw transaction wire cap, 400 KB) plus envelope overhead.
+const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
+const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+
+/// Platform service with the message limits and response compression DAPI serves it with.
+///
+/// Responses are gzip-compressed only for clients that list gzip in
+/// `grpc-accept-encoding`; everyone else still gets them uncompressed.
+/// Compressed requests are not accepted: requests are small, and refusing them
+/// keeps decompression out of the request path.
+pub(crate) fn platform_server(service: PlatformServiceImpl) -> PlatformServer<PlatformServiceImpl> {
+    PlatformServer::new(service)
+        .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
+        .max_encoding_message_size(MAX_ENCODING_BYTES)
+        .send_compressed(CompressionEncoding::Gzip)
+}
+
+/// Core service with the message limits and response compression DAPI serves it with.
+/// See [platform_server].
+fn core_server(service: CoreServiceImpl) -> CoreServer<CoreServiceImpl> {
+    CoreServer::new(service)
+        .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
+        .max_encoding_message_size(MAX_ENCODING_BYTES)
+        .send_compressed(CompressionEncoding::Gzip)
+}
 
 impl DapiServer {
     /// Start the unified gRPC server that exposes both Platform and Core services.
@@ -36,20 +74,6 @@ impl DapiServer {
 
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
-
-        // Coarse DoS backstop on the *encoded* Platform request. Must stay
-        // strictly above every per-method app-layer budget plus protobuf
-        // envelope overhead, so that oversized-but-parseable requests reach
-        // the app-layer validators and get their precise errors instead of
-        // dying here with tonic's generic decode-limit status. The largest
-        // legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
-        // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
-        // transitions (`max_state_transition_size`, 20 KiB).
-        const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
-        // Same principle for Core: sized above the largest app-layer budget
-        // (raw transaction wire cap, 400 KB) plus envelope overhead.
-        const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
-        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
             .tcp_keepalive(Some(Duration::from_secs(25)))
@@ -75,16 +99,8 @@ impl DapiServer {
         let mut builder = builder.layer(combined_layer);
 
         builder
-            .add_service(
-                PlatformServer::new(platform_service)
-                    .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
-                    .max_encoding_message_size(MAX_ENCODING_BYTES),
-            )
-            .add_service(
-                CoreServer::new(core_service)
-                    .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
-                    .max_encoding_message_size(MAX_ENCODING_BYTES),
-            )
+            .add_service(platform_server(platform_service))
+            .add_service(core_server(core_service))
             .serve(addr)
             .await?;
 
