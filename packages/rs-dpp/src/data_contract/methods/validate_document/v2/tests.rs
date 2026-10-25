@@ -240,3 +240,46 @@ fn should_refuse_the_documents_of_a_type_whose_references_cycle() {
     );
     assert_eq!(native_validator_state(&contract), Some(false));
 }
+
+/// At protocol version 15, `uniqueItems` holds `0.0` and `-0.0` as one value however long the
+/// list: a 16-element list holding both is refused, while 16 distinct numbers, the control,
+/// are accepted.
+#[test]
+fn should_hold_zero_and_negative_zero_as_one_unique_item_in_a_long_list() {
+    let platform_version = PlatformVersion::latest();
+    let contract = item_contract(platform_value!({
+        "scores": {
+            "type": "array",
+            "items": { "type": "number" },
+            "maxItems": 20,
+            "uniqueItems": true,
+            "position": 0,
+        },
+    }));
+    let distinct: Vec<Value> = (0..16)
+        .map(|number| Value::Float(f64::from(number)))
+        .collect();
+    let mut signed_zeros = distinct.clone();
+    signed_zeros[15] = Value::Float(-0.0);
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "scores": Value::Array(distinct) }),
+        platform_version,
+    );
+    assert!(errors.is_empty(), "{errors:?}");
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "scores": Value::Array(signed_zeros) }),
+        platform_version,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "uniqueItems"
+        ),
+        "{errors:?}"
+    );
+    assert_eq!(native_validator_state(&contract), Some(true));
+}

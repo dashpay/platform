@@ -131,18 +131,10 @@ impl JsonType {
 
 /// A format the JSON Schema validator knows under draft 2020-12, the pinned fork's. It
 /// compiles no schema naming another (it does not ignore unknown formats), so a `$ref`
-/// reaching one refuses every value.
+/// reaching one refuses every value. Each generation of the builder lists the formats it
+/// admits by name, so a variant added here is admitted only by the generation that lists it.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    strum::EnumIter,
-    strum::EnumString,
-    strum::IntoStaticStr,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum::EnumIter, strum::IntoStaticStr,
 )]
 pub enum ValidatorFormat {
     #[strum(serialize = "date")]
