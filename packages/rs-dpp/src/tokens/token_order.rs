@@ -149,7 +149,7 @@ impl TokenOrder {
             return None;
         }
         let value = Self::order_value(self.amount, self.price, self.decimals)?;
-        let paid = total_at(self.filled(), self.price, unit(self.decimals).ok()?, false);
+        let paid = total_at(self.filled(), self.price, unit(self.decimals), false);
         (value as u128)
             .checked_sub(paid)
             .and_then(|left| Credits::try_from(left).ok())
@@ -418,6 +418,12 @@ mod tests {
             offer.decimals = decimals;
             offer.price = max;
             assert_eq!(offer.fill_credits(1_000).ok(), Some(0));
+            offer.escrow = 1;
+            assert_eq!(
+                offer.escrow_after_fills(),
+                Some(1),
+                "the credit goes back when it closes"
+            );
         }
         // 38 decimals still fit: 10^38 base units in a whole token.
         assert_eq!(
