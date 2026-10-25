@@ -11,7 +11,10 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
-use grovedb::EstimatedLayerInformation;
+use grovedb::{
+    EstimatedLayerCount, EstimatedLayerInformation, EstimatedLayerSizes, EstimatedSumTrees,
+    TreeType,
+};
 use grovedb_merk::estimated_costs::average_case_costs::average_case_merk_propagate;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -63,8 +66,8 @@ fn propagation_credits(
 /// Orders two descriptions of one layer: the deeper first (`estimate_levels`, which gives a
 /// description by element count a depth too), as the depth sets how many nodes every use of the
 /// description touches; then at one depth the one GroveDB prices dearer
-/// ([`propagation_credits`]); then, for two priced alike, by their contents, so the order is
-/// total and the same whichever is seen first.
+/// ([`propagation_credits`]); then, for two priced alike, by their contents ([`layer_key`]), so
+/// the order is total and the same whichever is seen first.
 fn compare_layer_cost(
     a: &EstimatedLayerInformation,
     b: &EstimatedLayerInformation,
@@ -88,7 +91,134 @@ fn compare_layer_cost(
     if by_price != Ordering::Equal {
         return Ok(by_price);
     }
-    Ok(format!("{a:?}").cmp(&format!("{b:?}")))
+    Ok(layer_key(a).cmp(&layer_key(b)))
+}
+
+/// A total order on descriptions, for two GroveDB prices alike: every field in turn, each enum
+/// by the position of its variant. The matches name every variant, so a description GroveDB adds
+/// cannot fall into an ordering by accident; and unlike a formatted string, the key does not
+/// change with a dependency's `Debug` output.
+fn layer_key(layer: &EstimatedLayerInformation) -> Vec<u64> {
+    let mut key = vec![];
+    tree_type_key(layer.tree_type, &mut key);
+    match layer.estimated_layer_count {
+        EstimatedLayerCount::PotentiallyAtMaxElements => key.push(0),
+        EstimatedLayerCount::ApproximateElements(count) => key.extend([1, count as u64]),
+        EstimatedLayerCount::EstimatedLevel(level, to_be_empty) => {
+            key.extend([2, level as u64, to_be_empty as u64])
+        }
+    }
+    let flags = |flags: Option<u32>| flags.map_or(0, |flags| flags as u64 + 1);
+    let sized = |key: &mut Vec<u64>, entry: Option<(u8, u32, Option<u32>, u8)>| match entry {
+        None => key.push(0),
+        Some((key_size, value_size, flags_size, weight)) => key.extend([
+            1,
+            key_size as u64,
+            value_size as u64,
+            flags(flags_size),
+            weight as u64,
+        ]),
+    };
+    match layer.estimated_layer_sizes {
+        EstimatedLayerSizes::AllSubtrees(key_size, sum_trees, flags_size) => {
+            key.extend([0, key_size as u64]);
+            sum_trees_key(sum_trees, &mut key);
+            key.push(flags(flags_size));
+        }
+        EstimatedLayerSizes::AllItems(key_size, value_size, flags_size) => {
+            key.extend([1, key_size as u64, value_size as u64, flags(flags_size)])
+        }
+        EstimatedLayerSizes::AllReference(key_size, value_size, flags_size) => {
+            key.extend([2, key_size as u64, value_size as u64, flags(flags_size)])
+        }
+        EstimatedLayerSizes::AllItemsWithSumItem(key_size, value_size, flags_size) => {
+            key.extend([3, key_size as u64, value_size as u64, flags(flags_size)])
+        }
+        EstimatedLayerSizes::AllReferencesWithSumItem(key_size, value_size, flags_size) => {
+            key.extend([4, key_size as u64, value_size as u64, flags(flags_size)])
+        }
+        EstimatedLayerSizes::Mix {
+            subtrees_size,
+            items_size,
+            references_size,
+            items_with_sum_item_size,
+            references_with_sum_item_size,
+        } => {
+            key.push(5);
+            match subtrees_size {
+                None => key.push(0),
+                Some((key_size, sum_trees, flags_size, weight)) => {
+                    key.extend([1, key_size as u64]);
+                    sum_trees_key(sum_trees, &mut key);
+                    key.extend([flags(flags_size), weight as u64]);
+                }
+            }
+            sized(&mut key, items_size);
+            sized(&mut key, references_size);
+            sized(&mut key, items_with_sum_item_size);
+            sized(&mut key, references_with_sum_item_size);
+        }
+    }
+    key
+}
+
+fn tree_type_key(tree_type: TreeType, key: &mut Vec<u64>) {
+    let (variant, parameter) = match tree_type {
+        TreeType::NormalTree => (0, 0),
+        TreeType::SumTree => (1, 0),
+        TreeType::BigSumTree => (2, 0),
+        TreeType::CountTree => (3, 0),
+        TreeType::CountSumTree => (4, 0),
+        TreeType::ProvableCountTree => (5, 0),
+        TreeType::ProvableCountSumTree => (6, 0),
+        TreeType::CommitmentTree(chunk_power) => (7, chunk_power),
+        TreeType::MmrTree => (8, 0),
+        TreeType::BulkAppendTree(chunk_power) => (9, chunk_power),
+        TreeType::DenseAppendOnlyFixedSizeTree(height) => (10, height),
+        TreeType::ProvableSumTree => (11, 0),
+        TreeType::ProvableCountProvableSumTree => (12, 0),
+        TreeType::ProvableSumIndexedTree => (13, 0),
+        TreeType::ProvableCountIndexedTree => (14, 0),
+        TreeType::ProvableCountProvableSumIndexedTree => (15, 0),
+        TreeType::PrivateDocumentStore(parameter) => (16, parameter),
+    };
+    key.extend([variant, parameter as u64]);
+}
+
+fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
+    match sum_trees {
+        EstimatedSumTrees::NoSumTrees => key.push(0),
+        EstimatedSumTrees::SomeSumTrees {
+            sum_trees_weight,
+            big_sum_trees_weight,
+            count_trees_weight,
+            count_sum_trees_weight,
+            non_sum_trees_weight,
+            provable_sum_trees_weight,
+            provable_count_trees_weight,
+            provable_count_sum_trees_weight,
+            provable_count_provable_sum_trees_weight,
+        } => key.extend([
+            1,
+            sum_trees_weight as u64,
+            big_sum_trees_weight as u64,
+            count_trees_weight as u64,
+            count_sum_trees_weight as u64,
+            non_sum_trees_weight as u64,
+            provable_sum_trees_weight as u64,
+            provable_count_trees_weight as u64,
+            provable_count_sum_trees_weight as u64,
+            provable_count_provable_sum_trees_weight as u64,
+        ]),
+        EstimatedSumTrees::AllSumTrees => key.push(2),
+        EstimatedSumTrees::AllBigSumTrees => key.push(3),
+        EstimatedSumTrees::AllCountTrees => key.push(4),
+        EstimatedSumTrees::AllCountSumTrees => key.push(5),
+        EstimatedSumTrees::AllProvableSumTrees => key.push(6),
+        EstimatedSumTrees::AllProvableCountTrees => key.push(7),
+        EstimatedSumTrees::AllProvableCountSumTrees => key.push(8),
+        EstimatedSumTrees::AllProvableCountProvableSumTrees => key.push(9),
+    }
 }
 
 /// Merges `layer` into the batch's description of the layer at `path`, keeping the costlier of
