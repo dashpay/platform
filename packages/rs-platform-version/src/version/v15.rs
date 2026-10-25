@@ -200,7 +200,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    validations and their high-level operation converters are 0 in every table, which only this
 ///    version reaches.
 ///
-/// 8. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+/// 10. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
 ///    tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
 ///    the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///    the change in the offer's running total rounded down out of the escrow); a
