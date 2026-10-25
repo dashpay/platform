@@ -6,6 +6,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::serialized_version::v2::DataContractInSerializationFormatV2;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{
@@ -31,6 +32,7 @@ use std::fmt;
 
 pub(in crate::data_contract) mod v0;
 pub(in crate::data_contract) mod v1;
+pub(in crate::data_contract) mod v2;
 
 pub mod property_names {
     pub const ID: &str = "id";
@@ -68,6 +70,8 @@ pub enum DataContractMismatch {
     Keywords,
     /// The `description` fields are not equal.
     Description,
+    /// The compiled document types of two format version 2 contracts are not equal.
+    DocumentTypes,
     /// The two variants are of different serialization formats (e.g., V0 vs V1).
     FormatVersionMismatch,
     /// The two variants are different in V0.
@@ -88,6 +92,7 @@ impl fmt::Display for DataContractMismatch {
             DataContractMismatch::Tokens => "Tokens differ",
             DataContractMismatch::Keywords => "Keywords differ",
             DataContractMismatch::Description => "Description fields differ",
+            DataContractMismatch::DocumentTypes => "Compiled document types differ",
             DataContractMismatch::FormatVersionMismatch => {
                 "Serialization format versions differ (e.g., V0 vs V1)"
             }
@@ -116,6 +121,9 @@ pub enum DataContractInSerializationFormat {
     V0(DataContractInSerializationFormatV0),
     #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DataContractInSerializationFormatV1),
+    /// The stored format, which only state holds: never carried by a state transition.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "2"))]
+    V2(DataContractInSerializationFormatV2),
 }
 
 impl DataContractInSerializationFormat {
@@ -124,6 +132,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.id,
             DataContractInSerializationFormat::V1(v1) => v1.id,
+            DataContractInSerializationFormat::V2(v2) => v2.id,
         }
     }
 
@@ -132,6 +141,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.owner_id,
             DataContractInSerializationFormat::V1(v1) => v1.owner_id,
+            DataContractInSerializationFormat::V2(v2) => v2.owner_id,
         }
     }
 
@@ -139,6 +149,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
+            DataContractInSerializationFormat::V2(v2) => &v2.document_schemas,
         }
     }
 
@@ -153,10 +164,14 @@ impl DataContractInSerializationFormat {
             .any(document_schema_grants_moderator_abilities)
     }
 
+    /// The raw document schemas, to change. A format version 2 contract's compiled document
+    /// types are not rebuilt from them: only state transitions and the protocol version 12
+    /// migration change schemas, and neither meets format version 2.
     pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
         match self {
             DataContractInSerializationFormat::V0(v0) => &mut v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &mut v1.document_schemas,
+            DataContractInSerializationFormat::V2(v2) => &mut v2.document_schemas,
         }
     }
 
@@ -164,6 +179,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
             DataContractInSerializationFormat::V1(v1) => v1.schema_defs.as_ref(),
+            DataContractInSerializationFormat::V2(v2) => v2.schema_defs.as_ref(),
         }
     }
 
@@ -171,6 +187,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.version,
             DataContractInSerializationFormat::V1(v1) => v1.version,
+            DataContractInSerializationFormat::V2(v2) => v2.version,
         }
     }
 
@@ -179,6 +196,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => &v0.config,
             DataContractInSerializationFormat::V1(v1) => &v1.config,
+            DataContractInSerializationFormat::V2(v2) => &v2.config,
         }
     }
 
@@ -186,12 +204,14 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_GROUPS,
             DataContractInSerializationFormat::V1(v1) => &v1.groups,
+            DataContractInSerializationFormat::V2(v2) => &v2.groups,
         }
     }
     pub fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
             DataContractInSerializationFormat::V1(v1) => &v1.tokens,
+            DataContractInSerializationFormat::V2(v2) => &v2.tokens,
         }
     }
 
@@ -199,6 +219,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_KEYWORDS,
             DataContractInSerializationFormat::V1(v1) => &v1.keywords,
+            DataContractInSerializationFormat::V2(v2) => &v2.keywords,
         }
     }
 
@@ -206,6 +227,7 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &None,
             DataContractInSerializationFormat::V1(v1) => &v1.description,
+            DataContractInSerializationFormat::V2(v2) => &v2.description,
         }
     }
 
@@ -267,7 +289,61 @@ impl DataContractInSerializationFormat {
                     None
                 }
             }
+            (
+                DataContractInSerializationFormat::V2(v2_self),
+                DataContractInSerializationFormat::V2(v2_other),
+            ) => {
+                let mismatch = DataContractInSerializationFormat::V1(v2_self.clone().into())
+                    .first_mismatch(&DataContractInSerializationFormat::V1(
+                        v2_other.clone().into(),
+                    ));
+                if mismatch.is_none() && v2_self.document_types != v2_other.document_types {
+                    Some(DataContractMismatch::DocumentTypes)
+                } else {
+                    mismatch
+                }
+            }
             _ => Some(DataContractMismatch::FormatVersionMismatch),
+        }
+    }
+
+    /// `contract` in the format a node stores it in at `platform_version`
+    /// (`contract_storage_serialization_version`): format version 0 or 1 as
+    /// [`Self::try_from_platform_versioned`] gives it through protocol version 14, or format
+    /// version 2, the compiled form.
+    pub fn try_from_data_contract_for_storage(
+        contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        contract
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version
+        {
+            0 => {
+                let v0_format: DataContractInSerializationFormatV0 =
+                    contract.into_platform_versioned(platform_version);
+                Ok(v0_format.into())
+            }
+            1 => {
+                let v1_format: DataContractInSerializationFormatV1 =
+                    contract.into_platform_versioned(platform_version);
+                Ok(v1_format.into())
+            }
+            2 => Ok(DataContractInSerializationFormatV2::try_from_data_contract(
+                contract,
+                platform_version,
+            )?
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractInSerializationFormat::try_from_data_contract_for_storage"
+                    .to_string(),
+                known_versions: vec![0, 1, 2],
+                received: version,
+            }),
         }
     }
 }

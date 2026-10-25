@@ -540,7 +540,9 @@ impl IndexLevel {
         }
     }
 
-    fn try_from_indices_v0<I, T>(
+    /// Generation 0 of [`Self::try_from_indices`]: also called directly by the loader of a
+    /// stored document type whose generation was written with it.
+    pub(in crate::data_contract::document_type) fn try_from_indices_v0<I, T>(
         indices: I,
         document_type_name: &str,
     ) -> Result<Self, ProtocolError>

@@ -11,9 +11,11 @@ use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::PlatformVersion;
+use std::sync::OnceLock;
 
 /// Loads a stored contract the way Drive does: trusted bytes, no full validation.
 fn load(contract: &CorpusContract, platform_version: &PlatformVersion) -> DataContract {
@@ -110,6 +112,101 @@ fn should_reload_every_corpus_contract_reserialized_at_the_latest_protocol_versi
 
 /// The validation keywords of a schema the way the validation schema holds them: only the
 /// keywords that constrain a value, at every node.
+/// The latest protocol version, but storing contracts in format version 2, their document types
+/// compiled.
+fn latest_storing_compiled_contracts() -> &'static PlatformVersion {
+    static VERSION: OnceLock<PlatformVersion> = OnceLock::new();
+    VERSION.get_or_init(|| {
+        let mut version = PlatformVersion::latest().clone();
+        version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version = 2;
+        version
+    })
+}
+
+#[test]
+fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
+    let platform_version = PlatformVersion::latest();
+    let storing = latest_storing_compiled_contracts();
+    let mut document_types = 0;
+    for contract in contracts() {
+        let origin = format!("{:?} contract {}", contract.network, contract.id);
+        let loaded = load(&contract, platform_version);
+        let stored = loaded
+            .serialize_to_storage_bytes(storing)
+            .unwrap_or_else(|error| panic!("{origin} failed to compile: {error}"));
+        assert_eq!(stored[0], 2, "{origin} is not stored in format version 2");
+
+        // As Drive reads it, as a client reads it from a proof, and fully validated
+        let read_backs = [
+            DataContract::versioned_deserialize_trusted(&stored, false, platform_version),
+            DataContract::versioned_deserialize_untrusted(&stored, false, platform_version),
+            DataContract::versioned_deserialize_trusted(&stored, true, platform_version),
+        ];
+        let mut read_backs = read_backs.into_iter().map(|read_back| {
+            read_back.unwrap_or_else(|error| panic!("{origin} failed to read back: {error}"))
+        });
+        let read_back = read_backs.next().expect("expected a read back");
+        for other in read_backs {
+            assert_eq!(other, read_back, "{origin} reads back differently");
+        }
+        assert_eq!(
+            read_back, loaded,
+            "{origin} changed through its stored form"
+        );
+
+        // What document type equality leaves out: an integer range's key type, and the
+        // typed validation schema
+        for (name, document_type) in loaded.document_types() {
+            let read_back_type = read_back
+                .document_type_for_name(name)
+                .unwrap_or_else(|_| panic!("{origin} lost document type {name}"));
+            for (index_name, index) in document_type.indexes() {
+                let read_back_index = &read_back_type.indexes()[index_name];
+                assert_eq!(
+                    index.integer_range.as_ref().map(|range| range.key_type),
+                    read_back_index
+                        .integer_range
+                        .as_ref()
+                        .map(|range| range.key_type),
+                    "{origin} {name} index {index_name} changed its integer range key type"
+                );
+            }
+            assert_eq!(
+                read_back
+                    .document_type_validation_schema(name, platform_version)
+                    .ok(),
+                loaded
+                    .document_type_validation_schema(name, platform_version)
+                    .ok(),
+                "{origin} {name} changed its validation schema"
+            );
+            document_types += 1;
+        }
+
+        // Stored again, the same bytes; in format version 1, the bytes the contract had
+        assert_eq!(
+            read_back
+                .serialize_to_storage_bytes(storing)
+                .expect("expected the contract to compile again"),
+            stored,
+            "{origin} compiles to other bytes the second time"
+        );
+        assert_eq!(
+            read_back
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected the contract to serialize"),
+            loaded
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected the contract to serialize"),
+            "{origin} serializes to other format version 1 bytes after its stored form"
+        );
+    }
+    assert_eq!(document_types, 106 + 1397);
+}
+
 fn validation_keywords_of(schema: &Value) -> Value {
     let Value::Map(map) = schema else {
         return schema.clone();

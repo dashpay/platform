@@ -15,6 +15,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 #[cfg(test)]
 mod tests;
@@ -89,26 +90,43 @@ impl DataContract {
     /// the document type, or the refusal of its schema, kept the same way: the
     /// [`DataContractError`] building the validation schema or its patterns returns. Any
     /// other error is returned as it is, and not kept. Both are lent from the document type.
+    ///
+    /// A document type read back from its stored form is checked against the typed
+    /// validation schema stored with it, by the generation that built it; any other against
+    /// the one the builder `platform_version` selects builds from its schema.
     fn native_validator<'v>(
         &self,
         name: &str,
         document_type: &'v DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
-        // The slot of the builder generation this version selects
-        let generation = builder_generation(platform_version)?;
-        let slot = document_type
-            .json_schema_validator_ref()
-            .native(generation)
-            .ok_or_else(|| ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::native_validator".to_string(),
-                known_versions: vec![0],
-                received: generation,
-            })?;
+        let validators = document_type.json_schema_validator_ref();
+        let loaded = validators.loaded_validation_schema();
+        // The slot of the generation that built the stored schema, or that this version selects
+        let generation = match loaded {
+            Some(loaded) => loaded.generation,
+            None => builder_generation(platform_version)?,
+        };
+        let slot =
+            validators
+                .native(generation)
+                .ok_or_else(|| ProtocolError::UnknownVersionMismatch {
+                    method: "DataContract::native_validator".to_string(),
+                    known_versions: vec![0],
+                    received: generation,
+                })?;
         let built = match slot.get() {
             Some(built) => built,
             None => {
-                let validator = match self.document_type_native_validator(name, platform_version) {
+                let validator = match loaded {
+                    Some(loaded) => DocumentSchemaValidator::with_patterns(
+                        loaded.schema.clone(),
+                        BTreeMap::new(),
+                        loaded.generation,
+                    ),
+                    None => self.document_type_native_validator(name, platform_version),
+                };
+                let validator = match validator {
                     Ok(validator) => Ok(validator),
                     Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
                     Err(error) => return Err(error),

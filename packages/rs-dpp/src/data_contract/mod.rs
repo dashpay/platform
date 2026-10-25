@@ -172,6 +172,31 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     }
 }
 
+impl DataContract {
+    /// The contract's bytes as a node stores them at `platform_version`
+    /// (`contract_storage_serialization_version`): through protocol version 14 the bytes
+    /// [`PlatformSerializableWithPlatformVersion::serialize_to_bytes_with_platform_version`]
+    /// gives, or format version 2, the compiled form, which only state holds. Every other
+    /// serialization, of a state transition, a query response or a client, keeps
+    /// `contract_serialization_version`.
+    pub fn serialize_to_storage_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self.clone(),
+                platform_version,
+            )?;
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        bincode::encode_to_vec(serialization_format, config).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+        })
+    }
+}
+
 /// Decodes the stored serialization format with the ordinary decoder: bytes
 /// this node wrote itself (Drive state, wallet storage).
 fn decode_serialization_format_trusted<C: Config>(

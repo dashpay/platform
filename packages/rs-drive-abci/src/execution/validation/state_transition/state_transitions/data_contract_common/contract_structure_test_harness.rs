@@ -157,6 +157,9 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     let schema_defs = match contract {
         DataContractInSerializationFormat::V0(v0) => &mut v0.schema_defs,
         DataContractInSerializationFormat::V1(v1) => &mut v1.schema_defs,
+        DataContractInSerializationFormat::V2(_) => {
+            panic!("a state transition never carries the stored contract format")
+        }
     };
     let defs = schema_defs.get_or_insert_with(BTreeMap::new);
     for i in 0..levels {

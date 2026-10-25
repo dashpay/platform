@@ -1,5 +1,7 @@
 #[cfg(feature = "validation-schema")]
-use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
+use crate::data_contract::document_type::schema::validation_schema::{
+    DocumentSchemaValidator, ValidationSchema,
+};
 #[cfg(feature = "validation-schema")]
 use crate::data_contract::errors::DataContractError;
 use crate::validation::JsonSchemaValidator;
@@ -8,7 +10,7 @@ use platform_version::version::FeatureVersion;
 use std::fmt;
 use std::ops::Deref;
 #[cfg(feature = "validation-schema")]
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// DocumentType requires all fields to implement PartialEq and Clone
 /// JsonSchemaLazyValidator builds on demand with schema from DocumentType
@@ -19,10 +21,26 @@ use std::sync::OnceLock;
 /// way, or the refusal of a document type's schema that has no validation schema, whose
 /// documents protocol version 15 refuses: one slot for each generation of the validation
 /// schema's builder (`validation_schema`).
+///
+/// A document type read back from its stored, compiled form also holds the typed validation
+/// schema stored with it ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
+/// keeps it, so its documents keep being checked against the schema the type was registered
+/// with, by the generation that built it. `PartialEq` and `Debug` leave it out, as the stored
+/// form is compiled from the schema the document type holds.
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")] [NativeValidatorSlot; 1],
+    #[cfg(feature = "validation-schema")] Option<Arc<LoadedValidationSchema>>,
 );
+
+/// The typed validation schema a document type was read back with from its stored form, and
+/// the generation of the validation schema's builder that built it.
+#[cfg(feature = "validation-schema")]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LoadedValidationSchema {
+    pub(crate) generation: FeatureVersion,
+    pub(crate) schema: ValidationSchema,
+}
 
 /// What document validation builds of a document type's schema with one generation of the
 /// validation schema's builder: the native validator, or the refusal of the schema.
@@ -41,7 +59,27 @@ impl StatelessJsonSchemaLazyValidator {
             JsonSchemaValidator::new(),
             #[cfg(feature = "validation-schema")]
             [OnceLock::new()],
+            #[cfg(feature = "validation-schema")]
+            None,
         )
+    }
+
+    /// The validator of a document type read back from its stored form with `loaded`, its
+    /// stored typed validation schema.
+    #[cfg(feature = "validation-schema")]
+    pub(crate) fn with_loaded_validation_schema(loaded: LoadedValidationSchema) -> Self {
+        Self(
+            JsonSchemaValidator::new(),
+            [OnceLock::new()],
+            Some(Arc::new(loaded)),
+        )
+    }
+
+    /// The typed validation schema the document type was read back with from its stored form,
+    /// `None` for a document type parsed from its schema.
+    #[cfg(feature = "validation-schema")]
+    pub(crate) fn loaded_validation_schema(&self) -> Option<&LoadedValidationSchema> {
+        self.2.as_deref()
     }
 
     /// The slot of builder generation `generation`, `None` for a generation without one.
@@ -79,12 +117,19 @@ impl PartialEq for StatelessJsonSchemaLazyValidator {
     }
 }
 
+/// Leaves the caches empty and keeps the stored typed validation schema, which is data.
 impl Clone for StatelessJsonSchemaLazyValidator {
     fn clone(&self) -> Self {
-        StatelessJsonSchemaLazyValidator::new()
+        Self(
+            JsonSchemaValidator::new(),
+            #[cfg(feature = "validation-schema")]
+            [OnceLock::new()],
+            #[cfg(feature = "validation-schema")]
+            self.2.clone(),
+        )
     }
 
-    fn clone_from(&mut self, _source: &Self) {
-        *self = StatelessJsonSchemaLazyValidator::new();
+    fn clone_from(&mut self, source: &Self) {
+        *self = source.clone();
     }
 }

@@ -9,6 +9,7 @@ use crate::ProtocolError;
 use std::collections::BTreeMap;
 
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::serialized_version::v2::DataContractInSerializationFormatV2;
 use crate::validation::operations::ProtocolValidationOperation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -66,6 +67,14 @@ impl DataContractV1 {
                     full_validation,
                     validation_operations,
                     platform_version,
+                )?;
+
+                Ok(data_contract)
+            }
+            DataContractInSerializationFormat::V2(serialization_format_v2) => {
+                let data_contract = DataContractV1::try_from_platform_versioned_v2(
+                    serialization_format_v2,
+                    full_validation,
                 )?;
 
                 Ok(data_contract)
@@ -192,6 +201,82 @@ impl DataContractV1 {
         };
 
         Ok(data_contract)
+    }
+    /// A stored format version 2 contract, its document types read back from their compiled
+    /// forms rather than parsed from their schemas. Only state holds format version 2, written
+    /// by consensus from a contract it fully validated, so `full_validation` checks that the
+    /// compiled types are those of the raw schemas beside them, by name, and does not parse the
+    /// schemas again: parsing them with the reader's parser is what the stored form spares.
+    /// Charges no validation operations.
+    pub(in crate::data_contract) fn try_from_platform_versioned_v2(
+        data_contract_data: DataContractInSerializationFormatV2,
+        full_validation: bool,
+    ) -> Result<Self, ProtocolError> {
+        let DataContractInSerializationFormatV2 {
+            id,
+            config,
+            version,
+            owner_id,
+            schema_defs,
+            document_schemas,
+            document_types,
+            created_at,
+            updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_epoch,
+            updated_at_epoch,
+            groups,
+            tokens,
+            keywords,
+            description,
+        } = data_contract_data;
+
+        if full_validation && !document_types.keys().eq(document_schemas.keys()) {
+            return Err(ProtocolError::CorruptedSerialization(
+                "a stored contract's compiled document types are not those of its schemas"
+                    .to_string(),
+            ));
+        }
+        let mut schemas = document_schemas;
+        let document_types = document_types
+            .into_iter()
+            .map(|(name, stored)| {
+                let schema = schemas.remove(&name).ok_or_else(|| {
+                    ProtocolError::CorruptedSerialization(format!(
+                        "a stored contract compiles document type {name}, which it has no \
+                         schema for"
+                    ))
+                })?;
+                let document_type = stored.into_document_type(&name, id, schema)?;
+                Ok((name, document_type))
+            })
+            .collect::<Result<BTreeMap<_, _>, ProtocolError>>()?;
+
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
+
+        Ok(DataContractV1 {
+            id,
+            version,
+            owner_id,
+            document_types,
+            config,
+            schema_defs,
+            created_at,
+            updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_epoch,
+            updated_at_epoch,
+            groups,
+            tokens,
+            keywords: keywords
+                .into_iter()
+                .map(|keyword| keyword.to_lowercase())
+                .collect(),
+            description,
+        })
     }
 }
 

@@ -1066,17 +1066,30 @@ fn active_version_range_for_keys_in_creation(
 /// version 2 config, so an earlier version must reject the transition without charging as they
 /// do; admitting it would also store a moderated contract whose list trees the earlier storage
 /// writer never creates.
+///
+/// Format version 2, the stored format, is active at no protocol version: only state holds it,
+/// so decoding refuses a transition carrying one, whatever its config, as a binary that does
+/// not know the format refuses it by failing to decode it.
 fn active_version_range_for_contract(
     contract: &DataContractInSerializationFormat,
 ) -> RangeInclusive<ProtocolVersion> {
+    if matches!(contract, DataContractInSerializationFormat::V2(_)) {
+        return NO_VERSION;
+    }
     if matches!(contract.config(), DataContractConfig::V2(_)) {
         return 14..=LATEST_VERSION;
     }
     match contract {
         DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
         DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+        DataContractInSerializationFormat::V2(_) => NO_VERSION,
     }
 }
+
+/// The active range of a format no state transition may carry: it contains no protocol
+/// version.
+#[allow(clippy::reversed_empty_ranges)]
+const NO_VERSION: RangeInclusive<ProtocolVersion> = 1..=0;
 
 /// Whether a document transition of `batch_transition` has a base of version 2 or later, the
 /// format that can carry an action fee agreement.
@@ -1162,8 +1175,15 @@ impl StateTransition {
                 match data_contract_create_transition {
                     // Version 1 carries contract groups, which exist from protocol version 14.
                     // The embedded contract format alone would admit it at 9 and above, where
-                    // the group data would be silently dropped.
-                    DataContractCreateTransition::V1(_) => 14..=LATEST_VERSION,
+                    // the group data would be silently dropped. Within 14 and later, the
+                    // contract's format still decides: it is active nowhere for the stored
+                    // format, and from 14 for every other.
+                    DataContractCreateTransition::V1(_) => {
+                        let contract = active_version_range_for_contract(
+                            data_contract_create_transition.data_contract(),
+                        );
+                        (*contract.start()).max(14)..=(*contract.end()).min(LATEST_VERSION)
+                    }
                     DataContractCreateTransition::V0(_) => active_version_range_for_contract(
                         data_contract_create_transition.data_contract(),
                     ),
@@ -2932,14 +2952,23 @@ mod tests {
     /// Build a DataContractInSerializationFormat from a crate-private v0
     /// constructor via the public TryFromPlatformVersioned impl and DataContract V1.
     fn sample_data_contract_in_serialization_format() -> DataContractInSerializationFormat {
+        use platform_version::TryIntoPlatformVersioned;
+
+        sample_data_contract()
+            .try_into_platform_versioned(PlatformVersion::latest())
+            .expect("expected to serialize a trivial contract")
+    }
+
+    use crate::data_contract::DataContract;
+
+    /// A trivial contract with no document type.
+    fn sample_data_contract() -> DataContract {
         use crate::data_contract::config::v0::DataContractConfigV0;
         use crate::data_contract::config::DataContractConfig;
         use crate::data_contract::v1::DataContractV1;
-        use crate::data_contract::DataContract;
-        use platform_version::TryIntoPlatformVersioned;
         use std::collections::BTreeMap;
 
-        let contract = DataContract::V1(DataContractV1 {
+        DataContract::V1(DataContractV1 {
             id: Identifier::from([9u8; 32]),
             version: 1,
             owner_id: Identifier::from([7u8; 32]),
@@ -2965,11 +2994,7 @@ mod tests {
             tokens: BTreeMap::new(),
             keywords: Vec::new(),
             description: None,
-        });
-
-        contract
-            .try_into_platform_versioned(PlatformVersion::latest())
-            .expect("expected to serialize a trivial contract")
+        })
     }
 
     fn sample_data_contract_create_st() -> StateTransition {
@@ -3181,6 +3206,79 @@ mod tests {
             signature_public_key_id: 7,
             signature: BinaryData::new(vec![0xEE; 65]),
         }))
+    }
+
+    // Format version 2 of a contract is the stored format, which only state holds. Software
+    // without the format cannot decode a transition carrying one, so software with it refuses
+    // such a transition as not active, at every protocol version.
+    #[test]
+    fn should_refuse_a_contract_transition_carrying_the_stored_format_at_every_version() {
+        use crate::serialization::PlatformSerializable;
+
+        let mut storing = PlatformVersion::latest().clone();
+        storing
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version = 2;
+        let stored = DataContractInSerializationFormat::try_from_data_contract_for_storage(
+            sample_data_contract(),
+            &storing,
+        )
+        .expect("expected the contract to compile");
+        assert!(matches!(stored, DataContractInSerializationFormat::V2(_)));
+
+        let transitions = [
+            StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+                DataContractCreateTransitionV0 {
+                    data_contract: stored.clone(),
+                    identity_nonce: 1,
+                    user_fee_increase: 0,
+                    signature_public_key_id: 2,
+                    signature: BinaryData::new(vec![0xAB; 65]),
+                },
+            )),
+            StateTransition::DataContractCreate(DataContractCreateTransition::V1(
+                DataContractCreateTransitionV1 {
+                    data_contract: stored.clone(),
+                    identity_nonce: 1,
+                    contract_group: None,
+                    contract_group_memberships: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: 2,
+                    signature: BinaryData::new(vec![0xAB; 65]),
+                },
+            )),
+            StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
+                DataContractUpdateTransitionV0 {
+                    identity_contract_nonce: 4,
+                    data_contract: stored,
+                    user_fee_increase: 0,
+                    signature_public_key_id: 6,
+                    signature: BinaryData::new(vec![0xCD; 65]),
+                },
+            )),
+        ];
+        for transition in transitions {
+            assert!(transition.active_version_range().is_empty());
+            let bytes =
+                PlatformSerializable::serialize_to_bytes(&transition).expect("serialize succeeds");
+            for protocol_version in 9..=LATEST_VERSION {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("platform version exists");
+                assert!(
+                    matches!(
+                        StateTransition::deserialize_from_bytes_untrusted_in_version(
+                            &bytes,
+                            platform_version
+                        ),
+                        Err(ProtocolError::StateTransitionError(
+                            StateTransitionIsNotActiveError { .. }
+                        ))
+                    ),
+                    "protocol version {protocol_version}"
+                );
+            }
+        }
     }
 
     // Version 2 of the document base carries the action fee agreement, which exists from

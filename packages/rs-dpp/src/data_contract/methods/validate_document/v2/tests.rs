@@ -283,3 +283,66 @@ fn should_hold_zero_and_negative_zero_as_one_unique_item_in_a_long_list() {
     );
     assert_eq!(native_validator_state(&contract), Some(true));
 }
+
+/// A document type read back from its stored form is checked against the typed validation
+/// schema stored with it, by the generation that built it, with the verdicts of the same type
+/// parsed from its schema.
+#[test]
+fn should_check_the_documents_of_a_type_read_back_from_its_stored_form_against_its_stored_schema() {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+
+    let latest = PlatformVersion::latest();
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "pattern": "^[a-z]+$", "position": 0 },
+        "count": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
+        "tags": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 3 },
+            "maxItems": 3,
+            "uniqueItems": true,
+            "position": 2,
+        },
+    }));
+    let mut storing = latest.clone();
+    storing
+        .dpp
+        .contract_versions
+        .contract_storage_serialization_version = 2;
+    let bytes = contract
+        .serialize_to_storage_bytes(&storing)
+        .expect("expected the contract to compile");
+    let read_back = DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back");
+
+    let document_type = read_back
+        .document_type_for_name("item")
+        .expect("expected the document type");
+    let loaded = document_type
+        .json_schema_validator_ref()
+        .loaded_validation_schema()
+        .expect("expected the stored validation schema");
+    assert_eq!(loaded.generation, 0);
+    assert_eq!(
+        Some(&loaded.schema),
+        contract
+            .document_type_validation_schema("item", latest)
+            .ok()
+            .as_ref()
+    );
+
+    for properties in [
+        platform_value!({ "name": "abc", "count": 3 }),
+        platform_value!({ "name": "abcde" }),
+        platform_value!({ "name": "ABC" }),
+        platform_value!({ "count": 11 }),
+        platform_value!({ "tags": ["a", "a"] }),
+        platform_value!({ "other": 1 }),
+    ] {
+        assert_eq!(
+            document_errors(&read_back, properties.clone(), latest),
+            document_errors(&contract, properties.clone(), latest),
+            "{properties:?}"
+        );
+    }
+    assert_eq!(native_validator_state(&read_back), Some(true));
+}

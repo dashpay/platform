@@ -370,14 +370,24 @@ impl ValidationSchema {
 }
 
 impl DataContract {
-    /// The validation schema of one of the contract's document types, built from the
-    /// schema the document validator compiles for it by the builder `platform_version`
-    /// selects. Refuses a protocol version that selects none (`validation_schema`).
+    /// The validation schema of one of the contract's document types: the one stored with it
+    /// when it was read back from its stored form, otherwise the one the builder
+    /// `platform_version` selects builds from the schema the document validator compiles for
+    /// it. Refuses a protocol version that selects none (`validation_schema`) for a type
+    /// without a stored one.
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
+        #[cfg(feature = "validation")]
+        if let Some(loaded) = self
+            .document_type_for_name(document_type_name)?
+            .json_schema_validator_ref()
+            .loaded_validation_schema()
+        {
+            return Ok(loaded.schema.clone());
+        }
         let root = self.document_type_validated_schema(document_type_name, platform_version)?;
         let (schema, _) = ValidationSchema::build(&root, platform_version)?;
         Ok(schema)
@@ -403,16 +413,27 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError> {
         let document_type = self.document_type_for_name(document_type_name)?;
-        let root = DocumentType::enrich_with_base_schema(
-            document_type.schema().clone(),
-            self.schema_defs().map(|defs| Value::from(defs.clone())),
-            platform_version,
-        )?;
-        Ok(
-            DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
-                .unwrap_or(root),
-        )
+        validated_schema(document_type.schema(), self.schema_defs(), platform_version)
     }
+}
+
+/// The schema the document validator compiles for a document type whose own schema is
+/// `schema`, in a contract whose `$defs` are `schema_defs`: the schema with the `$defs` and the
+/// base schema added and its property type shorthands expanded.
+pub(crate) fn validated_schema(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<Value, ProtocolError> {
+    let root = DocumentType::enrich_with_base_schema(
+        schema.clone(),
+        schema_defs.map(|defs| Value::from(defs.clone())),
+        platform_version,
+    )?;
+    Ok(
+        DocumentType::expand_property_type_shorthands(&root, false, platform_version)?
+            .unwrap_or(root),
+    )
 }
 
 impl DocumentSchemaValidator {
