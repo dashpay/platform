@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/token-market-contract",
-  "version": "5.0.0-rc.7",
+  "version": "5.0.0-rc.8",
   "description": "A system contract for the open orders of the token marketplace",
   "scripts": {
     "lint": "eslint .",
