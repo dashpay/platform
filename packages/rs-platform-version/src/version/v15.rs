@@ -183,7 +183,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 ///
-/// 8. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 9. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///    of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///    `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///    listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -200,7 +200,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    validations and their high-level operation converters are 0 in every table, which only this
 ///    version reaches.
 ///
-/// 8. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+/// 10. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
 ///    tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
 ///    the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///    the change in the offer's running total rounded down out of the escrow); a
