@@ -137,7 +137,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
 ///    earlier keep the batch `advanced_structure` 1.
 ///
-/// 6. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+/// 6. **Documents checked natively**: `CONTRACT_VERSIONS_V7` selects
+///    `validate_document` 2, which checks a document against its type's typed
+///    validation schema (`document_type::schema::validation_schema`, built by
+///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
+///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
+///    value however long the list. A document type whose schema the validation
+///    schema does not represent has its documents refused
+///    (`InvalidContractStructure`): no document is checked through the
+///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
+///
+/// 7. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
 ///    genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
 ///    through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
 ///    per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
@@ -176,7 +186,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

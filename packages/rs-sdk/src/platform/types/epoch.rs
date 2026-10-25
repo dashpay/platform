@@ -255,6 +255,7 @@ mod tests {
         crate::platform::QuerySettings {
             request_settings,
             protocol_version: dpp::version::PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: true,
         }
     }
