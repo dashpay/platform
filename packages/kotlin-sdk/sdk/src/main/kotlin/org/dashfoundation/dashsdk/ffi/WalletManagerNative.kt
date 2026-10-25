@@ -264,28 +264,30 @@ internal object WalletManagerNative {
      * [walletManagerTxoReconcileBegin] and [walletManagerTxoReconcileFinish]).
      * The answers come back with the engine's wallet lock still held for
      * reading, so no fork can drop a spender they name before the page is
-     * applied; release it with [walletManagerTxoReconcileReleaseVerdicts]
-     * (finish releases it too). Call it outside the persistence handler's
-     * callback exclusion and never from inside a persistence callback: the
-     * engine calls those callbacks while it holds its wallet lock for
-     * writing.
+     * applied. The guard is written to [outHeld] (a `LongArray(1)`; 0 when
+     * nothing is held) only together with the answers. Release it with
+     * [txoReconcileHeldVerdictsFree] once the page is applied and before
+     * the next call that takes [managerHandle]: those resolve the handle in
+     * the native registry, which must never be waited for while the guard
+     * is held. Finish releases a guard left behind, as a backstop. Call it
+     * outside the persistence handler's callback exclusion and never from
+     * inside a persistence callback: the engine calls those callbacks while
+     * it holds its wallet lock for writing.
      */
     external fun walletManagerTxoReconcileClassifyOutpoints(
         managerHandle: Long,
         walletId: ByteArray,
         queriesJson: String,
+        outHeld: LongArray,
     ): ByteArray?
 
     /**
-     * Release the engine wallet-lock guard
-     * [walletManagerTxoReconcileClassifyOutpoints] kept for the wallet's
-     * reconcile run, once its page is applied. Nothing to do when none is
-     * held.
+     * Release the engine guard [walletManagerTxoReconcileClassifyOutpoints]
+     * handed out. Takes no manager handle and touches no native registry,
+     * so it completes whatever is queued there. 0 is a no-op; release each
+     * value once.
      */
-    external fun walletManagerTxoReconcileReleaseVerdicts(
-        managerHandle: Long,
-        walletId: ByteArray,
-    )
+    external fun txoReconcileHeldVerdictsFree(held: Long)
 
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //

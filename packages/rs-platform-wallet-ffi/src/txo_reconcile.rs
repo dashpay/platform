@@ -6,7 +6,9 @@
 //! `platform-wallet`.
 
 use platform_wallet::manager::accessors::WalletUtxoCursor;
-use platform_wallet::manager::txo_reconcile::{txo_heal_page, txo_reconcile_retry_stale_page};
+use platform_wallet::manager::txo_reconcile::{
+    txo_heal_page, txo_reconcile_retry_stale_page, TxoReconcileHeldVerdicts,
+};
 
 use crate::check_ptr;
 use crate::core_wallet_types::{
@@ -126,10 +128,12 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_begin(
 }
 
 /// Release the claim a `RUN` from
-/// `platform_wallet_manager_txo_reconcile_begin` granted, and the engine
-/// guard `platform_wallet_txo_reconcile_classify_outpoints` may still hold
-/// for it. `ran` is whether the run went ahead (even if it stopped early),
-/// which restarts the wallet's cadence.
+/// `platform_wallet_manager_txo_reconcile_begin` granted. `ran` is whether
+/// the run went ahead (even if it stopped early), which restarts the
+/// wallet's cadence. Also releases, as a backstop, an engine guard the
+/// host failed to free — but this resolves the manager handle, so a host
+/// frees each page's guard first
+/// (`platform_wallet_txo_reconcile_held_verdicts_free`).
 ///
 /// # Safety
 /// `wallet_id` points at 32 readable bytes.
@@ -241,24 +245,41 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count));
 }
 
+/// The engine guard one page's spend verdicts are held under — see
+/// `platform_wallet_txo_reconcile_classify_outpoints`. Opaque; released by
+/// `platform_wallet_txo_reconcile_held_verdicts_free`.
+pub struct TxoReconcileHeldVerdictsFFI {
+    _held: TxoReconcileHeldVerdicts,
+}
+
 /// Classify `count` store rows of `wallet_id` for the spend pass of the
 /// reconcile run it holds a claim for — `platform_wallet_classify_outpoints`'s
 /// answers and marshalling — and keep the engine's wallet-manager read
-/// lock held when this returns, so no fork can drop a spender these
-/// answers name before the host has written them. Only
-/// `OUTPOINT_CLASS_KNOWN_UNCREDITED` marks a row spent. Release with
-/// `platform_wallet_manager_txo_reconcile_release_verdicts` once the page
-/// is applied (`platform_wallet_manager_txo_reconcile_finish` releases it
-/// too). Call it outside the host's persistence-callback exclusion and
-/// never from inside a persistence callback: the engine calls those
-/// callbacks under its write lock. Fails with nothing held when the wallet
-/// holds no run claim.
+/// lock held when this returns, in `*out_held`, so no fork can drop a
+/// spender these answers name before the host has written them. Only
+/// `OUTPOINT_CLASS_KNOWN_UNCREDITED` marks a row spent.
+///
+/// Release `*out_held` with
+/// `platform_wallet_txo_reconcile_held_verdicts_free` as soon as the page
+/// is applied, and before the next call for this wallet or its
+/// `platform_wallet_manager_txo_reconcile_finish`: those resolve the
+/// manager handle, and the handle registry must never be waited for while
+/// the guard is held (every other path takes the registry before the
+/// engine lock). Finish and manager destroy release a guard the host
+/// failed to, as a backstop. Call this outside the host's
+/// persistence-callback exclusion and never from inside a persistence
+/// callback: the engine calls those callbacks under its write lock. The
+/// registry is read only to resolve the manager, with no guard held; the
+/// wait for the new guard happens after it is released.
+///
+/// Fails with `*out_held` null — nothing held — when the wallet holds no
+/// run claim. `*out_held` is also null when `count` is 0.
 ///
 /// # Safety
 /// As `platform_wallet_classify_outpoints`: `wallet_id` points at 32
 /// readable bytes; `queries` points at `count` live entries whose script
 /// pointers are valid for the call; `out_classes` is writable for `count`
-/// bytes.
+/// bytes. `out_held` is writable.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
     manager_handle: Handle,
@@ -266,39 +287,40 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
     queries: *const OutpointOwnershipQueryFFI,
     count: usize,
     out_classes: *mut u8,
+    out_held: *mut *mut TxoReconcileHeldVerdictsFFI,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(out_held);
+    *out_held = std::ptr::null_mut();
     classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
         let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(manager_handle, |m| m.txo_reconciler())
             .ok_or_else(invalid_manager_handle)?;
-        block_on_worker(async move { reconciler.classify_held(&wid, &owned).await }).ok_or_else(
-            || {
-                PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorWalletOperation,
-                    "the wallet holds no reconcile run claim".to_string(),
-                )
-            },
-        )
+        let (classes, held) =
+            block_on_worker(async move { reconciler.classify_held(&wid, &owned).await })
+                .ok_or_else(|| {
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorWalletOperation,
+                        "the wallet holds no reconcile run claim".to_string(),
+                    )
+                })?;
+        *out_held = Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
+        Ok(classes)
     })
 }
 
 /// Release the engine guard `platform_wallet_txo_reconcile_classify_outpoints`
-/// kept for `wallet_id`'s reconcile run, once the host has applied that
-/// page. Nothing to do when none is held.
+/// handed out. Touches no handle registry and never blocks, so it can run
+/// whatever else is queued on the registry or the engine. Null is a no-op.
 ///
 /// # Safety
-/// `wallet_id` points at 32 readable bytes.
+/// `held` is null or a pointer that call returned, released exactly once.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_release_verdicts(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id);
-    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
-    let option = PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(manager_handle, |m| m.txo_reconciler().release_held(&wid));
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
+pub unsafe extern "C" fn platform_wallet_txo_reconcile_held_verdicts_free(
+    held: *mut TxoReconcileHeldVerdictsFFI,
+) {
+    if !held.is_null() {
+        drop(Box::from_raw(held));
+    }
 }
 
 /// Whether a reconcile run classifies a page again after it came back
@@ -424,6 +446,7 @@ mod tests {
             script_pubkey_len: script.len(),
         };
         let mut classes = [0xFFu8; 1];
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::dangling_mut();
         let result = unsafe {
             platform_wallet_txo_reconcile_classify_outpoints(
                 Handle::MAX,
@@ -431,14 +454,189 @@ mod tests {
                 &query,
                 1,
                 classes.as_mut_ptr(),
+                &mut held,
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert_eq!(classes, [OUTPOINT_CLASS_UNKNOWN]);
+        assert!(held.is_null(), "nothing is held on a failure");
+        unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+    }
 
-        let result = unsafe {
-            platform_wallet_manager_txo_reconcile_release_verdicts(Handle::MAX, wallet_id.as_ptr())
+    /// Set in the child process that runs [`held_verdicts_registry_scenario`].
+    const HELD_VERDICTS_CHILD: &str = "PLATFORM_WALLET_FFI_HELD_VERDICTS_CHILD";
+    const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// The lock cycle the per-page release must not join. A run holds one
+    /// page's engine guard; an engine writer (a block, a fork) queues
+    /// behind it; a native read that resolved the manager under the
+    /// registry's read guard parks on the engine behind that writer; a
+    /// registry writer (a manager create or destroy) queues behind that
+    /// reader, and parking_lot then parks every new registry reader. A
+    /// release that looked the manager up in the registry would wait on
+    /// the registry writer, it on the reader, the reader on the engine
+    /// writer, and that writer on the guard. Freeing the held verdicts
+    /// touches no registry, so the guard goes, then the writer, the reader
+    /// and the registry writer in turn.
+    ///
+    /// The scenario runs in a child process (this test binary, re-invoked
+    /// on this test alone with [`HELD_VERDICTS_CHILD`] set), as
+    /// `spv_start_registry_tests` does: a regression forms a real deadlock
+    /// that would hold the process-wide registry and wedge every other
+    /// registry-backed test. The parent bounds the child and kills it.
+    #[test]
+    fn freeing_held_verdicts_completes_with_a_registry_writer_queued_behind_the_engine() {
+        if std::env::var_os(HELD_VERDICTS_CHILD).is_some() {
+            held_verdicts_registry_scenario();
+            return;
+        }
+        let test_name = format!(
+            "{}::freeing_held_verdicts_completes_with_a_registry_writer_queued_behind_the_engine",
+            module_path!()
+                .split_once("::")
+                .map(|(_, path)| path)
+                .expect("test module path below the crate root")
+        );
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args(["--exact", &test_name, "--nocapture"])
+            .env(HELD_VERDICTS_CHILD, "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn the scenario child");
+        let deadline = std::time::Instant::now() + 2 * WAIT;
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("child status") {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
         };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        let output = child.wait_with_output().expect("reap the scenario child");
+        let transcript = format!(
+            "--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        match status {
+            Some(status) => assert!(
+                status.success(),
+                "the scenario failed in the child process ({status})\n{transcript}"
+            ),
+            None => {
+                panic!("the scenario deadlocked: the child was killed\n{transcript}")
+            }
+        }
+    }
+
+    fn held_verdicts_registry_scenario() {
+        use std::sync::mpsc;
+        use std::sync::Arc;
+
+        use crate::test_fixtures::mock_manager;
+
+        /// Poll `condition` until it holds, failing after [`WAIT`].
+        fn wait_for(what: &str, condition: impl Fn() -> bool) {
+            let deadline = std::time::Instant::now() + WAIT;
+            while !condition() {
+                assert!(std::time::Instant::now() < deadline, "{what}");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let wallet_id = [0x5au8; 32];
+        let (reconciler, engine) = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| (m.txo_reconciler(), m.wallet_manager_arc()))
+            .expect("manager");
+        assert!(reconciler.claim_without_gate(&wallet_id));
+
+        // One page's verdicts, held.
+        let script = [0x76u8, 0xa9, 0x14];
+        let query = OutpointOwnershipQueryFFI {
+            type_tag: 0,
+            standard_tag: 0,
+            index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0; 32],
+            friend_identity_id: [0; 32],
+            outpoint: OutPointFFI {
+                txid: [0x22; 32],
+                vout: 0,
+            },
+            script_pubkey: script.as_ptr(),
+            script_pubkey_len: script.len(),
+        };
+        let mut classes = [0xFFu8; 1];
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                &query,
+                1,
+                classes.as_mut_ptr(),
+                &mut held,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!held.is_null());
+
+        // An engine writer queued behind the guard. With the guard held, a
+        // fresh engine read is refused exactly while a writer waits.
+        let writer_engine = Arc::clone(&engine);
+        let writer = std::thread::spawn(move || drop(writer_engine.blocking_write()));
+        wait_for("the engine writer never queued behind the guard", || {
+            engine.try_read().is_err()
+        });
+
+        // A native read holding the registry's read guard, parked on the
+        // engine behind that writer.
+        let (reading_tx, reading_rx) = mpsc::channel::<()>();
+        let reader = std::thread::spawn(move || {
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                let engine = manager.wallet_manager_arc();
+                reading_tx.send(()).expect("test observes the reader");
+                drop(engine.blocking_read());
+            })
+        });
+        reading_rx
+            .recv_timeout(WAIT)
+            .expect("the reader holds the registry's read guard");
+
+        // A registry writer queued behind that reader.
+        let other = mock_manager();
+        let registry_writer =
+            std::thread::spawn(move || PLATFORM_WALLET_MANAGER_STORAGE.insert(other));
+        wait_for("the registry writer never queued behind the reader", || {
+            PLATFORM_WALLET_MANAGER_STORAGE.try_read_refused()
+        });
+
+        // The per-page release.
+        let held_address = held as usize;
+        let (freed_tx, freed_rx) = mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            unsafe {
+                platform_wallet_txo_reconcile_held_verdicts_free(
+                    held_address as *mut TxoReconcileHeldVerdictsFFI,
+                )
+            };
+            freed_tx.send(()).expect("test observes the release");
+        });
+        freed_rx
+            .recv_timeout(WAIT)
+            .expect("the release completes without the registry");
+
+        writer.join().expect("engine writer");
+        assert!(reader.join().expect("registry reader").is_some());
+        let other = registry_writer.join().expect("registry writer");
+
+        reconciler.finish(&wallet_id, false);
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(other));
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
     }
 }

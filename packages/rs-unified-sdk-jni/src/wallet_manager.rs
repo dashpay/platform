@@ -3229,7 +3229,7 @@ fn core_selection_strategy(
 // (`platform_wallet_txo_reconcile_heal_page`), the spend verdicts and the
 // engine guard they are held under
 // (`platform_wallet_txo_reconcile_classify_outpoints` /
-// `…_txo_reconcile_release_verdicts`) and the stale-page retry
+// `…_txo_reconcile_held_verdicts_free`) and the stale-page retry
 // (`platform_wallet_txo_reconcile_retry_stale_page`). The cadence, the
 // gates, the account ordering, the cursor semantics, the page bound, the
 // heal verdicts and every classification rule live in `platform-wallet`.
@@ -3579,26 +3579,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 }
 
 /// Release the engine guard `walletManagerTxoReconcileClassifyOutpoints`
-/// kept for the wallet's reconcile run, once its page is applied. Bridges
-/// `platform_wallet_manager_txo_reconcile_release_verdicts`.
+/// handed out as `outHeld[0]`, once its page is applied. Takes no manager
+/// handle and touches no handle registry, so it completes whatever is
+/// queued there. 0 is a no-op; each value is released once. Bridges
+/// `platform_wallet_txo_reconcile_held_verdicts_free`.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileReleaseVerdicts(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_txoReconcileHeldVerdictsFree(
     mut env: JNIEnv,
     _class: JClass,
-    manager_handle: jlong,
-    wallet_id: JByteArray,
+    held: jlong,
 ) {
-    guard(&mut env, (), |env| {
-        let Some(wid) = read_id32(env, &wallet_id) else {
-            return;
-        };
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_release_verdicts(
-                manager_handle as Handle,
-                wid.as_ptr(),
-            )
-        };
-        let _ = take_pwffi_error(env, result);
+    guard(&mut env, (), |_env| unsafe {
+        platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free(
+            held as *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI,
+        )
     })
 }
 
@@ -3770,8 +3764,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 ///
 /// The answers come back with the engine's wallet-manager read lock still
 /// held for the wallet's reconcile run, so no fork can drop a spender they
-/// name before the page is applied; release it with
-/// `walletManagerTxoReconcileReleaseVerdicts`. Call outside the persistence
+/// name before the page is applied. The guard is `outHeld[0]` (0 when
+/// nothing is held), written last, only once the answers are ready to
+/// return; release it with `txoReconcileHeldVerdictsFree` before the next
+/// call that takes this manager handle. Call outside the persistence
 /// callback exclusion. Bridges
 /// `platform_wallet_txo_reconcile_classify_outpoints`.
 #[no_mangle]
@@ -3781,11 +3777,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     manager_handle: jlong,
     wallet_id: JByteArray,
     queries_json: JString,
+    out_held: jni::sys::jlongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
+        if out_held.is_null() {
+            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+            return ptr::null_mut();
+        }
         let raw = match env.get_string(&queries_json) {
             Ok(s) => String::from(s),
             Err(_) => {
@@ -3836,6 +3837,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
         // Caller-allocated answers, one byte per query.
         let mut classes = vec![platform_wallet_ffi::OUTPOINT_CLASS_UNKNOWN; queries.len()];
+        let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_txo_reconcile_classify_outpoints(
                 manager_handle as Handle,
@@ -3843,6 +3845,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 queries.as_ptr(),
                 queries.len(),
                 classes.as_mut_ptr(),
+                &mut held,
             )
         };
         // `scripts` must outlive the call above; this keeps that explicit
@@ -3851,9 +3854,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        env.byte_array_from_slice(&classes)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        // The guard reaches Kotlin only with answers it can apply; on any
+        // failure from here it is released at once rather than leaked.
+        let answers = env.byte_array_from_slice(&classes).map(|a| a.into_raw());
+        // SAFETY: Kotlin allocates `outHeld` as a LongArray(1).
+        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
+        match answers {
+            Ok(answers) if env.set_long_array_region(&out, 0, &[held as jlong]).is_ok() => answers,
+            _ => {
+                unsafe {
+                    platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free(held)
+                };
+                ptr::null_mut()
+            }
+        }
     })
 }
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the

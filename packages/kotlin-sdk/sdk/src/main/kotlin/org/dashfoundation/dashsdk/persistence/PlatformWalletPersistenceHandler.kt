@@ -1670,16 +1670,22 @@ class PlatformWalletPersistenceHandler(
      * close and on wallet deletion, and the run stops between pages,
      * reporting `completed = false`.
      *
-     * Lock order, the same as the engine's own: the engine's wallet lock,
-     * then [callbackExclusion], then the Room transaction. The engine calls
-     * persistence callbacks — which take [callbackExclusion] — while it
-     * holds its wallet lock for writing; [classifyOutpoints] takes that
-     * lock for reading and keeps it until [releaseVerdicts]. So a
-     * classification is only ever asked for outside [callbackExclusion]
-     * (never wait for the engine while holding it), never from inside a
-     * persistence callback, and its guard is released after the apply step
-     * has let go of [callbackExclusion]. The guard covers one page: the
-     * apply is one Room transaction.
+     * Lock order, the same as the engine's own: the native handle registry
+     * (read only transiently, inside one native call, to resolve the
+     * manager), then the engine's wallet lock, then [callbackExclusion],
+     * then the Room transaction. The engine calls persistence callbacks —
+     * which take [callbackExclusion] — while it holds its wallet lock for
+     * writing; [classifyOutpoints] takes that lock for reading and keeps it
+     * until [releaseVerdicts]. So a classification is only ever asked for
+     * outside [callbackExclusion] (never wait for the engine while holding
+     * it), never from inside a persistence callback, and its guard is
+     * released after the apply step has let go of [callbackExclusion]. Every
+     * other native path takes the registry before the engine lock, so no
+     * path that holds the guard may wait for the registry: [releaseVerdicts]
+     * must not resolve the manager handle (the native free it calls takes
+     * none), and it runs before the next page's classification or the
+     * run's finish resolve it again. The guard covers one page: the apply
+     * is one Room transaction.
      *
      * A failed engine read stops the run and is counted, the first page
      * included (Swift's contract: the report says the run did not

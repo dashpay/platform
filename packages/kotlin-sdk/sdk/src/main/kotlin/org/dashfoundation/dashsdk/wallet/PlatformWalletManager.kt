@@ -1397,6 +1397,9 @@ class PlatformWalletManager(
                 }
                 val tipHeight = tipOut[0]
                 var ran = false
+                // The engine guard the last classified page is held under —
+                // see [freeHeldVerdicts]. 0 when none is.
+                val heldVerdicts = AtomicLong(0L)
                 try {
                     val isCancelled = { isClosed || txoReconcileEpoch.get() != generation }
                     if (isCancelled()) return@withOp skip(TxoReconcileSkipReason.MANAGER_CLOSED)
@@ -1412,33 +1415,30 @@ class PlatformWalletManager(
                         },
                         classifyOutpoints = { queriesJson ->
                             reconcileEngineRead("outpoint classification", walletRef) {
-                                WalletManagerNative.walletManagerTxoReconcileClassifyOutpoints(
-                                    managerHandle, walletId, queriesJson,
-                                )
-                            }
-                        },
-                        releaseVerdicts = {
-                            // Drops the engine guard only; it never waits on
-                            // the engine. A failure leaves it to `finish`.
-                            runCatching {
-                                mapNativeErrors {
-                                    WalletManagerNative.walletManagerTxoReconcileReleaseVerdicts(
-                                        managerHandle, walletId,
+                                val outHeld = LongArray(1)
+                                try {
+                                    WalletManagerNative.walletManagerTxoReconcileClassifyOutpoints(
+                                        managerHandle, walletId, queriesJson, outHeld,
                                     )
+                                } finally {
+                                    // Kept even when the call failed after the
+                                    // guard was written. One the handler did
+                                    // not release is freed, never overwritten.
+                                    val previous = heldVerdicts.getAndSet(outHeld[0])
+                                    if (previous != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(previous)
                                 }
-                            }.onFailure { t ->
-                                android.util.Log.w(
-                                    "PlatformWalletManager",
-                                    "txos reconcile: verdict release failed " +
-                                        "error=${t.javaClass.simpleName} wallet=$walletRef",
-                                )
                             }
                         },
+                        releaseVerdicts = { freeHeldVerdicts(heldVerdicts) },
                         retryStalePage = WalletManagerNative::txoReconcileRetryStalePage,
                     )
                     ran = true
                     TxoReconcileOutcome.Reconciled(report)
                 } finally {
+                    // The guard first, without the native registry: `finish`
+                    // resolves the manager handle there, which must never be
+                    // waited for while a guard is held.
+                    freeHeldVerdicts(heldVerdicts)
                     // Released even when the run threw or was cancelled: a
                     // claim left behind would refuse every later run of the
                     // wallet as ALREADY_RUNNING. The teardown borrow is still
@@ -1461,6 +1461,18 @@ class PlatformWalletManager(
             // The teardown gate refuses new borrows once close began.
             if (isClosed) skip(TxoReconcileSkipReason.MANAGER_CLOSED) else throw closing
         }
+    }
+
+    /**
+     * Release the engine guard [held] carries, at most once (the value is
+     * taken out before it is freed). The native free takes no manager
+     * handle and never waits: it must complete while a registry writer —
+     * a manager being created or destroyed — is queued behind a native read
+     * that waits on the engine behind a writer that waits on this guard.
+     */
+    private fun freeHeldVerdicts(held: AtomicLong) {
+        val token = held.getAndSet(0L)
+        if (token != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(token)
     }
 
     /**

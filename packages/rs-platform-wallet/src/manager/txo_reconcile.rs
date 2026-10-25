@@ -30,34 +30,51 @@
 //!
 //! A run touches, in this order and never the other way round:
 //!
-//! 1. the wallet manager's `RwLock`, read side only, taken by
-//!    [`TxoReconciler::classify_held`] and kept until the host's apply has
-//!    committed;
-//! 2. the host's callback exclusion (Kotlin's `callbackExclusion`), taken
+//! 1. a host's handle registry (the C API's manager registry, a fair
+//!    `parking_lot` lock), read side only and only transiently, to resolve
+//!    the manager for one call — never while a run holds an engine guard;
+//! 2. the wallet manager's `RwLock`, read side only, taken by
+//!    [`TxoReconciler::classify_held`] and kept, in a
+//!    [`TxoReconcileHeldVerdicts`], until the host's apply has committed;
+//! 3. the host's callback exclusion (Kotlin's `callbackExclusion`), taken
 //!    for the apply;
-//! 3. the host's store transaction (one Room transaction for one page).
+//! 4. the host's store transaction (one Room transaction for one page).
 //!
 //! The engine calls the persistence callbacks, which take the callback
 //! exclusion, while it holds the wallet manager's write lock — the same
-//! order, 1 before 2. So a host must take the guard before the exclusion
+//! order, 2 before 3. So a host must take the guard before the exclusion
 //! (never wait for the engine while holding the exclusion), must never
 //! classify from inside a persistence callback, and must release the guard
-//! after the exclusion. The schedule mutex is a leaf: held only for a few
-//! map operations, never across an await or another lock, so it orders
-//! with nothing. SPV progress is read only by [`TxoReconciler::due_wallets`]
-//! and [`TxoReconciler::begin`], before a run holds anything.
+//! after the exclusion. Every other C API path also takes the registry
+//! before the engine lock (a blocking read inside a registry read, or a
+//! manager create or destroy that writes the registry), so **no path that
+//! holds the engine guard ever waits for the registry**: dropping a
+//! [`TxoReconcileHeldVerdicts`] touches only the guard's own slot, and the
+//! host drops a page's guard before it resolves the manager again for the
+//! next page or for [`TxoReconciler::finish`]. A classification resolves
+//! the manager with no guard held, then waits for its new guard outside
+//! the registry. The schedule mutex and a guard's slot mutex are leaves,
+//! taken in that order when both are: each is held only for a few map or
+//! slot operations, never across an await or another lock. SPV progress is
+//! read only by [`TxoReconciler::due_wallets`] and [`TxoReconciler::begin`],
+//! before a run holds anything.
 //!
 //! tokio's `RwLock` is fair: a writer waiting behind the held guard (a fork
 //! in `truncate_above`, a block being applied) queues every later reader
-//! behind it. That cannot close a cycle here. The writer holds nothing the
-//! guard holder waits for — the guard holder waits only for the callback
-//! exclusion and the store, and whatever holds the exclusion is either a
-//! callback that already holds its engine lock (a read lock taken before
-//! the writer queued; a write lock cannot be held beside the guard) or the
-//! host's own code, which makes no engine call under it. The one reader
-//! that could queue behind such a writer while holding a guard is the same
-//! run asking for its next page, which is why [`TxoReconciler::classify_held`]
-//! drops a run's previous guard before it waits for a new one.
+//! behind it, and `parking_lot`'s registry lock likewise parks new readers
+//! behind a queued writer. That cannot close a cycle here. The writer holds
+//! nothing the guard holder waits for — the guard holder waits only for the
+//! callback exclusion and the store, and whatever holds the exclusion is
+//! either a callback that already holds its engine lock (a read lock taken
+//! before the writer queued; a write lock cannot be held beside the guard)
+//! or the host's own code, which makes no engine call under it. A registry
+//! reader parked on the engine behind that writer, and a registry writer
+//! queued behind that reader, wait on the guard, never the other way
+//! round. The one reader that could queue behind such a writer while
+//! holding a guard is the same run asking for its next page, which is why
+//! a host releases each page's guard first and
+//! [`TxoReconciler::classify_held`] drops one it failed to release before
+//! it waits for a new one.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -299,29 +316,70 @@ pub struct TxoReconcileSchedule {
     steady_session: Option<u64>,
     in_flight: BTreeMap<WalletId, ReconcileClaim>,
     last_run: BTreeMap<WalletId, Instant>,
+    /// The id the next claim gets.
+    next_claim: u64,
 }
 
 /// The read side of the wallet manager's lock, owned so it can outlive the
 /// call that took it — see [`TxoReconciler::classify_held`].
 type EngineReadGuard = OwnedRwLockReadGuard<WalletManager<PlatformWalletInfo>>;
 
+/// Where one page's engine guard lives: shared by the run's claim, which
+/// empties it on [`TxoReconcileSchedule::finish`] and at shutdown, and the
+/// host's [`TxoReconcileHeldVerdicts`], which empties it on drop. Whichever
+/// comes first releases the guard; the other finds the slot empty.
+type HeldSlot = Arc<Mutex<Option<EngineReadGuard>>>;
+
+/// Empty `slot`, releasing the guard outside its mutex.
+fn release_slot(slot: &HeldSlot) {
+    let guard = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
+    drop(guard);
+}
+
+/// The engine guard one page's verdicts were answered under
+/// ([`TxoReconciler::classify_held`]). Dropping it releases the guard; that
+/// touches nothing but the guard's own slot — no schedule lookup, no
+/// manager, no host registry — so the host can release it whatever else is
+/// queued. Drop it once the page is applied.
+pub struct TxoReconcileHeldVerdicts {
+    slot: HeldSlot,
+}
+
+impl fmt::Debug for TxoReconcileHeldVerdicts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TxoReconcileHeldVerdicts")
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for TxoReconcileHeldVerdicts {
+    fn drop(&mut self) {
+        release_slot(&self.slot);
+    }
+}
+
 /// One run in flight.
 #[derive(Default)]
 struct ReconcileClaim {
+    /// Tells this claim from a later one for the same wallet, so a
+    /// classification that waited across a finish and a new begin does not
+    /// hand its guard to the new run.
+    id: u64,
     /// The wallet was removed while the run was in flight
     /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
     /// until it finishes, but its finish records nothing: the cadence it
     /// would restart belongs to a wallet that no longer exists.
     forgotten: bool,
-    /// The engine read guard the run's last classification is held under
-    /// until its host has applied the verdicts. Dropped with the claim, so
-    /// [`TxoReconcileSchedule::finish`] releases it on every path.
-    held: Option<EngineReadGuard>,
+    /// The slot of the guard the run's last classification is held under
+    /// until its host has applied the verdicts. Emptied by
+    /// [`TxoReconcileSchedule::finish`], so a run never outlives its guard.
+    held: Option<HeldSlot>,
 }
 
 impl fmt::Debug for ReconcileClaim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReconcileClaim")
+            .field("id", &self.id)
             .field("forgotten", &self.forgotten)
             .field("holds_engine", &self.held.is_some())
             .finish()
@@ -371,7 +429,12 @@ impl TxoReconcileSchedule {
         if self.in_flight.contains_key(&wallet_id) {
             return false;
         }
-        self.in_flight.insert(wallet_id, ReconcileClaim::default());
+        self.next_claim += 1;
+        let claim = ReconcileClaim {
+            id: self.next_claim,
+            ..ReconcileClaim::default()
+        };
+        self.in_flight.insert(wallet_id, claim);
         self.last_run.insert(wallet_id, now);
         true
     }
@@ -379,11 +442,15 @@ impl TxoReconcileSchedule {
     /// Release the claim [`Self::try_begin`] took. `ran_at` is when a run
     /// that went ahead finished, which restarts the wallet's cadence from
     /// then; `None` for one that did not. A claim whose wallet was
-    /// forgotten meanwhile records nothing.
+    /// forgotten meanwhile records nothing. An engine guard the run still
+    /// holds is released.
     pub fn finish(&mut self, wallet_id: &WalletId, ran_at: Option<Instant>) {
         let Some(claim) = self.in_flight.remove(wallet_id) else {
             return;
         };
+        if let Some(slot) = &claim.held {
+            release_slot(slot);
+        }
         if let Some(at) = ran_at.filter(|_| !claim.forgotten) {
             self.last_run.insert(*wallet_id, at);
         }
@@ -502,11 +569,11 @@ impl TxoReconciler {
 
     /// [`classify_outpoints`] for the run `wallet_id` holds a claim for
     /// ([`Self::begin`]), answered under a read guard on the wallet manager
-    /// that is kept when this returns. The host writes the verdicts to its
-    /// store and then calls [`Self::release_held`]; [`Self::finish`] and
-    /// the manager's shutdown release it too. Only
-    /// [`OutpointClass::KnownUncredited`] marks a row spent, and a mempool
-    /// spend never earns it.
+    /// that is kept when this returns: it comes back as a
+    /// [`TxoReconcileHeldVerdicts`], which the host drops once it has
+    /// written the verdicts to its store. [`Self::finish`] and the manager's
+    /// shutdown release it too. Only [`OutpointClass::KnownUncredited`]
+    /// marks a row spent, and a mempool spend never earns it.
     ///
     /// The guard is what makes a verdict safe to write. The host's own
     /// fences see its persistence rounds, not the engine, and the engine
@@ -523,38 +590,45 @@ impl TxoReconciler {
     ///
     /// The guard is held for one page's apply, so it must not wait on
     /// anything slow; see the module's lock order for what a host may do
-    /// while holding it. A run holds one guard at a time: the guard of its
-    /// previous page is released before this waits for the next.
+    /// while holding it. A run holds one guard at a time: the host drops a
+    /// page's before it asks about the next, and one it failed to drop is
+    /// released here before this waits.
     ///
     /// `None` — nothing classified, nothing held — when the wallet holds no
-    /// run claim, or its claim was released while this waited.
+    /// run claim, or its claim was released while this waited (a new claim
+    /// taken meanwhile does not get this guard).
     pub async fn classify_held(
         &self,
         wallet_id: &WalletId,
         queries: &[OutpointOwnershipQuery],
-    ) -> Option<Vec<OutpointClass>> {
-        let previous = lock_schedule(&self.schedule)
-            .in_flight
-            .get_mut(wallet_id)?
-            .held
-            .take();
-        drop(previous);
+    ) -> Option<(Vec<OutpointClass>, TxoReconcileHeldVerdicts)> {
+        let claim_id = {
+            let mut schedule = lock_schedule(&self.schedule);
+            let claim = schedule.in_flight.get_mut(wallet_id)?;
+            if let Some(previous) = claim.held.take() {
+                release_slot(&previous);
+            }
+            claim.id
+        };
         let engine = Arc::clone(&self.wallet_manager).read_owned().await;
         let classes = classify_outpoints(&engine, wallet_id, queries);
+        let held = TxoReconcileHeldVerdicts {
+            slot: Arc::new(Mutex::new(Some(engine))),
+        };
         let mut schedule = lock_schedule(&self.schedule);
-        schedule.in_flight.get_mut(wallet_id)?.held = Some(engine);
-        Some(classes)
-    }
-
-    /// Release the engine read guard [`Self::classify_held`] kept for
-    /// `wallet_id`'s run, once the host has applied its verdicts. Nothing
-    /// to do when none is held.
-    pub fn release_held(&self, wallet_id: &WalletId) {
-        let held = lock_schedule(&self.schedule)
+        let claim = schedule
             .in_flight
             .get_mut(wallet_id)
-            .and_then(|claim| claim.held.take());
-        drop(held);
+            .filter(|claim| claim.id == claim_id)?;
+        claim.held = Some(Arc::clone(&held.slot));
+        Some((classes, held))
+    }
+
+    /// Claim `wallet_id` as a granted [`Self::begin`] would, with no gate:
+    /// for tests that need a run without a steady SPV client.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn claim_without_gate(&self, wallet_id: &WalletId) -> bool {
+        lock_schedule(&self.schedule).try_begin(*wallet_id, Instant::now())
     }
 
     /// Release the claim [`Self::begin`] granted, and the engine guard it
@@ -611,12 +685,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Release every engine guard a reconcile run still holds, so a host
     /// that failed to release one cannot hold teardown's writers off.
     pub(super) fn release_txo_reconcile_holds(&self) {
-        let held: Vec<EngineReadGuard> = lock_schedule(&self.txo_reconcile_schedule)
+        let schedule = lock_schedule(&self.txo_reconcile_schedule);
+        for slot in schedule
             .in_flight
-            .values_mut()
-            .filter_map(|claim| claim.held.take())
-            .collect();
-        drop(held);
+            .values()
+            .filter_map(|claim| claim.held.as_ref())
+        {
+            release_slot(slot);
+        }
     }
 }
 
@@ -1236,19 +1312,39 @@ mod tests {
     /// How long a test waits for a fork it expects to finish.
     const PROCEEDS: Duration = Duration::from_secs(10);
 
+    /// Classify under the run's claim, keeping the held verdicts.
+    async fn classify(
+        reconciler: &TxoReconciler,
+        wallet_id: &WalletId,
+        queries: &[OutpointOwnershipQuery],
+    ) -> (Vec<OutpointClass>, TxoReconcileHeldVerdicts) {
+        reconciler
+            .classify_held(wallet_id, queries)
+            .await
+            .expect("the wallet holds a run claim")
+    }
+
+    fn holds_engine(reconciler: &TxoReconciler, wallet_id: &WalletId) -> bool {
+        lock_schedule(&reconciler.schedule).in_flight[wallet_id]
+            .held
+            .as_ref()
+            .is_some_and(|slot| slot.lock().expect("slot").is_some())
+    }
+
     #[tokio::test]
     async fn a_classification_needs_the_runs_claim() {
         let reconciler = reconciler();
-        assert_eq!(reconciler.classify_held(&A, &[]).await, None);
-        assert!(lock_schedule(&reconciler.schedule).try_begin(A, Instant::now()));
-        assert_eq!(reconciler.classify_held(&A, &[]).await, Some(Vec::new()));
-        assert!(lock_schedule(&reconciler.schedule).in_flight[&A]
-            .held
-            .is_some());
-        reconciler.release_held(&A);
-        assert!(lock_schedule(&reconciler.schedule).in_flight[&A]
-            .held
-            .is_none());
+        assert!(reconciler.classify_held(&A, &[]).await.is_none());
+        assert!(reconciler.claim_without_gate(&A));
+        let (classes, held) = classify(&reconciler, &A, &[]).await;
+        assert!(classes.is_empty());
+        assert!(holds_engine(&reconciler, &A));
+        drop(held);
+        assert!(
+            !holds_engine(&reconciler, &A),
+            "dropping the verdicts released the guard"
+        );
+        reconciler.finish(&A, true);
     }
 
     /// The race the guard closes: verdicts read, then a fork drops a
@@ -1260,11 +1356,12 @@ mod tests {
         use OutpointClass::{KnownUncredited, Unspent};
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
+        assert!(reconciler.claim_without_gate(&wallet_id));
 
+        let (classes, held) = classify(&reconciler, &wallet_id, &queries).await;
         assert_eq!(
-            reconciler.classify_held(&wallet_id, &queries).await,
-            Some(vec![KnownUncredited; 3]),
+            classes,
+            vec![KnownUncredited; 3],
             "a spender above the ChainLock is acted on: the guard keeps it in place"
         );
         let mut fork = spawn_fork(&reconciler);
@@ -1273,7 +1370,7 @@ mod tests {
             "the fork waits while the verdicts are held"
         );
 
-        reconciler.release_held(&wallet_id);
+        drop(held);
         timeout(PROCEEDS, fork)
             .await
             .expect("the fork proceeds once they are released")
@@ -1290,11 +1387,8 @@ mod tests {
     async fn finishing_the_run_releases_its_held_verdicts() {
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
-        assert!(reconciler
-            .classify_held(&wallet_id, &queries)
-            .await
-            .is_some());
+        assert!(reconciler.claim_without_gate(&wallet_id));
+        let (_, held) = classify(&reconciler, &wallet_id, &queries).await;
         let mut fork = spawn_fork(&reconciler);
         assert!(timeout(BLOCKED, &mut fork).await.is_err());
 
@@ -1303,37 +1397,69 @@ mod tests {
             .await
             .expect("the fork proceeds once the run finished")
             .expect("fork task");
+        drop(held);
     }
 
     /// tokio's `RwLock` queues a reader behind a waiting writer. A run that
     /// asked for its next page while still holding the last one would wait
-    /// behind a fork that waits for it. The previous guard is released
-    /// first, so the fork goes ahead and the next page sees its outcome.
+    /// behind a fork that waits for it. A guard the host failed to release
+    /// is released first, so the fork goes ahead and the next page sees its
+    /// outcome; the stale verdicts' later drop is harmless.
     #[tokio::test]
     async fn the_next_page_does_not_deadlock_behind_a_waiting_fork() {
         use OutpointClass::{KnownUncredited, Unspent};
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(lock_schedule(&reconciler.schedule).try_begin(wallet_id, Instant::now()));
-        assert!(reconciler
-            .classify_held(&wallet_id, &queries)
-            .await
-            .is_some());
+        assert!(reconciler.claim_without_gate(&wallet_id));
+        let (_, stale) = classify(&reconciler, &wallet_id, &queries).await;
         let mut fork = spawn_fork(&reconciler);
         assert!(timeout(BLOCKED, &mut fork).await.is_err());
 
-        let next = timeout(PROCEEDS, reconciler.classify_held(&wallet_id, &queries))
+        let (next, held) = timeout(PROCEEDS, classify(&reconciler, &wallet_id, &queries))
             .await
             .expect("the next page is classified, not deadlocked");
         assert_eq!(
             next,
-            Some(vec![KnownUncredited, KnownUncredited, Unspent]),
+            vec![KnownUncredited, KnownUncredited, Unspent],
             "the queued fork went first"
         );
         timeout(PROCEEDS, fork)
             .await
             .expect("fork finished")
             .expect("fork task");
-        reconciler.release_held(&wallet_id);
+        drop(stale);
+        assert!(
+            holds_engine(&reconciler, &wallet_id),
+            "dropping the stale verdicts leaves the new page's guard alone"
+        );
+        drop(held);
+        assert!(!holds_engine(&reconciler, &wallet_id));
+    }
+
+    /// A classification that waits for the engine across its run's finish
+    /// and a new begin does not hand its guard to the new run.
+    #[tokio::test]
+    async fn a_classification_outliving_its_claim_holds_nothing() {
+        let reconciler = reconciler();
+        assert!(reconciler.claim_without_gate(&A));
+        let writer = Arc::clone(&reconciler.wallet_manager).write_owned().await;
+        let mut waiting = pin!(reconciler.classify_held(&A, &[]));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+
+        reconciler.finish(&A, true);
+        assert!(
+            reconciler.claim_without_gate(&A),
+            "a new run for the wallet"
+        );
+        drop(writer);
+        assert!(
+            timeout(PROCEEDS, waiting)
+                .await
+                .expect("classified")
+                .is_none(),
+            "the old run's claim is gone"
+        );
+        assert!(!holds_engine(&reconciler, &A), "the new run holds no guard");
     }
 }
