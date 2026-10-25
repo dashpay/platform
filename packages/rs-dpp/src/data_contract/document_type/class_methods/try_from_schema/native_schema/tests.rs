@@ -1607,3 +1607,30 @@ fn should_refuse_a_float_token_cost_contract_id_byte_as_the_meta_schema_check_do
         );
     }
 }
+
+/// A rule of protocol version 15: in a list that must be unique, such as an `enum`'s members,
+/// `0.0` and `-0.0` are one value at every length, as the native document validator compares
+/// them.
+#[test]
+fn should_hold_zero_and_negative_zero_as_one_enum_member_at_every_length() {
+    // The two numbers given, then distinct integers up to `length` members
+    let members = |length: usize, first: f64, second: f64| {
+        let mut members = vec![json!(first), json!(second)];
+        members.extend((1..=length - 2).map(|member| json!(member)));
+        JsonValue::Array(members)
+    };
+    for length in [2, 15, 16, 17] {
+        let root = profile_root_with(|root| {
+            root["properties"]["score"]["enum"] = members(length, 0.0, -0.0);
+        });
+        assert_eq!(
+            native_refusal(&root).map(|error| error.keyword().to_string()),
+            Some("uniqueItems".to_string()),
+            "{length} members holding 0.0 and -0.0"
+        );
+        let root = profile_root_with(|root| {
+            root["properties"]["score"]["enum"] = members(length, 0.0, 0.5);
+        });
+        assert!(native_refusal(&root).is_none(), "{length} distinct members");
+    }
+}
