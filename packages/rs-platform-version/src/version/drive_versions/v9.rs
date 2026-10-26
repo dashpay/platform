@@ -94,7 +94,6 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             prove_elements: 0,
             prove_multiple_state_transition_results: 0,
             prove_state_transition: 1, // changed in v9: a document batch proof carries the owner's balance (verify v1)
-            prove_asset_lock_outpoint_info: 0,
         },
         balances: DriveBalancesMethodVersions {
             add_to_system_credits: 0,
