@@ -1581,6 +1581,15 @@ mod storage_refund_clawback_tests {
 /// control run below is the same workload under `PlatformVersion::latest()`:
 /// storage fees must double, processing fees must not move, and a refund
 /// priced at the wrong generation is off by exactly a factor of two.
+///
+/// The assertions are on transition-level pricing (each fee result and the
+/// stored documents' storage flags), which reads the block's epoch and the
+/// fee history. Block-end processing runs through the shared helper with its
+/// genesis-epoch context, because the blocks follow a fast-forward that never
+/// built the later epochs' pool trees; here it only proves that credits
+/// balance. Block-end behaviour in the epochs on either side of a boundary
+/// is covered by the strategy tests in `fee_version_boundary_tests.rs`,
+/// which walk every epoch change through the full block path.
 #[cfg(test)]
 mod fee_generation_boundary {
     use crate::execution::validation::state_transition::tests::{
