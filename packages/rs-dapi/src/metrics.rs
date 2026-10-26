@@ -560,6 +560,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getDataContract",
                 "getDataContractHistory",
                 "getDataContractsLatestVersions",
+                "getAssetLockOutpointInfo",
                 "getContractGroupInfo",
                 "getContractGroupMembers",
                 "getContractGroupsForContract",
