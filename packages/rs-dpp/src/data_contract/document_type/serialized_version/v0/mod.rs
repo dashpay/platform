@@ -46,6 +46,8 @@ use crate::data_contract::document_type::schema::validation_schema::{
 use crate::data_contract::document_type::validator::{
     LoadedValidationSchema, StatelessJsonSchemaLazyValidator,
 };
+#[cfg(feature = "validation")]
+use crate::data_contract::errors::DataContractError;
 
 /// The error of a stored document type that does not read back.
 fn stored_error(message: String) -> ProtocolError {
@@ -334,16 +336,25 @@ impl DocumentTypeInSerializationFormatV0 {
             index_structure.stamp_indexed_arrays(&indexed_arrays);
         }
 
+        // A stored form without a validation schema keeps its documents refused, as the
+        // version that stored it refuses them, rather than leaving them to the builder of
+        // whatever version reads it
         #[cfg(feature = "validation")]
-        let json_schema_validator = match validation_schema {
-            Some(stored) => {
-                let (schema, generation) = stored.into_validation_schema()?;
-                StatelessJsonSchemaLazyValidator::with_loaded_validation_schema(
-                    LoadedValidationSchema { generation, schema },
-                )
-            }
-            None => StatelessJsonSchemaLazyValidator::new(),
-        };
+        let json_schema_validator = StatelessJsonSchemaLazyValidator::with_loaded_validation_schema(
+            match validation_schema {
+                Some(stored) => {
+                    let (schema, generation) = stored.into_validation_schema()?;
+                    LoadedValidationSchema::Built { generation, schema }
+                }
+                None => {
+                    LoadedValidationSchema::Refused(DataContractError::InvalidContractStructure(
+                        "its stored form holds none, as the version that stored it built \
+                             none from its schema"
+                            .to_string(),
+                    ))
+                }
+            },
+        );
         #[cfg(not(feature = "validation"))]
         let _ = validation_schema;
 
@@ -410,10 +421,10 @@ impl DocumentTypeInSerializationFormatV0 {
     }
 }
 
-/// The typed validation schema to store with `document_type`: the one it was read back with
-/// from a stored form, or the one the builder `platform_version` selects builds from its
-/// schema. `None` when that version selects no builder, or when the builder refuses the schema,
-/// whose documents are then refused, as they are without a stored form.
+/// The typed validation schema to store with `document_type`: what it was read back with from
+/// a stored form, or the one the builder `platform_version` selects builds from its schema.
+/// `None` when it was read back without one, when that version selects no builder, or when the
+/// builder refuses the schema; its documents are then refused, at every version that reads it.
 #[cfg(feature = "validation-schema")]
 fn stored_validation_schema(
     document_type: &DocumentTypeV2,
@@ -425,10 +436,12 @@ fn stored_validation_schema(
         .json_schema_validator
         .loaded_validation_schema()
     {
-        return Ok(Some(StoredValidationSchema::new(
-            &loaded.schema,
-            loaded.generation,
-        )));
+        return Ok(match loaded {
+            LoadedValidationSchema::Built { generation, schema } => {
+                Some(StoredValidationSchema::new(schema, *generation))
+            }
+            LoadedValidationSchema::Refused(_) => None,
+        });
     }
     let Some(generation) = platform_version
         .dpp

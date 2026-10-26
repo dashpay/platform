@@ -7,6 +7,7 @@ use crate::data_contract::document_type::property_constraints::DocumentSystemVal
 use crate::data_contract::document_type::schema::validation_schema::{
     builder_generation, DocumentSchemaValidator,
 };
+use crate::data_contract::document_type::validator::LoadedValidationSchema;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
@@ -92,8 +93,9 @@ impl DataContract {
     /// other error is returned as it is, and not kept. Both are lent from the document type.
     ///
     /// A document type read back from its stored form is checked against the typed
-    /// validation schema stored with it, by the generation that built it; any other against
-    /// the one the builder `platform_version` selects builds from its schema.
+    /// validation schema stored with it, by the generation that built it, or refused when it
+    /// was stored without one; any other against the one the builder `platform_version`
+    /// selects builds from its schema.
     fn native_validator<'v>(
         &self,
         name: &str,
@@ -101,11 +103,13 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
         let validators = document_type.json_schema_validator_ref();
-        let loaded = validators.loaded_validation_schema();
-        // The slot of the generation that built the stored schema, or that this version selects
-        let generation = match loaded {
-            Some(loaded) => loaded.generation,
-            None => builder_generation(platform_version)?,
+        // The generation that built the stored schema, or that this version selects
+        let (generation, loaded) = match validators.loaded_validation_schema() {
+            Some(LoadedValidationSchema::Built { generation, schema }) => {
+                (*generation, Some(schema))
+            }
+            Some(LoadedValidationSchema::Refused(refusal)) => return Ok(Err(refusal)),
+            None => (builder_generation(platform_version)?, None),
         };
         let slot =
             validators
@@ -119,10 +123,10 @@ impl DataContract {
             Some(built) => built,
             None => {
                 let validator = match loaded {
-                    Some(loaded) => DocumentSchemaValidator::with_patterns(
-                        loaded.schema.clone(),
+                    Some(schema) => DocumentSchemaValidator::with_patterns(
+                        schema.clone(),
                         BTreeMap::new(),
-                        loaded.generation,
+                        generation,
                     ),
                     None => self.document_type_native_validator(name, platform_version),
                 };

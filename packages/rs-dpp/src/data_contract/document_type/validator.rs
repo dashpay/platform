@@ -22,24 +22,31 @@ use std::sync::{Arc, OnceLock};
 /// documents protocol version 15 refuses: one slot for each generation of the validation
 /// schema's builder (`validation_schema`).
 ///
-/// A document type read back from its stored, compiled form also holds the typed validation
-/// schema stored with it ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
-/// keeps it, so its documents keep being checked against the schema the type was registered
-/// with, by the generation that built it. `PartialEq` and `Debug` leave it out, as the stored
-/// form is compiled from the schema the document type holds.
+/// A document type read back from its stored, compiled form also holds what it was stored with
+/// to check its documents ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
+/// keeps it, so its documents keep being checked as the version that stored it checks them.
+/// `PartialEq` and `Debug` leave it out, as the stored form is compiled from the schema the
+/// document type holds.
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")] [NativeValidatorSlot; 1],
     #[cfg(feature = "validation-schema")] Option<Arc<LoadedValidationSchema>>,
 );
 
-/// The typed validation schema a document type was read back with from its stored form, and
-/// the generation of the validation schema's builder that built it.
+/// What a document type read back from its stored form was stored with to check its
+/// documents: the typed validation schema and the generation of the validation schema's
+/// builder that built it, or, for a stored form holding none (the builder of the version that
+/// stored it refused its schema, or that version selected no builder), the refusal of its
+/// documents. Either way they are checked as that version checks them, at every later version:
+/// a later builder that would accept the schema does not make them valid.
 #[cfg(feature = "validation-schema")]
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct LoadedValidationSchema {
-    pub(crate) generation: FeatureVersion,
-    pub(crate) schema: ValidationSchema,
+pub(crate) enum LoadedValidationSchema {
+    Built {
+        generation: FeatureVersion,
+        schema: ValidationSchema,
+    },
+    Refused(DataContractError),
 }
 
 /// What document validation builds of a document type's schema with one generation of the
@@ -64,8 +71,8 @@ impl StatelessJsonSchemaLazyValidator {
         )
     }
 
-    /// The validator of a document type read back from its stored form with `loaded`, its
-    /// stored typed validation schema.
+    /// The validator of a document type read back from its stored form with `loaded`, what it
+    /// was stored with to check its documents.
     #[cfg(feature = "validation-schema")]
     pub(crate) fn with_loaded_validation_schema(loaded: LoadedValidationSchema) -> Self {
         Self(
@@ -75,7 +82,7 @@ impl StatelessJsonSchemaLazyValidator {
         )
     }
 
-    /// The typed validation schema the document type was read back with from its stored form,
+    /// What the document type was read back with from its stored form to check its documents,
     /// `None` for a document type parsed from its schema.
     #[cfg(feature = "validation-schema")]
     pub(crate) fn loaded_validation_schema(&self) -> Option<&LoadedValidationSchema> {

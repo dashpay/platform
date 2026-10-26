@@ -63,6 +63,8 @@ use crate::data_contract::document_type::property_names::{
     ITEMS, POSITION, PROPERTIES, REF, REQUIRED,
 };
 use crate::data_contract::document_type::schema::last_value;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::LoadedValidationSchema;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -371,22 +373,26 @@ impl ValidationSchema {
 
 impl DataContract {
     /// The validation schema of one of the contract's document types: the one stored with it
-    /// when it was read back from its stored form, otherwise the one the builder
-    /// `platform_version` selects builds from the schema the document validator compiles for
-    /// it. Refuses a protocol version that selects none (`validation_schema`) for a type
-    /// without a stored one.
+    /// when it was read back from its stored form (refused when it was stored without one),
+    /// otherwise the one the builder `platform_version` selects builds from the schema the
+    /// document validator compiles for it. Refuses a protocol version that selects none
+    /// (`validation_schema`) for a type parsed from its schema.
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
         #[cfg(feature = "validation")]
-        if let Some(loaded) = self
+        match self
             .document_type_for_name(document_type_name)?
             .json_schema_validator_ref()
             .loaded_validation_schema()
         {
-            return Ok(loaded.schema.clone());
+            Some(LoadedValidationSchema::Built { schema, .. }) => return Ok(schema.clone()),
+            Some(LoadedValidationSchema::Refused(refusal)) => {
+                return Err(ProtocolError::DataContractError(refusal.clone()))
+            }
+            None => {}
         }
         let root = self.document_type_validated_schema(document_type_name, platform_version)?;
         let (schema, _) = ValidationSchema::build(&root, platform_version)?;
