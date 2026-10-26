@@ -71,15 +71,15 @@ pub struct EstablishedContact {
     /// to be built for the current reference.
     ///
     /// Load-bearing for **rotation self-heal across restart**. When the
-    /// contact rotates their receiving xpub the sweep tears down the stale
-    /// external account and re-registers from the new xpub — but if the
-    /// rebuild is deferred (no signer) and the app restarts before it drains,
-    /// the persisted account-registration row (an upsert with no tombstone)
-    /// rebuilds the STALE xpub while `incoming_request` carries the new
-    /// reference. The account-build sweep would then skip the contact (the
-    /// account exists) forever, sending to addresses the contact no longer
-    /// watches. Comparing this marker against `incoming_request.account_reference`
-    /// lets the sweep detect a stale account and tear it down + rebuild.
+    /// contact rotates their receiving xpub the external account must be
+    /// rebuilt from the new xpub — but if the rebuild is deferred (no signer)
+    /// and the app restarts before it drains, the persisted
+    /// account-registration row (an upsert with no tombstone) restores the
+    /// STALE xpub while `incoming_request` carries the new reference. The
+    /// account-build sweep would then skip the contact (the account exists)
+    /// forever, sending to addresses the contact no longer watches. Comparing
+    /// this marker against `incoming_request.account_reference` lets the sweep
+    /// queue the account for a rebuild that confirms or replaces it.
     ///
     /// Reset to `None` on (re-)establish and on rotation (the account must be
     /// rebuilt from the new key material). Persisted on the contact's

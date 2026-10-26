@@ -1571,7 +1571,7 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 /// and pays to, so an address encoded for another network still matches its
 /// key. A failed derivation counts as a mismatch, and a hardened pool never
 /// matches: its children cannot be derived from a public key.
-fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+pub(crate) fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
     #[cfg(test)]
     POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
     if pool.pool_type == AddressPoolType::AbsentHardened {

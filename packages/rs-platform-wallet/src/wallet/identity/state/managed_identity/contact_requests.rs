@@ -451,6 +451,7 @@ impl ManagedIdentity {
             );
             persister.store(cs.into())?;
             self.dashpay.sent_contact_requests.remove(&sender_id);
+            self.note_outbound_rekey(&sender_id, &contact.incoming_request);
             self.dashpay.established_contacts.insert(sender_id, contact);
         } else {
             // No matching sent request, just add as incoming
@@ -540,17 +541,16 @@ impl ManagedIdentity {
     ///   encrypted xpub + key indices) and clear
     ///   `payment_channel_broken` — a superseding request is exactly
     ///   the "wait for a new request" recovery the broken flag's
-    ///   docs promise. The caller is responsible for tearing down the
-    ///   stale external account so the build sweep re-registers it
-    ///   from the new xpub.
+    ///   docs promise. The rotation is recorded, so payments refuse the
+    ///   stale external account until the build sweep rebuilds it from
+    ///   the new xpub.
     /// - **Pending incoming** (not yet accepted): replace the entry —
     ///   accepting later uses the freshest key material.
     ///
     /// No-op if the sender isn't tracked at all (callers route fresh
     /// requests through [`Self::add_incoming_contact_request`]).
     /// Persists the resulting changeset. Returns `true` when an
-    /// established contact was re-keyed (the caller's signal to tear
-    /// down the stale external account).
+    /// established contact was re-keyed.
     pub fn apply_rotated_incoming_request(
         &mut self,
         request: ContactRequest,
@@ -565,7 +565,7 @@ impl ManagedIdentity {
         // The sync sweep collapses to the newest doc per sender, so this
         // shouldn't normally fire, but the state method must be safe to
         // call repeatedly with the same request without thrashing the
-        // persister or re-tearing-down the external account.
+        // persister or re-queueing the external account's rebuild.
         let already_applied = self
             .dashpay
             .established_contacts
@@ -601,8 +601,8 @@ impl ManagedIdentity {
         // method's own `already_applied` guard above — so a rotation committed
         // to memory but not to disk locks itself out of both, reports a
         // complete pass, advances the cursor, and loses the new key material
-        // at the next restart while the caller never tears down the stale
-        // external account.
+        // at the next restart while the stale external account is never
+        // rebuilt.
         let rekeyed_established =
             if let Some(contact) = self.dashpay.established_contacts.get(&sender_id) {
                 tracing::info!(
@@ -620,9 +620,9 @@ impl ManagedIdentity {
                 // the new request rather than showing the old label against
                 // fresh key material.
                 updated.contact_account_label = None;
-                // The stale external account (built from the old reference)
-                // is torn down by the caller — reset the marker so the build
-                // sweep re-registers from the new xpub and re-stamps it.
+                // The external account was built from the old reference —
+                // reset the marker so the build sweep rebuilds it from the new
+                // xpub and re-stamps it.
                 updated.external_account_reference = None;
                 cs.established.insert(
                     SentContactRequestKey {
@@ -632,6 +632,7 @@ impl ManagedIdentity {
                     updated.clone(),
                 );
                 persister.store(cs.into())?;
+                self.note_outbound_rekey(&sender_id, &updated.incoming_request);
                 self.dashpay.established_contacts.insert(sender_id, updated);
                 true
             } else if tracked_pending {
@@ -711,6 +712,7 @@ impl ManagedIdentity {
         let contact = EstablishedContact::new(*sender_id, outgoing_request, incoming_request);
 
         // Add to established contacts
+        self.note_outbound_rekey(sender_id, &contact.incoming_request);
         self.dashpay
             .established_contacts
             .insert(*sender_id, contact.clone());
@@ -1745,6 +1747,48 @@ mod tests {
             est.alias,
             Some("Bob".to_string()),
             "re-establish must preserve the alias"
+        );
+    }
+
+    /// Re-establishing a contact with another encrypted xpub records a
+    /// rotation; one with the same xpub does not.
+    #[test]
+    fn should_record_a_rotation_when_a_contact_is_reestablished_with_another_xpub() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p)
+            .expect("setup persists");
+        assert!(!managed.outbound_rekeyed(&contact_id));
+
+        // The same xpub re-ingested through the incoming side.
+        managed
+            .dashpay
+            .sent_contact_requests
+            .insert(contact_id, create_contact_request(our_id, contact_id, 3));
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 4), &p)
+            .expect("re-establish persists");
+        assert!(!managed.outbound_rekeyed(&contact_id), "the same xpub");
+
+        // Another xpub through the incoming side.
+        let mut rekeyed = create_contact_request(contact_id, our_id, 5);
+        rekeyed.encrypted_public_key = vec![1u8; 96];
+        managed
+            .dashpay
+            .sent_contact_requests
+            .insert(contact_id, create_contact_request(our_id, contact_id, 6));
+        managed
+            .add_incoming_contact_request(rekeyed, &p)
+            .expect("re-establish persists");
+        assert!(
+            managed.outbound_rekeyed(&contact_id),
+            "via the incoming side"
         );
     }
 

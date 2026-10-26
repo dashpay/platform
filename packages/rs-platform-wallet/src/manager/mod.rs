@@ -5,6 +5,7 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
+pub(crate) use load::pool_derives_from;
 #[cfg(test)]
 pub(crate) use load::pool_validations_on_this_thread;
 mod persistence_load;

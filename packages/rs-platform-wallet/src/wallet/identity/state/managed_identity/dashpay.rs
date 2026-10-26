@@ -120,6 +120,16 @@ pub struct DashPayState {
     /// which is safe and far cheaper than re-scanning every pass forever.
     pub sent_payment_reconcile_swept_table: BTreeMap<Identifier, [u8; 32]>,
 
+    /// Established contacts that this process saw take another encrypted
+    /// xpub than the one they had — a rotation — so their outbound account
+    /// may derive addresses the contact no longer watches. Payments refuse to
+    /// derive from it until it is rebuilt from the live request.
+    ///
+    /// In-memory only: a relaunch cannot tell a rotation from a host that did
+    /// not restore the outbound-account marker, so the restored account is
+    /// used as persisted until the rebuild confirms or replaces it.
+    pub(super) outbound_rekeyed: BTreeSet<Identifier>,
+
     /// Cached **contact** profiles keyed by the contact's identity id —
     /// established contacts, pending incoming-request senders, and (later)
     /// ignored senders, independent of relationship state. Populated by

@@ -973,9 +973,9 @@ fn ingest_received_requests(
         }
 
         if tracked_reference.is_some() {
-            // Rotation: supersede the tracked request. When an established
-            // contact was re-keyed, queue the stale external account for
-            // teardown so the build sweep re-registers from the new xpub.
+            // Rotation: supersede the tracked request. A re-keyed established
+            // contact's external account is queued for a rebuild from the new
+            // xpub, and payments refuse it until then.
             match managed.apply_rotated_incoming_request(contact_request.clone(), persister) {
                 Ok(true) => rotated_contacts.push(sender_id),
                 Ok(false) => {}
@@ -1097,22 +1097,24 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
     deadline.is_some_and(|d| std::time::Instant::now() >= d)
 }
 
-/// Whether a registered outbound `DashpayExternalAccount` for `contact`
-/// must be torn down + rebuilt because it was NOT built from the contact's
-/// current `incoming_request.account_reference`.
+/// Whether a registered outbound `DashpayExternalAccount` for `contact` is
+/// not known to be built from the contact's current
+/// `incoming_request.account_reference`, so it must be rebuilt — confirmed in
+/// place when the live request decrypts to the same xpub, replaced otherwise —
+/// before a payment derives from it.
 ///
 /// Only a **registered** account (`has_external == true`) can be stale — a
 /// missing account is handled by the ordinary build-candidate collection.
 /// A permanently-broken channel is left alone (the sweep never rebuilds
 /// broken contacts; they heal on a superseding request). The staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
-/// a mismatch (or a `None` marker from a cold restart on a host that did not
-/// carry it — the in-tree hosts persist it on the established rows, so a
-/// healthy account survives a restart without a rebuild) means the persisted,
-/// tombstone-less account row rebuilt the rotated-away xpub while the contact
-/// already tracks the new reference — so `send_payment` would derive addresses
-/// the contact no longer watches until it is rebuilt.
-pub(super) fn external_account_needs_rebuild(
+/// a mismatch means the contact rotated to a request the account was not
+/// built from, and a `None` marker means a host restored the account without
+/// it — neither the SQLite backend nor the Swift host keeps it. The account
+/// stays registered meanwhile; after a rotation this process observed,
+/// `reserve_contact_payment_address` refuses to derive from it until the
+/// rebuild.
+pub(crate) fn external_account_needs_rebuild(
     contact: &EstablishedContact,
     has_external: bool,
 ) -> bool {
@@ -1495,7 +1497,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             //     candidates; then DROP the guard before registering. ---
             let candidates = {
                 let mut wm = self.wallet_manager.write().await;
-                let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) else {
+                let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
                     // Fetched, but there is no longer anywhere to put it —
                     // nothing of this identity's is ingested. A LOCAL fault,
                     // not a remote one: Platform answered. Recorded so the
@@ -1512,8 +1514,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     }
                 };
                 // Established contacts re-keyed by a rotation request in
-                // this pass — their stale external accounts are torn down
-                // below so the build sweep re-registers from the new xpub.
+                // this pass — the build sweep rebuilds their external
+                // accounts from the new xpub.
                 let mut rotated_contacts: Vec<Identifier> = Vec::new();
                 // Track whether every ingest reached disk. A swallowed persist
                 // failure would let the cursor advance past a request that
@@ -1533,8 +1535,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // ingest (see `newest_received_per_sender`). Without this, a
                 // stale older doc is mis-read as a "rotation" away from the
                 // tracked state on every sweep, flipping the stored reference
-                // back and forth, tearing down + rebuilding the external
-                // account, and writing a changeset each pass forever.
+                // back and forth, rebuilding the external account, and
+                // writing a changeset each pass forever.
                 let parsed_received = received_docs.iter().filter_map(|(_doc_id, maybe_doc)| {
                     let doc = maybe_doc.as_ref()?;
                     Self::parse_contact_request_doc(doc, doc.owner_id(), identity_id)
@@ -1576,67 +1578,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     newest_by_recipient,
                 );
 
-                // (2a') Rotation self-heal across restart: an external account
-                //       rebuilt from the persisted (tombstone-less) registration
-                //       row after a restart can carry the STALE xpub while the
-                //       established contact already tracks the new incoming
-                //       reference (the deferred rebuild was lost with the
-                //       in-memory queue at load). Such an account exists but was
-                //       NOT built from the current reference, so the plain
-                //       `has_external` gate would skip it forever. Detect a
-                //       registered external account whose recorded
-                //       `external_account_reference` does not match the contact's
-                //       current `incoming_request.account_reference` (including a
-                //       `None` marker from a cold restore that didn't carry it),
-                //       and enqueue it for teardown + rebuild alongside the
-                //       in-pass rotations. Idempotent: once rebuilt the marker is
-                //       stamped, so the next sweep sees a match and skips it.
-                //       Accesses the managed identity's established contacts and
-                //       `info.core_wallet` as DISJOINT fields of `info` via a
-                //       plain `for` loop (the same split the teardown loop below
-                //       relies on) — a closure capturing whole `info` would
-                //       collide with the mutable `managed` reborrow.
-                {
-                    use key_wallet::account::account_collection::DashpayAccountKey;
-                    for (contact_id, contact) in managed.dashpay().established_contacts().iter() {
-                        let key = DashpayAccountKey {
-                            index: 0,
-                            user_identity_id: identity_id.to_buffer(),
-                            friend_identity_id: contact_id.to_buffer(),
-                        };
-                        let has_external = info
-                            .core_wallet
-                            .accounts
-                            .dashpay_external_accounts
-                            .contains_key(&key);
-                        if external_account_needs_rebuild(contact, has_external)
-                            && !rotated_contacts.contains(contact_id)
-                        {
-                            rotated_contacts.push(*contact_id);
-                        }
-                    }
-                }
-
-                // (2b) Tear down stale external accounts for contacts that
-                //      rotated in this pass: both the immutable Account
-                //      (old xpub — `send_payment`'s derivation source) and
-                //      the managed wrapper (old address pool). The
-                //      candidate collection below then re-queues them and
-                //      the build step re-registers from the NEW encrypted
-                //      xpub. The persisted account row is upserted (same
-                //      unique key) when the re-registration round lands.
-                for contact_id in &rotated_contacts {
-                    use key_wallet::account::account_collection::DashpayAccountKey;
-                    let key = DashpayAccountKey {
-                        index: 0,
-                        user_identity_id: identity_id.to_buffer(),
-                        friend_identity_id: contact_id.to_buffer(),
-                    };
-                    wallet.accounts.dashpay_external_accounts.remove(&key);
-                    info.core_wallet
-                        .accounts
-                        .dashpay_external_accounts
-                        .remove(&key);
+                // (2a') A contact that rotated in this pass had its marker
+                //       reset, and one restored without a marker never had
+                //       one: either way `external_account_needs_rebuild`
+                //       holds, so the candidate collection below queues the
+                //       outbound account for a rebuild. The account stays
+                //       registered meanwhile — still watched, its pools intact
+                //       — and after an observed rotation
+                //       `reserve_contact_payment_address` refuses to derive from
+                //       it until the rebuild replaces it.
+                if !rotated_contacts.is_empty() {
+                    tracing::debug!(
+                        owner = %identity_id,
+                        rotated = rotated_contacts.len(),
+                        "contacts rotated their addresses; their outbound accounts await a rebuild"
+                    );
                 }
 
                 // Advance the high-water cursors to the max `$createdAt`
@@ -1670,7 +1626,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
 
                 // (3) Collect account-building candidates: every established
-                //     contact missing a sending (external) account, skipping
+                //     contact missing a sending (external) account or holding
+                //     one that awaits a rebuild, skipping
                 //     contacts whose payment channel is already marked
                 //     permanently broken (no unbounded retry).
                 Self::collect_account_build_candidates(info, &identity_id)
@@ -1905,7 +1862,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .accounts
                 .dashpay_external_accounts
                 .contains_key(&key);
-            if has_external {
+            // A registered account built from the contact's live request
+            // needs nothing; one that may not be (a rotation, or a marker the
+            // host did not restore) is queued to be confirmed or replaced.
+            if has_external && !external_account_needs_rebuild(contact, has_external) {
                 continue;
             }
             // The incoming request carries the counterparty's encrypted
@@ -1982,6 +1942,30 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             contact = %contact_id,
             "Deferred DashPay account build: enqueued for the signer-backed drain"
         );
+    }
+
+    /// Queue `contact_id`'s outbound account for a build when it is missing or
+    /// awaits a rebuild, so a payment's drain builds, confirms or replaces it
+    /// before an address is derived. The sweep queues the same entries; this
+    /// covers a payment made before the sweep has run, as after a launch on a
+    /// host that does not keep the queue.
+    pub(super) async fn queue_outbound_rebuild(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+    ) {
+        let candidate = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+                return;
+            };
+            Self::collect_account_build_candidates(info, identity_id)
+                .into_iter()
+                .find(|candidate| candidate.contact_id == *contact_id)
+        };
+        if let Some(candidate) = candidate {
+            self.build_contact_accounts(identity_id, candidate).await;
+        }
     }
 
     /// Enqueue the deferred contact-crypto ops for a contact discovered by the
@@ -2572,9 +2556,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             // entry's payload. An `AlreadyExisted` no-op may
                             // have hit a pre-rotation row (the account key
                             // ignores `account_reference`); stamping it as
-                            // current would suppress the sweep's teardown +
-                            // rebuild forever (same reasoning as the accept
-                            // path).
+                            // current would suppress the sweep's rebuild
+                            // forever (same reasoning as the accept path).
                             if registration == ExternalAccountRegistration::Built {
                                 self.note_external_account_registered(
                                     &entry.owner_identity_id,
@@ -3245,8 +3228,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// never fires and `send_payment` silently derives addresses the
     /// contact no longer watches. Comparing the live ciphertext against the
     /// one we built from detects the race; on mismatch the marker is left
-    /// stale (or `None`) so the sweep's teardown + rebuild picks up the
-    /// fresh request.
+    /// stale (or `None`) so the sweep's rebuild picks up the fresh request.
     pub(crate) async fn note_external_account_registered(
         &self,
         identity_id: &Identifier,
@@ -3276,7 +3258,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Where markers are kept on disk, registration is their only writer:
         // it binds the marker in the account's own round, to the request the
         // account was built from. A completion arriving late — after the
-        // account was torn down and rebuilt, or from a request that reused
+        // account was rebuilt from a newer request, or from a request that reused
         // the same ciphertext under another reference — could otherwise
         // stamp the live reference beside an obsolete durable account, and a
         // restart would trust the pairing. So it only heals the broken flag,
@@ -3711,7 +3693,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // payload: an `AlreadyExisted` no-op may have hit a row built from a
         // PRE-rotation xpub (the account key ignores `account_reference`), and
         // stamping it as current would make `external_account_needs_rebuild`
-        // skip the teardown + rebuild forever — `send_payment` would keep
+        // skip the rebuild forever — `send_payment` would keep
         // deriving from an xpub the contact no longer watches. Left unstamped,
         // the sweep detects the stale marker and rebuilds; its build path
         // stamps + clears broken then.
