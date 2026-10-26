@@ -127,13 +127,20 @@ pub enum DataContractInSerializationFormat {
 }
 
 /// The contract of a contract state transition as decoding reads it: the variants of
-/// [`DataContractInSerializationFormat`] a transition may carry, at the same tags, so the same
-/// bytes decode to the same contract, and none at the tag of format version 2, the stored format,
-/// which only state holds. Decoding refuses that tag before reading any of the contract, as
-/// software without the format refuses it.
+/// [`DataContractInSerializationFormat`] a transition may carry, at the same tags (bincode) and
+/// `$formatVersion`s (serde), so the same input reads as the same contract, and none for format
+/// version 2, the stored format, which only state holds. Both refuse that format at its tag,
+/// before reading any of the contract, as software without the format refuses it.
 #[derive(Decode, DecodeUntrusted)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub(crate) enum TransitionContractFormat {
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DataContractInSerializationFormatV1),
 }
 

@@ -3301,12 +3301,12 @@ mod tests {
                 ),
                 "untagged",
             );
-            // Serde (JSON, platform values) refuses it once the contract is read
+            // Serde (JSON, platform values) refuses it at its `$formatVersion`
             #[cfg(feature = "serde-conversion")]
             {
                 let assert_refused_by_serde = |refusal: String, decoder: &str| {
                     assert!(
-                        refusal.contains("no state transition may carry"),
+                        refusal.contains("unknown variant `2`"),
                         "{decoder}: {refusal}"
                     );
                 };

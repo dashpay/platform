@@ -12,20 +12,20 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Value;
 use std::collections::BTreeMap;
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use super::stored_error;
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validation_schema::{
     ArrayConstraints, FormatConstraints, JsonType, JsonTypes, NumberConstraints, ObjectConstraints,
     SchemaNode, StringConstraints, ValidationSchema, ValidatorFormat,
 };
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::EncryptedFor;
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use crate::ProtocolError;
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use platform_version::version::FeatureVersion;
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use std::sync::Arc;
 
 /// `ValidationSchema`, and the builder generation that built it.
@@ -133,7 +133,7 @@ pub(super) enum StoredValidatorFormat {
     Uri,
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl StoredValidationSchema {
     /// `schema`, which builder generation `generation` built.
     pub(super) fn new(schema: &ValidationSchema, generation: FeatureVersion) -> Self {
@@ -195,7 +195,7 @@ impl StoredValidationSchema {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<&SchemaNode> for StoredSchemaNode {
     fn from(node: &SchemaNode) -> Self {
         let SchemaNode {
@@ -272,7 +272,7 @@ impl From<&SchemaNode> for StoredSchemaNode {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<StoredSchemaNode> for SchemaNode {
     fn from(stored: StoredSchemaNode) -> Self {
         let StoredSchemaNode {
@@ -351,7 +351,7 @@ impl From<StoredSchemaNode> for SchemaNode {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<JsonType> for StoredJsonType {
     fn from(json_type: JsonType) -> Self {
         match json_type {
@@ -366,7 +366,7 @@ impl From<JsonType> for StoredJsonType {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<StoredJsonType> for JsonType {
     fn from(stored: StoredJsonType) -> Self {
         match stored {
@@ -381,7 +381,7 @@ impl From<StoredJsonType> for JsonType {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<ValidatorFormat> for StoredValidatorFormat {
     fn from(format: ValidatorFormat) -> Self {
         match format {
@@ -399,7 +399,7 @@ impl From<ValidatorFormat> for StoredValidatorFormat {
     }
 }
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 impl From<StoredValidatorFormat> for ValidatorFormat {
     fn from(stored: StoredValidatorFormat) -> Self {
         match stored {

@@ -38,7 +38,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use validation_schema::StoredValidationSchema;
 
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validation_schema::{
     validated_schema, ValidationSchema,
 };
@@ -120,14 +120,8 @@ impl DocumentTypeInSerializationFormatV0 {
             DocumentTypeRef::V1(v1) => Cow::Owned(v1.clone().into()),
             DocumentTypeRef::V2(v2) => Cow::Borrowed(v2),
         };
-        #[cfg(feature = "validation-schema")]
         let validation_schema =
             stored_validation_schema(&document_type, schema_defs, platform_version)?;
-        #[cfg(not(feature = "validation-schema"))]
-        let validation_schema = {
-            let _ = (schema_defs, platform_version);
-            None
-        };
         let rules = |rules: &BTreeMap<String, _>| {
             rules
                 .iter()
@@ -355,6 +349,8 @@ impl DocumentTypeInSerializationFormatV0 {
                 }
             },
         );
+        // Without `validation` a document type has no validator to hold it: read and dropped,
+        // and such a build does not store a document type compiled again
         #[cfg(not(feature = "validation"))]
         let _ = validation_schema;
 
@@ -425,13 +421,12 @@ impl DocumentTypeInSerializationFormatV0 {
 /// a stored form, or the one the builder `platform_version` selects builds from its schema.
 /// `None` when it was read back without one, when that version selects no builder, or when the
 /// builder refuses the schema; its documents are then refused, at every version that reads it.
-#[cfg(feature = "validation-schema")]
+#[cfg(feature = "validation")]
 fn stored_validation_schema(
     document_type: &DocumentTypeV2,
     schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
     platform_version: &PlatformVersion,
 ) -> Result<Option<StoredValidationSchema>, ProtocolError> {
-    #[cfg(feature = "validation")]
     if let Some(loaded) = document_type
         .json_schema_validator
         .loaded_validation_schema()
@@ -458,6 +453,22 @@ fn stored_validation_schema(
         Err(ProtocolError::DataContractError(_)) => Ok(None),
         Err(error) => Err(error),
     }
+}
+
+/// Without `validation` a document type holds no validation schema read back from a stored
+/// form (it has no validator to hold one), so the stored form written here could differ from
+/// the one a node writes for the same contract: storing a document type compiled needs it.
+#[cfg(not(feature = "validation"))]
+fn stored_validation_schema(
+    _document_type: &DocumentTypeV2,
+    _schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
+    _platform_version: &PlatformVersion,
+) -> Result<Option<StoredValidationSchema>, ProtocolError> {
+    Err(ProtocolError::NotSupported(
+        "storing a document type compiled needs the validation feature, whose document types \
+         keep the validation schema they were read back with"
+            .to_string(),
+    ))
 }
 
 #[cfg(test)]
