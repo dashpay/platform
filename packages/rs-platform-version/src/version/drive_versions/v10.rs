@@ -34,8 +34,10 @@ use crate::version::drive_versions::{
 ///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
 ///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 lowers
 ///   each operation of an estimated batch with layer descriptions of its own and merges them
-///   keeping the deeper one, so no other write of the batch (a document, a nonce) lowers what
-///   the escrows describe, whichever is built first.
+///   into one covering both (the deeper depth, with the nodes priced dearer there), so no other
+///   write of the batch (a document, a nonce) lowers what the escrows describe, whichever is
+///   built first. It raises the estimate of any batch whose operations describe a shared layer
+///   differently, an ordinary document transition included.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -60,7 +62,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         batch_operations: DriveBatchOperationsMethodVersion {
-            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions keeping the deeper
+            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both
             ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
