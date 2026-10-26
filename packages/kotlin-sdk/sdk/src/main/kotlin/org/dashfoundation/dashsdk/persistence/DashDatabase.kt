@@ -179,9 +179,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * treated the account as rotated, tore it down and rebuilt it — and that
  * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
  * native rebuilds once, stamps it, and never again.
+ *
+ * Version 16 (outbound DashPay account digest): adds the nullable
+ * `accounts.encryptedXpubDigest` column — the digest of the contact request
+ * an outbound DashPay account's xpub was decrypted from, written on the same
+ * row as the xpub through `onPersistAccountXpubDigest` and read back through
+ * `onLoadAccountXpubDigest`. A relaunch compares it with the contact's live
+ * request, so a rotation seen before the account was rebuilt keeps payments
+ * to that contact held. NULL for pre-migration rows: native verifies each
+ * outbound account once by decrypting, and stamps it.
  */
 @Database(
-    version = 15,
+    version = 16,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -717,6 +726,16 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v15 -> v16: additive nullable `accounts.encryptedXpubDigest`, see
+         * the version-16 class doc above. NULL for every pre-existing row.
+         */
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `accounts` ADD COLUMN `encryptedXpubDigest` BLOB")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -746,6 +765,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                 .build()
 

@@ -69,20 +69,27 @@ final class OutboundAccountReplacementPersistenceTests: XCTestCase {
         XCTAssertNil(txos.first?.coreAddress)
     }
 
-    func testDigestRoundTripsOnTheAccountRowAndFailsClosed() throws {
-        let container = try DashModelContainer.createInMemory()
-        try seed(container)
-        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+    func testDigestSurvivesStoreReopenOnTheAccountRowAndFailsClosed() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
         let digest = Data(repeating: 0xD1, count: 32)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            try seed(container)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            XCTAssertNil(try handler.loadAccountXpubDigest(walletId: walletId, key: key))
+            XCTAssertThrowsError(try handler.persistAccountXpubDigest(walletId: walletId, key: key, digest: digest))
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertThrowsError(try handler.persistAccountXpubDigest(
+                walletId: walletId, key: key, digest: Data(repeating: 0xD1, count: 31)))
+            try handler.persistAccountXpubDigest(walletId: walletId, key: key, digest: digest)
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        }
 
-        XCTAssertNil(try handler.loadAccountXpubDigest(walletId: walletId, key: key))
-        XCTAssertThrowsError(try handler.persistAccountXpubDigest(walletId: walletId, key: key, digest: digest))
-        handler.beginChangeset(walletId: walletId)
-        XCTAssertThrowsError(try handler.persistAccountXpubDigest(
-            walletId: walletId, key: key, digest: Data(repeating: 0xD1, count: 31)))
-        try handler.persistAccountXpubDigest(walletId: walletId, key: key, digest: digest)
-        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
-
+        let reopened = try DashModelContainer.create(url: url)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
         XCTAssertEqual(try handler.loadAccountXpubDigest(walletId: walletId, key: key), digest)
         let missing = PlatformWalletPersistenceHandler.AccountLookupKey(typeTag: outboundTypeTag, index: 0, standardTag: 0, registrationIndex: 0,
                         keyClass: 0, userIdentityId: owner, friendIdentityId: Data(repeating: 9, count: 32))

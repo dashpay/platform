@@ -48,7 +48,9 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::support::{guard, net_from_ord, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
+use jni::objects::{
+    GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue, JValueOwned,
+};
 use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
@@ -244,6 +246,24 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onWalletChangesetDashPayBackfill",
             WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
         ),
+        pool_reset: bridge_overrides(
+            env,
+            bridge,
+            "onResetAccountAddressPool",
+            RESET_ACCOUNT_ADDRESS_POOL_DESCRIPTOR,
+        ),
+        persist_digest: bridge_overrides(
+            env,
+            bridge,
+            "onPersistAccountXpubDigest",
+            PERSIST_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+        ),
+        load_digest: bridge_overrides(
+            env,
+            bridge,
+            "onLoadAccountXpubDigest",
+            LOAD_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+        ),
     })
 }
 
@@ -300,6 +320,14 @@ struct BridgeOverrides {
     header: bool,
     /// `onWalletChangesetDashPayBackfill`, which stores the record.
     backfill: bool,
+    /// `onResetAccountAddressPool`. Without it a round that replaces an
+    /// account's xpub fails rather than keep the previous xpub's rows.
+    pool_reset: bool,
+    /// `onPersistAccountXpubDigest` and `onLoadAccountXpubDigest`, wired only
+    /// as a pair: a digest written but never read back is no use, and one
+    /// read back without being written could only be stale.
+    persist_digest: bool,
+    load_digest: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -320,6 +348,13 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         } else {
             None
         },
+        on_reset_account_address_pools_fn: overrides
+            .pool_reset
+            .then_some(tramp_reset_account_address_pools as _),
+        on_persist_account_xpub_digest_fn: (overrides.persist_digest && overrides.load_digest)
+            .then_some(tramp_persist_account_xpub_digest as _),
+        on_load_account_xpub_digest_fn: (overrides.persist_digest && overrides.load_digest)
+            .then_some(tramp_load_account_xpub_digest as _),
         ..Default::default()
     }
 }
@@ -764,6 +799,125 @@ fn call_persist_account_registration(
     .i()
 }
 
+// ── Outbound account sidecars: pool reset, request digest ─────────────
+
+/// The spec arguments every account-row sidecar call leads with.
+fn account_key_args<'l>(
+    env: &mut JNIEnv<'l>,
+    s: &AccountSpecFFI,
+) -> Result<[JValueOwned<'l>; 7], jni::errors::Error> {
+    let user = env.byte_array_from_slice(&s.user_identity_id)?;
+    let friend = env.byte_array_from_slice(&s.friend_identity_id)?;
+    Ok([
+        JValueOwned::Byte(s.type_tag as i8),
+        JValueOwned::Byte(s.standard_tag as i8),
+        JValueOwned::Int(s.index as i32),
+        JValueOwned::Int(s.registration_index as i32),
+        JValueOwned::Int(s.key_class as i32),
+        JValueOwned::Object(user.into()),
+        JValueOwned::Object(friend.into()),
+    ])
+}
+
+unsafe extern "C" fn tramp_reset_account_address_pools(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    specs: *const AccountSpecFFI,
+    count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for s in slice_or_empty(specs, count) {
+            let code = env.with_local_frame(16, |env| {
+                let key = account_key_args(env, s)?;
+                let mut args: Vec<JValue> = vec![(&wid).into()];
+                args.extend(key.iter().map(JValueOwned::borrow));
+                env.call_method(
+                    bridge,
+                    "onResetAccountAddressPool",
+                    RESET_ACCOUNT_ADDRESS_POOL_DESCRIPTOR,
+                    &args,
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+unsafe extern "C" fn tramp_persist_account_xpub_digest(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    spec: *const AccountSpecFFI,
+    digest: *const u8,
+) -> i32 {
+    if spec.is_null() || digest.is_null() {
+        return ERR_JNI;
+    }
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let key = account_key_args(env, &*spec)?;
+        let digest = bytes(env, digest, 32)?;
+        let mut args: Vec<JValue> = vec![(&wid).into()];
+        args.extend(key.iter().map(JValueOwned::borrow));
+        args.push((&digest).into());
+        env.call_method(
+            bridge,
+            "onPersistAccountXpubDigest",
+            PERSIST_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+            &args,
+        )?
+        .i()
+    })
+}
+
+unsafe extern "C" fn tramp_load_account_xpub_digest(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    spec: *const AccountSpecFFI,
+    out_found: *mut bool,
+    out_digest: *mut u8,
+) -> i32 {
+    if spec.is_null() || out_found.is_null() || out_digest.is_null() {
+        return ERR_JNI;
+    }
+    *out_found = false;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let key = account_key_args(env, &*spec)?;
+        let mut args: Vec<JValue> = vec![(&wid).into()];
+        args.extend(key.iter().map(JValueOwned::borrow));
+        let digest = env
+            .call_method(
+                bridge,
+                "onLoadAccountXpubDigest",
+                LOAD_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+                &args,
+            )?
+            .l()?;
+        if digest.is_null() {
+            return Ok(None);
+        }
+        env.convert_byte_array(JByteArray::from(digest)).map(Some)
+    });
+    match loaded {
+        None => ERR_JNI,
+        Some(None) => 0,
+        Some(Some(digest)) => {
+            // A digest of another length is handed over as none; the wallet
+            // then verifies the account by decrypting.
+            if digest.len() == 32 {
+                std::ptr::copy_nonoverlapping(digest.as_ptr(), out_digest, 32);
+                *out_found = true;
+            }
+            0
+        }
+    }
+}
+
 // ── Account address pools ─────────────────────────────────────────────
 
 unsafe extern "C" fn tramp_persist_account_address_pools(
@@ -948,6 +1102,16 @@ const WALLET_CHANGESET_HEADER_DESCRIPTOR: &str = "([BZIZJJJJ[B)I";
 /// site, the descriptor table and the override probe in
 /// [`restrict_account_writers`].
 const ACCOUNT_REGISTRATION_DESCRIPTOR: &str = "([BBBIII[B[B[B)I";
+
+/// `onResetAccountAddressPool(walletId, typeTag, standardTag, index,
+/// registrationIndex, keyClass, userIdentityId, friendIdentityId): Int`.
+const RESET_ACCOUNT_ADDRESS_POOL_DESCRIPTOR: &str = "([BBBIII[B[B)I";
+
+/// `onPersistAccountXpubDigest(walletId, <account key>, digest): Int`.
+const PERSIST_ACCOUNT_XPUB_DIGEST_DESCRIPTOR: &str = "([BBBIII[B[B[B)I";
+
+/// `onLoadAccountXpubDigest(walletId, <account key>): ByteArray?`.
+const LOAD_ACCOUNT_XPUB_DIGEST_DESCRIPTOR: &str = "([BBBIII[B[B)[B";
 
 /// `onPersistAccountAddressPoolEntry`'s descriptor, shared the same way.
 const ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR: &str =
@@ -5129,6 +5293,9 @@ mod tests {
                 sweeps: false,
                 header,
                 backfill,
+                pool_reset: false,
+                persist_digest: false,
+                load_digest: false,
             });
             assert_eq!(
                 extension.on_persist_wallet_dashpay_backfill_fn.is_some(),
@@ -5140,9 +5307,43 @@ mod tests {
             sweeps: true,
             header: false,
             backfill: false,
+            pool_reset: false,
+            persist_digest: false,
+            load_digest: false,
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
+    }
+
+    /// The pool reset is wired for a bridge that implements it, and the digest
+    /// slots only for one that implements both halves.
+    #[test]
+    fn outbound_account_sidecar_slots_follow_the_bridges_overrides() {
+        let none = BridgeOverrides {
+            sweeps: false,
+            header: false,
+            backfill: false,
+            pool_reset: false,
+            persist_digest: false,
+            load_digest: false,
+        };
+        let reset = extension_for(BridgeOverrides {
+            pool_reset: true,
+            ..none
+        });
+        assert!(reset.on_reset_account_address_pools_fn.is_some());
+        assert!(reset.on_persist_account_xpub_digest_fn.is_none());
+        for (persist_digest, load_digest) in [(true, false), (false, true), (true, true)] {
+            let extension = extension_for(BridgeOverrides {
+                persist_digest,
+                load_digest,
+                ..none
+            });
+            let wired = persist_digest && load_digest;
+            assert_eq!(extension.on_persist_account_xpub_digest_fn.is_some(), wired);
+            assert_eq!(extension.on_load_account_xpub_digest_fn.is_some(), wired);
+            assert!(extension.on_reset_account_address_pools_fn.is_none());
+        }
     }
 
     /// A bridge inheriting the no-op account writers gets neither account

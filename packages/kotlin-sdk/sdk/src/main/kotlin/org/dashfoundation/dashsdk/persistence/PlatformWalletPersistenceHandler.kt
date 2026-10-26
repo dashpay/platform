@@ -612,6 +612,75 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    // ── Outbound account sidecars ─────────────────────────────────────
+
+    override fun onResetAccountAddressPool(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            val account = fetchAccount(
+                db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,
+                registrationIndex, keyClass, userIdentityId, friendIdentityId,
+            ) ?: return@stage
+            // The TXO -> core address FK cascades; keep funds history.
+            db.txoDao().unlinkFromAccountAddresses(account.id)
+            db.coreAddressDao().deleteByAccount(account.id)
+        }
+        0
+    }
+
+    override fun onPersistAccountXpubDigest(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+        digest: ByteArray,
+    ): Int = guarded {
+        require(digest.size == DIGEST_LENGTH) { "account xpub digest must be $DIGEST_LENGTH bytes" }
+        stage(walletId) { db ->
+            val account = checkNotNull(
+                fetchAccount(
+                    db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,
+                    registrationIndex, keyClass, userIdentityId, friendIdentityId,
+                ),
+            ) { "no account row for the xpub digest" }
+            db.accountDao().update(account.copy(encryptedXpubDigest = digest, lastUpdated = now()))
+        }
+        0
+    }
+
+    override fun onLoadAccountXpubDigest(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+    ): ByteArray? = loadOrThrow {
+        runBlockingResult {
+            checkNotNull(
+                fetchAccount(
+                    database, walletId, typeTag.toInt() and 0xFF, index,
+                    standardTag.toInt() and 0xFF, registrationIndex, keyClass,
+                    userIdentityId, friendIdentityId,
+                ),
+            ) { "no account row to read the xpub digest from" }.encryptedXpubDigest
+        }
+    }
+
     // ── Account address pools ─────────────────────────────────────────
 
     override fun onPersistAccountAddressPoolEntry(
@@ -4102,6 +4171,8 @@ class PlatformWalletPersistenceHandler(
 
     companion object {
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
+        /** Length of an outbound DashPay account's request digest. */
+        private const val DIGEST_LENGTH: Int = 32
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
         internal const val CAPABILITY_INVITATIONS: Long = 0x02
         internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
