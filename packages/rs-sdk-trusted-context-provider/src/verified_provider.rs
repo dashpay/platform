@@ -947,6 +947,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_prove_again_for_a_joined_height_the_lower_fetch_did_not_cover() {
+        let f = fixture(Network::Testnet);
+        let bootstrap = f.bootstrap.clone();
+        let mut answered = 0;
+        let relay = MockRelay::serve(3, move |_| {
+            answered += 1;
+            Some(if answered == 1 {
+                Answer::Late(Duration::from_millis(500), 200, bootstrap.clone())
+            } else {
+                reply(200, bootstrap.clone())
+            })
+        });
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        // The relay proves the lowest target the lower height accepts.
+        let lower = f.target.height + 600;
+        let higher = lower + 1;
+        let first = fetch(&provider, f.quorum_type, f.quorum_hash, lower);
+        let second = async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            fetch(&provider, f.quorum_type, f.quorum_hash, higher).await
+        };
+        let (first, second) = futures::join!(first, second);
+        assert_eq!(first.expect("the lower height is proven"), Some(f.key));
+        // The higher caller waited for the lower fetch instead of asking at
+        // once, then asked for its own height. The fixture proves nothing
+        // higher, so its own fetch fails; it does not fail for having joined.
+        let heights = relay.heights();
+        assert_eq!(heights[..2], [json!(lower), json!(higher)], "{heights:?}");
+        let reason = unavailable_reason(second);
+        assert!(
+            reason.contains(&format!("for core height {higher}")),
+            "{reason}"
+        );
+    }
+
+    #[tokio::test]
     async fn should_prove_an_honest_height_while_a_bogus_one_is_in_flight() {
         let f = fixture(Network::Testnet);
         let bogus = i32::MAX as u32;
