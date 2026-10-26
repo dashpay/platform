@@ -1035,6 +1035,15 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        // The token market contract exists only from its activation version: below it no
+        // contract is served under its id, including one preloaded into the known contracts.
+        #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+        if *id == SystemDataContract::TokenMarket.id()
+            && platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
+        {
+            return Ok(None);
+        }
+
         // First check known contracts cache
         let known = self.known_contracts.lock().unwrap();
         if let Some(contract) = known.get(id) {
@@ -2566,6 +2575,17 @@ mod tests {
             .expect("the lookup must succeed at protocol version 15")
             .expect("the token market contract must be served at protocol version 15");
         assert_eq!(contract.id(), id);
+
+        // A copy preloaded into the known contracts is not served before activation either.
+        provider.add_known_contract((*contract).clone());
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
+            .expect("the lookup must succeed at protocol version 15")
+            .is_some());
     }
 
     #[test]
