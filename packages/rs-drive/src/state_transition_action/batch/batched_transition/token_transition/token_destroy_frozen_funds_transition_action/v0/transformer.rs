@@ -350,6 +350,18 @@ fn read_frozen_listings(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<TokenOrder>, Option<Arc<DataContractFetchInfo>>), Error> {
+    // Before protocol version 15 there are no listings to destroy, and nothing is read: the
+    // frozen balance alone is destroyed, as it always was.
+    if platform_version
+        .drive
+        .methods
+        .token
+        .order_escrow
+        .fetch_frozen_listings
+        .is_none()
+    {
+        return Ok((vec![], None));
+    }
     let (listings, read_cost) = drive.fetch_frozen_token_listings(
         token_id,
         frozen_identity_id,
