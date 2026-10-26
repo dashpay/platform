@@ -333,6 +333,10 @@ pub enum BoundedDecodeError {
     /// A bound from [`CodecBounds`] was hit.
     Bounds(BoundsError),
     /// The bytes are not a valid encoding.
+    ///
+    /// This is bincode's own error, kept for diagnostics. Unlike
+    /// [`BoundsError`] it can carry `usize` fields, so the ABI layer maps it to
+    /// its own fixed-width code instead of exposing it on the wire.
     Decode(DecodeError),
     /// The value ended before the input did.
     TrailingBytes {

@@ -290,8 +290,9 @@ bounded pair instead:
 
 ```rust
 use platform_serialization::bounded::CodecBounds;
-use platform_value::Value;
+use platform_value::{platform_value, Value};
 
+let value = platform_value!({ "name": "alice", "scores": [1, 2, 3] });
 let bounds = CodecBounds { max_bytes: 64 * 1024, max_depth: 256, max_elements: 65_536 };
 let bytes = value.encode_bounded(&bounds)?;
 let decoded = Value::decode_bounded(&bytes, &bounds)?;
