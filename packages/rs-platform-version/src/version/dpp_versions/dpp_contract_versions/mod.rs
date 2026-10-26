@@ -121,6 +121,13 @@ pub struct DocumentTypeMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
     pub document_type_schema: FeatureVersion,
+    /// How full validation checks a document type's schema at registration. 0: against the
+    /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
+    /// which also compiles the schema. 1 (protocol version 15): with the rules of document
+    /// meta-schema v3 in Platform's own code, an index property name held to 255 bytes, and
+    /// the type required to have a typed validation schema, which its documents are checked
+    /// against natively (`validate_document` 2).
+    pub check_document_type_schema: FeatureVersion,
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
@@ -164,6 +171,12 @@ pub struct DocumentTypeSchemaVersions {
     /// documents a `countOf` or `sumOf` totals by integer, string or
     /// identifier keys; 1 (protocol version 15) by byte array keys too.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Builds a document type's typed validation schema and its native validator
+    /// (`document_type::schema::validation_schema`), which `validate_document` 2 checks
+    /// documents against. `None` on versions whose document validation does not read one;
+    /// 0 (protocol version 15) builds what the document validator of protocol version 14
+    /// compiles.
+    pub validation_schema: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
