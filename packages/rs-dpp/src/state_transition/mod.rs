@@ -3010,6 +3010,45 @@ mod tests {
         ))
     }
 
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_agree_with_the_pre_sign_rule_on_keys_that_may_sign_a_non_batch_transition() {
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use strum::IntoEnumIterator;
+
+        let every_bounds = [
+            None,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from([2; 32]),
+            }),
+            Some(ContractBounds::SingleContractDocumentType {
+                id: Identifier::from([2; 32]),
+                document_type_name: "preorder".to_string(),
+            }),
+            Some(ContractBounds::ContractGroup {
+                id: Identifier::from([3; 32]),
+            }),
+        ];
+        let transfer = sample_transfer_st();
+        for purpose in Purpose::iter() {
+            for contract_bounds in &every_bounds {
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id: 7,
+                    purpose,
+                    contract_bounds: contract_bounds.clone(),
+                    ..Default::default()
+                }
+                .into();
+                assert_eq!(
+                    key.can_sign_non_batch(),
+                    transfer.verify_identity_key_bounds(&key).is_ok(),
+                    "{purpose:?} {contract_bounds:?}"
+                );
+            }
+        }
+    }
+
     #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
     #[test]
     fn should_enforce_contract_bounds_before_private_key_signing() {
