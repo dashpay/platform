@@ -3228,6 +3228,52 @@ mod history {
         refused(&market, &place);
     }
 
+    /// A token can reach more decimals than a contract may declare (16) through a conventions
+    /// update, up to the 255 a `u8` holds, and the history records its orders at that scale: a
+    /// listing placed and filled at 200 decimals writes both records, the fill paying the one
+    /// credit the listing is worth.
+    #[tokio::test]
+    async fn should_record_the_orders_of_a_token_past_16_decimals() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration.set_conventions_change_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            },
+            dash_to_credits!(1.0),
+        );
+        market.set_decimals(200).await;
+        market.refresh_contract();
+        let (place, order_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place, &BlockInfo::default());
+        let fill = market.fill_ask(order_id, 1, 1_000, 10).await;
+        market.assert_executes(&fill, &BlockInfo::default());
+
+        let placed = market.history("orderPlaced");
+        assert_eq!(placed.len(), 1);
+        assert_eq!(
+            property(&placed[0], "decimals").to_integer::<u8>().ok(),
+            Some(200)
+        );
+        let filled = market.history("orderFilled");
+        assert_eq!(filled.len(), 1);
+        assert_eq!(
+            property(&filled[0], "decimals").to_integer::<u8>().ok(),
+            Some(200)
+        );
+        assert_eq!(
+            property(&filled[0], "credits").to_integer::<u64>().ok(),
+            Some(1)
+        );
+    }
+
     /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
     /// the token changes to 2 records 8 on its placement and its fill, and its placement is
     /// still proved once it has closed, against the contract at either scale.

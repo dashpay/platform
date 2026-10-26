@@ -1058,7 +1058,7 @@
       "decimals": {
         "type": "integer",
         "minimum": 0,
-        "maximum": 16,
+        "maximum": 255,
         "description": "The token's decimals when the order was placed: its price is per whole token at this scale",
         "position": 6
       }
@@ -1191,7 +1191,7 @@
       "decimals": {
         "type": "integer",
         "minimum": 0,
-        "maximum": 16,
+        "maximum": 255,
         "description": "The decimals the order was placed at, which priced the fill",
         "position": 6
       }
