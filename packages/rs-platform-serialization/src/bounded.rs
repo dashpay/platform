@@ -41,7 +41,7 @@ use bincode::error::DecodeError;
 use bincode::Decode;
 use core::fmt::{self, Display, Formatter};
 
-use crate::BincodeContext;
+use crate::{BincodeContext, PLATFORM_BINCODE_CONFIG};
 
 /// Explicit limits for one bounded decode or encode.
 ///
@@ -318,11 +318,10 @@ impl<'de> BorrowReader<'de> for BoundedSliceReader<'de> {
 
 /// The bincode configuration used for canonical wire bytes: standard layout,
 /// big endian, variable-length integers, no byte limit (the caller's
-/// [`CodecBounds`] is the limit). Identical to the native platform config.
+/// [`CodecBounds`] is the limit). It is [`PLATFORM_BINCODE_CONFIG`] itself, so
+/// guest and native bytes cannot drift apart.
 pub const fn canonical_config() -> Configuration<BigEndian, Varint, NoLimit> {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 /// The decoder type used by [`bounded_decode_from_slice`].
@@ -774,6 +773,8 @@ mod tests {
 
     #[test]
     fn should_use_the_native_big_endian_varint_configuration() {
+        // Spelled out rather than taken from PLATFORM_BINCODE_CONFIG, so the
+        // test still fails if the shared constant itself ever changes.
         let native = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
