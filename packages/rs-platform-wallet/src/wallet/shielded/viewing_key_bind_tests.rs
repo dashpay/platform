@@ -197,8 +197,12 @@ mod zero_amount_tests {
     use super::*;
     use crate::error::PlatformWalletError;
     use dpp::address_funds::PlatformAddress;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::shielded::builder::OrchardProver;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use futures::FutureExt;
     use grovedb_commitment_tree::ProvingKey;
 
@@ -216,6 +220,7 @@ mod zero_amount_tests {
         Unshield,
         Withdraw,
         IdentityTopUp,
+        IdentityCreate,
     }
 
     async fn assert_zero_amount_rejected(spend: Spend) {
@@ -235,6 +240,17 @@ mod zero_amount_tests {
         let platform_address = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network);
         let core_address = dashcore::Address::dummy(network, 1).to_string();
         let identity_id = Identifier::from([0x11; 32]);
+        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        });
+        let identity_signer = simple_signer::signer::SimpleSigner::default();
 
         // Exercise both the contended sync-store path and empty-wallet error precedence.
         for locked in [true, false] {
@@ -294,13 +310,35 @@ mod zero_amount_tests {
                         )
                         .await
                         .map(|_| ()),
+                    Spend::IdentityCreate => wallet
+                        .shielded_identity_create_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            0,
+                            vec![(
+                                identity_key.clone(),
+                                IdentityPublicKeyInCreation::from(&identity_key),
+                            )],
+                            0,
+                            PlatformAddress::P2pkh([0x11; 20]),
+                            &identity_signer,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
                 }
             }
             .now_or_never()
             .unwrap_or_else(|| panic!("{spend:?} waited on the store (locked={locked})"));
+            // Identity-create spends a fixed denomination, rejected by the allow-list check.
+            let expected = match spend {
+                Spend::IdentityCreate => "denomination 0 is not a member",
+                _ => "amount must be > 0",
+            };
             assert!(
                 matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
-                    if message == "amount must be > 0"),
+                    if message.starts_with(expected)),
                 "{spend:?} returned {result:?} (locked={locked})"
             );
         }
@@ -324,6 +362,11 @@ mod zero_amount_tests {
     #[tokio::test]
     async fn should_reject_zero_amount_identity_top_up_before_reserving_notes() {
         assert_zero_amount_rejected(Spend::IdentityTopUp).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_denomination_identity_create_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityCreate).await;
     }
 }
 

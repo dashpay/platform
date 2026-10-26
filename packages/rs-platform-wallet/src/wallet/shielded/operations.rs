@@ -25,7 +25,8 @@ use super::activity_recorder::{
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+    ensure_allowed_denomination, select_notes_for_denomination, select_notes_with_fee,
+    ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
@@ -2827,6 +2828,9 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     min_actions: usize,
     num_keys: usize,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    // Reject zero or any other non-member before waiting on a concurrent sync's store lock.
+    ensure_allowed_denomination(denomination, sdk.version())?;
+
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
