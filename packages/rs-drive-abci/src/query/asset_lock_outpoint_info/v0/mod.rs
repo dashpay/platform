@@ -7,7 +7,7 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_request::GetAssetLockOutpointInfoRequestV0;
 use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_response::{
     get_asset_lock_outpoint_info_response_v0, AssetLockOutpointInfo,
-    GetAssetLockOutpointInfoResponseV0,
+    GetAssetLockOutpointInfoResponseV0, Status,
 };
 use dpp::asset_lock::{reduced_asset_lock_value::AssetLockValueGettersV0, StoredAssetLockInfo};
 use dpp::platform_value::Bytes36;
@@ -62,15 +62,15 @@ impl<C> Platform<C> {
 fn asset_lock_outpoint_info(info: StoredAssetLockInfo) -> AssetLockOutpointInfo {
     match info {
         StoredAssetLockInfo::NotPresent => AssetLockOutpointInfo {
-            status: 1,
+            status: Status::NotPresent as i32,
             remaining_credits: None,
         },
         StoredAssetLockInfo::PartiallyConsumed(value) => AssetLockOutpointInfo {
-            status: 2,
+            status: Status::PartiallyConsumed as i32,
             remaining_credits: Some(value.remaining_credit_value()),
         },
         StoredAssetLockInfo::FullyConsumed => AssetLockOutpointInfo {
-            status: 3,
+            status: Status::FullyConsumed as i32,
             remaining_credits: Some(0),
         },
     }

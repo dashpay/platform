@@ -52,6 +52,8 @@ pub mod system;
 
 #[cfg(feature = "server")]
 mod asset_lock;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod asset_lock_outpoint_info_query;
 #[cfg(feature = "server")]
 /// The saved platform state: its record, the small per-block record, and the
 /// collections kept as one aux entry per member.

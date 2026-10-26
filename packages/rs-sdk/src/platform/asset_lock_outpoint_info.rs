@@ -17,7 +17,7 @@ pub struct AssetLockOutpointInfoQuery {
 
 fn request_for_outpoint(
     outpoint: &OutPoint,
-    settings: &QuerySettings<'_>,
+    _settings: &QuerySettings<'_>,
 ) -> Result<GetAssetLockOutpointInfoRequest, Error> {
     let mut bytes = outpoint.txid.to_byte_array().to_vec();
     bytes.extend_from_slice(&outpoint.vout.to_le_bytes());
@@ -25,7 +25,7 @@ fn request_for_outpoint(
         version: Some(get_asset_lock_outpoint_info_request::Version::V0(
             GetAssetLockOutpointInfoRequestV0 {
                 outpoint: bytes,
-                prove: settings.prove,
+                prove: true,
             },
         )),
     })

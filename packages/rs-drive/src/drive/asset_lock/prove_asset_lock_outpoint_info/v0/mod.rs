@@ -1,4 +1,4 @@
-use crate::drive::asset_lock::asset_lock_outpoint_info_query;
+use crate::drive::asset_lock_outpoint_info_query::asset_lock_outpoint_info_query;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::platform_value::Bytes36;
@@ -13,7 +13,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         self.grove_get_proved_path_query(
-            &asset_lock_outpoint_info_query(&outpoint.0),
+            &asset_lock_outpoint_info_query(outpoint),
             transaction,
             &mut vec![],
             &platform_version.drive,
