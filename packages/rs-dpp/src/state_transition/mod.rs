@@ -1145,19 +1145,10 @@ impl StateTransition {
             .map(usize::from);
         let state_transition =
             platform_value::with_value_decode_depth_limit(max_value_depth, || decode(bytes))?;
+        state_transition.ensure_admitted_by_some_version()?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
-
-            // A format no protocol version admits, such as the stored contract format, is
-            // refused as undecodable, at every version: the refusal a binary without the format
-            // gives, not a range to report
-            if active_version_range.is_empty() {
-                return Err(ProtocolError::PlatformDeserializationError(format!(
-                    "a {} carries a format no state transition may carry",
-                    state_transition.name()
-                )));
-            }
 
             // Tests are done with very high protocol ranges, while we could put this behind a feature,
             // that would probably be overkill.
@@ -1177,6 +1168,21 @@ impl StateTransition {
         }
         #[cfg(not(all(feature = "state-transitions", feature = "validation")))]
         Ok(state_transition)
+    }
+
+    /// Refuses a transition carrying a format no protocol version admits, such as the stored
+    /// contract format, as undecodable (`PlatformDeserializationError`): the refusal a binary
+    /// without the format gives, at every protocol version and whatever features are built.
+    /// The versioned decoders run it before checking the active range; every other decoder of
+    /// a transition from outside should run it too.
+    pub fn ensure_admitted_by_some_version(&self) -> Result<(), ProtocolError> {
+        if self.active_version_range().is_empty() {
+            return Err(ProtocolError::PlatformDeserializationError(format!(
+                "a {} carries a format no state transition may carry",
+                self.name()
+            )));
+        }
+        Ok(())
     }
 
     pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
@@ -3224,6 +3230,7 @@ mod tests {
     #[test]
     fn should_refuse_a_contract_transition_carrying_the_stored_format_at_every_version() {
         use crate::serialization::PlatformSerializable;
+        use crate::state_transition::state_transition_factory::StateTransitionFactory;
 
         let mut storing = PlatformVersion::latest().clone();
         storing
@@ -3272,7 +3279,8 @@ mod tests {
             assert!(transition.active_version_range().is_empty());
             let bytes =
                 PlatformSerializable::serialize_to_bytes(&transition).expect("serialize succeeds");
-            for protocol_version in 9..=LATEST_VERSION {
+            assert!(StateTransitionFactory.create_from_buffer(&bytes).is_err());
+            for protocol_version in 1..=LATEST_VERSION {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("platform version exists");
                 for decoded in [

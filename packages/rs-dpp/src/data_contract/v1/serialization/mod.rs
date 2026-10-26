@@ -71,6 +71,20 @@ impl DataContractV1 {
 
                 Ok(data_contract)
             }
+            // Fully validated, a stored contract is read as its format version 1: its schemas
+            // parsed and checked, its compiled types ignored, since a caller asking for full
+            // validation does not trust the bytes, and only state holds compiled types that
+            // consensus wrote
+            DataContractInSerializationFormat::V2(serialization_format_v2) if full_validation => {
+                let data_contract = DataContractV1::try_from_platform_versioned_v1(
+                    serialization_format_v2.into(),
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
+
+                Ok(data_contract)
+            }
             DataContractInSerializationFormat::V2(serialization_format_v2) => {
                 let data_contract =
                     DataContractV1::try_from_platform_versioned_v2(serialization_format_v2)?;
@@ -200,12 +214,12 @@ impl DataContractV1 {
 
         Ok(data_contract)
     }
-    /// A stored format version 2 contract, its document types read back from their compiled
-    /// forms rather than parsed from their schemas. Only state holds format version 2, written
-    /// by consensus from a contract it fully validated, so full validation does not parse the
-    /// schemas again: parsing them with the reader's parser is what the stored form spares.
-    /// Every read refuses compiled types that are not those of the raw schemas beside them, by
-    /// name, which no writer produces. Charges no validation operations.
+    /// A stored format version 2 contract read without full validation, as Drive and proof
+    /// verification read state: its document types read back from their compiled forms rather
+    /// than parsed from their schemas, which is what the stored form spares. Only state holds
+    /// format version 2, written by consensus from a contract it fully validated. Refuses
+    /// compiled types that are not those of the raw schemas beside them, by name, which no
+    /// writer produces. Charges no validation operations.
     pub(in crate::data_contract) fn try_from_platform_versioned_v2(
         data_contract_data: DataContractInSerializationFormatV2,
     ) -> Result<Self, ProtocolError> {

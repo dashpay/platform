@@ -99,20 +99,42 @@ fn should_refuse_a_stored_form_whose_compiled_types_are_not_those_of_its_schemas
         .expect("expected a document type")
         .clone();
     format.document_types.remove(&name);
-    // As Drive reads it and fully validated
-    for full_validation in [false, true] {
-        let error = DataContract::try_from_platform_versioned(
-            DataContractInSerializationFormat::V2(format.clone()),
-            full_validation,
-            &mut vec![],
-            PlatformVersion::latest(),
-        )
-        .expect_err("expected the stored form to be refused");
-        assert!(
-            error.to_string().contains("not those of its schemas"),
-            "full validation {full_validation}: {error}"
-        );
-    }
+    // As Drive reads it
+    let error = DataContract::try_from_platform_versioned(
+        DataContractInSerializationFormat::V2(format.clone()),
+        false,
+        &mut vec![],
+        PlatformVersion::latest(),
+    )
+    .expect_err("expected the stored form to be refused");
+    assert!(
+        error.to_string().contains("not those of its schemas"),
+        "{error}"
+    );
+}
+
+/// Fully validated, a stored contract is read as its format version 1: its compiled types are
+/// not read, so ones that do not match its schemas, from bytes anyone could have written, change
+/// nothing.
+#[test]
+fn should_read_a_fully_validated_stored_form_from_its_schemas_alone() {
+    let contract = fixture_contract();
+    let mut format = stored(&contract);
+    let names: Vec<String> = format.document_types.keys().cloned().collect();
+    assert!(names.len() >= 2, "expected two document types");
+    // Swap two types' compiled forms
+    let first = format.document_types[&names[0]].clone();
+    let second = format.document_types[&names[1]].clone();
+    format.document_types.insert(names[0].clone(), second);
+    format.document_types.insert(names[1].clone(), first);
+    let read = DataContract::try_from_platform_versioned(
+        DataContractInSerializationFormat::V2(format),
+        true,
+        &mut vec![],
+        PlatformVersion::latest(),
+    )
+    .expect("expected the stored form to read from its schemas");
+    assert_eq!(read, contract);
 }
 
 /// JSON carries the compiled document types as bytes, so they come back exactly; the raw
