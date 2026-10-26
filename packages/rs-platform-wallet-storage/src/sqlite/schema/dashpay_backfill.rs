@@ -19,7 +19,7 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::accounts::{
     account_dashpay_ids, account_index, account_key_class, account_type_db_label,
 };
-use crate::sqlite::schema::blob;
+use crate::sqlite::schema::{blob, id32};
 use crate::sqlite::util::safe_cast::i64_to_u32;
 
 /// Replace this wallet's backfill record with `record`; an empty record (no
@@ -128,8 +128,8 @@ pub fn load_for_wallet(
         let contact: Vec<u8> = row.get(4)?;
         let covered_from = i64_to_u32("account_registrations.dashpay_covered_from", row.get(5)?)?;
         covered.push(DashPayBackfillCoveredContact {
-            owner: identity_id(owner),
-            contact: identity_id(contact),
+            owner: Identifier::from(id32("account_registrations.user_identity_id", &owner)?),
+            contact: Identifier::from(id32("account_registrations.friend_identity_id", &contact)?),
             account_index,
             covered_from,
         });
@@ -149,9 +149,4 @@ fn receiving_account(entry: &DashPayBackfillCoveredContact) -> AccountType {
         user_identity_id: entry.owner.to_buffer(),
         friend_identity_id: entry.contact.to_buffer(),
     }
-}
-
-/// A 32-byte id column already width-checked by the caller.
-fn identity_id(bytes: Vec<u8>) -> Identifier {
-    Identifier::from(<[u8; 32]>::try_from(bytes).unwrap_or_default())
 }
