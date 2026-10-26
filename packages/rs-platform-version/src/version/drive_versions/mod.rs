@@ -129,7 +129,6 @@ pub struct DriveProveMethodVersions {
     /// needs a mapping in `Drive::proof_carries_owner_balance`, which refuses an
     /// unmapped one with `UnknownVersionMismatch`.
     pub prove_state_transition: FeatureVersion,
-    pub prove_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
