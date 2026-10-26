@@ -360,8 +360,9 @@ specific behaviors without polluting the production constants:
 {
     if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
         let test_version = version - (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES);
+        // DEFAULT_PLATFORM_TEST_VERSIONS is [TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]
         let versions = PLATFORM_TEST_VERSIONS
-            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+            .get_or_init(|| Vec::from(DEFAULT_PLATFORM_TEST_VERSIONS));
         return versions.get(test_version as usize - 2).ok_or(/* ... */);
     }
 }
