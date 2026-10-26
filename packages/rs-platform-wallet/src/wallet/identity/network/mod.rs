@@ -51,6 +51,7 @@ mod transfer;
 mod transfer_to_addresses;
 mod update;
 pub(crate) use key_selection::usable_authentication_key;
+pub use key_selection::{check_signing_key, usable_signing_key, SigningScope};
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
