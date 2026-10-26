@@ -2,6 +2,7 @@
 
 use super::document::document_signing_key;
 use super::key_selection::SigningScope;
+use dpp::data_contracts::SystemDataContract;
 
 use dpp::fee::Credits;
 
@@ -53,7 +54,7 @@ fn dpns_registration_signing_key<'a>(
         signer,
         SecurityLevel::HIGH,
         SigningScope::Contract {
-            contract_id: dpp::data_contracts::SystemDataContract::DPNS.id(),
+            contract_id: SystemDataContract::DPNS.id(),
         },
     )
 }
@@ -561,7 +562,7 @@ mod signing_key_tests {
 
     #[test]
     fn should_register_with_a_key_that_covers_both_dpns_document_types() {
-        let dpns = dpp::data_contracts::SystemDataContract::DPNS.id();
+        let dpns = SystemDataContract::DPNS.id();
         let identity = identity(vec![
             key(0, SecurityLevel::MASTER),
             bound_key(

@@ -43,7 +43,6 @@ use dpp::document::Document;
 use dpp::document::DocumentV0Setters;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
@@ -1039,6 +1038,7 @@ mod tests {
 
     use super::super::key_selection::tests::{bound_key, identity, key};
     use super::super::signing_key::tests::KeyFilter;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 
     const CONTRACT: [u8; 32] = [0xDA; 32];

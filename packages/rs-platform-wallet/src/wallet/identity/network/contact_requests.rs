@@ -1,5 +1,8 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
+use super::document::document_signing_key;
+use super::key_selection::SigningScope;
+use dpp::data_contracts::SystemDataContract;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -1175,12 +1178,12 @@ fn contact_request_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    super::document::document_signing_key(
+    document_signing_key(
         identity,
         signer,
         SecurityLevel::HIGH,
-        super::key_selection::SigningScope::DocumentType {
-            contract_id: dpp::data_contracts::SystemDataContract::Dashpay.id(),
+        SigningScope::DocumentType {
+            contract_id: SystemDataContract::Dashpay.id(),
             document_type_name: "contactRequest",
         },
     )
@@ -5934,7 +5937,7 @@ mod contact_request_key_tests {
 
     #[test]
     fn should_sign_a_contact_request_with_a_key_bound_to_contact_requests_or_unbound() {
-        let dashpay = dpp::data_contracts::SystemDataContract::Dashpay.id();
+        let dashpay = SystemDataContract::Dashpay.id();
         let bound_to = |id, document_type_name: &str| {
             bound_key(
                 id,
