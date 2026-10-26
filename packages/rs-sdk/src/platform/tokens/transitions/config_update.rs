@@ -103,6 +103,22 @@ mod tests {
     use dpp::document::DocumentV0;
 
     #[test]
+    fn should_forward_standard_config_update_document() {
+        let document = Document::V0(DocumentV0 {
+            id: [9; 32].into(),
+            ..Default::default()
+        });
+        let result = ConfigUpdateResult::try_from(
+            StateTransitionProofResult::VerifiedTokenActionWithDocument(document.clone()),
+        )
+        .expect("convert verified standard config update");
+        assert!(matches!(
+            result,
+            ConfigUpdateResult::Document(forwarded) if forwarded == document
+        ));
+    }
+
+    #[test]
     fn should_forward_active_group_config_update_without_document() {
         // Drive proves a still-active group action (a proposal, or a co-signature
         // that does not reach the threshold) with no historical document.

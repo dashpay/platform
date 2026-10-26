@@ -2721,6 +2721,7 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::document::DocumentV0;
     use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 
     #[test]
@@ -2748,6 +2749,36 @@ mod tests {
             );
             assert_eq!(result.remaining_balance, Some(balance));
         }
+    }
+
+    #[test]
+    fn should_omit_document_for_active_group_config_update() {
+        let result = TokenConfigUpdateResultWasm::from_result(
+            ConfigUpdateResult::GroupActionWithDocument(5, None),
+            Identifier::from([3; 32]),
+        );
+        assert_eq!(result.group_power, Some(5));
+        assert!(result.document.is_none());
+    }
+
+    #[test]
+    fn should_forward_document_for_closed_group_config_update() {
+        let contract_id = Identifier::from([3; 32]);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([9; 32]),
+            ..Default::default()
+        });
+        let result = TokenConfigUpdateResultWasm::from_result(
+            ConfigUpdateResult::GroupActionWithDocument(7, Some(document.clone())),
+            contract_id,
+        );
+        assert_eq!(result.group_power, Some(7));
+        let forwarded = result
+            .document
+            .expect("closed group action carries the document");
+        assert_eq!(forwarded.inner(), &document);
+        assert_eq!(Identifier::from(forwarded.data_contract_id()), contract_id);
+        assert_eq!(forwarded.document_type_name(), "configUpdate");
     }
 
     /// An empty tier map is passed through as an empty schedule: rs-dpp's structure
