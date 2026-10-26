@@ -174,7 +174,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
 ///    deeper description of that layer another write of the batch registered; and
 ///    `apply_drive_operations` 2 merges each operation's estimated layer descriptions into the
-///    batch's keeping the deeper one, so an estimate does not depend on the operations' order.
+///    batch's as one covering both (the deeper depth, with the nodes priced dearer there), so an
+///    estimate does not depend on the operations' order. That raises the estimated fee of any
+///    batch whose operations describe a shared layer differently, an ordinary document
+///    transition included (its nonce update describes the root a level deeper than the
+///    document); the fee a transition pays is unchanged.
 ///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
 ///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
 ///    placed, which prices its fills and keys its `book` and `depth` index entries
