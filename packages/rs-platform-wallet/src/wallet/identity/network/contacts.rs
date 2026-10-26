@@ -33,13 +33,15 @@ use super::contact_requests::outbound_account_is_current;
 /// can't be rebuilt.
 ///
 /// An outbound account carries the digest of the request it was decrypted
-/// from and resets the account's stored pool first: a contact that rotated
-/// its xpub keys the same account, and the previous xpub's rows at the same
-/// indices must not survive beside the new ones.
+/// from. One that replaces a registered account (`replaces`) also resets the
+/// account's stored pool first: a contact that rotated its xpub keys the same
+/// account, and the previous xpub's rows at the same indices must not survive
+/// beside the new ones.
 fn dashpay_account_registration_changeset(
     account_type: AccountType,
     account_xpub: ExtendedPubKey,
     encrypted_xpub_digest: Option<[u8; 32]>,
+    replaces: bool,
     managed: &ManagedCoreFundsAccount,
 ) -> PlatformWalletChangeSet {
     PlatformWalletChangeSet {
@@ -52,7 +54,7 @@ fn dashpay_account_registration_changeset(
             account_type,
             managed.managed_account_type().address_pools(),
         ),
-        account_pool_resets: if encrypted_xpub_digest.is_some() {
+        account_pool_resets: if replaces {
             vec![account_type]
         } else {
             Vec::new()
@@ -261,6 +263,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_type,
                 account_xpub,
                 None,
+                false,
                 &managed,
             ))
             .map_err(|e| {
@@ -596,6 +599,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         #[cfg(test)]
         registration_rendezvous::wait(&contact_identity_id).await;
+        // A payment stores the outbound pool snapshot it took after releasing
+        // the wallet-manager guard, under the payment gate. Replacing the
+        // account under the same gate keeps that store from landing after the
+        // reset that drops the pool it was taken from.
+        let _payment_guard = self.persister.lock_contact_payments().await;
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -705,12 +713,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Failed to persist the kept external contact account: {e}"
                     )))
                 })?;
-            mark_built_from_live_request(
-                info,
-                our_identity_id,
-                &contact_identity_id,
-                bound_contact,
-            );
+            mark_built_from_live_request(info, our_identity_id, &contact_identity_id);
             tracing::info!(
                 our_identity = %our_identity_id,
                 contact = %contact_identity_id,
@@ -724,10 +727,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // rationale as `register_contact_account`): without this round
         // the account vanishes on relaunch and `send_payment` loses its
         // xpub + derived-address state until the next sweep rebuilds it.
+        let replaces = wallet.accounts.dashpay_external_accounts.contains_key(&key)
+            || info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key);
         let mut changeset = dashpay_account_registration_changeset(
             account_type,
             contact_xpub,
             Some(digest),
+            replaces,
             &managed,
         );
         changeset.contacts = bound_contact
@@ -776,7 +786,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        mark_built_from_live_request(info, our_identity_id, &contact_identity_id, bound_contact);
+        mark_built_from_live_request(info, our_identity_id, &contact_identity_id);
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -800,23 +810,21 @@ fn established_contact<'a>(
 }
 
 /// Record that the outbound account now derives from the contact's live
-/// request: clear an observed rotation and mirror in memory the marker a
-/// registration round bound on disk.
+/// request: clear an observed rotation and stamp the in-memory marker. A
+/// registration round that bound the marker on disk carries the same value;
+/// elsewhere the digest the round stored beside the xpub vouches for it after
+/// a relaunch.
 fn mark_built_from_live_request(
     info: &mut PlatformWalletInfo,
     our_identity_id: &Identifier,
     contact_identity_id: &Identifier,
-    bound_contact: Option<EstablishedContact>,
 ) {
     let Some(managed) = info.identity_manager.managed_identity_mut(our_identity_id) else {
         return;
     };
     managed.clear_outbound_rekey(contact_identity_id);
-    let Some(bound) = bound_contact else {
-        return;
-    };
     if let Some(contact) = managed.established_contact_mut(contact_identity_id) {
-        contact.external_account_reference = bound.external_account_reference;
+        contact.external_account_reference = Some(contact.incoming_request.account_reference);
     }
 }
 

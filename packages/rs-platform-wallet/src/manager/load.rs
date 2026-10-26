@@ -299,16 +299,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // built from the live request is current, and one built from an
             // earlier request has a rotation pending, which refuses payments
             // to the contact until the account is rebuilt.
-            let (current, rotated) = apply_outbound_account_digests(
+            let (current, awaiting_rebuild) = apply_outbound_account_digests(
                 &wallet,
                 &mut platform_info,
                 &outbound_account_digests,
             );
-            if current + rotated > 0 {
+            if current + awaiting_rebuild > 0 {
                 tracing::info!(
                     wallet_id = %hex::encode(expected_wallet_id),
                     current,
-                    rotated,
+                    awaiting_rebuild,
                     "load: DashPay external accounts checked against their contacts' live requests"
                 );
             }
@@ -1550,28 +1550,24 @@ fn distrust_markers_of_foreign_external_pools(
 }
 
 /// Compare each restored DashPay external account's digest with its
-/// contact's live request. A match whose pools all derive from the account
-/// stamps the in-memory marker, so the contact sweep does not rebuild it; a
-/// mismatch clears the marker and records a pending rotation, so payments to
-/// the contact are refused until the account is rebuilt. A digest of the
-/// wrong length, or one for a relationship that is no longer established or
-/// registered, is ignored. Returns how many accounts were found current and
-/// how many rotated.
+/// contact's live request. An account whose digest names the live request and
+/// whose pools all derive from it is current: its in-memory marker is
+/// stamped, so neither the contact sweep nor a payment waits for a rebuild.
+/// Any other digest — another request's, one beside pools the account does not
+/// derive, one of the wrong length, or one the host could not read (handed
+/// over empty) — proves nothing about the account, so its marker is cleared
+/// and a pending rotation recorded: payments to the contact are refused until
+/// the account is rebuilt or confirmed. A relationship that is no longer
+/// established or registered is ignored. Returns how many accounts were found
+/// current and how many await a rebuild.
 fn apply_outbound_account_digests(
     wallet: &key_wallet::Wallet,
     info: &mut PlatformWalletInfo,
     digests: &BTreeMap<DashpayAccountKey, Vec<u8>>,
 ) -> (usize, usize) {
     let mut current = 0;
-    let mut rotated = 0;
+    let mut pending = 0;
     for (key, stored) in digests {
-        let Ok(stored) = <[u8; 32]>::try_from(stored.as_slice()) else {
-            tracing::warn!(
-                len = stored.len(),
-                "load: ignoring a DashPay external account digest of the wrong length"
-            );
-            continue;
-        };
         let (Some(account), Some(managed_account)) = (
             wallet.accounts.dashpay_external_accounts.get(key),
             info.core_wallet.accounts.dashpay_external_accounts.get(key),
@@ -1588,24 +1584,28 @@ fn apply_outbound_account_digests(
         let Some(contact) = managed.established_contact_mut(&contact_id) else {
             continue;
         };
-        if encrypted_xpub_digest(&contact.incoming_request.encrypted_public_key) == stored {
-            if managed_account
+        let live_reference = contact.incoming_request.account_reference;
+        let names_live_request = <[u8; 32]>::try_from(stored.as_slice()).is_ok_and(|stored| {
+            encrypted_xpub_digest(&contact.incoming_request.encrypted_public_key) == stored
+        });
+        // A marker that survived the restored-marker checks above already
+        // vouches for these pools, so they are derived again only without it.
+        let pools_derive = contact.external_account_reference == Some(live_reference)
+            || managed_account
                 .managed_account_type()
                 .address_pools()
                 .into_iter()
-                .all(|pool| pool_derives_from(pool, account))
-            {
-                contact.external_account_reference =
-                    Some(contact.incoming_request.account_reference);
-                current += 1;
-            }
+                .all(|pool| pool_derives_from(pool, account));
+        if names_live_request && pools_derive {
+            contact.external_account_reference = Some(live_reference);
+            current += 1;
         } else {
             contact.external_account_reference = None;
             managed.mark_outbound_rekeyed(&contact_id);
-            rotated += 1;
+            pending += 1;
         }
     }
-    (current, rotated)
+    (current, pending)
 }
 
 #[cfg(test)]

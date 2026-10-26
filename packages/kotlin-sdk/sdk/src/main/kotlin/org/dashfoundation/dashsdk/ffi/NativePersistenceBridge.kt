@@ -221,8 +221,9 @@ abstract class NativePersistenceBridge {
 
     /**
      * `on_persist_account_xpub_digest_fn`: store the 32-byte [digest] on the
-     * account row registered earlier in the same round. Descriptor
-     * `([BBBIII[B[B[B)I`. Wired only with [onLoadAccountXpubDigest].
+     * account row registered earlier in the same round; an empty [digest]
+     * clears it. Descriptor `([BBBIII[B[B[B)I`. Wired only with
+     * [onLoadAccountXpubDigest].
      */
     open fun onPersistAccountXpubDigest(
         walletId: ByteArray,

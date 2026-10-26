@@ -368,6 +368,13 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, handler.onChangesetEnd(walletId, true))
 
         assertNull(db.coreAddressDao().getByAddress("yOldXpubAddress0"))
+        assertNotEquals(
+            "an account without a row fails the round rather than reset nothing",
+            0,
+            handler.onResetAccountAddressPool(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, ByteArray(32) { 9 },
+            ),
+        )
         val txo = db.txoDao().getByOutpoint(ByteArray(36) { 7 })
         assertNotNull("the reset keeps funds history", txo)
         assertNull(txo!!.coreAddressId)
@@ -408,6 +415,17 @@ class PlatformWalletPersistenceHandlerTest {
             ),
         )
         assertThrows(IllegalStateException::class.java) { load(ByteArray(32) { 9 }) }
+
+        // An account registered again without a digest clears the previous one.
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistAccountXpubDigest(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend, ByteArray(0),
+            ),
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, true))
+        assertNull(load())
     }
 
     @Test

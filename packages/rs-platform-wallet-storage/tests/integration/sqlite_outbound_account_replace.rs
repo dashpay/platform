@@ -229,3 +229,46 @@ fn should_hand_the_outbound_account_digest_to_the_next_load() {
         Some(&vec![7u8; 32])
     );
 }
+
+#[test]
+fn should_keep_only_the_latest_registrations_digest() {
+    let (persister, _tmp, path) = fresh_persister();
+    let wallet_id = registered_wallet(&persister);
+    let xpub = xpub_from_seed(0x41);
+    persister
+        .store(wallet_id, registration_round(xpub, [1; 32], false))
+        .expect("first registration");
+    persister
+        .store(wallet_id, registration_round(xpub, [2; 32], false))
+        .expect("the same account kept from another request");
+    let digest = |path: &std::path::Path| {
+        SqlitePersister::open(SqlitePersisterConfig::new(path))
+            .expect("reopen")
+            .load()
+            .expect("load")
+            .wallets[&wallet_id]
+            .outbound_account_digests
+            .get(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: OWNER,
+                friend_identity_id: CONTACT,
+            })
+            .cloned()
+    };
+    drop(persister);
+    assert_eq!(
+        digest(&path),
+        Some(vec![2u8; 32]),
+        "the later request's digest wins"
+    );
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    let mut without = registration_round(xpub, [0; 32], false);
+    without.account_registrations[0].encrypted_xpub_digest = None;
+    without.account_address_pools.clear();
+    persister
+        .store(wallet_id, without)
+        .expect("registered again without a digest");
+    drop(persister);
+    assert_eq!(digest(&path), None, "a registration without one clears it");
+}

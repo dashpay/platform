@@ -1114,11 +1114,11 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
 /// broken contacts; they heal on a superseding request). The staleness test
 /// is `external_account_reference != Some(incoming_request.account_reference)`:
 /// a mismatch means the contact rotated to a request the account was not
-/// built from, and a `None` marker means a host restored the account without
-/// it — neither the SQLite backend nor the Swift host keeps it. The account
-/// stays registered meanwhile; after a rotation this process observed,
-/// `reserve_contact_payment_address` refuses to derive from it until the
-/// rebuild.
+/// built from, and a `None` marker means nothing vouched for the account at
+/// load — its row carried no digest naming the live request (see
+/// `apply_outbound_account_digests`). The account stays registered meanwhile,
+/// and `reserve_contact_payment_address` refuses to derive from it until the
+/// rebuild confirms or replaces it.
 pub(crate) fn external_account_needs_rebuild(
     contact: &EstablishedContact,
     has_external: bool,

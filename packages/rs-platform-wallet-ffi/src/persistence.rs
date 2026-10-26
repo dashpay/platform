@@ -333,9 +333,10 @@ pub type ResetAccountAddressPoolsFn = unsafe extern "C" fn(
 ) -> i32;
 
 /// Store on the account row `spec` names the 32-byte `digest` of the contact
-/// request its xpub was decrypted from, replacing any previous one. Runs after
-/// the account registrations of the same atomic changeset; the spec's xpub
-/// pointer is null.
+/// request its xpub was decrypted from, replacing any previous one; a null
+/// `digest` clears it, for an account registered again without one. Runs
+/// after the account registrations of the same atomic changeset; the spec's
+/// xpub pointer is null.
 pub type PersistAccountXpubDigestFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -2138,26 +2139,31 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         // Digests of the requests outbound DashPay accounts were built from:
-        // a sidecar on the account rows registered just above, in the same
-        // atomic round. A host without the slot keeps none.
-        if let (Some(cb), Some(_)) = (
+        // a sidecar on the account rows registered just above. It is written
+        // only where the round is atomic, so a digest can never land beside
+        // an xpub write that failed; a host without the slot keeps none. Every
+        // outbound registration writes it, and one without a digest clears
+        // the previous xpub's.
+        if let (Some(cb), Some(_), true) = (
             self.tracked_masternodes_callbacks
                 .persist_account_xpub_digest,
             self.callbacks.on_persist_account_registrations_fn,
+            self.callback_capabilities()
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS),
         ) {
             for entry in &changeset.account_registrations {
-                let Some(digest) = entry.encrypted_xpub_digest else {
+                if !matches!(
+                    entry.account_type,
+                    AccountType::DashpayExternalAccount { .. }
+                ) {
                     continue;
-                };
+                }
                 let spec = build_account_spec_ffi(&entry.account_type, &[]);
-                let rc = unsafe {
-                    cb(
-                        self.callbacks.context,
-                        wallet_id.as_ptr(),
-                        &spec,
-                        digest.as_ptr(),
-                    )
-                };
+                let digest = entry
+                    .encrypted_xpub_digest
+                    .as_ref()
+                    .map_or(std::ptr::null(), |digest| digest.as_ptr());
+                let rc = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &spec, digest) };
                 if rc != 0 {
                     eprintln!("Account xpub digest persistence callback returned error code {rc}");
                     outcome.record(rc);
@@ -3612,7 +3618,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     self.callbacks.context,
                     &entry.wallet_id,
                     &mut wallet_state,
-                )?;
+                );
             }
             if let Some(cb) = self
                 .tracked_masternodes_callbacks
@@ -6357,13 +6363,16 @@ fn build_wallet_start_state(
 }
 
 /// Read the digest each restored outbound DashPay account row carries into
-/// `wallet_state`. A failed read fails the load, like every sidecar.
+/// `wallet_state`. The digest only spares a rebuild, so a read the host fails
+/// does not fail the load: the account is handed over with an empty digest,
+/// which proves nothing, and payments to the contact wait until it is
+/// rebuilt or confirmed.
 fn load_account_xpub_digests(
     callback: LoadAccountXpubDigestFn,
     context: *mut c_void,
     wallet_id: &WalletId,
     wallet_state: &mut ClientWalletStartState,
-) -> Result<(), PersistenceError> {
+) {
     let keys: Vec<DashpayAccountKey> = wallet_state
         .wallet
         .accounts
@@ -6392,18 +6401,19 @@ fn load_account_xpub_digests(
             )
         };
         if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                "Loading an account xpub digest failed",
-            ));
-        }
-        if found {
+            tracing::warn!(
+                code = rc,
+                "loading an outbound account's xpub digest failed; the account awaits a rebuild"
+            );
+            wallet_state
+                .outbound_account_digests
+                .insert(key, Vec::new());
+        } else if found {
             wallet_state
                 .outbound_account_digests
                 .insert(key, digest.to_vec());
         }
     }
-    Ok(())
 }
 
 /// Rehydrate immutable UUID sidecars after decoding the frozen legacy rows.
@@ -10121,10 +10131,14 @@ mod tests {
             spec: *const AccountSpecFFI,
             digest: *const u8,
         ) -> i32 {
+            let digest = if digest.is_null() {
+                "none".to_owned()
+            } else {
+                format!("{:02x}", *digest)
+            };
             (*(context as *const Log)).lock().push(format!(
-                "digest {:02x} {:02x}",
-                (*spec).friend_identity_id[0],
-                *digest
+                "digest {:02x} {digest}",
+                (*spec).friend_identity_id[0]
             ));
             0
         }
@@ -10219,11 +10233,51 @@ mod tests {
                 ..extensions
             },
         )
-        .store([42; 32], round)
+        .store([42; 32], round.clone())
         .expect("a host without the digest slot keeps no digest");
         assert_eq!(
-            log.lock().clone(),
+            std::mem::take(&mut *log.lock()),
             vec!["registrations 1", "reset 0b", "pools 1"]
+        );
+
+        // A host whose rounds are not atomic could keep the digest beside an
+        // xpub write that failed, so it is never handed one.
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                on_changeset_begin_fn: None,
+                on_changeset_end_fn: None,
+                ..callbacks()
+            },
+            PersistenceCapabilities::NONE,
+            extensions,
+        )
+        .store([42; 32], round.clone())
+        .expect("a non-atomic round stores");
+        assert_eq!(
+            std::mem::take(&mut *log.lock()),
+            vec!["registrations 1", "reset 0b", "pools 1"]
+        );
+
+        // An outbound registration without a digest clears the stored one,
+        // and a host that keeps no pools has none to reset.
+        let mut without = round;
+        without.account_registrations[0].encrypted_xpub_digest = None;
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                on_persist_account_address_pools_fn: None,
+                ..callbacks()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                reset_account_address_pools: None,
+                ..extensions
+            },
+        )
+        .store([42; 32], without)
+        .expect("nothing to reset without pools");
+        assert_eq!(
+            log.lock().clone(),
+            vec!["registrations 1", "digest 0b none"]
         );
     }
 
@@ -10285,8 +10339,7 @@ mod tests {
             outbound_account_digests: BTreeMap::new(),
         };
 
-        load_account_xpub_digests(load, std::ptr::null_mut(), &[42; 32], &mut state)
-            .expect("digest sidecar");
+        load_account_xpub_digests(load, std::ptr::null_mut(), &[42; 32], &mut state);
 
         let key = |friend: u8| DashpayAccountKey {
             index: 0,
@@ -10296,6 +10349,24 @@ mod tests {
         assert_eq!(
             state.outbound_account_digests,
             BTreeMap::from([(key(0x0C), vec![0xD2; 32])])
+        );
+
+        // A read the host fails does not fail the load: the account is handed
+        // over with an empty digest, which proves nothing.
+        unsafe extern "C" fn failing(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            -1
+        }
+        state.outbound_account_digests.clear();
+        load_account_xpub_digests(failing, std::ptr::null_mut(), &[42; 32], &mut state);
+        assert_eq!(
+            state.outbound_account_digests,
+            BTreeMap::from([(key(0x0B), Vec::new()), (key(0x0C), Vec::new())])
         );
     }
 

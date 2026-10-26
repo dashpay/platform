@@ -91,6 +91,12 @@ final class OutboundAccountReplacementPersistenceTests: XCTestCase {
         let reopened = try DashModelContainer.create(url: url)
         let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
         XCTAssertEqual(try handler.loadAccountXpubDigest(walletId: walletId, key: key), digest)
+
+        // An account registered again without a digest clears the previous one.
+        handler.beginChangeset(walletId: walletId)
+        try handler.persistAccountXpubDigest(walletId: walletId, key: key, digest: nil)
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        XCTAssertNil(try handler.loadAccountXpubDigest(walletId: walletId, key: key))
         let missing = PlatformWalletPersistenceHandler.AccountLookupKey(typeTag: outboundTypeTag, index: 0, standardTag: 0, registrationIndex: 0,
                         keyClass: 0, userIdentityId: owner, friendIdentityId: Data(repeating: 9, count: 32))
         XCTAssertThrowsError(try handler.loadAccountXpubDigest(walletId: walletId, key: missing),

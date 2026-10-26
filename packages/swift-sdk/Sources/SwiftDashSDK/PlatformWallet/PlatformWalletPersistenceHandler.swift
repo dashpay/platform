@@ -703,6 +703,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// The account row `key` names. A failed fetch or a missing row throws:
+    /// every caller acts on a row registered earlier, so its absence is an
+    /// error, never "nothing to do".
+    private func requireAccount(walletId: Data, key: AccountLookupKey) throws -> PersistentAccount {
+        let typeTag = key.typeTag
+        let index = key.index
+        let candidates = try backgroundContext.fetch(FetchDescriptor<PersistentAccount>(
+            predicate: #Predicate {
+                $0.wallet.walletId == walletId && $0.accountType == typeTag && $0.accountIndex == index
+            }
+        ))
+        guard let account = candidates.first(where: { acc in
+            acc.standardTag == key.standardTag
+                && acc.registrationIndex == key.registrationIndex
+                && acc.keyClass == key.keyClass
+                && acc.userIdentityId == key.userIdentityId
+                && acc.friendIdentityId == key.friendIdentityId
+        }) else { throw AccountSidecarPersistenceError.missingAccount }
+        return account
+    }
+
     /// Drop every stored pool row of the accounts `keys` names, before the
     /// round's pool snapshots land: each account was registered again in the
     /// same round under another xpub. TXOs linked to a dropped row are kept and
@@ -711,10 +732,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         try onQueue {
             guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
             for key in keys {
-                guard let account = fetchAccount(walletId: walletId, key: key) else { continue }
+                let account = try requireAccount(walletId: walletId, key: key)
                 for row in account.coreAddresses {
                     for txo in row.txos {
                         txo.coreAddress = nil
+                        // Registered so a later read in this round sees the
+                        // unlinked object, not the stored link to a deleted row.
+                        roundIndex?.txosByOutpoint[txo.outpoint] = txo
                     }
                     roundIndex?.coreAddressesByAddress[row.address] = nil
                     backgroundContext.delete(row)
@@ -724,15 +748,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// Store the digest of the contact request an outbound DashPay account was
-    /// built from on its row, registered earlier in the same round.
-    func persistAccountXpubDigest(walletId: Data, key: AccountLookupKey, digest: Data) throws {
+    /// built from on its row, registered earlier in the same round; `nil`
+    /// clears it.
+    func persistAccountXpubDigest(walletId: Data, key: AccountLookupKey, digest: Data?) throws {
         try onQueue {
             guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
-            guard digest.count == 32 else { throw AccountSidecarPersistenceError.malformedDigest }
-            guard let account = fetchAccount(walletId: walletId, key: key) else {
-                throw AccountSidecarPersistenceError.missingAccount
-            }
-            account.encryptedXpubDigest = digest
+            if let digest, digest.count != 32 { throw AccountSidecarPersistenceError.malformedDigest }
+            try requireAccount(walletId: walletId, key: key).encryptedXpubDigest = digest
         }
     }
 
@@ -740,10 +762,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// has none. A missing row is a failed read.
     func loadAccountXpubDigest(walletId: Data, key: AccountLookupKey) throws -> Data? {
         try onQueue {
-            guard let account = fetchAccount(walletId: walletId, key: key) else {
-                throw AccountSidecarPersistenceError.missingAccount
-            }
-            return account.encryptedXpubDigest
+            try requireAccount(walletId: walletId, key: key).encryptedXpubDigest
         }
     }
 
@@ -11946,12 +11965,12 @@ private func persistAccountXpubDigestCallback(
     context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
     spec: UnsafePointer<AccountSpecFFI>?, digest: UnsafePointer<UInt8>?
 ) -> Int32 {
-    guard let context, let walletId, let spec, let digest else { return -1 }
+    guard let context, let walletId, let spec else { return -1 }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
     do {
         try handler.persistAccountXpubDigest(
             walletId: Data(bytes: walletId, count: 32), key: accountLookupKey(spec.pointee),
-            digest: Data(bytes: digest, count: 32))
+            digest: digest.map { Data(bytes: $0, count: 32) })
         return 0
     } catch { return -1 }
 }
@@ -11965,14 +11984,14 @@ private func loadAccountXpubDigestCallback(
     outFound.pointee = false
     let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
     do {
-        // A digest of another length is handed over as none; Rust then
-        // verifies the account by decrypting.
-        if let digest = try handler.loadAccountXpubDigest(
-            walletId: Data(bytes: walletId, count: 32), key: accountLookupKey(spec.pointee)),
-            digest.count == 32 {
-            digest.copyBytes(to: outDigest, count: 32)
-            outFound.pointee = true
-        }
+        guard let digest = try handler.loadAccountXpubDigest(
+            walletId: Data(bytes: walletId, count: 32), key: accountLookupKey(spec.pointee))
+        else { return 0 }
+        // A digest that does not fit the 32-byte slot is a failed read, which
+        // Rust treats as proving nothing about the account.
+        guard digest.count == 32 else { return -1 }
+        digest.copyBytes(to: outDigest, count: 32)
+        outFound.pointee = true
         return 0
     } catch { return -1 }
 }

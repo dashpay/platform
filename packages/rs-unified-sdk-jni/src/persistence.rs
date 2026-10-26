@@ -825,6 +825,9 @@ unsafe extern "C" fn tramp_reset_account_address_pools(
     specs: *const AccountSpecFFI,
     count: usize,
 ) -> i32 {
+    if specs.is_null() && count > 0 {
+        return ERR_JNI;
+    }
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for s in slice_or_empty(specs, count) {
@@ -854,12 +857,13 @@ unsafe extern "C" fn tramp_persist_account_xpub_digest(
     spec: *const AccountSpecFFI,
     digest: *const u8,
 ) -> i32 {
-    if spec.is_null() || digest.is_null() {
+    if spec.is_null() {
         return ERR_JNI;
     }
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         let key = account_key_args(env, &*spec)?;
+        // A null digest clears the stored one; it crosses as an empty array.
         let digest = bytes(env, digest, 32)?;
         let mut args: Vec<JValue> = vec![(&wid).into()];
         args.extend(key.iter().map(JValueOwned::borrow));
@@ -906,13 +910,12 @@ unsafe extern "C" fn tramp_load_account_xpub_digest(
     match loaded {
         None => ERR_JNI,
         Some(None) => 0,
+        // A digest that does not fit the 32-byte slot is a failed read, which
+        // the wallet treats as proving nothing about the account.
+        Some(Some(digest)) if digest.len() != 32 => ERR_JNI,
         Some(Some(digest)) => {
-            // A digest of another length is handed over as none; the wallet
-            // then verifies the account by decrypting.
-            if digest.len() == 32 {
-                std::ptr::copy_nonoverlapping(digest.as_ptr(), out_digest, 32);
-                *out_found = true;
-            }
+            std::ptr::copy_nonoverlapping(digest.as_ptr(), out_digest, 32);
+            *out_found = true;
             0
         }
     }
@@ -5318,7 +5321,7 @@ mod tests {
     /// The pool reset is wired for a bridge that implements it, and the digest
     /// slots only for one that implements both halves.
     #[test]
-    fn outbound_account_sidecar_slots_follow_the_bridges_overrides() {
+    fn should_wire_the_outbound_account_sidecar_slots_the_bridge_implements() {
         let none = BridgeOverrides {
             sweeps: false,
             header: false,

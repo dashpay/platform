@@ -625,10 +625,12 @@ class PlatformWalletPersistenceHandler(
         friendIdentityId: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
-            val account = fetchAccount(
-                db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,
-                registrationIndex, keyClass, userIdentityId, friendIdentityId,
-            ) ?: return@stage
+            val account = checkNotNull(
+                fetchAccount(
+                    db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,
+                    registrationIndex, keyClass, userIdentityId, friendIdentityId,
+                ),
+            ) { "no account row whose pool to reset" }
             // The TXO -> core address FK cascades; keep funds history.
             db.txoDao().unlinkFromAccountAddresses(account.id)
             db.coreAddressDao().deleteByAccount(account.id)
@@ -647,7 +649,11 @@ class PlatformWalletPersistenceHandler(
         friendIdentityId: ByteArray,
         digest: ByteArray,
     ): Int = guarded {
-        require(digest.size == DIGEST_LENGTH) { "account xpub digest must be $DIGEST_LENGTH bytes" }
+        // An empty digest clears the stored one: the account was registered
+        // again without one.
+        require(digest.isEmpty() || digest.size == DIGEST_LENGTH) {
+            "account xpub digest must be $DIGEST_LENGTH bytes"
+        }
         stage(walletId) { db ->
             val account = checkNotNull(
                 fetchAccount(
@@ -655,7 +661,9 @@ class PlatformWalletPersistenceHandler(
                     registrationIndex, keyClass, userIdentityId, friendIdentityId,
                 ),
             ) { "no account row for the xpub digest" }
-            db.accountDao().update(account.copy(encryptedXpubDigest = digest, lastUpdated = now()))
+            db.accountDao().update(
+                account.copy(encryptedXpubDigest = digest.takeIf { it.isNotEmpty() }, lastUpdated = now()),
+            )
         }
         0
     }

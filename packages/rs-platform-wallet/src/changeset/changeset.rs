@@ -2587,6 +2587,24 @@ mod tests {
         );
     }
 
+    /// The new pool a replacement stores after its reset survives a merge
+    /// with the reset's earlier round.
+    #[test]
+    fn should_keep_pool_snapshots_that_follow_an_earlier_reset() {
+        let replaced = contact_account(2);
+        let mut merged = PlatformWalletChangeSet {
+            account_pool_resets: vec![replaced],
+            ..Default::default()
+        };
+        merged.merge(PlatformWalletChangeSet {
+            account_address_pools: vec![pool_of(replaced)],
+            ..Default::default()
+        });
+
+        assert_eq!(merged.account_pool_resets, vec![replaced]);
+        assert_eq!(merged.account_address_pools.len(), 1);
+    }
+
     #[test]
     fn should_not_count_a_round_that_only_resets_a_pool_as_empty() {
         let round = PlatformWalletChangeSet {
