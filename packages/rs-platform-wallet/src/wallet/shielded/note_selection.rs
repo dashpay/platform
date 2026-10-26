@@ -10,7 +10,7 @@ use dpp::fee::Credits;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_withdrawal_fee, is_allowed_identity_create_denomination,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -214,14 +214,11 @@ pub(crate) fn ensure_allowed_denomination(
     denomination: u64,
     platform_version: &PlatformVersion,
 ) -> Result<(), PlatformWalletError> {
-    let allowed = platform_version
-        .drive_abci
-        .validation_and_processing
-        .event_constants
-        .shielded_identity_create_denominations;
-    if !allowed.contains(&denomination) {
+    if !is_allowed_identity_create_denomination(denomination, platform_version) {
         return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed:?}"
+            "denomination {denomination} is not a member of the allowed exit-denomination set \
+             of protocol version {}",
+            platform_version.protocol_version
         )));
     }
     Ok(())
