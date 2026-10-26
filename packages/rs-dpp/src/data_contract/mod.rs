@@ -195,38 +195,11 @@ impl DataContract {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
     }
-
-    /// [`PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted::versioned_deserialize_untrusted`]
-    /// for bytes that neither this node's state nor a verified proof vouches for, such as the
-    /// contract of an unproved query response. A contract in the stored format (format version
-    /// 2) has its document types parsed from the schemas it carries, as format version 1's are,
-    /// rather than read back from its compiled types: only state is trusted to hold compiled
-    /// types that are what its schemas compile to. Nodes answer unproved queries in format
-    /// version 0 or 1, which read the same either way.
-    pub fn versioned_deserialize_unauthenticated(
-        data: &[u8],
-        full_validation: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let (data_contract_in_serialization_format, _) =
-            decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
-        let data_contract_in_serialization_format = match data_contract_in_serialization_format {
-            DataContractInSerializationFormat::V2(stored) => {
-                DataContractInSerializationFormat::V1(stored.into())
-            }
-            format => format,
-        };
-        DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
-            full_validation,
-            &mut vec![],
-            platform_version,
-        )
-    }
 }
 
 /// Decodes the stored serialization format with the ordinary decoder: bytes
-/// this node wrote itself (Drive state, wallet storage).
+/// this node wrote itself (Drive state, wallet storage). A contract in the stored
+/// format is read back from its compiled document types.
 fn decode_serialization_format_trusted<C: Config>(
     data: &[u8],
     config: C,
@@ -237,7 +210,11 @@ fn decode_serialization_format_trusted<C: Config>(
 }
 
 /// Decodes the serialization format with the untrusted decoder: bytes from a
-/// peer, a client, a proof or a host caller.
+/// peer, a client, a proof or a host caller. The untrusted entry points read a
+/// contract in the stored format from its schemas
+/// ([`DataContractInSerializationFormat::into_schema_form`]): nothing vouches for its
+/// compiled types. Proof verification, whose bytes the proof authenticates, reads them
+/// with `DataContract::try_from_platform_versioned`.
 fn decode_serialization_format_untrusted<C: Config>(
     data: &[u8],
     config: C,
@@ -292,7 +269,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntruste
         let (data_contract_in_serialization_format, _) =
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            data_contract_in_serialization_format.into_schema_form(),
             full_validation,
             &mut vec![],
             platform_version,
@@ -336,7 +313,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted for DataC
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         Ok((
             DataContract::try_from_platform_versioned(
-                data_contract_in_serialization_format,
+                data_contract_in_serialization_format.into_schema_form(),
                 full_validation,
                 &mut vec![],
                 platform_version,

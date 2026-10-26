@@ -137,12 +137,20 @@ fn should_read_a_fully_validated_stored_form_from_its_schemas_alone() {
     assert_eq!(read, contract);
 }
 
-/// Bytes no proof or state vouches for are read from their schemas, so compiled types that do
-/// not match them change nothing there either; read from state, the same bytes give the
-/// compiled types back as they are.
+/// The untrusted decoders read bytes nothing vouches for from their schemas, so compiled types
+/// that do not match them change nothing there; read as Drive reads its state, or as proof
+/// verification reads authenticated state, the same bytes give the compiled types back as they
+/// are.
 #[test]
-fn should_read_an_unauthenticated_stored_form_from_its_schemas_alone() {
-    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+fn should_read_an_untrusted_stored_form_from_its_schemas_alone() {
+    use crate::data_contract::created_data_contract::v0::CreatedDataContractInSerializationFormatV0;
+    use crate::data_contract::created_data_contract::{
+        CreatedDataContract, CreatedDataContractInSerializationFormat,
+    };
+    use crate::serialization::{
+        PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+    };
 
     let contract = fixture_contract();
     let mut format = stored(&contract);
@@ -153,22 +161,46 @@ fn should_read_an_unauthenticated_stored_form_from_its_schemas_alone() {
     let second = format.document_types[&names[1]].clone();
     format.document_types.insert(names[0].clone(), second);
     format.document_types.insert(names[1].clone(), first);
-    let bytes = bincode::encode_to_vec(
-        DataContractInSerializationFormat::V2(format),
-        bincode::config::standard().with_big_endian(),
-    )
-    .expect("expected the stored form to encode");
+    let format = DataContractInSerializationFormat::V2(format);
+    let config = bincode::config::standard().with_big_endian();
+    let bytes =
+        bincode::encode_to_vec(&format, config).expect("expected the stored form to encode");
     let latest = PlatformVersion::latest();
 
-    let read = DataContract::versioned_deserialize_unauthenticated(&bytes, false, latest)
+    let untrusted = DataContract::versioned_deserialize_untrusted(&bytes, false, latest)
         .expect("expected the stored form to read from its schemas");
-    assert_eq!(read, contract);
-    for from_state in [
+    assert_eq!(untrusted, contract);
+    let (untrusted_with_len, _) =
+        DataContract::versioned_deserialize_with_bytes_len_untrusted(&bytes, false, latest)
+            .expect("expected the stored form to read from its schemas");
+    assert_eq!(untrusted_with_len, contract);
+    // A contract about to be registered is read from its schemas, whatever reads it
+    let created_bytes = bincode::encode_to_vec(
+        CreatedDataContractInSerializationFormat::V0(CreatedDataContractInSerializationFormatV0 {
+            data_contract: format.clone(),
+            identity_nonce: 1,
+        }),
+        config,
+    )
+    .expect("expected the created contract to encode");
+    for created in [
+        CreatedDataContract::versioned_deserialize_trusted(&created_bytes, false, latest),
+        CreatedDataContract::versioned_deserialize_untrusted(&created_bytes, false, latest),
+    ] {
+        assert_eq!(
+            created
+                .expect("expected the created contract to read from its schemas")
+                .data_contract(),
+            &contract
+        );
+    }
+
+    for read_back in [
         DataContract::versioned_deserialize_trusted(&bytes, false, latest),
-        DataContract::versioned_deserialize_untrusted(&bytes, false, latest),
+        DataContract::try_from_platform_versioned(format, false, &mut vec![], latest),
     ] {
         assert_ne!(
-            from_state.expect("expected the stored form to read back"),
+            read_back.expect("expected the stored form to read back"),
             contract
         );
     }

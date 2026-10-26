@@ -32,6 +32,7 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -701,10 +702,7 @@ impl FromUnproved<platform::GetDataContractsLatestVersionsRequest> for DataContr
                             let data_contract = entry
                                 .data_contract
                                 .map(|bytes| {
-                                    // An unproved response is not authenticated: a contract
-                                    // in the stored format has its types read from its
-                                    // schemas, not from its compiled types
-                                    DataContract::versioned_deserialize_unauthenticated(
+                                    DataContract::versioned_deserialize_untrusted(
                                         &bytes,
                                         false,
                                         platform_version,

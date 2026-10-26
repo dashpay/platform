@@ -214,12 +214,14 @@ impl DataContractV1 {
 
         Ok(data_contract)
     }
-    /// A stored format version 2 contract read without full validation, as Drive and proof
-    /// verification read state: its document types read back from their compiled forms rather
-    /// than parsed from their schemas, which is what the stored form spares. Only state holds
-    /// format version 2, written by consensus from a contract it fully validated. Refuses
-    /// compiled types that are not those of the raw schemas beside them, by name, which no
-    /// writer produces. Charges no validation operations.
+    /// A stored format version 2 contract read without full validation, as Drive reads its own
+    /// state and proof verification reads state a proof authenticates: its document types read
+    /// back from their compiled forms rather than parsed from their schemas, which is what the
+    /// stored form spares. Only state holds format version 2, written by consensus from a
+    /// contract it fully validated; the untrusted decoders read bytes nothing vouches for from
+    /// their schemas ([`DataContractInSerializationFormat::into_schema_form`]) and never reach
+    /// here. Refuses compiled types that are not those of the raw schemas beside them, by name,
+    /// which no writer produces. Charges no validation operations.
     pub(in crate::data_contract) fn try_from_platform_versioned_v2(
         data_contract_data: DataContractInSerializationFormatV2,
     ) -> Result<Self, ProtocolError> {

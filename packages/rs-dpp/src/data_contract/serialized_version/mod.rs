@@ -147,6 +147,19 @@ impl From<TransitionContractFormat> for DataContractInSerializationFormat {
 }
 
 impl DataContractInSerializationFormat {
+    /// The contract as its document schemas define it: format version 2 becomes its format
+    /// version 1, without the compiled document types, so reading it parses the schemas. Bytes
+    /// that neither this node's state nor a verified proof vouches for are read this way: only
+    /// those hold compiled types that are what their schemas compile to.
+    pub fn into_schema_form(self) -> Self {
+        match self {
+            DataContractInSerializationFormat::V2(stored) => {
+                DataContractInSerializationFormat::V1(stored.into())
+            }
+            format => format,
+        }
+    }
+
     /// Returns the unique identifier for the data contract.
     pub fn id(&self) -> Identifier {
         match self {
