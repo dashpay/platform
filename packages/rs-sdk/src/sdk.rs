@@ -57,6 +57,20 @@ mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
 
+/// A local view of the authenticated network observation and this SDK's version tables.
+/// This is informational: a newer network version does not disable operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolVersionInfo {
+    /// Highest fresh, proof-and-signature-verified version, or no observation yet.
+    pub verified_version: Option<u32>,
+    /// Version table currently used to build operations (possibly pinned).
+    pub effective_version: u32,
+    /// Highest protocol version whose tables are included in this SDK.
+    pub maximum_supported_version: u32,
+    /// Whether the authenticated network observation exceeds the known tables.
+    pub newer_protocol_available: bool,
+}
+
 /// Metadata needed to select the rules for interpreting a proved response.
 /// Reading it does not authenticate it or update the SDK's stored version.
 pub trait ProofResponseMetadata {
@@ -773,6 +787,19 @@ impl Sdk {
     /// Return the raw protocol version number currently used by this SDK.
     pub fn protocol_version_number(&self) -> u32 {
         self.protocol_version.load(Ordering::Relaxed)
+    }
+
+    /// Read the cached verified observation without making a request.
+    /// Ordinary proved queries update it even when the operation version is pinned.
+    pub fn protocol_version_info(&self) -> ProtocolVersionInfo {
+        let observed = self.verified_protocol_version.load(Ordering::Relaxed);
+        let maximum_supported_version = PlatformVersion::latest().protocol_version;
+        ProtocolVersionInfo {
+            verified_version: (observed != 0).then_some(observed),
+            effective_version: self.protocol_version_number(),
+            maximum_supported_version,
+            newer_protocol_available: observed > maximum_supported_version,
+        }
     }
 
     // TODO: Move to settings
@@ -2009,6 +2036,29 @@ pub(crate) mod test {
         sdk.protocol_version
             .store(starting_version, Ordering::Relaxed);
         sdk
+    }
+
+    #[test]
+    fn test_protocol_version_info_tracks_observation_without_changing_pinned_version() {
+        let version = super::PlatformVersion::latest();
+        let sdk = SdkBuilder::new_mock()
+            .with_version(version)
+            .build()
+            .unwrap();
+        let clone = sdk.clone();
+        let initial = sdk.protocol_version_info();
+        assert_eq!(initial.verified_version, None);
+        assert!(!initial.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert!(!clone.protocol_version_info().newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version + 1);
+        let info = clone.protocol_version_info();
+        assert_eq!(info.verified_version, Some(version.protocol_version + 1));
+        assert_eq!(info.effective_version, version.protocol_version);
+        assert_eq!(info.maximum_supported_version, version.protocol_version);
+        assert!(info.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert_eq!(sdk.protocol_version_info(), info);
     }
 
     #[test]
