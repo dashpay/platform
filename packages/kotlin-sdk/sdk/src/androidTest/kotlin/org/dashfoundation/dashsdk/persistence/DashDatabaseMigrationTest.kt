@@ -690,13 +690,54 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v15 -> v16 adds the nullable `accounts.encryptedXpubDigest`. A
+     * pre-migration outbound account reads back with no digest — native then
+     * confirms it by decrypting once — and a digest written afterwards
+     * survives on the same row as the xpub.
+     */
+    @Test
+    fun migrate15To16AddsOutboundAccountDigestColumn() {
+        helper.createDatabase(dbName, 15).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO accounts (walletId, accountType, accountIndex, accountTypeName, " +
+                    "balanceConfirmed, balanceUnconfirmed, externalHighestUsed, " +
+                    "internalHighestUsed, standardTag, registrationIndex, keyClass, " +
+                    "userIdentityId, friendIdentityId, accountExtendedPubKeyBytes, createdAt, " +
+                    "lastUpdated) " +
+                    "VALUES (x'01', 13, 0, 'dashpayExternalAccount', 0, 0, -1, -1, 0, 0, 0, " +
+                    "x'0A', x'0B', x'04', 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 16, true, DashDatabase.MIGRATION_15_16)
+
+        db.query("SELECT encryptedXpubDigest FROM accounts WHERE accountType = 13").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration accounts carry no digest", c.isNull(0))
+        }
+        db.execSQL("UPDATE accounts SET encryptedXpubDigest = x'D1D1' WHERE accountType = 13")
+        db.query("SELECT encryptedXpubDigest, accountExtendedPubKeyBytes FROM accounts").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(0xD1.toByte(), 0xD1.toByte()).contentEquals(c.getBlob(0)))
+            assertTrue("the xpub is untouched", byteArrayOf(0x04).contentEquals(c.getBlob(1)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -709,16 +750,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v15 schema. */
+    /** The full chain from v1 must also land on a valid v16 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -734,6 +776,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 }

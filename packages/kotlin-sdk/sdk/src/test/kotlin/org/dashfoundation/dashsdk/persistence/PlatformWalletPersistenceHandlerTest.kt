@@ -29,6 +29,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -307,6 +308,124 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, accounts[0].accountType)
         assertEquals("standardBip44", accounts[0].accountTypeName)
         assertTrue(xpub.contentEquals(accounts[0].accountExtendedPubKeyBytes!!))
+    }
+
+    private val outboundTypeTag: Byte = 13
+    private val contactOwner = ByteArray(32) { 0x0A }
+    private val contactFriend = ByteArray(32) { 0x0B }
+
+    /** Register the outbound DashPay account and one pool row at [address]. */
+    private fun seedOutboundAccount(address: String) {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend, ByteArray(78) { 4 },
+        )
+        handler.onPersistAccountAddressPoolEntry(
+            walletId = walletId,
+            accountTypeTag = outboundTypeTag,
+            accountStandardTag = 0,
+            accountIndex = 0,
+            accountRegistrationIndex = 0,
+            accountKeyClass = 0,
+            accountUserIdentityId = contactOwner,
+            accountFriendIdentityId = contactFriend,
+            poolTypeTag = 0,
+            publicKey = ByteArray(33) { 9 },
+            hasPublicKey = true,
+            addressPoolTypeTag = 0,
+            addressIndex = 0,
+            isUsed = true,
+            balance = 0,
+            addressBase58 = address,
+            derivationPath = "m/0",
+        )
+    }
+
+    @Test
+    fun outboundAccountPoolResetDropsItsRowsAndKeepsTheirTxos() = runTest {
+        seedOutboundAccount("yOldXpubAddress0")
+        val txid = ByteArray(32) { 7 }
+        db.transactionDao().upsert(TransactionEntity(txid = txid, transactionData = ByteArray(0)))
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = ByteArray(36) { 7 },
+                vout = 0,
+                amount = 1_000,
+                address = "yOldXpubAddress0",
+                walletId = walletId,
+                txid = txid,
+                coreAddressId = "yOldXpubAddress0",
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onResetAccountAddressPool(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend,
+            ),
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, true))
+
+        assertNull(db.coreAddressDao().getByAddress("yOldXpubAddress0"))
+        assertNotEquals(
+            "an account without a row fails the round rather than reset nothing",
+            0,
+            handler.onResetAccountAddressPool(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, ByteArray(32) { 9 },
+            ),
+        )
+        val txo = db.txoDao().getByOutpoint(ByteArray(36) { 7 })
+        assertNotNull("the reset keeps funds history", txo)
+        assertNull(txo!!.coreAddressId)
+    }
+
+    @Test
+    fun outboundAccountDigestSurvivesRestartOnTheAccountRowAndFailsClosed() = runTest {
+        seedOutboundAccount("yOutboundAddress0")
+        val digest = ByteArray(32) { 0xD1.toByte() }
+        fun load(friend: ByteArray = contactFriend) = handler.onLoadAccountXpubDigest(
+            walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, friend,
+        )
+
+        assertNull(load())
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistAccountXpubDigest(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend, digest,
+            ),
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, true))
+        assertTrue(digest.contentEquals(load()))
+        // A fresh handler models process restart: the digest is read back.
+        assertTrue(
+            digest.contentEquals(
+                newHandler().onLoadAccountXpubDigest(
+                    walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend,
+                ),
+            ),
+        )
+
+        assertNotEquals(
+            "a digest of the wrong length is refused",
+            0,
+            handler.onPersistAccountXpubDigest(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend, ByteArray(31),
+            ),
+        )
+        assertThrows(IllegalStateException::class.java) { load(ByteArray(32) { 9 }) }
+
+        // An account registered again without a digest clears the previous one.
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistAccountXpubDigest(
+                walletId, outboundTypeTag, 0, 0, 0, 0, contactOwner, contactFriend, ByteArray(0),
+            ),
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, true))
+        assertNull(load())
     }
 
     @Test

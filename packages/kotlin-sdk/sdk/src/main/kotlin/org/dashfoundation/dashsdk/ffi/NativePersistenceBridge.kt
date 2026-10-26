@@ -198,6 +198,61 @@ abstract class NativePersistenceBridge {
         accountXpubBytes: ByteArray,
     ): Int = 0
 
+    // ── Outbound account sidecars ─────────────────────────────────────
+
+    /**
+     * `on_reset_account_address_pools_fn`, one call per account: drop every
+     * stored pool row of the account before the round's pool entries land —
+     * it was registered again in the same round under another xpub. TXOs
+     * linked to a dropped row are kept. Descriptor `([BBBIII[B[B)I`.
+     * A bridge that stores pool entries must implement it: without it native
+     * fails a round that replaces an account's xpub.
+     */
+    open fun onResetAccountAddressPool(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_persist_account_xpub_digest_fn`: store the 32-byte [digest] on the
+     * account row registered earlier in the same round; an empty [digest]
+     * clears it. Descriptor `([BBBIII[B[B[B)I`. Wired only with
+     * [onLoadAccountXpubDigest].
+     */
+    open fun onPersistAccountXpubDigest(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+        digest: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_account_xpub_digest_fn`: the digest stored on the account
+     * row, or `null` when it has none. Throw when the row cannot be read.
+     * Descriptor `([BBBIII[B[B)[B`.
+     */
+    open fun onLoadAccountXpubDigest(
+        walletId: ByteArray,
+        typeTag: Byte,
+        standardTag: Byte,
+        index: Int,
+        registrationIndex: Int,
+        keyClass: Int,
+        userIdentityId: ByteArray,
+        friendIdentityId: ByteArray,
+    ): ByteArray? = null
+
     // ── Account address pools ─────────────────────────────────────────
 
     /**
