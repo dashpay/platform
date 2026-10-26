@@ -40,9 +40,14 @@ describe('envoy template', () => {
     expect(compressor).to.be.greaterThan(cors);
     expect(grpcWeb).to.be.greaterThan(compressor);
 
-    // Native gRPC must never be HTTP-compressed: rs-dapi compresses its messages.
+    // Only grpc-web responses are compressed; rs-dapi compresses native gRPC itself.
+    const responses = envoyConfig.indexOf('response_direction_config:', compressor);
+    const library = envoyConfig.indexOf('compressor_library:', compressor);
+
+    expect(responses).to.be.within(compressor, library);
+
     const contentTypes = (envoyConfig
-      .slice(compressor, grpcWeb)
+      .slice(responses, library)
       .match(/^\s+- application\/[\w+-]+$/gm) ?? [])
       .map((line) => line.trim().slice(2));
 
