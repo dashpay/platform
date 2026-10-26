@@ -197,9 +197,7 @@ mod zero_amount_tests {
     use super::*;
     use crate::error::PlatformWalletError;
     use dpp::address_funds::PlatformAddress;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-    use dpp::platform_value::BinaryData;
+    use dpp::identity::IdentityPublicKey;
     use dpp::prelude::Identifier;
     use dpp::shielded::builder::OrchardProver;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -240,16 +238,12 @@ mod zero_amount_tests {
         let platform_address = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network);
         let core_address = dashcore::Address::dummy(network, 1).to_string();
         let identity_id = Identifier::from([0x11; 32]);
-        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 0,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::new(vec![0x02; 33]),
-            disabled_at: None,
-        });
+        let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(1),
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("identity master key");
         let identity_signer = simple_signer::signer::SimpleSigner::default();
 
         // Exercise both the contended sync-store path and empty-wallet error precedence.
