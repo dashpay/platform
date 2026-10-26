@@ -30,7 +30,7 @@ use alloc::vec::Vec;
 use bincode::de::Decoder;
 use bincode::enc::write::{SizeWriter, Writer};
 use bincode::enc::{Encode, Encoder, EncoderImpl};
-use bincode::error::EncodeError;
+use bincode::error::{DecodeError, EncodeError};
 use core::fmt::{self, Display, Formatter};
 use platform_serialization::bounded::{
     bounded_decode_from_slice, canonical_config, decode_bounded_bytes, decode_bounded_len,
@@ -123,6 +123,15 @@ where
 
     fn container_end(&mut self) {
         self.budget.exit_container();
+    }
+
+    // The element budget was charged at the header; this keeps an allocator
+    // failure within that budget an error instead of an abort, as on the
+    // untrusted path.
+    fn reserve_element<T>(&mut self, storage: &mut Vec<T>) -> Result<(), BoundedDecodeError> {
+        storage
+            .try_reserve(1)
+            .map_err(|_| DecodeError::LimitExceeded.into())
     }
 
     fn bytes(&mut self, decoder: &mut D) -> Result<Vec<u8>, BoundedDecodeError> {
