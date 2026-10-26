@@ -139,11 +139,33 @@ fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
             .unwrap_or_else(|error| panic!("{origin} failed to compile: {error}"));
         assert_eq!(stored[0], 2, "{origin} is not stored in format version 2");
 
-        // As Drive reads it, as a client reads it from a proof, and fully validated
+        // Fully validated, the stored form reads as its format version 1 does: its schemas
+        // parsed and checked by today's rules, which a contract registered earlier may break
+        let format_v1 = loaded
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected the contract to serialize");
+        match (
+            DataContract::versioned_deserialize_trusted(&stored, true, platform_version),
+            DataContract::versioned_deserialize_trusted(&format_v1, true, platform_version),
+        ) {
+            (Ok(from_stored), Ok(from_format_v1)) => assert_eq!(
+                from_stored, from_format_v1,
+                "{origin} fully validated differs from its format version 1"
+            ),
+            (Err(from_stored), Err(from_format_v1)) => assert_eq!(
+                from_stored.to_string(),
+                from_format_v1.to_string(),
+                "{origin} is refused otherwise than its format version 1"
+            ),
+            (from_stored, from_format_v1) => panic!(
+                "{origin} fully validated: {from_stored:?}, its format version 1: {from_format_v1:?}"
+            ),
+        }
+
+        // As Drive reads it, and as a client reads it from a proof
         let read_backs = [
             DataContract::versioned_deserialize_trusted(&stored, false, platform_version),
             DataContract::versioned_deserialize_untrusted(&stored, false, platform_version),
-            DataContract::versioned_deserialize_trusted(&stored, true, platform_version),
         ];
         let mut read_backs = read_backs.into_iter().map(|read_back| {
             read_back.unwrap_or_else(|error| panic!("{origin} failed to read back: {error}"))

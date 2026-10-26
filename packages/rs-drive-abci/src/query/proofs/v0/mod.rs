@@ -20,7 +20,11 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
         let state_transition =
-            match StateTransition::deserialize_from_bytes_untrusted(&state_transition_bytes) {
+            match StateTransition::deserialize_from_bytes_untrusted(&state_transition_bytes)
+                .and_then(|state_transition| {
+                    state_transition.ensure_admitted_by_some_version()?;
+                    Ok(state_transition)
+                }) {
                 Ok(state_transition) => state_transition,
                 Err(e) => {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Protocol(
