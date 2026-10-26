@@ -1,3 +1,16 @@
+## [5.0.0](https://github.com/dashpay/platform/compare/v5.0.0-rc.8...v5.0.0) (2026-10-26)
+
+
+### Bug Fixes
+
+* **platform-wallet-storage:** open the wallet store on Android ([#5352](https://github.com/dashpay/platform/issues/5352))
+
+
+### Miscellaneous Chores
+
+* bump rs-tenderdash-abci to v1.8.1 for zip RUSTSEC-2026-0367/0368/0369 ([#5583](https://github.com/dashpay/platform/issues/5583))
+* bump rustls-webpki and webpki-roots for RUSTSEC-2026-0381/0382/0383 ([#5582](https://github.com/dashpay/platform/issues/5582))
+
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 
 
