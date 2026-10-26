@@ -85,6 +85,7 @@ pub use seed_binding::SeedBindingVerification;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
+pub use contact_requests::select_own_encryption_key;
 /// Seed-backed [`ContactCryptoProvider`] for tests. Lives behind the private
 /// `contact_requests` module, so sibling modules reach it directly and the
 /// manager's tests reach it through here.

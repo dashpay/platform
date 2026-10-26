@@ -30,7 +30,8 @@ pub use crypto::{
     unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use network::{
-    check_signing_key, usable_signing_key, DashPayView, IdentityWallet, SigningScope,
+    check_signing_key, select_own_encryption_key, usable_signing_key, DashPayView, IdentityWallet,
+    SigningScope,
 };
 pub use state::{
     BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex,
