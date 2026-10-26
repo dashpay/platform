@@ -48,6 +48,10 @@ pub enum BoundedEncodeError {
     /// A bound from [`CodecBounds`] was hit.
     Bounds(BoundsError),
     /// bincode refused to encode a leaf.
+    ///
+    /// This is bincode's own error, kept for diagnostics. Unlike
+    /// [`BoundsError`] it can carry `usize` fields, so the ABI layer maps it to
+    /// its own fixed-width code instead of exposing it on the wire.
     Encode(EncodeError),
     /// The allocator could not provide the traversal stack or the output
     /// buffer, which the bounds otherwise allowed.
