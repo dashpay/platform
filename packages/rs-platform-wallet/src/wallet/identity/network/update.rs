@@ -8,9 +8,6 @@ use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyType;
-use dpp::identity::Purpose;
-use dpp::identity::SecurityLevel;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
@@ -21,7 +18,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
-use super::signing_key::AvailableSigningKey;
+use super::signing_key::master_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -136,14 +133,7 @@ impl IdentityWallet {
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
-        let master_key_id = identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::MASTER],
-                &[KeyType::ECDSA_SECP256K1],
-                true,
-            )?
+        let master_key_id = master_signing_key(&identity, signer)?
             .map(|key| key.id())
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(

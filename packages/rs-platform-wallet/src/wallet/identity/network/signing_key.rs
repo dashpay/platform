@@ -77,7 +77,21 @@ impl AvailableSigningKey for Identity {
     }
 }
 
-/// Respect explicit keys; automatic withdrawals exhaust TRANSFER before OWNER.
+/// The MASTER key that authorizes an identity update. Platform refuses a disabled signing key.
+pub(super) fn master_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    identity.available_signing_key(
+        signer,
+        Purpose::AUTHENTICATION,
+        &[SecurityLevel::MASTER],
+        &[KeyType::ECDSA_SECP256K1],
+        false,
+    )
+}
+
+/// Respect explicit keys; automatic withdrawals exhaust enabled TRANSFER keys before OWNER.
 pub(super) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
@@ -97,7 +111,7 @@ pub(super) fn credit_signing_key<'a>(
             purpose,
             &SecurityLevel::full_range(),
             &KeyType::all_key_types(),
-            true,
+            false,
         ) {
             Ok(Some(key)) => return Ok(key),
             Ok(None) => {}
@@ -267,7 +281,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn should_exhaust_transfer_keys_including_disabled_before_owner_fallback() {
+    fn should_skip_disabled_transfer_keys_before_owner_fallback() {
         let mut identity = identity(
             Purpose::TRANSFER,
             SecurityLevel::CRITICAL,
@@ -285,10 +299,43 @@ pub(super) mod tests {
         let select = |ids: &[u32], allow_owner| {
             credit_signing_key(&identity, None, &available(ids), allow_owner).map(|k| k.id())
         };
-        assert_eq!(select(&[0, 1], true).unwrap(), 1);
-        assert_eq!(select(&[0, 2], true).unwrap(), 2);
+        assert_eq!(
+            select(&[0, 1, 2], true).unwrap(),
+            2,
+            "Platform refuses a disabled signing key, so key 1 is never chosen"
+        );
+        assert_eq!(
+            select(&[0, 1], true).unwrap(),
+            0,
+            "only the disabled TRANSFER key is available, so OWNER signs"
+        );
         assert_eq!(select(&[0], true).unwrap(), 0);
-        assert_unavailable(select(&[0], false).unwrap_err());
+        assert_unavailable(select(&[1], false).unwrap_err());
+    }
+
+    #[test]
+    fn should_skip_a_disabled_master_key() {
+        let mut identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            KeyType::ECDSA_SECP256K1,
+        );
+        identity
+            .public_keys_mut()
+            .get_mut(&1)
+            .unwrap()
+            .set_disabled_at(1);
+        let select = |identity: &Identity, ids: &[u32]| {
+            master_signing_key(identity, &available(ids)).map(|key| key.map(|key| key.id()))
+        };
+        assert_eq!(select(&identity, &[1, 2]).unwrap(), Some(2));
+        assert_unavailable(select(&identity, &[1]).unwrap_err());
+        identity.public_keys_mut().retain(|id, _| *id == 1);
+        assert_eq!(
+            select(&identity, &[1]).unwrap(),
+            None,
+            "a disabled key is not eligible at all"
+        );
     }
 
     #[test]
