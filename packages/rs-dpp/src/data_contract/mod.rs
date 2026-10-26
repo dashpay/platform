@@ -195,6 +195,34 @@ impl DataContract {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
     }
+
+    /// [`PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted::versioned_deserialize_untrusted`]
+    /// for bytes that neither this node's state nor a verified proof vouches for, such as the
+    /// contract of an unproved query response. A contract in the stored format (format version
+    /// 2) has its document types parsed from the schemas it carries, as format version 1's are,
+    /// rather than read back from its compiled types: only state is trusted to hold compiled
+    /// types that are what its schemas compile to. Nodes answer unproved queries in format
+    /// version 0 or 1, which read the same either way.
+    pub fn versioned_deserialize_unauthenticated(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let (data_contract_in_serialization_format, _) =
+            decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
+        let data_contract_in_serialization_format = match data_contract_in_serialization_format {
+            DataContractInSerializationFormat::V2(stored) => {
+                DataContractInSerializationFormat::V1(stored.into())
+            }
+            format => format,
+        };
+        DataContract::try_from_platform_versioned(
+            data_contract_in_serialization_format,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
 }
 
 /// Decodes the stored serialization format with the ordinary decoder: bytes

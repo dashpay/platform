@@ -137,6 +137,43 @@ fn should_read_a_fully_validated_stored_form_from_its_schemas_alone() {
     assert_eq!(read, contract);
 }
 
+/// Bytes no proof or state vouches for are read from their schemas, so compiled types that do
+/// not match them change nothing there either; read from state, the same bytes give the
+/// compiled types back as they are.
+#[test]
+fn should_read_an_unauthenticated_stored_form_from_its_schemas_alone() {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+
+    let contract = fixture_contract();
+    let mut format = stored(&contract);
+    let names: Vec<String> = format.document_types.keys().cloned().collect();
+    assert!(names.len() >= 2, "expected two document types");
+    // Swap two types' compiled forms
+    let first = format.document_types[&names[0]].clone();
+    let second = format.document_types[&names[1]].clone();
+    format.document_types.insert(names[0].clone(), second);
+    format.document_types.insert(names[1].clone(), first);
+    let bytes = bincode::encode_to_vec(
+        DataContractInSerializationFormat::V2(format),
+        bincode::config::standard().with_big_endian(),
+    )
+    .expect("expected the stored form to encode");
+    let latest = PlatformVersion::latest();
+
+    let read = DataContract::versioned_deserialize_unauthenticated(&bytes, false, latest)
+        .expect("expected the stored form to read from its schemas");
+    assert_eq!(read, contract);
+    for from_state in [
+        DataContract::versioned_deserialize_trusted(&bytes, false, latest),
+        DataContract::versioned_deserialize_untrusted(&bytes, false, latest),
+    ] {
+        assert_ne!(
+            from_state.expect("expected the stored form to read back"),
+            contract
+        );
+    }
+}
+
 /// JSON carries the compiled document types as bytes, so they come back exactly; the raw
 /// schemas come back as JSON gives any format's schemas back, with their integers widened.
 /// A platform value gives everything back.
