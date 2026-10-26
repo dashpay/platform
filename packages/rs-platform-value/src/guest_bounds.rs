@@ -49,6 +49,9 @@ pub enum BoundedEncodeError {
     Bounds(BoundsError),
     /// bincode refused to encode a leaf.
     Encode(EncodeError),
+    /// The allocator could not provide the traversal stack or the output
+    /// buffer, which the bounds otherwise allowed.
+    AllocationFailed,
 }
 
 impl From<BoundsError> for BoundedEncodeError {
@@ -68,6 +71,7 @@ impl Display for BoundedEncodeError {
         match self {
             BoundedEncodeError::Bounds(error) => write!(f, "bounds: {error}"),
             BoundedEncodeError::Encode(error) => write!(f, "encode: {error}"),
+            BoundedEncodeError::AllocationFailed => write!(f, "allocation failed"),
         }
     }
 }
@@ -81,6 +85,7 @@ impl core::error::Error for BoundedEncodeError {
             BoundedEncodeError::Encode(error) => Some(error),
             #[cfg(not(feature = "std"))]
             BoundedEncodeError::Encode(_) => None,
+            BoundedEncodeError::AllocationFailed => None,
         }
     }
 }
@@ -217,6 +222,7 @@ fn encode_leaf_or_push<'v, E: Encoder>(
             budget.claim_elements(items.len() as u64)?;
             VALUE_ARRAY_VARIANT.encode(encoder)?;
             (items.len() as u64).encode(encoder)?;
+            reserve_frame(frames)?;
             frames.push(EncodeFrame::Array(items.iter()));
         }
         Value::Map(entries) => {
@@ -224,6 +230,7 @@ fn encode_leaf_or_push<'v, E: Encoder>(
             budget.claim_elements((entries.len() as u64).saturating_mul(2))?;
             VALUE_MAP_VARIANT.encode(encoder)?;
             (entries.len() as u64).encode(encoder)?;
+            reserve_frame(frames)?;
             frames.push(EncodeFrame::Map {
                 entries: entries.iter(),
                 pending_value: None,
@@ -297,8 +304,9 @@ impl Value {
     /// allocation is the traversal stack (one frame per open container, so at
     /// most `max_depth` frames); the output is then refused if it would exceed
     /// `max_bytes`, and only afterwards is the output buffer allocated, sized
-    /// exactly once. The bytes are identical to the derived
-    /// [`bincode::Encode`] output.
+    /// exactly once. Both allocations are fallible: an allocator failure is
+    /// [`BoundedEncodeError::AllocationFailed`], not an abort. The bytes are
+    /// identical to the derived [`bincode::Encode`] output.
     pub fn encode_bounded(&self, bounds: &CodecBounds) -> Result<Vec<u8>, BoundedEncodeError> {
         let size = {
             let mut budget = CodecBudget::new(bounds);
@@ -309,10 +317,19 @@ impl Value {
         CodecBudget::new(bounds).check_len(size)?;
 
         let mut budget = CodecBudget::new(bounds);
-        let mut encoder = EncoderImpl::new(ExactWriter::with_capacity(size), canonical_config());
+        let mut encoder =
+            EncoderImpl::new(ExactWriter::try_with_capacity(size)?, canonical_config());
         encode_value_with(self, &mut encoder, &mut budget)?;
         Ok(encoder.into_writer().bytes)
     }
+}
+
+/// Makes room for one more open container on the traversal stack, so an
+/// allocator failure is an error rather than an abort.
+fn reserve_frame(frames: &mut Vec<EncodeFrame<'_>>) -> Result<(), BoundedEncodeError> {
+    frames
+        .try_reserve(1)
+        .map_err(|_| BoundedEncodeError::AllocationFailed)
 }
 
 /// A writer into a `Vec<u8>` sized once, up front, from the size pass.
@@ -321,10 +338,12 @@ struct ExactWriter {
 }
 
 impl ExactWriter {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            bytes: Vec::with_capacity(capacity),
-        }
+    fn try_with_capacity(capacity: usize) -> Result<Self, BoundedEncodeError> {
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(capacity)
+            .map_err(|_| BoundedEncodeError::AllocationFailed)?;
+        Ok(Self { bytes })
     }
 }
 
