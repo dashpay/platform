@@ -1640,3 +1640,58 @@ mod tests {
         assert_eq!(heights[1], 140 - MAX_RECENT_STATES as u32 + 1);
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod browser_tests {
+    use super::*;
+    use dash_core_proof::ProofNetwork;
+    use js_sys::{Function, Reflect};
+    use wasm_bindgen::JsValue;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    async fn should_end_a_callers_wait_at_its_deadline() {
+        // A browser timer of the test's own, so a deadline that never fires
+        // fails the test instead of leaving it pending.
+        let fallback = pin!(sleep(Duration::from_secs(5)));
+        let deadline = pin!(caller_sleep(Duration::from_millis(50)));
+        let woke = select(fallback, deadline).await;
+        assert!(matches!(woke, Either::Right(_)), "the deadline fired");
+    }
+
+    #[wasm_bindgen_test]
+    async fn should_report_a_relay_that_never_answers_as_unavailable() {
+        let fetch = Function::new_with_args("request", "return new Promise(() => {});");
+        Reflect::set(&js_sys::global(), &JsValue::from_str("fetch"), &fetch)
+            .expect("set the global fetch");
+        let checkpoint = State {
+            network: ProofNetwork::Testnet,
+            height: 1_000_000,
+            block_hash: [1; 32],
+            masternode_root: [2; 32],
+            quorum_root: [3; 32],
+        };
+        let timing = Timing {
+            deadline: Duration::from_millis(300),
+            request_timeout: Duration::from_millis(300),
+            ..Timing::default()
+        };
+        let fetches = Arc::new(ProofFetches::new(
+            6,
+            600,
+            checkpoint,
+            vec![Url::parse("https://relay.test/proofs").expect("a URL")],
+            NonZeroUsize::new(4).expect("non-zero"),
+            ProofTransport::new().expect("a transport"),
+            timing,
+        ));
+        let result = fetches.fetch(6, [7; 32], 1_000_100).await;
+        assert!(
+            matches!(
+                result,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "{result:?}"
+        );
+    }
+}
