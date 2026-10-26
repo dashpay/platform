@@ -61,9 +61,12 @@ const MAX_REQUESTS_IN_FLIGHT: usize = 2;
 /// call, and the quorums come from unverified responses.
 const MAX_QUORUMS_IN_FLIGHT: usize = 2;
 /// Most recently failed fetches remembered for their cooldowns. Running
-/// fetches are not counted: natively each has a caller waiting on it, and in
-/// a browser each needed a free place to start and ends at its deadline.
+/// fetches have their own bound.
 const MAX_FAILED_FETCHES: usize = 64;
+/// Most fetches running at once, waiting ones included. A fetch gives its
+/// proving place up while it waits, so without this bound fetches of fake
+/// quorums could pile up; past it, new quorums are refused until one ends.
+const MAX_RUNNING_FETCHES: usize = 16;
 /// Verified states kept besides the checkpoint, to start later proofs from.
 const MAX_RECENT_STATES: usize = 16;
 /// The delay before asking a busy relay again doubles this many times.
@@ -121,13 +124,19 @@ fn backoff(first: Duration, max: Duration, failures: u32) -> Duration {
     first.saturating_mul(1 << doublings).min(max)
 }
 
-/// A proven key and the highest target height that proved it.
-struct Cached {
+/// A proven key and the highest target height that proved it. The key is
+/// served for heights up to `active_at` plus the validity window.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Cached {
     key: QuorumKey,
     active_at: u32,
 }
 
-type FetchFuture = BoxFuture<'static, Result<(), String>>;
+/// What a fetch hands every caller waiting on it: the key it proved and the
+/// height that covers, so that a caller does not depend on the cache still
+/// holding it.
+type FetchResult = Result<Cached, String>;
+type FetchFuture = BoxFuture<'static, FetchResult>;
 type SharedFetch = Shared<FetchFuture>;
 
 /// A running or recently failed fetch of a quorum, for one height.
@@ -208,7 +217,7 @@ fn choose_ask(
 
 /// How one answer from a relay counts.
 enum Verdict {
-    Proven,
+    Proven(Cached),
     /// The relay cannot serve this quorum for the height asked: a 502, or a
     /// valid proof that does not serve the request. Asked again once, for the
     /// other height, after a delay; then left out of the fetch.
@@ -372,6 +381,10 @@ impl ProofFetches {
     /// it, and return it. Every failure is
     /// [`ContextProviderError::QuorumSourceUnavailable`]; this never reports
     /// the quorum as absent.
+    ///
+    /// A caller may first join a fetch for a lower height near its own, which
+    /// may prove the quorum only up to that height; it then starts a fetch of
+    /// its own, once.
     pub(crate) async fn fetch(
         self: Arc<Self>,
         quorum_type: u32,
@@ -381,15 +394,25 @@ impl ProofFetches {
         if let Ok(key) = self.lookup(quorum_type, quorum_hash, height) {
             return Ok(key);
         }
-        let fetch = self
-            .join_or_start(quorum_type, quorum_hash, height)
-            .map_err(ContextProviderError::QuorumSourceUnavailable)?;
-        fetch
-            .await
-            .map_err(ContextProviderError::QuorumSourceUnavailable)?;
-        // A fetch this one joined may have proven the quorum only for a lower
-        // height; the lookup then reports the source as unavailable.
-        self.lookup(quorum_type, quorum_hash, height)
+        let unavailable = ContextProviderError::QuorumSourceUnavailable;
+        let mut may_join_lower = true;
+        loop {
+            let (fetch, covers) = self
+                .join_or_start_for(quorum_type, quorum_hash, height, may_join_lower)
+                .map_err(unavailable)?;
+            let proven = fetch.await.map_err(unavailable)?;
+            if height <= proven.active_at.saturating_add(self.window) {
+                return Ok(proven.key);
+            }
+            if covers || !may_join_lower {
+                return Err(unavailable(format!(
+                    "quorum {} was proven active at core height {}, not for {height}",
+                    hex::encode(quorum_hash),
+                    proven.active_at
+                )));
+            }
+            may_join_lower = false;
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Proven> {
@@ -397,20 +420,40 @@ impl ProofFetches {
         self.proven.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The running fetch of this quorum for a height near this one, or a
-    /// new one if the limits allow.
-    ///
-    /// A fetch or a failure counts only for heights within the validity
-    /// window of its own, since the height comes from an unverified response:
-    /// a fetch or failure at a bogus height must not hold back, or cool down,
-    /// a request for an honest one, which runs its own fetch.
+    /// [`join_or_start_for`](Self::join_or_start_for), joining a fetch for a
+    /// lower height if there is one.
+    #[cfg(test)]
     fn join_or_start(
         self: &Arc<Self>,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
-    ) -> Result<SharedFetch, String> {
+    ) -> Result<(SharedFetch, bool), String> {
+        self.join_or_start_for(quorum_type, quorum_hash, height, true)
+    }
+
+    /// A running fetch of this quorum to wait on, or a new one if the limits
+    /// allow, and whether its result is sure to cover `height`.
+    ///
+    /// A fetch for height `H` proves a target at or above `H` minus the
+    /// window, so its key is sure to be served for heights up to `H`. A
+    /// caller joins such a fetch for a height at most a window below its
+    /// own; with `may_join_lower`, it otherwise joins one for a height at
+    /// most a window above, and must check what it proved.
+    ///
+    /// A fetch or a failure counts only for heights within the validity
+    /// window of its own, since the height comes from an unverified response:
+    /// a fetch or failure at a bogus height must not hold back, or cool down,
+    /// a request for an honest one, which runs its own fetch.
+    fn join_or_start_for(
+        self: &Arc<Self>,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        height: u32,
+        may_join_lower: bool,
+    ) -> Result<(SharedFetch, bool), String> {
         let quorum = (quorum_type, quorum_hash);
+        let window = self.window;
         let near = |other: u32| other.abs_diff(height) <= self.window;
         let now = Instant::now();
         let forgotten_after = self.timing.max_quorum_cooldown.saturating_mul(2);
@@ -423,19 +466,30 @@ impl ProofFetches {
         // A fetch that finished since the caller's lookup has nothing to add.
         if let Some(cached) = proven.keys.peek(&quorum) {
             if height <= cached.active_at.saturating_add(self.window) {
-                return Ok(future::ready(Ok(())).boxed().shared());
+                return Ok((future::ready(Ok(*cached)).boxed().shared(), true));
             }
         }
-        let joinable = proven.fetches.iter().find_map(|(other, slot)| match slot {
-            Slot::Running {
-                fetch,
-                height: running,
-                ..
-            } if *other == quorum && near(*running) => fetch.upgrade(),
-            _ => None,
-        });
-        if let Some(fetch) = joinable {
-            return Ok(fetch);
+        let joinable = proven
+            .fetches
+            .iter()
+            .filter_map(|(other, slot)| match slot {
+                Slot::Running {
+                    fetch,
+                    height: running,
+                    ..
+                } if *other == quorum => {
+                    let covers = height <= *running && *running - height <= window;
+                    let lower = may_join_lower && *running < height && height - *running <= window;
+                    (covers || lower)
+                        .then(|| fetch.upgrade())
+                        .flatten()
+                        .map(|fetch| (fetch, covers))
+                }
+                _ => None,
+            })
+            .max_by_key(|(_, covers)| *covers);
+        if let Some(joined) = joinable {
+            return Ok(joined);
         }
         let earlier = proven
             .fetches
@@ -470,6 +524,17 @@ impl ProofFetches {
                 "{running} other quorums are being proven; not starting another"
             ));
         }
+        // Every running slot left after the pruning above is alive.
+        let live = proven
+            .fetches
+            .iter()
+            .filter(|(_, slot)| matches!(slot, Slot::Running { .. }))
+            .count();
+        if live >= MAX_RUNNING_FETCHES {
+            return Err(format!(
+                "{live} quorum fetches are running; not starting another"
+            ));
+        }
         // The earlier failures near this height stay until the new fetch
         // ends, so a fetch every caller abandons does not erase them.
         proven.next_fetch_id += 1;
@@ -488,7 +553,7 @@ impl ProofFetches {
         // A fetch not yet polled always downgrades; were it done, it would
         // need no slot.
         let Some(weak) = fetch.downgrade() else {
-            return Ok(fetch);
+            return Ok((fetch, true));
         };
         proven.fetches.push((
             quorum,
@@ -503,7 +568,7 @@ impl ProofFetches {
         // so its slot stays joinable meanwhile.
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(fetch.clone().map(drop));
-        Ok(fetch)
+        Ok((fetch, true))
     }
 
     /// A fetch every waiter of this quorum shares.
@@ -531,7 +596,7 @@ impl ProofFetches {
     /// Record how a fetch ended, if its slot is still its own. A failure
     /// without a single request asked nothing, so it does not cool the
     /// quorum down further; the earlier failures are kept.
-    fn finish(&self, attempt: &Attempt, result: &Result<(), String>, asked: bool) {
+    fn finish(&self, attempt: &Attempt, result: &FetchResult, asked: bool) {
         attempt.holding.store(false, Ordering::Relaxed);
         let mut proven = self.lock();
         let ours = |slot: &Slot| matches!(slot, Slot::Running { id, .. } if *id == attempt.id);
@@ -554,7 +619,7 @@ impl ProofFetches {
             return;
         };
         let failed = match (result, asked, attempt.failed_at) {
-            (Ok(()), _, _) => None,
+            (Ok(_), _, _) => None,
             (Err(_), true, _) => Some((Instant::now(), attempt.failures.saturating_add(1))),
             (Err(_), false, Some(at)) => Some((at, attempt.failures)),
             (Err(_), false, None) => None,
@@ -604,7 +669,7 @@ impl ProofFetches {
     /// request budget is spent, every source is out or the deadline passes.
     /// Also returns whether the failure counts against the quorum: whether
     /// any request was sent, and the fetch did not end waiting for a place.
-    async fn prove(&self, attempt: &Attempt) -> (Result<(), String>, bool) {
+    async fn prove(&self, attempt: &Attempt) -> (FetchResult, bool) {
         let (quorum, height) = (attempt.quorum, attempt.height);
         let started = Instant::now();
         let deadline = started + self.timing.deadline;
@@ -707,7 +772,7 @@ impl ProofFetches {
                 reply => self.judge(quorum, height, &ask, reply),
             };
             match verdict {
-                Verdict::Proven => {
+                Verdict::Proven(proven) => {
                     self.source_answered(source);
                     tracing::debug!(
                         quorum_type = quorum.0,
@@ -717,7 +782,7 @@ impl ProofFetches {
                         elapsed_ms = elapsed.as_millis(),
                         "proved quorum key"
                     );
-                    return (Ok(()), true);
+                    return (Ok(proven), true);
                 }
                 Verdict::CannotServe(reason) => {
                     state.cannot_serve += 1;
@@ -831,19 +896,20 @@ impl ProofFetches {
             ));
         };
         match self.publish(quorum, *key, verified.state()) {
-            Ok(()) => Verdict::Proven,
+            Ok(proven) => Verdict::Proven(proven),
             Err(reason) => Verdict::CannotServe(reason),
         }
     }
 
-    /// Cache a proven key and remember the state that proved it. Nothing is
-    /// cached if either conflicts with what is already known.
+    /// Cache a proven key and remember the state that proved it, and return
+    /// what the cache now holds for the quorum. Nothing is cached if either
+    /// conflicts with what is already known.
     pub(crate) fn publish(
         &self,
         quorum: QuorumId,
         key: QuorumKey,
         target: &State,
-    ) -> Result<(), String> {
+    ) -> Result<Cached, String> {
         let mut proven = self.lock();
         if let Some(known) = proven.states.get(&target.height) {
             if known != target {
@@ -856,7 +922,7 @@ impl ProofFetches {
                 return Err("proves a different block than one already verified".to_string());
             }
         }
-        match proven.keys.get_mut(&quorum) {
+        let cached = match proven.keys.get_mut(&quorum) {
             Some(cached) if cached.key != key => {
                 tracing::error!(
                     quorum_type = quorum.0,
@@ -867,17 +933,19 @@ impl ProofFetches {
                 );
                 return Err("opens a different key than one already proven".to_string());
             }
-            Some(cached) => cached.active_at = cached.active_at.max(target.height),
-            None => {
-                proven.keys.put(
-                    quorum,
-                    Cached {
-                        key,
-                        active_at: target.height,
-                    },
-                );
+            Some(cached) => {
+                cached.active_at = cached.active_at.max(target.height);
+                *cached
             }
-        }
+            None => {
+                let cached = Cached {
+                    key,
+                    active_at: target.height,
+                };
+                proven.keys.put(quorum, cached);
+                cached
+            }
+        };
         if proven
             .states
             .insert(target.height, target.clone())
@@ -895,7 +963,7 @@ impl ProofFetches {
                 }
             }
         }
-        Ok(())
+        Ok(cached)
     }
 
     /// The source to ask next: one that is not cooling down, left out of
@@ -1011,10 +1079,10 @@ fn body_excerpt(body: &[u8]) -> String {
 /// Run a fetch so that a panic becomes a failed fetch instead of being raised
 /// again in every waiter of the shared future.
 #[cfg(not(target_arch = "wasm32"))]
-async fn contained<F, Fut>(prove: F) -> Result<(), String>
+async fn contained<F, Fut>(prove: F) -> FetchResult
 where
     F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<(), String>>,
+    Fut: Future<Output = FetchResult>,
 {
     match AssertUnwindSafe(async move { prove().await })
         .catch_unwind()
@@ -1032,10 +1100,10 @@ where
 /// Run a fetch on the local executor, where browser requests and timers have
 /// to run, so it finishes even if every waiter goes away.
 #[cfg(target_arch = "wasm32")]
-async fn contained<F, Fut>(prove: F) -> Result<(), String>
+async fn contained<F, Fut>(prove: F) -> FetchResult
 where
     F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = Result<(), String>> + 'static,
+    Fut: Future<Output = FetchResult> + 'static,
 {
     on_local_executor(prove)
         .await
@@ -1215,10 +1283,10 @@ mod tests {
     }
 
     #[test]
-    fn should_admit_a_quorum_while_many_fetches_wait_out_backoffs() {
+    fn should_refuse_new_quorums_while_the_running_fetches_are_full() {
         let fetches = Arc::new(fetches());
         let mut waiting = Vec::new();
-        for n in 0..MAX_FAILED_FETCHES + 8 {
+        for n in 0..MAX_RUNNING_FETCHES {
             let fetch = fetches
                 .join_or_start(6, [n as u8; 32], 150)
                 .expect("a place is free");
@@ -1226,7 +1294,38 @@ mod tests {
             holding(&fetches, (6, [n as u8; 32])).store(false, Ordering::Relaxed);
             waiting.push(fetch);
         }
+        let refused = fetches.join_or_start(6, [0xff; 32], 150).map(|_| ());
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|reason| reason.contains("quorum fetches are running")),
+            "{refused:?}"
+        );
+        // A running fetch can still be joined.
+        assert!(fetches.join_or_start(6, [0; 32], 150).is_ok());
+
+        let id = running_id(&fetches, (6, [1; 32]), 150).expect("running");
+        let first = attempt((6, [1; 32]), id, holding(&fetches, (6, [1; 32])));
+        fetches.finish(&first, &Err("failed".to_string()), true);
         assert!(fetches.join_or_start(6, [0xff; 32], 150).is_ok());
+    }
+
+    #[test]
+    fn should_join_a_lower_fetch_only_when_asked_to_and_say_it_may_not_cover() {
+        let fetches = Arc::new(fetches());
+        let _lower = fetches.join_or_start(6, [1; 32], 150).expect("starts");
+        let id = running_id(&fetches, (6, [1; 32]), 150);
+        let (_, covers) = fetches.join_or_start(6, [1; 32], 100).expect("joins");
+        assert!(covers, "a fetch for 150 covers 100");
+        let (_, covers) = fetches.join_or_start(6, [1; 32], 400).expect("joins");
+        assert!(!covers, "a fetch for 150 may prove only up to 150");
+        assert_eq!(running_id(&fetches, (6, [1; 32]), 400), None);
+        let (_, covers) = fetches
+            .join_or_start_for(6, [1; 32], 400, false)
+            .expect("its own fetch");
+        assert!(covers);
+        assert!(running_id(&fetches, (6, [1; 32]), 400).is_some());
+        assert_eq!(running_id(&fetches, (6, [1; 32]), 150), id);
     }
 
     #[test]
@@ -1294,9 +1393,9 @@ mod tests {
         let fetches = Arc::new(fetches());
         let quorum = (6, [1; 32]);
         let now = Instant::now();
-        let Some(long_ago) = now.checked_sub(Duration::from_secs(11)) else {
-            return;
-        };
+        let long_ago = now
+            .checked_sub(Duration::from_secs(11))
+            .expect("the clock has been running longer than the cooldown");
         let failed = Slot::Failed {
             at: long_ago,
             failures: 2,
