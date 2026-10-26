@@ -1,16 +1,20 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
-    DriveVerifyAddressFundsMethodVersions, DriveVerifyChainedDocumentMethodVersions,
-    DriveVerifyCompositeDocumentMethodVersions, DriveVerifyContractGroupMethodVersions,
-    DriveVerifyContractMethodVersions, DriveVerifyContractModerationMethodVersions,
-    DriveVerifyDocumentCountMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyDocumentRankedMethodVersions, DriveVerifyDocumentSumMethodVersions,
-    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyAddressFundsMethodVersions, DriveVerifyAssetLockMethodVersions,
+    DriveVerifyChainedDocumentMethodVersions, DriveVerifyCompositeDocumentMethodVersions,
+    DriveVerifyContractGroupMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyContractModerationMethodVersions, DriveVerifyDocumentCountMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyDocumentRankedMethodVersions,
+    DriveVerifyDocumentSumMethodVersions, DriveVerifyGroupMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
 };
 
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
+    asset_lock: DriveVerifyAssetLockMethodVersions {
+        verify_asset_lock_outpoint_info: 0,
+    },
     contract: DriveVerifyContractMethodVersions {
         verify_contract: 0,
         verify_contract_history: 0,

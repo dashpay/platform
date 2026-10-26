@@ -94,6 +94,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             prove_elements: 0,
             prove_multiple_state_transition_results: 0,
             prove_state_transition: 1, // changed in v9: a document batch proof carries the owner's balance (verify v1)
+            prove_asset_lock_outpoint_info: 0,
         },
         balances: DriveBalancesMethodVersions {
             add_to_system_credits: 0,
@@ -116,6 +117,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             add_asset_lock_outpoint: 0,
             add_estimation_costs_for_adding_asset_lock: 0,
             fetch_asset_lock_outpoint_info: 0,
+            prove_asset_lock_outpoint_info: 0,
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1); the six range-total verifiers 1 (a proof that the range holds nothing verifies to zero) and the composite documents verifier 1 (sum-bearing items are documents)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)

@@ -124,6 +124,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContractGroupsForContractRequest",
         "GetDataContractHistoryRequest",
         "GetDataContractsLatestVersionsRequest",
+        "GetAssetLockOutpointInfoRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDataContractsByRangeRequest",
@@ -204,7 +205,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 69] = [
+    const VERSIONED_RESPONSES: [&str; 70] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
@@ -217,6 +218,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContractGroupsForContractResponse",
         "GetDataContractHistoryResponse",
         "GetDataContractsLatestVersionsResponse",
+        "GetAssetLockOutpointInfoResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentHistoryResponse",
