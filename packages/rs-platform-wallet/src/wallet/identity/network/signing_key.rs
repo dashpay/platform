@@ -1,7 +1,7 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
+use super::key_selection::{usable_signing_key, SigningScope};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
-use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -44,37 +44,20 @@ pub(super) fn first_available<'a>(
     unavailable.map_or(Ok(None), |key| Err(signing_key_unavailable(key)))
 }
 
-/// Signer-aware `get_first_public_key_matching`: key-ID order, same eligibility policy.
-/// Call on an identity snapshot, outside wallet manager guards.
-/// `Ok(None)` means no eligible key; `Err` means eligible keys are unavailable.
-pub(super) trait AvailableSigningKey {
-    fn available_signing_key(
-        &self,
-        signer: &impl Signer<IdentityPublicKey>,
-        purpose: Purpose,
-        security_levels: &[SecurityLevel],
-        key_types: &[KeyType],
-        allow_disabled: bool,
-    ) -> Result<Option<&IdentityPublicKey>, dash_sdk::Error>;
-}
-
-impl AvailableSigningKey for Identity {
-    fn available_signing_key(
-        &self,
-        signer: &impl Signer<IdentityPublicKey>,
-        purpose: Purpose,
-        security_levels: &[SecurityLevel],
-        key_types: &[KeyType],
-        allow_disabled: bool,
-    ) -> Result<Option<&IdentityPublicKey>, dash_sdk::Error> {
-        let eligible = self.public_keys().values().filter(|key| {
-            key.purpose() == purpose
-                && security_levels.contains(&key.security_level())
-                && key_types.contains(&key.key_type())
-                && (allow_disabled || !key.is_disabled())
-        });
-        first_available(eligible, signer)
-    }
+/// The key that signs a contract create or update: a CRITICAL AUTHENTICATION ECDSA key.
+/// These are not batches, so a contract-bound key cannot sign them.
+pub(super) fn contract_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        &[SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1],
+        SigningScope::NonBatch,
+    )
 }
 
 /// The MASTER key that authorizes an identity update. Platform refuses a disabled signing key.
@@ -82,12 +65,13 @@ pub(super) fn master_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    identity.available_signing_key(
+    usable_signing_key(
+        identity,
         signer,
         Purpose::AUTHENTICATION,
         &[SecurityLevel::MASTER],
         &[KeyType::ECDSA_SECP256K1],
-        false,
+        SigningScope::NonBatch,
     )
 }
 
@@ -106,12 +90,13 @@ pub(super) fn credit_signing_key<'a>(
         .into_iter()
         .chain(allow_owner.then_some(Purpose::OWNER))
     {
-        match identity.available_signing_key(
+        match usable_signing_key(
+            identity,
             signer,
             purpose,
             &SecurityLevel::full_range(),
             &KeyType::all_key_types(),
-            false,
+            SigningScope::NonBatch,
         ) {
             Ok(Some(key)) => return Ok(key),
             Ok(None) => {}
@@ -133,6 +118,7 @@ pub(super) mod tests {
     use super::*;
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::platform_value::BinaryData;
@@ -235,15 +221,15 @@ pub(super) mod tests {
         ineligible.set_purpose(Purpose::ENCRYPTION);
         identity.add_public_key(ineligible);
         let select = |identity: &Identity, ids: &[u32]| {
-            identity
-                .available_signing_key(
-                    &available(ids),
-                    Purpose::AUTHENTICATION,
-                    &[SecurityLevel::HIGH],
-                    &[KeyType::ECDSA_HASH160],
-                    false,
-                )
-                .map(|key| key.map(|key| key.id()))
+            usable_signing_key(
+                identity,
+                &available(ids),
+                Purpose::AUTHENTICATION,
+                &[SecurityLevel::HIGH],
+                &[KeyType::ECDSA_HASH160],
+                SigningScope::NonBatch,
+            )
+            .map(|key| key.map(|key| key.id()))
         };
         assert_eq!(select(&identity, &[2, 3]).unwrap(), Some(2));
         assert_eq!(select(&identity, &[1, 2]).unwrap(), Some(1));
@@ -262,8 +248,14 @@ pub(super) mod tests {
         key.set_disabled_at(1);
         let select = |purpose, level, key_type| {
             let signer = available(&[1, 2]);
-            let key =
-                identity.available_signing_key(&signer, purpose, &[level], &[key_type], false);
+            let key = usable_signing_key(
+                &identity,
+                &signer,
+                purpose,
+                &[level],
+                &[key_type],
+                SigningScope::NonBatch,
+            );
             key.unwrap().map(|k| k.id())
         };
         assert_eq!(
@@ -311,6 +303,31 @@ pub(super) mod tests {
         );
         assert_eq!(select(&[0], true).unwrap(), 0);
         assert_unavailable(select(&[1], false).unwrap_err());
+    }
+
+    #[test]
+    fn should_sign_a_contract_transition_only_with_a_key_free_of_contract_bounds() {
+        use super::super::key_selection::tests::{bound_key, identity as identity_of, key};
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        let identity = identity_of(vec![
+            bound_key(
+                1,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContract {
+                    id: Identifier::from([0x0C; 32]),
+                }),
+            ),
+            key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(3, SecurityLevel::CRITICAL),
+        ]);
+        let chosen = contract_signing_key(&identity, &KeyFilter(|_| true)).unwrap();
+        assert_eq!(
+            chosen.map(|key| key.id()),
+            Some(3),
+            "Platform refuses a contract-bound key outside a batch, and an unlimited key is \
+             taken before a budgeted one"
+        );
     }
 
     #[test]

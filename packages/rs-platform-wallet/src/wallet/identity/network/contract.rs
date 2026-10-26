@@ -26,7 +26,7 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
-use super::signing_key::AvailableSigningKey;
+use super::signing_key::contract_signing_key;
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
@@ -34,7 +34,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, PartialIdentity};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
@@ -162,21 +162,10 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
-            // Contract create requires CRITICAL + AUTHENTICATION +
-            // ECDSA_SECP256K1 specifically — DPP rejects HIGH /
-            // MEDIUM / non-ECDSA keys on this state-transition
-            // shape.
-            identity
-                .available_signing_key(
-                    signer,
-                    Purpose::AUTHENTICATION,
-                    &[SecurityLevel::CRITICAL],
-                    &[KeyType::ECDSA_SECP256K1],
-                    false,
-                )?
+            contract_signing_key(&identity, signer)?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No CRITICAL authentication key found on owner identity \
+                        "No usable CRITICAL authentication key found on owner identity \
                          (required to sign a contract-create state transition)"
                             .to_string(),
                     )
@@ -387,21 +376,10 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
-            // Contract update requires the same CRITICAL +
-            // AUTHENTICATION + ECDSA_SECP256K1 key as create — DPP
-            // rejects HIGH / MEDIUM / non-ECDSA keys on this
-            // state-transition shape.
-            identity
-                .available_signing_key(
-                    signer,
-                    Purpose::AUTHENTICATION,
-                    &[SecurityLevel::CRITICAL],
-                    &[KeyType::ECDSA_SECP256K1],
-                    false,
-                )?
+            contract_signing_key(&identity, signer)?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No CRITICAL authentication key found on owner identity \
+                        "No usable CRITICAL authentication key found on owner identity \
                          (required to sign a contract-update state transition)"
                             .to_string(),
                     )

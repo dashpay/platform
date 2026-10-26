@@ -12,17 +12,36 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::signing_key::AvailableSigningKey;
+use super::super::key_selection::{usable_signing_key, SigningScope};
 use std::sync::Arc;
 
 use dpp::data_contract::DataContract;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
+
+/// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
+/// ECDSA key whose bounds cover the whole contract, since token operations are contract-wide.
+fn token_signing_key<'a>(
+    identity: &'a Identity,
+    token_contract_id: Identifier,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    usable_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        &[SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1],
+        SigningScope::Contract {
+            contract_id: token_contract_id,
+        },
+    )
+}
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Resolve the AUTHENTICATION signing key for token state
@@ -31,13 +50,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `ECDSA_SECP256K1`.
+    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `ECDSA_SECP256K1`,
+    /// bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
     /// key matches what the state transition needs.
     pub(super) async fn token_resolve_signing_key(
         &self,
         identity_id: &Identifier,
+        token_contract_id: Identifier,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
@@ -52,14 +73,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
 
-        let signing_key = identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )?
+        let signing_key = token_signing_key(&identity, token_contract_id, signer)?
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level on identity {} — \
@@ -119,9 +133,38 @@ mod signing_tests {
         let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
-            .token_resolve_signing_key(&Identifier::default(), &signer)
+            .token_resolve_signing_key(&Identifier::default(), Identifier::default(), &signer)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("available to signer"), "{error}");
+    }
+
+    #[test]
+    fn should_sign_a_token_operation_with_a_key_that_covers_the_whole_contract() {
+        use crate::wallet::identity::network::key_selection::tests::{bound_key, identity, key};
+        use crate::wallet::identity::network::signing_key::tests::KeyFilter;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        let token_contract = Identifier::from([0x70; 32]);
+        let identity = identity(vec![
+            bound_key(
+                1,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: token_contract,
+                    document_type_name: "note".to_string(),
+                }),
+            ),
+            key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(3, SecurityLevel::CRITICAL),
+        ]);
+        let chosen = token_signing_key(&identity, token_contract, &KeyFilter(|_| true)).unwrap();
+        assert_eq!(
+            chosen.map(|key| key.id()),
+            Some(3),
+            "a document-type bound key cannot sign a token operation, and an unlimited key \
+             is taken before a budgeted one"
+        );
     }
 }
