@@ -357,7 +357,7 @@ SQL lookups without blob decoding.
   pair. Sentinel `0` / `zeroblob(32)` default for account types without
   that axis (including the provider key-material types).
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- `dashpay_covered_from` (V022): the height a `'dashpay_receiving'` account
+- `dashpay_covered_from` (V020): the height a `'dashpay_receiving'` account
   is covered from in the DashPay coreHeight backfill record (DIP-15 §12.6,
   dashpay/platform#4302); NULL when the record does not cover it. A CHECK
   limits it to `'dashpay_receiving'` rows. The record's extent lives on
@@ -464,7 +464,7 @@ DashPay coreHeight backfill lowers the cursor deliberately, and the
 backfill record committed in the same transaction vouches for the lowered
 value, so a rewind overwrites the stored cursor.
 
-`dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (V022) are that
+`dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (V020) are that
 record's extent: the lowest height the backfill rewound the cursor to and the
 cursor it rewound from. Both set or both NULL (CHECK). Its covered receiving
 accounts are `account_registrations.dashpay_covered_from`. Every write
@@ -559,7 +559,7 @@ pending). The request columns hold a bincode-encoded `ContactRequest`;
 `accepted_accounts` holds a bincode-encoded `Vec<u32>`.
 `payment_channel_broken` is nullable and read as false when NULL; it is set
 when external-account registration permanently fails for a contact and
-cleared on a superseding rotation. `external_account_reference` (V022) is the
+cleared on a superseding rotation. `external_account_reference` (V020) is the
 outbound-account marker — the account reference the contact's outbound
 account was last built for — written only on established rows, NULL when
 absent; a NULL marker makes the next sweep rebuild that account once.
@@ -874,3 +874,4 @@ table-rebuild migration, as V004 does.
 | V020 | `V020__asset_lock_shielded_recipient.rs` | Adds the nullable `asset_locks.shielded_recipient BLOB` column (CHECK: NULL or exactly 43 bytes, the raw Orchard address) recording the recipient a shielded asset-lock funding was built to pay, so a resume after restart pays that recipient and refuses another; the lifecycle blob is untouched. Adds the `asset_locks_shielded_recipient_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `shielded_recipient`. Purely additive; existing rows read back NULL and keep accepting the resuming caller's recipient. |
 | V019 | `V019__dashpay_backfill.rs` | Adds `dashpay_backfill` (one row per wallet: the DashPay coreHeight backfill's `floor` / `rewound_from` and its `covered` receival accounts as one `covered_bytes` blob), plus nullable `contacts.external_account_reference` (outbound-account marker). Purely additive; an upgraded database reads back "no backfill recorded" and no marker for every wallet, so the first launch re-runs the backfill once (dashpay/platform#4302). |
 | V022 | `V022__dashpay_backfill.rs` | Adds the DashPay coreHeight backfill record as nullable columns: `core_sync_state.dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (its extent, both set or both NULL) and `account_registrations.dashpay_covered_from` (per covered `'dashpay_receiving'` account), plus nullable `contacts.external_account_reference` (outbound-account marker). Purely additive; an upgraded database reads back "no backfill recorded" and no marker for every wallet, so the first launch re-runs the backfill once (dashpay/platform#4302). |
+| V020 | `V020__dashpay_backfill.rs` | Adds the DashPay coreHeight backfill record as nullable columns: `core_sync_state.dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (its extent, both set or both NULL) and `account_registrations.dashpay_covered_from` (per covered `'dashpay_receiving'` account), plus nullable `contacts.external_account_reference` (outbound-account marker). Purely additive; an upgraded database reads back "no backfill recorded" and no marker for every wallet, so the first launch re-runs the backfill once (dashpay/platform#4302). |
