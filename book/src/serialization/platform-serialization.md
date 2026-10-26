@@ -270,7 +270,10 @@ and write the same value bytes as the node. `platform-serialization` and
 | `platform-value` | `platform-version` | the `PlatformVersion` aware impls for `Identifier` |
 | `platform-value` | `json`, `cbor` | the JSON and CBOR converters (both imply `std`) |
 
-Default features enable everything, so no native consumer changes. With
+Default features enable the native profile (`std` and `platform-version` on
+both crates, plus `random` on `platform-value`), which is the full API these
+crates offered before the split, so no native consumer changes. `json` and
+`cbor` stay opt-in, as they always were. With
 `--no-default-features` both crates are `#![no_std]` plus `alloc`, and CI
 builds them for `wasm32v1-none`, a target with no std library at all, so a
 std leak in the alloc profile is a compile error rather than a surprise when a
