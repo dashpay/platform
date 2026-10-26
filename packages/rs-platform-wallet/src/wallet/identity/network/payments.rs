@@ -1361,11 +1361,24 @@ fn reserve_contact_payment_address(
     // A contact this process saw rotate may no longer watch the addresses
     // its outbound account derives. The signer-backed drain rebuilds the
     // account from the live request; until then nothing is derived from it.
-    if info
+    // A broken channel is never rebuilt until the contact sends a new
+    // request, so it says so rather than inviting a retry.
+    if let Some(managed) = info
         .identity_manager
         .managed_identity(from_identity_id)
-        .is_some_and(|managed| managed.outbound_rekeyed(to_contact_id))
+        .filter(|managed| managed.outbound_rekeyed(to_contact_id))
     {
+        if managed
+            .established_contact(to_contact_id)
+            .is_some_and(|contact| contact.payment_channel_broken)
+        {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "The DashpayExternalAccount for contact {} was built from a request the \
+                 contact rotated away from, and the rotated request is unusable; payments \
+                 resume once the contact sends a new one",
+                to_contact_id
+            )));
+        }
         return Err(PlatformWalletError::InvalidIdentityData(format!(
             "The DashpayExternalAccount for contact {} awaits a rebuild from the contact's \
              rotated request; retry once it has been rebuilt",
@@ -3527,6 +3540,7 @@ mod tests {
             crate::wallet::identity::ManagedIdentity,
         >,
         backfill: crate::changeset::DashPayBackfillRecord,
+        outbound_account_digests: BTreeMap<DashpayAccountKey, Vec<u8>>,
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
     }
 
@@ -3574,6 +3588,7 @@ mod tests {
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: self.backfill.clone(),
+                    outbound_account_digests: self.outbound_account_digests.clone(),
                 },
             );
             Ok(ClientStartState {
@@ -3605,6 +3620,15 @@ mod tests {
             .expect("owner identity")
             .clone();
         identity.dashpay_rescan_triggered_mut().clear();
+        let contacts: Vec<Identifier> = identity
+            .dashpay()
+            .established_contacts()
+            .keys()
+            .copied()
+            .collect();
+        for contact in contacts {
+            identity.clear_outbound_rekey(&contact);
+        }
         let mut identities = std::collections::BTreeMap::new();
         identities.insert(0, identity);
         ReloadPersister {
@@ -3612,6 +3636,7 @@ mod tests {
             managed,
             identities,
             backfill: backfill.unwrap_or_else(|| info.dashpay_backfill.clone()),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         }
     }
@@ -4580,6 +4605,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill,
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -4823,6 +4849,7 @@ mod tests {
                 managed: managed.clone(),
                 identities,
                 backfill: record,
+                outbound_account_digests: BTreeMap::new(),
                 stores: Mutex::default(),
             })
             .await;
@@ -4957,6 +4984,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: host_record,
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -5025,6 +5053,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: Default::default(),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -5665,10 +5694,12 @@ mod tests {
     /// account; pools that derive from another xpub are replaced too.
     #[tokio::test]
     async fn should_keep_the_outbound_account_and_its_pool_when_a_rebuild_finds_the_same_xpub() {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::changeset::encrypted_xpub_digest;
         use crate::wallet::identity::network::contacts::ExternalAccountRegistration;
         use crate::wallet::identity::network::dashpay_view::DashPayView;
         use crate::wallet::identity::{ContactRequest, EstablishedContact};
-        use key_wallet::account::account_collection::DashpayAccountKey;
+        use key_wallet::account::AccountType;
 
         let (manager, persister, wallet_id) = make_wallet().await;
         // The SQLite backend: no atomic rounds, so no durable marker.
@@ -5786,7 +5817,7 @@ mod tests {
             let iw = iw.clone();
             async move {
                 let wm = iw.wallet_manager.read().await;
-                DashPayView::<crate::broadcaster::SpvBroadcaster>::collect_account_build_candidates(
+                DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
                     wm.get_wallet_info(&wallet_id).expect("info"),
                     &owner,
                 )
@@ -5866,6 +5897,39 @@ mod tests {
             "keeping the account rewrites no pool"
         );
         assert!(!queued().await, "nothing is left to rebuild");
+        let account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let registrations = || {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|(_, cs)| cs.account_registrations.clone())
+                .filter(|entry| entry.account_type == account_type)
+                .collect::<Vec<_>>()
+        };
+        let resets = || {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|(_, cs)| cs.account_pool_resets.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            registrations()
+                .iter()
+                .map(|entry| entry.encrypted_xpub_digest)
+                .collect::<Vec<_>>(),
+            vec![Some(encrypted_xpub_digest(&payload))],
+            "keeping the account stores its row with the live request's digest"
+        );
+        assert!(resets().is_empty(), "and resets no pool");
 
         // An observed rotation to another xpub refuses payments until the
         // rebuild replaces the account with fresh pools.
@@ -5899,8 +5963,25 @@ mod tests {
             reserve().await.is_err(),
             "no payment derives from an account the contact rotated away from"
         );
-        assert_eq!(register(rotated).await, ExternalAccountRegistration::Built);
+        persister.stores.lock().unwrap().clear();
+        assert_eq!(
+            register(rotated.clone()).await,
+            ExternalAccountRegistration::Built
+        );
         assert!(used().await.is_empty(), "a rotated xpub starts fresh pools");
+        assert_eq!(
+            registrations()
+                .iter()
+                .map(|entry| entry.encrypted_xpub_digest)
+                .collect::<Vec<_>>(),
+            vec![Some(encrypted_xpub_digest(&rotated))],
+            "the replacement records the rotated request's digest"
+        );
+        assert_eq!(
+            resets(),
+            vec![account_type],
+            "and drops the stored pool of the xpub it replaces"
+        );
         reserve().await.expect("the rebuilt account pays");
         assert_ne!(
             iw.wallet_manager
@@ -5936,6 +6017,127 @@ mod tests {
         restore_without_marker().await;
         assert_eq!(register(payload).await, ExternalAccountRegistration::Built);
         assert!(used().await.is_empty(), "foreign pools are replaced");
+    }
+
+    /// The digest the outbound account's row carries tells a relaunched
+    /// process what the in-memory rotation record could not survive: an
+    /// account built from the contact's live request is current and pays
+    /// without a rebuild; one built from a request the contact rotated away
+    /// from refuses payments until it is rebuilt. Without a usable digest the
+    /// account pays and is queued to be verified.
+    #[tokio::test]
+    async fn should_know_after_a_relaunch_whether_the_outbound_account_predates_a_rotation() {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::changeset::encrypted_xpub_digest;
+        use crate::wallet::identity::network::contacts::ExternalAccountRegistration;
+        use crate::wallet::identity::network::dashpay_view::DashPayView;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAD; 32]);
+        let contact = Identifier::from([0x15; 32]);
+        let shared_key = [0x56u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let rotated = encrypted_contact_xpub(&owner, &Identifier::from([0x16; 32]), &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(
+                    contact,
+                    ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    ContactRequest::new(contact, owner, 0, 0, 7, payload.clone(), 100, 0),
+                ));
+        }
+        assert_eq!(
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    &payload,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register"),
+            ExternalAccountRegistration::Built
+        );
+        let built_from = encrypted_xpub_digest(&payload);
+
+        // Relaunch on a host that hands back `digest` and no marker.
+        let relaunch = |digest: Option<Vec<u8>>| {
+            let manager = Arc::clone(&manager);
+            async move {
+                let mut snapshot = reload_snapshot(&manager, wallet_id, owner, 0, None).await;
+                for identity in snapshot.identities.values_mut() {
+                    if let Some(established) = identity.established_contact_mut(&contact) {
+                        established.external_account_reference = None;
+                    }
+                }
+                snapshot.outbound_account_digests = digest.into_iter().map(|d| (key, d)).collect();
+                let (restarted, _, _) = reload(snapshot).await;
+                let mut wm = restarted.wallet_manager.write().await;
+                let queued = !DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
+                    wm.get_wallet_info(&wallet_id).expect("info"),
+                    &owner,
+                )
+                .is_empty();
+                let paid =
+                    super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact)
+                        .is_ok();
+                (queued, paid)
+            }
+        };
+
+        assert_eq!(
+            relaunch(Some(built_from.to_vec())).await,
+            (false, true),
+            "built from the live request: current, pays, nothing to rebuild"
+        );
+        assert_eq!(
+            relaunch(None).await,
+            (true, true),
+            "no digest: pays and is queued to be verified"
+        );
+        assert_eq!(
+            relaunch(Some(built_from[..31].to_vec())).await,
+            (true, true),
+            "a digest of the wrong length counts as none"
+        );
+
+        // The contact rotates; the process ends before the rebuild.
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            assert!(wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_rotated_incoming_request(
+                    ContactRequest::new(contact, owner, 0, 0, 8, rotated, 200, 0),
+                    &p,
+                )
+                .expect("rotate"));
+        }
+        assert_eq!(
+            relaunch(Some(built_from.to_vec())).await,
+            (true, false),
+            "built from a request the contact rotated away from: refused until rebuilt"
+        );
     }
 
     /// Outbound registrations of one account are serialized: the durable
@@ -6938,6 +7140,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: Default::default(),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));

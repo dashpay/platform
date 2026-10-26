@@ -64,6 +64,13 @@ impl ManagedIdentity {
         }
     }
 
+    /// Record that the outbound account of `contact_id` was built from another
+    /// request than the contact's live one, as a load learns from the digest
+    /// the account row carries.
+    pub(crate) fn mark_outbound_rekeyed(&mut self, contact_id: &Identifier) {
+        self.dashpay.outbound_rekeyed.insert(*contact_id);
+    }
+
     /// Whether `contact_id` rotated since its outbound account was built.
     pub(crate) fn outbound_rekeyed(&self, contact_id: &Identifier) -> bool {
         self.dashpay.outbound_rekeyed.contains(contact_id)

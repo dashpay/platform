@@ -628,6 +628,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .map(|(account_type, account_xpub)| AccountRegistrationEntry {
                     account_type: *account_type,
                     account_xpub: *account_xpub,
+                    encrypted_xpub_digest: None,
                 })
                 .collect(),
             provider_key_account_registrations,

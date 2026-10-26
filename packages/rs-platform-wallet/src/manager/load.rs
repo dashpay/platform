@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    encrypted_xpub_digest, ClientStartState, ClientWalletStartState, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -14,6 +16,7 @@ use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use dpp::prelude::Identifier;
+use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -147,6 +150,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
                 dashpay_backfill,
+                outbound_account_digests,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -288,6 +292,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                          restored markers are not trusted"
                     );
                 }
+            }
+            // The digest an external account row carries names the contact
+            // request its xpub was decrypted from, on every backend, so it
+            // decides what the marker handling above could not: an account
+            // built from the live request is current, and one built from an
+            // earlier request has a rotation pending, which refuses payments
+            // to the contact until the account is rebuilt.
+            let (current, rotated) = apply_outbound_account_digests(
+                &wallet,
+                &mut platform_info,
+                &outbound_account_digests,
+            );
+            if current + rotated > 0 {
+                tracing::info!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    current,
+                    rotated,
+                    "load: DashPay external accounts checked against their contacts' live requests"
+                );
             }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
@@ -898,6 +921,7 @@ mod idempotent_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
                     dashpay_backfill: Default::default(),
+                    outbound_account_digests: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -965,6 +989,7 @@ mod idempotent_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    outbound_account_digests: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -1005,6 +1030,7 @@ mod idempotent_load_tests {
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
                 dashpay_backfill: Default::default(),
+                outbound_account_digests: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1521,6 +1547,65 @@ fn distrust_markers_of_foreign_external_pools(
         }
     }
     cleared
+}
+
+/// Compare each restored DashPay external account's digest with its
+/// contact's live request. A match whose pools all derive from the account
+/// stamps the in-memory marker, so the contact sweep does not rebuild it; a
+/// mismatch clears the marker and records a pending rotation, so payments to
+/// the contact are refused until the account is rebuilt. A digest of the
+/// wrong length, or one for a relationship that is no longer established or
+/// registered, is ignored. Returns how many accounts were found current and
+/// how many rotated.
+fn apply_outbound_account_digests(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+    digests: &BTreeMap<DashpayAccountKey, Vec<u8>>,
+) -> (usize, usize) {
+    let mut current = 0;
+    let mut rotated = 0;
+    for (key, stored) in digests {
+        let Ok(stored) = <[u8; 32]>::try_from(stored.as_slice()) else {
+            tracing::warn!(
+                len = stored.len(),
+                "load: ignoring a DashPay external account digest of the wrong length"
+            );
+            continue;
+        };
+        let (Some(account), Some(managed_account)) = (
+            wallet.accounts.dashpay_external_accounts.get(key),
+            info.core_wallet.accounts.dashpay_external_accounts.get(key),
+        ) else {
+            continue;
+        };
+        let contact_id = Identifier::from(key.friend_identity_id);
+        let Some(managed) = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from(key.user_identity_id))
+        else {
+            continue;
+        };
+        let Some(contact) = managed.established_contact_mut(&contact_id) else {
+            continue;
+        };
+        if encrypted_xpub_digest(&contact.incoming_request.encrypted_public_key) == stored {
+            if managed_account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .all(|pool| pool_derives_from(pool, account))
+            {
+                contact.external_account_reference =
+                    Some(contact.incoming_request.account_reference);
+                current += 1;
+            }
+        } else {
+            contact.external_account_reference = None;
+            managed.mark_outbound_rekeyed(&contact_id);
+            rotated += 1;
+        }
+    }
+    (current, rotated)
 }
 
 #[cfg(test)]

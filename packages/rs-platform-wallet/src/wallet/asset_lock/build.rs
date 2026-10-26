@@ -671,6 +671,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_registrations: vec![AccountRegistrationEntry {
                 account_type,
                 account_xpub,
+                encrypted_xpub_digest: None,
             }],
             ..Default::default()
         };
@@ -1725,6 +1726,7 @@ mod tests {
                     wallet.compute_wallet_id(),
                     ClientWalletStartState {
                         dashpay_backfill: Default::default(),
+                        outbound_account_digests: Default::default(),
                         wallet: wallet.clone(),
                         wallet_info: info.clone(),
                         identity_manager: Default::default(),

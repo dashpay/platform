@@ -2185,6 +2185,7 @@ mod tests {
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    outbound_account_digests: Default::default(),
                 },
             );
             Ok(crate::changeset::ClientStartState {
