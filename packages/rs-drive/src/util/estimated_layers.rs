@@ -10,7 +10,6 @@ use crate::fees::op::DriveCost;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::{
     EstimatedLayerCount, EstimatedLayerInformation, EstimatedLayerSizes, EstimatedSumTrees,
     TreeType,
@@ -255,7 +254,9 @@ pub(crate) fn register_keeping_deeper_estimated_layers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
+    use grovedb::EstimatedLayerCount::{
+        ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements,
+    };
     use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
     use grovedb::EstimatedSumTrees::{AllBigSumTrees, NoSumTrees};
     use grovedb::TreeType;
