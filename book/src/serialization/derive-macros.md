@@ -229,7 +229,7 @@ The `PlatformSignable` derive solves a specific problem: when you sign a state t
 Here is how it is used on `DataContractCreateTransitionV0` in `packages/rs-dpp/src/state_transition/state_transitions/contract/data_contract_create_transition/v0/mod.rs`:
 
 ```rust
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
@@ -240,6 +240,8 @@ pub struct DataContractCreateTransitionV0 {
     pub signature: BinaryData,
 }
 ```
+
+(It derives `Encode` but not `Decode`: it decodes through a private copy of itself that refuses a contract in the stored format, which only state holds. The copy's fields must follow the struct's.)
 
 The `#[platform_signable(exclude_from_sig_hash)]` attribute marks fields that should be excluded from the signature hash. The derive generates:
 

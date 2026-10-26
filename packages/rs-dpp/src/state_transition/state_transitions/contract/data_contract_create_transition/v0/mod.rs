@@ -20,6 +20,8 @@ use crate::data_contract::serialized_version::TransitionContractFormat;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::state_transitions::contract::stored_contract_format::decode_through;
+#[cfg(feature = "serde-conversion")]
+use crate::state_transition::state_transitions::contract::stored_contract_format::deserialize_transition_contract_format;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
@@ -29,8 +31,9 @@ use crate::version::PlatformVersion;
 ///DataContractCreateTransitionV0 has the same encoding structure
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-/// Decoded through [`DataContractCreateTransitionV0Decoded`], which refuses the stored contract
-/// format at its tag.
+/// Its decoding refuses a contract in format version 2, the stored format, which only state
+/// holds: bincode at the format's tag, through a private copy of the struct, and serde once the
+/// contract is read.
 #[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -38,6 +41,10 @@ use crate::version::PlatformVersion;
     serde(rename_all = "camelCase")
 )]
 pub struct DataContractCreateTransitionV0 {
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(deserialize_with = "deserialize_transition_contract_format")
+    )]
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,

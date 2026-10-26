@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_contract::serialized_version::TransitionContractFormat;
 use crate::state_transition::state_transitions::contract::stored_contract_format::decode_through;
+#[cfg(feature = "serde-conversion")]
+use crate::state_transition::state_transitions::contract::stored_contract_format::deserialize_transition_contract_format;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_version::version::PlatformVersion;
@@ -24,8 +26,9 @@ use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-/// Decoded through [`DataContractUpdateTransitionV0Decoded`], which refuses the stored contract
-/// format at its tag.
+/// Its decoding refuses a contract in format version 2, the stored format, which only state
+/// holds: bincode at the format's tag, through a private copy of the struct, and serde once the
+/// contract is read.
 #[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -38,6 +41,10 @@ pub struct DataContractUpdateTransitionV0 {
         serde(rename = "$identity-contract-nonce")
     )]
     pub identity_contract_nonce: IdentityNonce,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(deserialize_with = "deserialize_transition_contract_format")
+    )]
     pub data_contract: DataContractInSerializationFormat,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

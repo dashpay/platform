@@ -1,12 +1,37 @@
 //! Format version 2 of a contract, the stored format, is the form only state holds: a node
 //! compiles it when it stores the contract. A contract transition carries its contract as its
-//! signer wrote it, in format version 0 or 1, so the contract transitions decode their contract
-//! as a [`TransitionContractFormat`], which refuses the stored format at its tag, before any of
-//! it is read, whatever decoder reads the transition and at every protocol version. Software
-//! without the format refuses it there the same way, as a variant it does not know.
+//! signer wrote it, in format version 0 or 1, so the contract transitions refuse the stored format
+//! whatever reads them, at every protocol version:
+//!
+//! - bincode decodes their contract as a [`TransitionContractFormat`], which refuses the stored
+//!   format at its tag, before any of it is read, as software without the format refuses it;
+//! - serde (JSON, platform values, JavaScript objects) refuses it once the contract is read
+//!   ([`deserialize_transition_contract_format`]).
 
+#[cfg(feature = "serde-conversion")]
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 #[cfg(doc)]
 use crate::data_contract::serialized_version::TransitionContractFormat;
+#[cfg(feature = "serde-conversion")]
+use serde::{Deserialize, Deserializer};
+
+/// Deserializes the contract of a contract transition with serde, refusing format version 2,
+/// the stored format, as decoding the transition with bincode does.
+#[cfg(feature = "serde-conversion")]
+pub(super) fn deserialize_transition_contract_format<'de, D>(
+    deserializer: D,
+) -> Result<DataContractInSerializationFormat, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match DataContractInSerializationFormat::deserialize(deserializer)? {
+        DataContractInSerializationFormat::V2(_) => Err(serde::de::Error::custom(
+            "a contract transition carries its contract in format version 2, the stored format, \
+             which no state transition may carry",
+        )),
+        format => Ok(format),
+    }
+}
 
 /// Gives `$transition` the four decoders bincode derives, each reading `$decoded`, its copy
 /// with the contract read as a [`TransitionContractFormat`], and converting it with `From`.

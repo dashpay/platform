@@ -1,8 +1,10 @@
 //! Format version 2 of a data contract: the stored format, written only to state, never
 //! carried by a state transition. It holds format version 1's fields, raw document schemas
 //! included, and beside them each document type compiled
-//! ([`DocumentTypeInSerializationFormat`]), so a node or a client loading the contract reads
-//! the document types back instead of parsing their schemas.
+//! ([`DocumentTypeInSerializationFormat`]), so a node, or a client verifying a proof of it,
+//! reads the document types back instead of parsing their schemas. A reader that asks for full
+//! validation, or reads bytes nothing authenticates
+//! (`DataContract::versioned_deserialize_unauthenticated`), parses the schemas instead.
 
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v0::DataContractV0Getters;

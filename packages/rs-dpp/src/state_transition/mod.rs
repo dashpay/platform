@@ -3204,7 +3204,8 @@ mod tests {
 
     // Format version 2 of a contract is the stored format, which only state holds. Software
     // without the format cannot decode a transition carrying one, so a contract transition's own
-    // decoding refuses one too: every decoder of a transition, at every protocol version.
+    // decoding refuses one too: every decoder of a transition, bincode at every protocol version
+    // and serde.
     #[test]
     fn should_refuse_a_contract_transition_carrying_the_stored_format_in_every_decoder() {
         use crate::serialization::{
@@ -3300,6 +3301,30 @@ mod tests {
                 ),
                 "untagged",
             );
+            // Serde (JSON, platform values) refuses it once the contract is read
+            #[cfg(feature = "serde-conversion")]
+            {
+                let assert_refused_by_serde = |refusal: String, decoder: &str| {
+                    assert!(
+                        refusal.contains("no state transition may carry"),
+                        "{decoder}: {refusal}"
+                    );
+                };
+                let json = serde_json::to_value(&transition).expect("serialize to JSON");
+                assert_refused_by_serde(
+                    serde_json::from_value::<StateTransition>(json)
+                        .expect_err("expected JSON to refuse the stored format")
+                        .to_string(),
+                    "JSON",
+                );
+                let value = platform_value::to_value(&transition).expect("serialize to a value");
+                assert_refused_by_serde(
+                    platform_value::from_value::<StateTransition>(value)
+                        .expect_err("expected a platform value to refuse the stored format")
+                        .to_string(),
+                    "platform value",
+                );
+            }
             for protocol_version in 1..=LATEST_VERSION {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("platform version exists");
