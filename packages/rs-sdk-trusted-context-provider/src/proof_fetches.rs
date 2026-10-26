@@ -25,6 +25,8 @@ use crate::quorum_refresh::on_local_executor;
 use crate::quorum_refresh::panic_message;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::quorum_refresh::sleep;
+// A `Send` timer on every target, for callers outside the local executor.
+use crate::quorum_refresh::sleep as caller_sleep;
 use dash_context_provider::ContextProviderError;
 use dash_core_proof::bootstrap::{self, RecordKind};
 use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
@@ -74,6 +76,10 @@ const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
 /// stops asking it: one for the height and one for the tip.
 const MAX_CANNOT_SERVE: u32 = 2;
+/// Busy answers in a row after which a fetch stops asking a source. A relay
+/// that stays busy is not cooled down for other fetches, but it must not keep
+/// one running, and holding a running slot, for its whole deadline.
+const MAX_BUSY: u32 = 3;
 /// How long a fetch waits before trying again to take a place to prove its
 /// quorum.
 const PLACE_RETRY: Duration = Duration::from_millis(250);
@@ -395,12 +401,25 @@ impl ProofFetches {
             return Ok(key);
         }
         let unavailable = ContextProviderError::QuorumSourceUnavailable;
+        // One deadline for the caller, across the lower fetch it may wait on
+        // and the fetch of its own that may follow.
+        let deadline = Instant::now() + self.timing.deadline;
         let mut may_join_lower = true;
         loop {
             let (fetch, covers) = self
                 .join_or_start_for(quorum_type, quorum_hash, height, may_join_lower)
                 .map_err(unavailable)?;
-            let proven = fetch.await.map_err(unavailable)?;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let proven = match select(fetch, pin!(caller_sleep(remaining))).await {
+                Either::Left((proven, _)) => proven.map_err(unavailable)?,
+                Either::Right(_) => {
+                    return Err(unavailable(format!(
+                        "quorum {} was not proven within {} ms",
+                        hex::encode(quorum_hash),
+                        self.timing.deadline.as_millis()
+                    )));
+                }
+            };
             if height <= proven.active_at.saturating_add(self.window) {
                 return Ok(proven.key);
             }
@@ -785,6 +804,7 @@ impl ProofFetches {
                     return (Ok(proven), true);
                 }
                 Verdict::CannotServe(reason) => {
+                    state.busy = 0;
                     state.cannot_serve += 1;
                     // Next time, ask this source for the other height.
                     state.ask_tip = ask.height != 0;
@@ -795,6 +815,12 @@ impl ProofFetches {
                         state.ready_at = Instant::now() + self.timing.first_retry;
                         failures.push(note(&reason));
                     }
+                }
+                Verdict::Busy(reason) if state.busy + 1 >= MAX_BUSY => {
+                    state.dropped = true;
+                    failures.push(note(&format!(
+                        "{reason}; busy {MAX_BUSY} times, not asked again"
+                    )));
                 }
                 Verdict::Busy(reason) => {
                     state.busy += 1;
@@ -1312,6 +1338,8 @@ mod tests {
 
     #[test]
     fn should_join_a_lower_fetch_only_when_asked_to_and_say_it_may_not_cover() {
+        // The fetch for 150 keeps its place, and the one for 400 takes the
+        // second of the two, so starting it is not refused.
         let fetches = Arc::new(fetches());
         let _lower = fetches.join_or_start(6, [1; 32], 150).expect("starts");
         let id = running_id(&fetches, (6, [1; 32]), 150);
