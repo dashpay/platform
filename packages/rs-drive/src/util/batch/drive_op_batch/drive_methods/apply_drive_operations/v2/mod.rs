@@ -27,10 +27,14 @@ impl Drive {
     /// describe a layer sets its level: a document, a nonce or a balance write built after a
     /// write deeper in the same layer (the token marketplace's escrows, in the Tokens and the
     /// prefunded specialized balances trees) lowered the batch's estimate of that layer. Here
-    /// each operation is lowered with a map of its own, merged into the batch's keeping the
-    /// costlier of two descriptions of one layer (`merge_estimated_layer`: the deeper, then at
-    /// one depth the one GroveDB's propagation estimate prices dearer), so the estimate does
-    /// not depend on the order of the batch's operations.
+    /// each operation is lowered with a map of its own, merged into the batch's as one
+    /// description that covers both of two descriptions of one layer (`merge_estimated_layer`:
+    /// the deeper depth, and at that depth the nodes GroveDB's propagation estimate prices
+    /// dearer), so the estimate does not depend on the order of the batch's operations and no
+    /// operation is priced below its own description. That raises the estimate of any batch
+    /// whose operations describe a shared layer differently, not only the marketplace's: a
+    /// document's nonce update describes the root a level deeper than the document does, so
+    /// the root of every document batch is now estimated at the nonce's depth.
     ///
     /// Each operation is also built against the operations of its GroveDB batch built before it
     /// ([`DriveOperation::append_low_level_drive_operations_after_ttl_drain`]): a document
@@ -122,9 +126,9 @@ impl Drive {
             // Each operation is built against the operations of its GroveDB batch built before
             // it, and appended to them: a document deletion sees the batch's other writes as
             // pending. An estimate lowers each operation into layer descriptions of its own and
-            // merges them into the batch's, keeping the costlier of two descriptions of one layer
-            // (the deeper, then at one depth the one GroveDB prices dearer): the batch's estimate
-            // is the same whichever order its operations come in.
+            // merges them into the batch's, one description covering both of two of one layer (the
+            // deeper depth, with the nodes GroveDB prices dearer there): the batch's estimate is
+            // the same whichever order its operations come in.
             let batch_operations = if forfeited {
                 &mut forfeited_low_level_operations
             } else {
@@ -289,8 +293,8 @@ mod tests {
     }
 
     /// A token mint and a prefunded balance write both describe the root at depth 3, with
-    /// different key sizes and sum trees: the batch's estimate keeps the costlier of the two,
-    /// whichever comes first.
+    /// different key sizes and sum trees: the batch's estimate keeps the nodes GroveDB prices
+    /// dearer, whichever comes first.
     #[test]
     fn should_estimate_two_descriptions_of_one_depth_alike_in_either_order() {
         let latest = PlatformVersion::latest();

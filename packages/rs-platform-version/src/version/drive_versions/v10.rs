@@ -35,8 +35,10 @@ use crate::version::drive_versions::{
 ///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
 ///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 lowers
 ///   each operation of an estimated batch with layer descriptions of its own and merges them
-///   keeping the deeper one, so no other write of the batch (a document, a nonce) lowers what
-///   the escrows describe, whichever is built first.
+///   into one covering both (the deeper depth, with the nodes priced dearer there), so no other
+///   write of the batch (a document, a nonce) lowers what the escrows describe, whichever is
+///   built first. It raises the estimate of any batch whose operations describe a shared layer
+///   differently, an ordinary document transition included.
 /// * **Frozen listings** — `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
 ///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
 ///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
@@ -66,7 +68,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 2, // changed in v10: each operation is built against the batch's earlier ones
-            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions keeping the deeper
+            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
