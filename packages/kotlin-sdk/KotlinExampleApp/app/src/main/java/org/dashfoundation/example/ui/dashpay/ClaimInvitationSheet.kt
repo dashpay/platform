@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.tokens.InvitationPreview
+import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
@@ -174,21 +175,34 @@ fun ClaimInvitationSheet(
                         )
                     } catch (e: DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
                         // The invitation's identity is this wallet's: one it
-                        // records, or one an earlier claim created without
-                        // recording it, which discovery loads like any
-                        // identity of this wallet. Only the identity the
+                        // records, or one an earlier claim at this index
+                        // created without recording it, which is loaded like
+                        // any identity of this wallet. Only the identity the
                         // error names counts.
                         val claimedId = Base58.decodeIdentifier(e.identityId) ?: throw e
                         walletOwned.firstOrNull { it.identityId.contentEquals(claimedId) }
                             ?.identityId
-                            ?: runCatching {
-                                mgr.identityRegistration.discoverIdentities(
-                                    walletHandle = wallet.handle,
-                                    mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                                )
-                            }.getOrNull()
-                                ?.firstOrNull { it.contentEquals(claimedId) }
+                            ?: identityAt(wallet.handle, mgr, identityIndex) { cause ->
+                                "This invitation already created identity ${e.identityId} " +
+                                    "in this wallet, but loading it failed: $cause. Try again."
+                            }?.takeIf { it.contentEquals(claimedId) }
                             ?: throw e
+                    } catch (e: DashSdkError.PlatformWallet.InvitationKeysAlreadyRegistered) {
+                        // The keys at this index belong to an identity. When
+                        // it is this wallet's own, unrecorded one, loading it
+                        // records it, and the next claim takes the next index.
+                        // Any other owner keeps the refusal.
+                        val owner = e.identityId ?: throw e
+                        val ownerId = Base58.decodeIdentifier(owner) ?: throw e
+                        val loaded = identityAt(wallet.handle, mgr, identityIndex) { cause ->
+                            "Identity $owner holds these keys, but checking whether it " +
+                                "is this wallet's failed: $cause. Try again."
+                        }
+                        if (loaded?.contentEquals(ownerId) != true) throw e
+                        throw ClaimRecoveryMessage(
+                            "Identity $owner of this wallet already used these keys and " +
+                                "is now loaded. Claim again once it is listed.",
+                        )
                     }
                 }
                 val username = preview.inviterUsername
@@ -198,11 +212,12 @@ fun ClaimInvitationSheet(
                     onClose()
                 }
             } catch (t: Throwable) {
-                errorMessage = if (t is DashSdkError.PlatformWallet.InvitationClaimedByThisWallet) {
-                    "This invitation already created identity ${t.identityId} in this wallet. " +
-                        "If it is not listed, try Search Wallets for Identities."
-                } else {
-                    t.message ?: "Claiming the invitation failed."
+                errorMessage = when (t) {
+                    is DashSdkError.PlatformWallet.InvitationClaimedByThisWallet ->
+                        "This invitation already created identity ${t.identityId} in this wallet. " +
+                            "If it is not listed, try Search Wallets for Identities."
+                    is ClaimRecoveryMessage -> t.message
+                    else -> t.message ?: "Claiming the invitation failed."
                 }
             } finally {
                 isClaiming = false
@@ -328,3 +343,26 @@ fun ClaimInvitationSheet(
         )
     }
 }
+
+
+/**
+ * Loads this wallet's identity at [identityIndex], recording it. A failed
+ * load is thrown as [ClaimRecoveryMessage] built by [failure] from its cause.
+ */
+private suspend fun identityAt(
+    walletHandle: Long,
+    mgr: PlatformWalletManager,
+    identityIndex: Int,
+    failure: (String) -> String,
+): ByteArray? = try {
+    mgr.identityRegistration.loadIdentityAtIndex(
+        walletHandle = walletHandle,
+        mnemonicResolverHandle = mgr.mnemonicResolverHandle,
+        identityIndex = identityIndex,
+    )
+} catch (e: Exception) {
+    throw ClaimRecoveryMessage(failure(e.message ?: e.javaClass.simpleName))
+}
+
+/** A recovery outcome of the claim, shown to the user as is. */
+private class ClaimRecoveryMessage(override val message: String) : Exception(message)
