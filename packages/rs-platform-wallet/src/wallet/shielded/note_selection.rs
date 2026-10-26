@@ -205,6 +205,17 @@ pub fn select_notes_with_fee<'a>(
     Ok((selected, total, exact_fee))
 }
 
+/// Reject a zero spend `amount`. Lock-free, so callers can run it before taking the store lock
+/// or `shield_guard`.
+pub(crate) fn ensure_positive_amount(amount: u64) -> Result<(), PlatformWalletError> {
+    if amount == 0 {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "amount must be > 0".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Reject a `denomination` outside the versioned `IdentityCreateFromShieldedPool` exit set.
 ///
 /// Consensus only accepts members of that set, but rejects others at `validate_structure` — AFTER

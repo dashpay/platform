@@ -221,6 +221,13 @@ mod zero_amount_tests {
         IdentityCreate,
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum Held {
+        StoreLock,
+        ShieldGuard,
+        Nothing,
+    }
+
     async fn assert_zero_amount_rejected(spend: Spend) {
         let dir = tempfile::tempdir().expect("temporary shielded store");
         let coordinator = coordinator_at(dir.path());
@@ -246,12 +253,16 @@ mod zero_amount_tests {
         .expect("identity master key");
         let identity_signer = simple_signer::signer::SimpleSigner::default();
 
-        // Exercise both the contended sync-store path and empty-wallet error precedence.
-        for locked in [true, false] {
-            let _guard = if locked {
-                Some(coordinator.store().write().await)
-            } else {
-                None
+        // Exercise a contended sync store, a long-running shielded operation holding
+        // `shield_guard`, and empty-wallet error precedence.
+        for held in [Held::StoreLock, Held::ShieldGuard, Held::Nothing] {
+            let _store_guard = match held {
+                Held::StoreLock => Some(coordinator.store().write().await),
+                _ => None,
+            };
+            let _shield_guard = match held {
+                Held::ShieldGuard => Some(wallet.shield_guard.lock().await),
+                _ => None,
             };
             let result = async {
                 match spend {
@@ -324,7 +335,7 @@ mod zero_amount_tests {
                 }
             }
             .now_or_never()
-            .unwrap_or_else(|| panic!("{spend:?} waited on the store (locked={locked})"));
+            .unwrap_or_else(|| panic!("{spend:?} waited while {held:?} was held"));
             // Identity-create spends a fixed denomination, rejected by the allow-list check.
             let expected = match spend {
                 Spend::IdentityCreate => "denomination 0 is not a member",
@@ -333,7 +344,7 @@ mod zero_amount_tests {
             assert!(
                 matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
                     if message.starts_with(expected)),
-                "{spend:?} returned {result:?} (locked={locked})"
+                "{spend:?} returned {result:?} while {held:?} was held"
             );
         }
     }
