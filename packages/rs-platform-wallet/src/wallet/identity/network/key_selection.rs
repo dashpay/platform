@@ -41,9 +41,11 @@ pub enum SigningScope<'a> {
 }
 
 impl SigningScope<'_> {
-    /// What `key`'s contract bounds say about signing in this scope. Bounds limit only
-    /// AUTHENTICATION keys, as in consensus.
-    fn bounds_check(&self, key: &IdentityPublicKey) -> BatchedTransitionBoundsCheck {
+    /// What `key`'s contract bounds say about signing in this scope: `Allowed`, `Denied`, or
+    /// `RequiresContractGroupMembership` for a group-bound key, which only Platform can answer.
+    /// Bounds limit only AUTHENTICATION keys, as in consensus, and a contract-bound
+    /// AUTHENTICATION key is `Denied` outside a batch.
+    pub fn bounds_check(&self, key: &IdentityPublicKey) -> BatchedTransitionBoundsCheck {
         let bounds = match key.contract_bounds() {
             Some(bounds) if key.purpose() == Purpose::AUTHENTICATION => bounds,
             _ => return BatchedTransitionBoundsCheck::Allowed,
@@ -661,5 +663,43 @@ pub(super) mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains(SIGNER_KEY_UNAVAILABLE_PREFIX), "{err}");
+    }
+
+    #[test]
+    fn should_report_the_bounds_verdict_for_each_scope() {
+        use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
+        let contract = Identifier::from(CONTRACT);
+        let group_id = Identifier::from(OTHER_CONTRACT);
+        let group_bound = bound_key(
+            1,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::ContractGroup { id: group_id }),
+        );
+        let bound_here = bound_key(
+            2,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContract { id: contract }),
+        );
+        assert_eq!(
+            document_scope().bounds_check(&key(1, SecurityLevel::HIGH)),
+            Allowed
+        );
+        assert_eq!(document_scope().bounds_check(&bound_here), Allowed);
+        assert_eq!(document_scope().bounds_check(&bound_elsewhere(3)), Denied);
+        assert_eq!(SigningScope::NonBatch.bounds_check(&bound_here), Denied);
+        assert_eq!(
+            SigningScope::NonBatch
+                .bounds_check(&transfer_key(4, bound_here.contract_bounds().cloned())),
+            Allowed,
+            "bounds limit only AUTHENTICATION keys"
+        );
+        assert!(matches!(
+            document_scope().bounds_check(&group_bound),
+            RequiresContractGroupMembership { contract_group_id, .. } if contract_group_id == group_id
+        ));
+        assert!(matches!(
+            whole_contract().bounds_check(&group_bound),
+            RequiresContractGroupMembership { contract_id, .. } if contract_id == contract
+        ));
     }
 }
