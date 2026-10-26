@@ -15,12 +15,16 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 /// Result types returned from token configuration update operations.
 ///
 /// This enum represents the different possible outcomes when updating token
-/// configuration, always returning a document with the updated settings.
+/// configuration, depending on whether it's a group action.
 pub enum ConfigUpdateResult {
     /// Standard configuration update result containing the updated configuration document.
     Document(Document),
-    /// Group-based configuration update action with document and group power information.
-    GroupActionWithDocument(GroupSumPower, Document),
+    /// Group-based configuration update action with group power information.
+    ///
+    /// The document is `None` while the group action is still active (a proposal,
+    /// or a co-signature that does not close the action); it is present once the
+    /// action closes and the update is applied.
+    GroupActionWithDocument(GroupSumPower, Option<Document>),
 }
 
 impl Sdk {
@@ -28,8 +32,8 @@ impl Sdk {
     ///
     /// This method broadcasts a configuration update transition to modify token
     /// settings such as minting rules, transfer restrictions, or other contract
-    /// parameters. The result always includes a document with the updated
-    /// configuration details.
+    /// parameters. The result includes a document with the updated
+    /// configuration details, except for a group action that is still active.
     ///
     /// # Arguments
     ///
@@ -47,7 +51,6 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    /// - A group action result is missing the expected document
     pub async fn token_update_contract_token_configuration<S: Signer<IdentityPublicKey>>(
         &self,
         config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
@@ -66,21 +69,19 @@ impl Sdk {
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
+        ConfigUpdateResult::from_proof_result(proof_result)
+    }
+}
+
+impl ConfigUpdateResult {
+    fn from_proof_result(proof_result: StateTransitionProofResult) -> Result<Self, Error> {
         match proof_result {
             StateTransitionProofResult::VerifiedTokenActionWithDocument(document) => {
                 Ok(ConfigUpdateResult::Document(document))
             }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, Some(document)) => {
+            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, document) => {
+                // The document is absent while the group action is still active
                 Ok(ConfigUpdateResult::GroupActionWithDocument(power, document))
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(_, None) => {
-                Err(Error::DriveProofError(
-                    drive::error::proof::ProofError::IncorrectProof(
-                        "Expected document in group action result".to_string(),
-                    ),
-                    vec![],
-                    Default::default(),
-                ))
             }
             _ => Err(Error::DriveProofError(
                 drive::error::proof::ProofError::UnexpectedResultProof(
@@ -91,5 +92,55 @@ impl Sdk {
                 Default::default(),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::document::DocumentV0;
+
+    #[test]
+    fn should_forward_active_group_config_update_without_document() {
+        // Drive proves a still-active group action (a proposal, or a co-signature
+        // that does not reach the threshold) with no historical document.
+        let result = ConfigUpdateResult::from_proof_result(
+            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(5, None),
+        )
+        .expect("an active group action is a verified result, not a proof error");
+        assert!(matches!(
+            result,
+            ConfigUpdateResult::GroupActionWithDocument(5, None)
+        ));
+    }
+
+    #[test]
+    fn should_forward_closed_group_config_update_with_document() {
+        let result = ConfigUpdateResult::from_proof_result(
+            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(
+                7,
+                Some(Document::V0(DocumentV0::default())),
+            ),
+        )
+        .expect("convert verified closed group action");
+        assert!(matches!(
+            result,
+            ConfigUpdateResult::GroupActionWithDocument(7, Some(_))
+        ));
+    }
+
+    #[test]
+    fn should_reject_a_proof_result_of_another_transition() {
+        let result = ConfigUpdateResult::from_proof_result(
+            StateTransitionProofResult::VerifiedTokenBalance(Default::default(), 1),
+        );
+        assert!(matches!(
+            result,
+            Err(Error::DriveProofError(
+                drive::error::proof::ProofError::UnexpectedResultProof(_),
+                _,
+                _
+            ))
+        ));
     }
 }

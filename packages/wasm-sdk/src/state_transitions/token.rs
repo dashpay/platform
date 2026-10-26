@@ -2607,7 +2607,7 @@ fn deserialize_token_config_update_options(
 ///
 /// The result type depends on token configuration:
 /// - Standard tokens: returns a document
-/// - Group-managed tokens: returns group power and document
+/// - Group-managed tokens: returns group power, and the document once the group action closes
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenConfigUpdateResult")]
@@ -2636,7 +2636,7 @@ impl TokenConfigUpdateResultWasm {
             ConfigUpdateResult::GroupActionWithDocument(power, doc) => {
                 TokenConfigUpdateResultWasm {
                     group_power: Some(power),
-                    document: Some(document_to_wasm(doc, contract_id, "configUpdate")),
+                    document: doc.map(|d| document_to_wasm(d, contract_id, "configUpdate")),
                 }
             }
         }
