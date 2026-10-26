@@ -84,14 +84,6 @@ data class AccountEntity(
      * Rust load path (`Account::from_xpub`). `null` = not yet persisted.
      */
     val accountExtendedPubKeyBytes: ByteArray? = null,
-    /**
-     * For an outbound DashPay account (`accountType == 13`): the 32-byte
-     * digest of the contact request its xpub was decrypted from, written in
-     * the same round as the xpub. `null` for every other account and for
-     * rows stored before it existed; native then verifies the account by
-     * decrypting after a launch.
-     */
-    val encryptedXpubDigest: ByteArray? = null,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 ) {

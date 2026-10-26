@@ -94,12 +94,6 @@ public final class PersistentAccount {
     /// `nil` values, so freshly-inserted unhydrated rows don't
     /// conflict.
     @Attribute(.unique) public var accountExtendedPubKeyBytes: Data?
-    /// For an outbound DashPay account (`accountType == 13`): the 32-byte
-    /// digest of the contact request its xpub was decrypted from, written in
-    /// the same round as the xpub. `nil` for every other account, and for
-    /// rows stored before the digest existed; Rust then verifies the account
-    /// by decrypting after a launch.
-    public var encryptedXpubDigest: Data?
     /// Record timestamps.
     public var createdAt: Date
     public var lastUpdated: Date

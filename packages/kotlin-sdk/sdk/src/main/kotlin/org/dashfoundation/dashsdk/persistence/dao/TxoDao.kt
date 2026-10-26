@@ -18,16 +18,6 @@ import java.util.Date
 @Dao
 interface TxoDao {
 
-    /**
-     * Unlink every TXO from the core address rows of [accountId], so the
-     * account's pool can be dropped without cascading its funds history away.
-     */
-    @Query(
-        "UPDATE txos SET coreAddressId = NULL WHERE coreAddressId IN " +
-            "(SELECT address FROM core_addresses WHERE accountId = :accountId)",
-    )
-    suspend fun unlinkFromAccountAddresses(accountId: Long)
-
     @Query("SELECT * FROM txos WHERE walletId = :walletId")
     fun observeByWallet(walletId: ByteArray): Flow<List<TxoEntity>>
 

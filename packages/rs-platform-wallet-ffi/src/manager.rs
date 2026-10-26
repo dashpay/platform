@@ -8,13 +8,12 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAccountXpubDigestFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAccountXpubDigestFn,
-    PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks, ResetAccountAddressPoolsFn,
+    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -291,15 +290,6 @@ unsafe fn persistence_extension_callbacks(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
         ),
-        reset_account_address_pools: slot!(
-            on_reset_account_address_pools_fn,
-            ResetAccountAddressPoolsFn
-        ),
-        persist_account_xpub_digest: slot!(
-            on_persist_account_xpub_digest_fn,
-            PersistAccountXpubDigestFn
-        ),
-        load_account_xpub_digest: slot!(on_load_account_xpub_digest_fn, LoadAccountXpubDigestFn),
     }
 }
 

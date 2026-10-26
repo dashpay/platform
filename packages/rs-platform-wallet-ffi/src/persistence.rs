@@ -10,7 +10,7 @@
 //! same integers on a different callback family.
 
 use bincode::config;
-use key_wallet::account::account_collection::{AccountCollection, DashpayAccountKey};
+use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
@@ -319,42 +319,6 @@ pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
     out_operation_id: *mut u8,
 ) -> i32;
 
-/// Drop every stored address-pool row of the `count` accounts in `specs`
-/// before the round's pool snapshots are written: each account is registered
-/// again in the same round under another xpub, which derives other addresses
-/// at the same `(pool_type, address_index)` keys. The account rows themselves
-/// stay. Each spec's xpub pointer is null. Runs between the account
-/// registrations and the pool snapshots of one atomic changeset.
-pub type ResetAccountAddressPoolsFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    specs: *const AccountSpecFFI,
-    count: usize,
-) -> i32;
-
-/// Store on the account row `spec` names the 32-byte `digest` of the contact
-/// request its xpub was decrypted from, replacing any previous one; a null
-/// `digest` clears it, for an account registered again without one. Runs
-/// after the account registrations of the same atomic changeset; the spec's
-/// xpub pointer is null.
-pub type PersistAccountXpubDigestFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
-    digest: *const u8,
-) -> i32;
-
-/// Read the digest stored on the account row `spec` names into the 32
-/// writable bytes at `out_digest`, setting `out_found`. A row without one
-/// reports `out_found = false`.
-pub type LoadAccountXpubDigestFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    spec: *const AccountSpecFFI,
-    out_found: *mut bool,
-    out_digest: *mut u8,
-) -> i32;
-
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -521,39 +485,6 @@ pub struct PersistenceCallbacksExtension {
             out_operation_id: *mut u8,
         ) -> i32,
     >,
-    /// See [`ResetAccountAddressPoolsFn`]. A host that persists address
-    /// pools must provide it: a round that replaces an account's xpub fails
-    /// without it, rather than leave the previous xpub's rows beside the new
-    /// ones.
-    pub on_reset_account_address_pools_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            specs: *const AccountSpecFFI,
-            count: usize,
-        ) -> i32,
-    >,
-    /// See [`PersistAccountXpubDigestFn`]. Wired together with the load slot
-    /// below; a host without them keeps no digest, and each outbound DashPay
-    /// account is then verified by decrypting after a launch.
-    pub on_persist_account_xpub_digest_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            spec: *const AccountSpecFFI,
-            digest: *const u8,
-        ) -> i32,
-    >,
-    /// See [`LoadAccountXpubDigestFn`].
-    pub on_load_account_xpub_digest_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            spec: *const AccountSpecFFI,
-            out_found: *mut bool,
-            out_digest: *mut u8,
-        ) -> i32,
-    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -574,9 +505,6 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_dashpay_backfill_fn: None,
             on_persist_asset_lock_operation_id_fn: None,
             on_load_asset_lock_operation_id_fn: None,
-            on_reset_account_address_pools_fn: None,
-            on_persist_account_xpub_digest_fn: None,
-            on_load_account_xpub_digest_fn: None,
         }
     }
 }
@@ -598,9 +526,6 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_dashpay_backfill: Option<PersistWalletDashPayBackfillFn>,
     pub persist_asset_lock_operation_id: Option<PersistAssetLockOperationIdFn>,
     pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
-    pub reset_account_address_pools: Option<ResetAccountAddressPoolsFn>,
-    pub persist_account_xpub_digest: Option<PersistAccountXpubDigestFn>,
-    pub load_account_xpub_digest: Option<LoadAccountXpubDigestFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -2138,78 +2063,6 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Digests of the requests outbound DashPay accounts were built from:
-        // a sidecar on the account rows registered just above. It is written
-        // only where the round is atomic, so a digest can never land beside
-        // an xpub write that failed; a host without the slot keeps none. Every
-        // outbound registration writes it, and one without a digest clears
-        // the previous xpub's.
-        if let (Some(cb), Some(_), true) = (
-            self.tracked_masternodes_callbacks
-                .persist_account_xpub_digest,
-            self.callbacks.on_persist_account_registrations_fn,
-            self.callback_capabilities()
-                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS),
-        ) {
-            for entry in &changeset.account_registrations {
-                if !matches!(
-                    entry.account_type,
-                    AccountType::DashpayExternalAccount { .. }
-                ) {
-                    continue;
-                }
-                let spec = build_account_spec_ffi(&entry.account_type, &[]);
-                let digest = entry
-                    .encrypted_xpub_digest
-                    .as_ref()
-                    .map_or(std::ptr::null(), |digest| digest.as_ptr());
-                let rc = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &spec, digest) };
-                if rc != 0 {
-                    eprintln!("Account xpub digest persistence callback returned error code {rc}");
-                    outcome.record(rc);
-                }
-            }
-        }
-
-        // Accounts registered again under another xpub drop their stored
-        // pool rows before this round's snapshots land. A host that keeps
-        // pools but cannot drop them fails the round instead of leaving the
-        // previous xpub's rows beside the new ones.
-        if !changeset.account_pool_resets.is_empty() {
-            match self
-                .tracked_masternodes_callbacks
-                .reset_account_address_pools
-            {
-                Some(cb) => {
-                    let specs: Vec<AccountSpecFFI> = changeset
-                        .account_pool_resets
-                        .iter()
-                        .map(|account_type| build_account_spec_ffi(account_type, &[]))
-                        .collect();
-                    let rc = unsafe {
-                        cb(
-                            self.callbacks.context,
-                            wallet_id.as_ptr(),
-                            specs.as_ptr(),
-                            specs.len(),
-                        )
-                    };
-                    if rc != 0 {
-                        eprintln!("Account pool reset callback returned error code {rc}");
-                        outcome.record(rc);
-                    }
-                }
-                None if self.callbacks.on_persist_account_address_pools_fn.is_some() => {
-                    eprintln!(
-                        "Account pool reset requested, but the host persists address pools \
-                         without the reset callback"
-                    );
-                    outcome.record(1);
-                }
-                None => {}
-            }
-        }
-
         // Per-account address-pool snapshots. The `_string_storage`
         // Vec keeps every owned `CString` alive for the callback
         // window; `_address_storage` keeps every per-pool
@@ -3612,14 +3465,6 @@ impl PlatformWalletPersistence for FFIPersister {
                 ));
             }
             let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
-            if let Some(cb) = self.tracked_masternodes_callbacks.load_account_xpub_digest {
-                load_account_xpub_digests(
-                    cb,
-                    self.callbacks.context,
-                    &entry.wallet_id,
-                    &mut wallet_state,
-                );
-            }
             if let Some(cb) = self
                 .tracked_masternodes_callbacks
                 .load_asset_lock_operation_id
@@ -6340,7 +6185,8 @@ fn build_wallet_start_state(
         unused_asset_locks,
         unconfirmed_outgoing_txs,
         dashpay_backfill,
-        // Filled from the digest sidecar by the caller when the host keeps it.
+        // This host keeps no outbound account digests: each outbound account
+        // is confirmed by decrypting after a launch.
         outbound_account_digests: BTreeMap::new(),
     };
 
@@ -6360,60 +6206,6 @@ fn build_wallet_start_state(
     };
 
     Ok((wallet_state, platform_address_state))
-}
-
-/// Read the digest each restored outbound DashPay account row carries into
-/// `wallet_state`. The digest only spares a rebuild, so a read the host fails
-/// does not fail the load: the account is handed over with an empty digest,
-/// which proves nothing, and payments to the contact wait until it is
-/// rebuilt or confirmed.
-fn load_account_xpub_digests(
-    callback: LoadAccountXpubDigestFn,
-    context: *mut c_void,
-    wallet_id: &WalletId,
-    wallet_state: &mut ClientWalletStartState,
-) {
-    let keys: Vec<DashpayAccountKey> = wallet_state
-        .wallet
-        .accounts
-        .dashpay_external_accounts
-        .keys()
-        .copied()
-        .collect();
-    for key in keys {
-        let spec = build_account_spec_ffi(
-            &AccountType::DashpayExternalAccount {
-                index: key.index,
-                user_identity_id: key.user_identity_id,
-                friend_identity_id: key.friend_identity_id,
-            },
-            &[],
-        );
-        let mut found = false;
-        let mut digest = [0u8; 32];
-        let rc = unsafe {
-            callback(
-                context,
-                wallet_id.as_ptr(),
-                &spec,
-                &mut found,
-                digest.as_mut_ptr(),
-            )
-        };
-        if rc != 0 {
-            tracing::warn!(
-                code = rc,
-                "loading an outbound account's xpub digest failed; the account awaits a rebuild"
-            );
-            wallet_state
-                .outbound_account_digests
-                .insert(key, Vec::new());
-        } else if found {
-            wallet_state
-                .outbound_account_digests
-                .insert(key, digest.to_vec());
-        }
-    }
 }
 
 /// Rehydrate immutable UUID sidecars after decoding the frozen legacy rows.
@@ -10096,280 +9888,6 @@ mod tests {
         }
     }
 
-    /// A replaced outbound account reaches the host as one atomic round:
-    /// its row, then the digest beside it, then the reset of its stored pool,
-    /// then the new pool. A host that keeps pools without the reset slot fails
-    /// the round; one without the digest slot still stores the rest.
-    #[test]
-    fn should_store_a_replaced_outbound_account_in_order_and_refuse_without_a_reset() {
-        type Log = Mutex<Vec<String>>;
-        unsafe extern "C" fn registrations(
-            context: *mut c_void,
-            _: *const u8,
-            _: *const AccountSpecFFI,
-            count: usize,
-        ) -> i32 {
-            (*(context as *const Log))
-                .lock()
-                .push(format!("registrations {count}"));
-            0
-        }
-        unsafe extern "C" fn pools(
-            context: *mut c_void,
-            _: *const u8,
-            _: *const AccountAddressPoolFFI,
-            count: usize,
-        ) -> i32 {
-            (*(context as *const Log))
-                .lock()
-                .push(format!("pools {count}"));
-            0
-        }
-        unsafe extern "C" fn digest(
-            context: *mut c_void,
-            _: *const u8,
-            spec: *const AccountSpecFFI,
-            digest: *const u8,
-        ) -> i32 {
-            let digest = if digest.is_null() {
-                "none".to_owned()
-            } else {
-                format!("{:02x}", *digest)
-            };
-            (*(context as *const Log)).lock().push(format!(
-                "digest {:02x} {digest}",
-                (*spec).friend_identity_id[0]
-            ));
-            0
-        }
-        unsafe extern "C" fn reset(
-            context: *mut c_void,
-            _: *const u8,
-            specs: *const AccountSpecFFI,
-            count: usize,
-        ) -> i32 {
-            let specs = slice::from_raw_parts(specs, count);
-            (*(context as *const Log))
-                .lock()
-                .push(format!("reset {:02x}", specs[0].friend_identity_id[0]));
-            0
-        }
-
-        let account_type = AccountType::DashpayExternalAccount {
-            index: 0,
-            user_identity_id: [0x0A; 32],
-            friend_identity_id: [0x0B; 32],
-        };
-        let xpub = key_wallet::Wallet::from_seed_bytes(
-            [0x41; 64],
-            key_wallet::Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("wallet")
-        .accounts
-        .all_accounts()[0]
-            .account_xpub;
-        let round = PlatformWalletChangeSet {
-            account_registrations: vec![AccountRegistrationEntry {
-                account_type,
-                account_xpub: xpub,
-                encrypted_xpub_digest: Some([0xD1; 32]),
-            }],
-            account_address_pools: vec![platform_wallet::changeset::AccountAddressPoolEntry {
-                account_type,
-                pool_type: key_wallet::managed_account::address_pool::AddressPoolType::Absent,
-                addresses: Vec::new(),
-            }],
-            account_pool_resets: vec![account_type],
-            ..Default::default()
-        };
-        let log = Log::default();
-        let callbacks = || PersistenceCallbacks {
-            context: std::ptr::addr_of!(log).cast_mut().cast(),
-            on_changeset_begin_fn: Some(noop_begin),
-            on_changeset_end_fn: Some(noop_end),
-            on_persist_account_registrations_fn: Some(registrations),
-            on_persist_account_address_pools_fn: Some(pools),
-            ..Default::default()
-        };
-        let extensions = PersistenceExtensionCallbacks {
-            reset_account_address_pools: Some(reset),
-            persist_account_xpub_digest: Some(digest),
-            ..Default::default()
-        };
-
-        FFIPersister::new_with_persistence_capabilities_and_extensions(
-            callbacks(),
-            PersistenceCapabilities::NONE,
-            extensions,
-        )
-        .store([42; 32], round.clone())
-        .expect("a replacement round stores");
-        assert_eq!(
-            std::mem::take(&mut *log.lock()),
-            vec!["registrations 1", "digest 0b d1", "reset 0b", "pools 1"]
-        );
-
-        assert!(
-            FFIPersister::new_with_persistence_capabilities_and_extensions(
-                callbacks(),
-                PersistenceCapabilities::NONE,
-                PersistenceExtensionCallbacks {
-                    reset_account_address_pools: None,
-                    ..extensions
-                },
-            )
-            .store([42; 32], round.clone())
-            .is_err(),
-            "a host that keeps pools cannot drop a reset"
-        );
-        log.lock().clear();
-
-        FFIPersister::new_with_persistence_capabilities_and_extensions(
-            callbacks(),
-            PersistenceCapabilities::NONE,
-            PersistenceExtensionCallbacks {
-                persist_account_xpub_digest: None,
-                ..extensions
-            },
-        )
-        .store([42; 32], round.clone())
-        .expect("a host without the digest slot keeps no digest");
-        assert_eq!(
-            std::mem::take(&mut *log.lock()),
-            vec!["registrations 1", "reset 0b", "pools 1"]
-        );
-
-        // A host whose rounds are not atomic could keep the digest beside an
-        // xpub write that failed, so it is never handed one.
-        FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks {
-                on_changeset_begin_fn: None,
-                on_changeset_end_fn: None,
-                ..callbacks()
-            },
-            PersistenceCapabilities::NONE,
-            extensions,
-        )
-        .store([42; 32], round.clone())
-        .expect("a non-atomic round stores");
-        assert_eq!(
-            std::mem::take(&mut *log.lock()),
-            vec!["registrations 1", "reset 0b", "pools 1"]
-        );
-
-        // An outbound registration without a digest clears the stored one,
-        // and a host that keeps no pools has none to reset.
-        let mut without = round;
-        without.account_registrations[0].encrypted_xpub_digest = None;
-        FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks {
-                on_persist_account_address_pools_fn: None,
-                ..callbacks()
-            },
-            PersistenceCapabilities::NONE,
-            PersistenceExtensionCallbacks {
-                reset_account_address_pools: None,
-                ..extensions
-            },
-        )
-        .store([42; 32], without)
-        .expect("nothing to reset without pools");
-        assert_eq!(
-            log.lock().clone(),
-            vec!["registrations 1", "digest 0b none"]
-        );
-    }
-
-    #[test]
-    fn should_read_the_digest_of_each_restored_outbound_account() {
-        unsafe extern "C" fn load(
-            _: *mut c_void,
-            wallet_id: *const u8,
-            spec: *const AccountSpecFFI,
-            found: *mut bool,
-            digest: *mut u8,
-        ) -> i32 {
-            assert_eq!(slice::from_raw_parts(wallet_id, 32), &[42; 32]);
-            assert_eq!(
-                (*spec).type_tag,
-                AccountTypeTagFFI::DashpayExternalAccount as u8
-            );
-            // Only the second contact's row carries one.
-            *found = (*spec).friend_identity_id == [0x0C; 32];
-            if *found {
-                std::ptr::write_bytes(digest, 0xD2, 32);
-            }
-            0
-        }
-        let mut wallet = key_wallet::Wallet::from_seed_bytes(
-            [0x41; 64],
-            key_wallet::Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
-        )
-        .expect("wallet");
-        let xpub = key_wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
-            key_wallet::Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("wallet")
-        .accounts
-        .all_accounts()[0]
-            .account_xpub;
-        for friend in [0x0B, 0x0C] {
-            wallet
-                .add_account(
-                    AccountType::DashpayExternalAccount {
-                        index: 0,
-                        user_identity_id: [0x0A; 32],
-                        friend_identity_id: [friend; 32],
-                    },
-                    Some(xpub),
-                )
-                .expect("contact account");
-        }
-        let mut state = ClientWalletStartState {
-            wallet_info: key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0),
-            wallet,
-            identity_manager: Default::default(),
-            unused_asset_locks: BTreeMap::new(),
-            unconfirmed_outgoing_txs: Vec::new(),
-            dashpay_backfill: Default::default(),
-            outbound_account_digests: BTreeMap::new(),
-        };
-
-        load_account_xpub_digests(load, std::ptr::null_mut(), &[42; 32], &mut state);
-
-        let key = |friend: u8| DashpayAccountKey {
-            index: 0,
-            user_identity_id: [0x0A; 32],
-            friend_identity_id: [friend; 32],
-        };
-        assert_eq!(
-            state.outbound_account_digests,
-            BTreeMap::from([(key(0x0C), vec![0xD2; 32])])
-        );
-
-        // A read the host fails does not fail the load: the account is handed
-        // over with an empty digest, which proves nothing.
-        unsafe extern "C" fn failing(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const AccountSpecFFI,
-            _: *mut bool,
-            _: *mut u8,
-        ) -> i32 {
-            -1
-        }
-        state.outbound_account_digests.clear();
-        load_account_xpub_digests(failing, std::ptr::null_mut(), &[42; 32], &mut state);
-        assert_eq!(
-            state.outbound_account_digests,
-            BTreeMap::from([(key(0x0B), Vec::new()), (key(0x0C), Vec::new())])
-        );
-    }
-
     #[test]
     fn should_require_explicit_operation_id_persistence_attestation() {
         unsafe extern "C" fn persist(
@@ -10742,36 +10260,6 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_operation_id_fn
             ) + std::mem::size_of::<Option<LoadAssetLockOperationIdFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_reset_account_address_pools_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_reset_account_address_pools_fn
-            ) + std::mem::size_of::<Option<ResetAccountAddressPoolsFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_persist_account_xpub_digest_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_persist_account_xpub_digest_fn
-            ) + std::mem::size_of::<Option<PersistAccountXpubDigestFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_account_xpub_digest_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_account_xpub_digest_fn
-            ) + std::mem::size_of::<Option<LoadAccountXpubDigestFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(

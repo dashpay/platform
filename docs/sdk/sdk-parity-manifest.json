@@ -47,9 +47,7 @@
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
-    "platform_wallet_reserve_dashpay_payment_address": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
-    "platform_wallet_send_dashpay_payment": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
@@ -1690,84 +1688,6 @@
           "id": "should_refuse_drain_on_a_buffered_persistence_backend",
           "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
           "covers_restart": false
-        }
-      ]
-    },
-    {
-      "id": "dashpay.outbound_account_rotation",
-      "title": "A contact's rotated xpub replaces the outbound account's stored pool and is known after a restart",
-      "area": "persistence",
-      "shared_apis": [
-        "platform_wallet_send_dashpay_payment",
-        "platform_wallet_reserve_dashpay_payment_address"
-      ],
-      "required_persistence_capabilities": [
-        "asset_lock_funding_indices",
-        "atomic_changesets",
-        "wallet_restore"
-      ],
-      "hosts": {
-        "swift": {
-          "sdk": "supported",
-          "example_app": "not-applicable",
-          "restart": "tested",
-          "reason": null
-        },
-        "kotlin": {
-          "sdk": "supported",
-          "example_app": "not-applicable",
-          "restart": "tested",
-          "reason": null
-        }
-      },
-      "verification": [
-        {
-          "host": "shared",
-          "kind": "unit",
-          "file": "packages/rs-platform-wallet/src/wallet/identity/network/payments.rs",
-          "id": "should_know_after_a_relaunch_whether_the_outbound_account_predates_a_rotation",
-          "command": "cargo test -p platform-wallet --lib should_know_after_a_relaunch_whether_the_outbound_account_predates_a_rotation",
-          "covers_restart": true
-        },
-        {
-          "host": "shared",
-          "kind": "unit",
-          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
-          "id": "should_store_a_replaced_outbound_account_in_order_and_refuse_without_a_reset",
-          "command": "cargo test -p platform-wallet-ffi --lib should_store_a_replaced_outbound_account_in_order_and_refuse_without_a_reset",
-          "covers_restart": false
-        },
-        {
-          "host": "swift",
-          "kind": "unit",
-          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/OutboundAccountReplacementPersistenceTests.swift",
-          "id": "testResetDropsThePreviousXpubsRowsAndKeepsTheirTxos",
-          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/OutboundAccountReplacementPersistenceTests",
-          "covers_restart": false
-        },
-        {
-          "host": "swift",
-          "kind": "unit",
-          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/OutboundAccountReplacementPersistenceTests.swift",
-          "id": "testDigestSurvivesStoreReopenOnTheAccountRowAndFailsClosed",
-          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/OutboundAccountReplacementPersistenceTests",
-          "covers_restart": true
-        },
-        {
-          "host": "kotlin",
-          "kind": "unit",
-          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
-          "id": "outboundAccountPoolResetDropsItsRowsAndKeepsTheirTxos",
-          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
-          "covers_restart": false
-        },
-        {
-          "host": "kotlin",
-          "kind": "unit",
-          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
-          "id": "outboundAccountDigestSurvivesRestartOnTheAccountRowAndFailsClosed",
-          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
-          "covers_restart": true
         }
       ]
     }
