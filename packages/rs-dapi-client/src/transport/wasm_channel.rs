@@ -21,12 +21,8 @@ pub type PlatformGrpcClient = PlatformClient<WasmClient>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<WasmClient>;
 
-/// Create a Platform client over `channel`.
-///
-/// Unlike the native client this does not ask for gRPC message compression:
-/// the browser already negotiates HTTP `Content-Encoding` with the gateway and
-/// decompresses transparently, and `grpc-accept-encoding` is not in the
-/// gateway's CORS allow-list, so sending it would fail the preflight.
+/// Create a Platform client over `channel`. Browsers negotiate HTTP compression
+/// themselves, and `grpc-accept-encoding` would fail the gateway's CORS preflight.
 pub fn new_platform_client(channel: WasmClient) -> PlatformGrpcClient {
     PlatformClient::new(channel)
 }
