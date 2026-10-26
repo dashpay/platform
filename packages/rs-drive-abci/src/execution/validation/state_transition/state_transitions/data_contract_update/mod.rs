@@ -877,6 +877,10 @@ mod tests {
     mod contract_cache_coherence {
         use super::*;
         use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use dpp::serialization::{
+            PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+            PlatformSerializableWithPlatformVersion,
+        };
         use drive::grovedb::Transaction;
 
         /// A platform with a funded identity that owns a committed contract at version 1, and
@@ -905,6 +909,17 @@ mod tests {
                 .expect("expected to get data contract");
             contract.set_owner_id(identity.id());
             contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+            // The document types were parsed under the fixture's config, and integer widths
+            // follow the config: parse them again under the one set, as a transition carrying
+            // the contract would be, since Drive stores the types as they are
+            let contract = DataContract::versioned_deserialize_trusted(
+                &contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected to serialize the contract"),
+                true,
+                platform_version,
+            )
+            .expect("expected the contract to parse again");
 
             platform
                 .drive

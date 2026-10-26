@@ -349,7 +349,9 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
 
 #[test]
 fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
-    let pv = PlatformVersion::latest();
+    // The version 14 activation, which re-stores TokenHistory in format version 1; from
+    // protocol version 15 contracts are stored compiled, with another length
+    let pv = PlatformVersion::get(14).expect("PV14");
     for (flags, epoch) in [
         (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
         (StorageFlags::new_single_epoch(3, Some([99; 32])), 7),
