@@ -34,16 +34,44 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::RootTree;
     use crate::util::batch::drive_op_batch::{DriveOperation, SystemOperationType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes36;
     use dpp::version::PlatformVersion;
+    use grovedb::Element;
 
     fn stored_value(remaining: u64, platform_version: &PlatformVersion) -> AssetLockValue {
         AssetLockValue::new(100, vec![0x51], remaining, vec![], platform_version)
             .expect("asset-lock value")
+    }
+
+    fn insert_item(
+        drive: &Drive,
+        outpoint: &Bytes36,
+        bytes: Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) {
+        let transaction = drive.grove.start_transaction();
+        drive
+            .grove
+            .insert(
+                &[[RootTree::SpentAssetLockTransactions as u8].as_slice()],
+                &outpoint.0,
+                Element::new_item(bytes),
+                None,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("insert asset-lock item successfully");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .value
+            .expect("commit asset-lock item transaction successfully");
     }
 
     #[test]
@@ -95,5 +123,20 @@ mod tests {
         let (_, info) = Drive::verify_asset_lock_outpoint_info(&proof, &absent, platform_version)
             .expect("verify absent asset-lock state");
         assert_eq!(info, dpp::asset_lock::StoredAssetLockInfo::NotPresent);
+    }
+
+    #[test]
+    fn should_reject_malformed_asset_lock_value() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let outpoint = Bytes36::from([3u8; 36]);
+        insert_item(&drive, &outpoint, vec![0xff], platform_version);
+
+        let proof = drive
+            .prove_asset_lock_outpoint_info(&outpoint, None, platform_version)
+            .expect("prove malformed asset-lock state");
+        assert!(
+            Drive::verify_asset_lock_outpoint_info(&proof, &outpoint, platform_version).is_err()
+        );
     }
 }
