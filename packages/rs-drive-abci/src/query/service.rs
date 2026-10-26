@@ -17,7 +17,8 @@ use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
-    GetAddressesTrunkStateResponse, GetBlocksRequest, GetBlocksResponse, GetConsensusParamsRequest,
+    GetAddressesTrunkStateResponse, GetAssetLockOutpointInfoRequest,
+    GetAssetLockOutpointInfoResponse, GetBlocksRequest, GetBlocksResponse, GetConsensusParamsRequest,
     GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
@@ -378,6 +379,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
             "get_identity_balance_and_revision",
+        )
+        .await
+    }
+
+    async fn get_asset_lock_outpoint_info(
+        &self,
+        request: Request<GetAssetLockOutpointInfoRequest>,
+    ) -> Result<Response<GetAssetLockOutpointInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_asset_lock_outpoint_info,
+            "get_asset_lock_outpoint_info",
         )
         .await
     }
