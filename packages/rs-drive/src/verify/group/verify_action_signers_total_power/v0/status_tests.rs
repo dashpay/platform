@@ -15,6 +15,7 @@ use dpp::data_contract::DataContract;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::v0::GroupActionV0;
 use dpp::group::group_action::GroupAction;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::tokens::token_event::TokenEvent;
 use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery};
@@ -436,7 +437,7 @@ fn forge_empty_element(
         bytes.clear();
         encode_into(ops.iter(), bytes);
     }
-    let config = bincode::config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let (mut decoded, _): (GroveDBProof, _) =
         bincode::decode_from_slice(proof, config).expect("decode genuine proof envelope");
     let fake = Element::empty_tree()

@@ -66,6 +66,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
@@ -149,9 +150,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
@@ -163,9 +162,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize consume DataContract: {}", e))
         })
@@ -195,16 +192,12 @@ fn decode_serialization_format_untrusted<C: Config>(
 }
 
 fn no_limit_config() -> Configuration<BigEndian, Varint, NoLimit> {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn contract_limit_config() -> Configuration<BigEndian, Varint, Limit<CONTRACT_DESERIALIZATION_LIMIT>>
 {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
+    PLATFORM_BINCODE_CONFIG.with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
 }
 
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for DataContract {

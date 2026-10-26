@@ -223,6 +223,7 @@ mod tests {
         GroveDBProof, GroveDBProofV0, GroveDBProofV1, LayerProof, MerkOnlyLayerProof, ProofBytes,
         ProveOptions,
     };
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -244,7 +245,7 @@ mod tests {
             _ => panic!("test helper only encodes known GroveDB envelopes"),
         };
 
-        bincode::encode_to_vec(proof, bincode::config::standard().with_big_endian())
+        bincode::encode_to_vec(proof, PLATFORM_BINCODE_CONFIG)
             .expect("test GroveDB proof should encode")
     }
 
@@ -356,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_envelopes_at_or_above_the_minimum_pass_the_gate() {
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         for version in [1u32, 2u32] {
             let grovedb_proof =

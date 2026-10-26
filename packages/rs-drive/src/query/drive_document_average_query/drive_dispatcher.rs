@@ -869,9 +869,7 @@ mod tests {
         // recomputation) is exercised end-to-end in the SDK
         // FromProof tests; the dispatcher-level test here just pins
         // the routing decision.
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let _: (GroveDBProof, _) = bincode::decode_from_slice(&proof_bytes, bincode_config)
             .expect("proof bytes must bincode-decode as a GroveDBProof");
     }
@@ -899,6 +897,7 @@ mod tests {
     use crate::query::drive_document_sum_query::{
         DocumentSumRequest, DocumentSumResponse, SumMode,
     };
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// Issue an independent count + sum pair via the per-surface
     /// dispatchers and return the zipped `(count, sum)` aggregate.

@@ -62,6 +62,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
@@ -1180,9 +1181,7 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
         &[ADDRESS_BALANCES_KEY_U8],
     ];
 
-    let config = dpp::bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
 
     let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
         dpp::bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map_err(|e| {
