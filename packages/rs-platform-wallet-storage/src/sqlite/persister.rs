@@ -1313,6 +1313,12 @@ impl PlatformWalletPersistence for SqlitePersister {
         true
     }
 
+    /// [`LoadPolicy::Recovery`] serves a degraded projection and refuses
+    /// every write ([`ensure_writable`](Self::ensure_writable)).
+    fn refuses_writes(&self) -> bool {
+        self.config.load_policy == LoadPolicy::Recovery
+    }
+
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,

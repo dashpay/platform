@@ -44,7 +44,7 @@ use platform_wallet::{
     derive_contact_xpub, ContactRequest, EstablishedContact, PlatformEventHandler, PlatformWallet,
     PlatformWalletManager,
 };
-use platform_wallet_storage::{FlushMode, SqlitePersister, SqlitePersisterConfig};
+use platform_wallet_storage::{FlushMode, LoadPolicy, SqlitePersister, SqlitePersisterConfig};
 use rusqlite::{params, Connection};
 
 /// The mnemonic `test_platform_wallet_manager_with` builds its wallet from.
@@ -430,6 +430,187 @@ async fn should_resume_the_backfill_from_the_persisted_cursor_after_a_sqlite_rel
         Some(REQUEST_HEIGHT),
         "without the persisted record the relaunch rewinds again — the #4302 defect"
     );
+    close(manager, wallet, persister).await;
+}
+
+/// Session one of the recovery tests: establish a contact below the cursor
+/// and let the rescan rewind for it, so its coverage is on file, then close.
+async fn seed_rewound_coverage(path: &Path) -> WalletId {
+    let owner = Identifier::from(OWNER);
+    let contact = Identifier::from(CONTACT);
+    let persister = open(path);
+    let (manager, wallet_id) = test_platform_wallet_manager_with(Arc::clone(&persister)).await;
+    let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+    let receiving = derive_contact_xpub(&seed_wallet(), Network::Testnet, 0, &owner, &contact)
+        .expect("derive receiving xpub")
+        .xpub;
+    wallet
+        .identity()
+        .dashpay()
+        .register_contact_account(&owner, &contact, 0, receiving)
+        .await
+        .expect("register the receival account");
+    establish_contact(
+        &wallet,
+        &persister,
+        owner,
+        contact,
+        REQUEST_HEIGHT,
+        0,
+        vec![0u8; 96],
+    )
+    .await;
+    wallet
+        .state_mut()
+        .await
+        .dashpay_backfill
+        .retain(|o, c, _| (o, c) != (&owner, &contact));
+    advance_and_commit(&wallet, &persister, TIP).await;
+    assert_eq!(
+        wallet
+            .identity()
+            .dashpay()
+            .reconcile_dashpay_rescan()
+            .await
+            .expect("rewind"),
+        Some(REQUEST_HEIGHT)
+    );
+    assert_eq!(stored_covered_accounts(&persister, &wallet_id), 1);
+    close(manager, wallet, persister).await;
+    wallet_id
+}
+
+/// Reopen `path` read-only, as a user rescuing a damaged database does.
+fn open_recovery(path: &Path, mode: FlushMode) -> Arc<SqlitePersister> {
+    Arc::new(
+        SqlitePersister::open(
+            SqlitePersisterConfig::new(path)
+                .with_flush_mode(mode)
+                .with_load_policy(LoadPolicy::Recovery),
+        )
+        .expect("open in recovery"),
+    )
+}
+
+/// Whether the published wallet carries coverage for the seeded contact.
+async fn carries_coverage(wallet: &PlatformWallet) -> bool {
+    wallet
+        .state()
+        .await
+        .dashpay_backfill
+        .covered_from(&Identifier::from(OWNER), &Identifier::from(CONTACT), 0)
+        .is_some()
+}
+
+/// A recovery reopen publishes its degraded projection even when it skips a
+/// receiving account the stored record covers. The manager drops coverage for
+/// accounts the wallet does not hold and would write the smaller record back
+/// before publishing; a recovery persister refuses every write, so the drop
+/// stays in memory and `load_from_persistor` serves the read-only wallet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_publish_a_recovery_load_that_skips_a_covered_receiving_account() {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let wallet_id = seed_rewound_coverage(&path).await;
+    {
+        let conn = Connection::open(&path).expect("open the closed file");
+        let drifted = conn
+            .execute(
+                "UPDATE account_registrations SET account_index = 7 \
+                 WHERE wallet_id = ?1 AND account_type = 'dashpay_receiving'",
+                params![wallet_id.as_slice()],
+            )
+            .expect("drift the receiving account's row");
+        assert_eq!(drifted, 1);
+    }
+
+    let persister = open_recovery(&path, FlushMode::Immediate);
+    let manager = relaunch(&persister).await;
+    let wallet = manager
+        .get_wallet(&wallet_id)
+        .await
+        .expect("restored wallet");
+    assert!(
+        wallet
+            .state()
+            .await
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .is_empty(),
+        "the drifted receiving account is skipped"
+    );
+    assert!(
+        wallet.state().await.dashpay_backfill.is_empty(),
+        "no coverage survives for the account the wallet does not hold"
+    );
+    assert_eq!(
+        stored_covered_accounts(&persister, &wallet_id),
+        1,
+        "recovery leaves the file as it was"
+    );
+    close(manager, wallet, persister).await;
+}
+
+/// A Manual-mode backend cannot hold coverage durably, so the manager gives
+/// the wallet none and would invalidate the host's record before publishing.
+/// Read-only, that invalidation is skipped rather than failing the load.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_publish_a_manual_recovery_load_over_stored_coverage() {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let wallet_id = seed_rewound_coverage(&path).await;
+
+    let persister = open_recovery(&path, FlushMode::Manual);
+    let manager = relaunch(&persister).await;
+    let wallet = manager
+        .get_wallet(&wallet_id)
+        .await
+        .expect("restored wallet");
+    assert!(
+        !carries_coverage(&wallet).await,
+        "a backend that cannot hold coverage durably gives the wallet none"
+    );
+    assert_eq!(
+        stored_covered_accounts(&persister, &wallet_id),
+        1,
+        "recovery leaves the file as it was"
+    );
+    close(manager, wallet, persister).await;
+}
+
+/// Reloading a wallet the same manager published before makes the manager
+/// replace the host's record, since the earlier wallet might have changed it.
+/// Read-only, nothing could have, so the reload publishes without the write.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_reload_a_removed_wallet_from_a_recovery_backend() {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let wallet_id = seed_rewound_coverage(&path).await;
+
+    let persister = open_recovery(&path, FlushMode::Immediate);
+    let manager = relaunch(&persister).await;
+    let wallet = manager
+        .get_wallet(&wallet_id)
+        .await
+        .expect("restored wallet");
+    assert!(carries_coverage(&wallet).await);
+    drop(manager.remove_wallet(&wallet_id).await.expect("remove"));
+    drop(wallet);
+
+    manager
+        .load_from_persistor()
+        .await
+        .expect("a second load of the same file must not need a write");
+    let wallet = manager
+        .get_wallet(&wallet_id)
+        .await
+        .expect("reloaded wallet");
+    assert!(
+        carries_coverage(&wallet).await,
+        "the reloaded wallet keeps the coverage on file"
+    );
+    assert_eq!(stored_covered_accounts(&persister, &wallet_id), 1);
     close(manager, wallet, persister).await;
 }
 
