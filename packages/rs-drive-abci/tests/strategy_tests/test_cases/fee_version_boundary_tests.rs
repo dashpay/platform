@@ -210,6 +210,7 @@ mod tests {
             // The validator path verifies the chain lock of every proposal it did
             // not build, so the locks must carry a real quorum signature.
             independent_process_proposal_verification: true,
+            record_submitted_state_transitions: true,
             sign_chain_locks: true,
             ..Default::default()
         }
@@ -493,6 +494,10 @@ mod tests {
     }
 
     fn assert_runs_agree(continuous: &SplitRun, reopened: &SplitRun) {
+        assert!(
+            !continuous.snapshot.submitted_per_block.is_empty(),
+            "the runs must record their submitted transitions"
+        );
         assert_eq!(
             continuous.snapshot.submitted_per_block, reopened.snapshot.submitted_per_block,
             "both runs must submit the same transitions after the split"

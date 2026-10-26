@@ -1029,7 +1029,9 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             )
             .await;
 
-        state_transitions_per_block.insert(block_height, state_transitions.clone());
+        if strategy.record_submitted_state_transitions {
+            state_transitions_per_block.insert(block_height, state_transitions.clone());
+        }
 
         let proposed_version = proposer_versions
             .as_ref()
