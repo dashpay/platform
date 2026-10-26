@@ -32,7 +32,6 @@
 //! Nothing here depends on `std` or on the native `PlatformVersion` registry.
 
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
 use bincode::config::{BigEndian, Configuration, NoLimit, Varint};
 use bincode::de::read::{BorrowReader, Reader};
@@ -393,7 +392,9 @@ where
 }
 
 /// Reads a length-prefixed byte string, allocating exactly the declared length
-/// and only after that length has been checked against the unread input.
+/// and only after that length has been checked against the unread input. The
+/// reservation is fallible, so an allocator failure is a decode error rather
+/// than an abort.
 ///
 /// bincode's own `Vec<u8>` decoder allocates from the declared length before
 /// reading the payload, so it is never used on the bounded path.
@@ -404,7 +405,11 @@ where
 {
     let len = decode_bounded_len(decoder)?;
     decoder.claim_bytes_read(len)?;
-    let mut bytes = vec![0u8; len];
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(len)
+        .map_err(|_| DecodeError::LimitExceeded)?;
+    bytes.resize(len, 0);
     decoder.reader().read(&mut bytes)?;
     Ok(bytes)
 }
@@ -427,8 +432,9 @@ where
 
 /// Reads a length-prefixed list of strings. The count is charged to the
 /// element budget and checked against the unread input (each entry needs at
-/// least its own length byte) before the list starts; the list then grows by
-/// push and each string goes through [`decode_bounded_string`].
+/// least its own length byte) before the list starts; the list then grows one
+/// fallible reservation at a time and each string goes through
+/// [`decode_bounded_string`].
 pub fn decode_bounded_string_list<D>(
     decoder: &mut D,
     budget: &mut CodecBudget<'_>,
@@ -441,6 +447,9 @@ where
     budget.claim_elements(count as u64)?;
     let mut strings = Vec::new();
     for _ in 0..count {
+        strings
+            .try_reserve(1)
+            .map_err(|_| DecodeError::LimitExceeded)?;
         strings.push(decode_bounded_string(decoder)?);
     }
     Ok(strings)
