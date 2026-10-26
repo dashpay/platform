@@ -139,6 +139,12 @@ where
             .map_err(|_| DecodeError::LimitExceeded.into())
     }
 
+    fn reserve_frame<T>(&mut self, frames: &mut Vec<T>) -> Result<(), BoundedDecodeError> {
+        frames
+            .try_reserve(1)
+            .map_err(|_| DecodeError::LimitExceeded.into())
+    }
+
     fn bytes(&mut self, decoder: &mut D) -> Result<Vec<u8>, BoundedDecodeError> {
         decode_bounded_bytes(decoder)
     }
