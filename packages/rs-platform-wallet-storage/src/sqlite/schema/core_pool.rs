@@ -16,6 +16,7 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
@@ -76,6 +77,34 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
           AND key_type IS NOT NULL AND public_key IS NOT NULL \
           AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
     )";
+
+const RESET_POOL_SQL: &str = "DELETE FROM core_address_pool \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6";
+
+/// Drop every stored pool row of `accounts`, which a round registers again
+/// under another xpub: the new xpub derives other addresses at the same
+/// `(pool_type, address_index)` keys, and a row of the previous xpub left
+/// beside them would be read back as the account's own.
+pub fn reset_pools(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    accounts: &[AccountType],
+) -> Result<(), WalletStorageError> {
+    let mut stmt = tx.prepare_cached(RESET_POOL_SQL)?;
+    for account_type in accounts {
+        let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+        stmt.execute(params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+        ])?;
+    }
+    Ok(())
+}
 
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and

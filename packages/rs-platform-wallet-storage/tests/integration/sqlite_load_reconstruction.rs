@@ -96,6 +96,7 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
             key_class: 0,
         },
         account_xpub: test_xpub(),
+        encrypted_xpub_digest: None,
     };
     let mut cs = PlatformWalletChangeSet::default();
     cs.account_registrations = vec![reg];
@@ -180,6 +181,7 @@ fn registration_without_addresses_still_surfaces_in_load() {
             key_class: 0,
         },
         account_xpub: test_xpub(),
+        encrypted_xpub_digest: None,
     };
     let mut cs = PlatformWalletChangeSet::default();
     cs.account_registrations = vec![reg];
@@ -241,6 +243,7 @@ fn load_all_reconstructs_only_registered_accounts() {
             key_class: 0,
         },
         account_xpub: test_xpub(),
+        encrypted_xpub_digest: None,
     }];
     cs_a.platform_addresses = Some(PlatformAddressChangeSet {
         addresses: vec![

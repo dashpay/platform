@@ -12,6 +12,7 @@ use platform_wallet::changeset::{
     AccountRegistrationEntry, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::sqlite::schema::accounts::AccountRegistrationWire;
 use platform_wallet_storage::sqlite::schema::{accounts, blob};
 use platform_wallet_storage::{LoadCtx, LoadSite, SqlitePersister, WalletStorageError};
 
@@ -62,10 +63,12 @@ fn a1_account_registrations_roundtrip() {
                 standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
             },
             account_xpub: standard_xpub,
+            encrypted_xpub_digest: None,
         },
         AccountRegistrationEntry {
             account_type: AccountType::IdentityRegistration,
             account_xpub: idreg_xpub,
+            encrypted_xpub_digest: None,
         },
     ];
     let cs = PlatformWalletChangeSet {
@@ -160,6 +163,7 @@ fn standard(index: u32, variant: StandardAccountType, xpub_seed: u8) -> AccountR
             standard_account_type: variant,
         },
         account_xpub: xpub_from_seed(xpub_seed),
+        encrypted_xpub_digest: None,
     }
 }
 
@@ -186,7 +190,7 @@ fn plant_registration(
     index: i64,
     entry: &AccountRegistrationEntry,
 ) {
-    let payload = blob::encode(entry).expect("encode registration");
+    let payload = blob::encode(&AccountRegistrationWire::from(entry)).expect("encode registration");
     let conn = persister.lock_conn_for_test();
     conn.execute(
         "INSERT INTO account_registrations \
@@ -296,6 +300,7 @@ fn a1_wallet_without_a_legacy_row_keeps_every_registration() {
     let idreg = AccountRegistrationEntry {
         account_type: AccountType::IdentityRegistration,
         account_xpub: xpub_from_seed(9),
+        encrypted_xpub_digest: None,
     };
     store_registrations(
         &persister,

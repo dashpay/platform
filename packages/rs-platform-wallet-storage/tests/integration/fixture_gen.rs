@@ -34,6 +34,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use platform_wallet::changeset::{AccountRegistrationEntry, IdentityEntry};
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
+use platform_wallet_storage::sqlite::schema::accounts::AccountRegistrationWire;
 use platform_wallet_storage::sqlite::schema::blob;
 
 /// The two wallets the fixture carries: one populated, one bare.
@@ -174,8 +175,10 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
             })
             .unwrap()
             .account_xpub,
+        encrypted_xpub_digest: None,
     };
-    let registration_blob = blob::encode(&registration).expect("encode registration");
+    let registration_blob =
+        blob::encode(&AccountRegistrationWire::from(&registration)).expect("encode registration");
     let identity_blob = blob::encode(&identity_entry()).expect("encode identity");
 
     conn.execute(

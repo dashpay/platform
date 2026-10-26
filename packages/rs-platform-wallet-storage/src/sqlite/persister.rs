@@ -1,6 +1,9 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
 use std::collections::{BTreeMap, HashSet};
+
+use key_wallet::account::account_collection::DashpayAccountKey;
+use key_wallet::account::AccountType;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
@@ -1841,7 +1844,7 @@ fn load_one_wallet(
     if account_manifest
         .provider
         .iter()
-        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
+        .any(|entry| entry.account_type == AccountType::ProviderPlatformKeys)
     {
         restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
             .map_err(|e| {
@@ -1865,7 +1868,34 @@ fn load_one_wallet(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
+        outbound_account_digests: outbound_account_digests(&account_manifest.ecdsa),
     })
+}
+
+/// The digest each outbound DashPay account row carries, keyed by account.
+fn outbound_account_digests(
+    entries: &[platform_wallet::changeset::AccountRegistrationEntry],
+) -> BTreeMap<DashpayAccountKey, Vec<u8>> {
+    entries
+        .iter()
+        .filter_map(|entry| match entry.account_type {
+            AccountType::DashpayExternalAccount {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => entry.encrypted_xpub_digest.map(|digest| {
+                (
+                    DashpayAccountKey {
+                        index,
+                        user_identity_id,
+                        friend_identity_id,
+                    },
+                    digest.to_vec(),
+                )
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Count one wallet's whole loss and attribute it, or return so the caller
@@ -2183,6 +2213,12 @@ fn apply_changeset_to_tx(
             wallet_id,
             &cs.provider_key_account_registrations,
         )?;
+    }
+    // A reset drops the account's stored rows before this round's snapshots
+    // land, so an account registered again under another xpub keeps none of
+    // the previous xpub's rows at the same indices.
+    if !cs.account_pool_resets.is_empty() {
+        schema::core_pool::reset_pools(tx, wallet_id, &cs.account_pool_resets)?;
     }
     // Pools land before core so the UTXO writer can attribute each outpoint
     // to its owning account by matching the outpoint's script against a

@@ -167,6 +167,7 @@ fn seed_registered_wallet(
         .map(|account| AccountRegistrationEntry {
             account_type: account.account_type,
             account_xpub: account.account_xpub,
+            encrypted_xpub_digest: None,
         })
         .collect();
     persister

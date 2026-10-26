@@ -906,6 +906,7 @@ mod tests {
             .map(|a| AccountRegistrationEntry {
                 account_type: a.account_type,
                 account_xpub: a.account_xpub,
+                encrypted_xpub_digest: None,
             })
             .collect()
     }

@@ -50,6 +50,7 @@ fn spent_utxo_address_is_marked_used() {
         .map(|a| AccountRegistrationEntry {
             account_type: a.account_type,
             account_xpub: a.account_xpub,
+            encrypted_xpub_digest: None,
         })
         .collect();
     persister

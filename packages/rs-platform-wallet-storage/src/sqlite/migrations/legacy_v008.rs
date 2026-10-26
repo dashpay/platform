@@ -43,7 +43,8 @@ pub(super) fn backfill_registrations(tx: &Transaction<'_>) -> Result<(), WalletS
         let label: String = row.get(1)?;
         let index: i64 = row.get(2)?;
         blob::check_size(row.get(3)?)?;
-        let entry: AccountRegistrationEntry = blob::decode(&row.get::<_, Vec<u8>>(4)?)?;
+        let entry = blob::decode::<accounts::AccountRegistrationWire>(&row.get::<_, Vec<u8>>(4)?)?
+            .into_entry(None);
         if !matches_account(&label, index, &entry.account_type) {
             return Err(WalletStorageError::AccountRegistrationEntryMismatch);
         }
@@ -100,7 +101,10 @@ pub(super) fn convert_pools(tx: &Transaction<'_>) -> Result<(), WalletStorageErr
         let mut rows = stmt.query([wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
             blob::check_size(row.get(0)?)?;
-            registrations.push(blob::decode(&row.get::<_, Vec<u8>>(1)?)?);
+            registrations.push(
+                blob::decode::<accounts::AccountRegistrationWire>(&row.get::<_, Vec<u8>>(1)?)?
+                    .into_entry(None),
+            );
         }
 
         let mut stmt = tx.prepare(

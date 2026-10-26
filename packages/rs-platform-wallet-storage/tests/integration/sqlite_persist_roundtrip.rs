@@ -336,6 +336,7 @@ fn tc014_account_registration_roundtrip() {
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::bip32::ExtendedPubKey;
     use platform_wallet::changeset::AccountRegistrationEntry;
+    use platform_wallet_storage::sqlite::schema::accounts::AccountRegistrationWire;
 
     // Synthesise a deterministic xpub from a fixed test seed so the
     // test is reproducible without external fixtures.
@@ -348,6 +349,7 @@ fn tc014_account_registration_roundtrip() {
             standard_account_type: StandardAccountType::BIP44Account,
         },
         account_xpub: xpub,
+        encrypted_xpub_digest: None,
     };
 
     let (persister, tmp, path) = fresh_persister();
@@ -373,8 +375,11 @@ fn tc014_account_registration_roundtrip() {
             |row| row.get(0),
         )
         .unwrap();
-    let decoded: AccountRegistrationEntry =
-        platform_wallet_storage::sqlite::schema::blob::decode(&blob_bytes).unwrap();
+    let decoded = platform_wallet_storage::sqlite::schema::blob::decode::<AccountRegistrationWire>(
+        &blob_bytes,
+    )
+    .unwrap()
+    .into_entry(None);
     assert_eq!(decoded.account_type, entry.account_type);
     assert_eq!(decoded.account_xpub, xpub);
     drop(tmp);

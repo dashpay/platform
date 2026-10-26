@@ -50,6 +50,7 @@ fn c1_load_populates_keyless_wallet_payload() {
         .map(|a| AccountRegistrationEntry {
             account_type: a.account_type,
             account_xpub: a.account_xpub,
+            encrypted_xpub_digest: None,
         })
         .collect();
     let reg = PlatformWalletChangeSet {

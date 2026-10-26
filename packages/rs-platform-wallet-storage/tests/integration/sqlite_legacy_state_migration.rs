@@ -11,6 +11,7 @@ use key_wallet::{AddressInfo, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletPersistence,
 };
+use platform_wallet_storage::sqlite::schema::accounts::AccountRegistrationWire;
 use platform_wallet_storage::sqlite::{migrations, schema::blob};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 use rusqlite::{params, Connection};
@@ -53,6 +54,7 @@ fn legacy_database(
             .account_of_type(standard_type())
             .unwrap()
             .account_xpub,
+        encrypted_xpub_digest: None,
     };
     insert_registration(&conn, &WALLET_ID, "standard", 0, &entry);
     let managed = ManagedWalletInfo::from_wallet(&wallet, 0);
@@ -83,7 +85,7 @@ fn insert_registration(
 ) {
     conn.execute(
         "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, ?2, ?3, ?4)",
-        params![wallet_id.as_slice(), label, index, blob::encode(entry).unwrap()],
+        params![wallet_id.as_slice(), label, index, blob::encode(&AccountRegistrationWire::from(entry)).unwrap()],
     ).unwrap();
 }
 
@@ -147,6 +149,7 @@ fn should_backfill_legacy_account_discriminators_and_load_strictly() {
             .account_of_type(contact_type)
             .unwrap()
             .account_xpub,
+        encrypted_xpub_digest: None,
     };
     let platform = AccountRegistrationEntry {
         account_type: platform_type,
@@ -155,6 +158,7 @@ fn should_backfill_legacy_account_discriminators_and_load_strictly() {
             .account_of_type(platform_type)
             .unwrap()
             .account_xpub,
+        encrypted_xpub_digest: None,
     };
     insert_registration(&conn, &WALLET_ID, "dashpay_receiving", 4, &contact);
     insert_registration(&conn, &WALLET_ID, "platform_payment", 3, &platform);
@@ -389,6 +393,7 @@ fn should_preserve_derived_only_hardened_address_with_unambiguous_owner() {
         &AccountRegistrationEntry {
             account_type: AccountType::IdentityRegistration,
             account_xpub: account.account_xpub,
+            encrypted_xpub_digest: None,
         },
     );
     conn.execute("INSERT INTO core_derived_addresses VALUES (?1, 'identity_registration', 0, ?2, 'absent_hardened/3', 1)", params![WALLET_ID.as_slice(), address.to_string()]).unwrap();

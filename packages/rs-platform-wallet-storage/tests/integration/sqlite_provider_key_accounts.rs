@@ -348,6 +348,7 @@ fn empty_provider_set_round_trips() {
             .first()
             .expect("an account")
             .account_xpub,
+        encrypted_xpub_digest: None,
     };
     persister
         .store(
@@ -659,6 +660,7 @@ fn ecdsa_registration_path_rejects_provider_account_labels() {
                 account_registrations: vec![AccountRegistrationEntry {
                     account_type: AccountType::ProviderOperatorKeys,
                     account_xpub: ecdsa_xpub,
+                    encrypted_xpub_digest: None,
                 }],
                 ..Default::default()
             },

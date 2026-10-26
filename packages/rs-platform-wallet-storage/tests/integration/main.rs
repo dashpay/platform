@@ -58,6 +58,7 @@ mod sqlite_money_column_overflow_on_read;
 mod sqlite_object_metadata;
 mod sqlite_open_integrity_check;
 mod sqlite_open_version_gate;
+mod sqlite_outbound_account_replace;
 mod sqlite_permissions;
 mod sqlite_persist_roundtrip;
 mod sqlite_pool_reader;
