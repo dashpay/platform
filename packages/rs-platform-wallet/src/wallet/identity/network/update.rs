@@ -5,7 +5,9 @@ use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::accessors::IdentitySettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
@@ -267,11 +269,12 @@ impl IdentityWallet {
     ///   - The Identity Keys list in the iOS app keeps showing
     ///     only the pre-update key set.
     ///
-    /// `ManagedIdentity::add_key` handles both the in-memory
-    /// mutation AND the `IdentityKeysChangeSet` upsert. Run it
-    /// on each new key under a write lock; the breadcrumb lets
-    /// the iOS Keychain re-derive the matching private bytes
-    /// from the wallet seed + DIP-9 path.
+    /// A cache behind `transition_revision` moves to it, and the update's
+    /// keys are layered in memory and stored with the scalar snapshot,
+    /// revision included, as one fallible write under the write lock, so
+    /// the landed revision is stored even when no key matched. An added
+    /// key carries the breadcrumb that lets the iOS Keychain re-derive the
+    /// matching private bytes from the wallet seed + DIP-9 path.
     ///
     /// A cache already refreshed to `transition_revision` or past it (a
     /// fetch answered between the update's snapshot and this step) holds the
@@ -339,36 +342,48 @@ impl IdentityWallet {
         // subsequent update must not reuse the pre-broadcast value.
         managed.identity.set_revision(transition_revision);
 
-        for key in added_keys {
-            let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-            managed
-                .add_key(key, breadcrumb, &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "identity key not persisted after update: {e}"
-                    ))
-                })?;
-        }
-
-        if !disabled_ids.is_empty() {
-            // Disable-side counterpart to the `add_key` loop
-            // above: stamp `disabled_at` on the matching cached
-            // keys and fire the persister so the Swift
-            // `PersistentPublicKey.disabledAt` rows flip without
-            // a network re-fetch. The local wall-clock timestamp
-            // is a placeholder — the next fetch at this revision or
-            // above reconciles it to the authoritative on-chain block
-            // time. `disable_keys` rebuilds the derivation breadcrumb
-            // from the managed identity's own wallet slot, so the
-            // disabled key keeps its private-key linkage.
-            let disabled_at = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or_default();
-            managed.disable_keys(&disabled_ids, disabled_at, &self.persister);
-        }
-
-        Ok(())
+        // The added keys, then the disabled ones stamped with the local
+        // wall-clock time, a placeholder the next fetch at this revision or
+        // above reconciles to the on-chain block time. A disabled key keeps
+        // the breadcrumb of the managed identity's own wallet slot, so it
+        // keeps its private-key linkage. They are stored with the scalar
+        // snapshot as one write, so the landed revision is stored even when
+        // no key matched.
+        let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+        let mut keys: Vec<KeyWithBreadcrumb> = added_keys
+            .into_iter()
+            .map(|key| KeyWithBreadcrumb {
+                breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, key.id())),
+                key,
+            })
+            .collect();
+        let disabled_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default();
+        let slot = managed.wallet_id.zip(managed.identity_index);
+        keys.extend(
+            disabled_ids
+                .iter()
+                .filter(|id| !added_ids.contains(id))
+                .filter_map(|id| managed.identity.public_keys().get(id).cloned())
+                .map(|mut key| {
+                    key.set_disabled_at(disabled_at);
+                    KeyWithBreadcrumb {
+                        breadcrumb: slot.map(|(wallet_id, identity_index)| {
+                            (wallet_id, identity_index, key.id())
+                        }),
+                        key,
+                    }
+                }),
+        );
+        managed
+            .store_keys_with_snapshot(keys, &self.persister)
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "identity key not persisted after update: {e}"
+                ))
+            })
     }
 
     /// Take Drive's revision from an update it refused for its revision.
@@ -875,6 +890,87 @@ mod update_identity_at_revision_tests {
         let changesets = store.take();
         assert_eq!(changesets.len(), 1, "the snapshot alone");
         assert!(changesets[0].identities.is_some());
+    }
+
+    /// A cache at 4 behind an update that landed at 5 stores the landed
+    /// revision with the update's keys as one write: an added key with a
+    /// disable, and a disable of a key the cache lacks, which stores the
+    /// snapshot alone. A failed store is returned.
+    #[tokio::test]
+    async fn should_store_a_landed_revision_with_its_keys_in_one_write() {
+        let identity_id = Identifier::default();
+        let stored_revision = |changesets: &[crate::changeset::PlatformWalletChangeSet]| {
+            changesets[0]
+                .identities
+                .as_ref()
+                .and_then(|identities| identities.identities.get(&identity_id))
+                .map(|entry| entry.revision)
+        };
+        for (added, disabled) in [(vec![key_3()], vec![1]), (vec![], vec![9])] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(4, store.clone()).await;
+            let wallet = wallet.identity();
+            store.take();
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, added.clone(), disabled.clone())
+                .await
+                .unwrap();
+            let changesets = store.take();
+            assert_eq!(
+                changesets.len(),
+                1,
+                "added {added:?}, disabled {disabled:?}"
+            );
+            assert_eq!(stored_revision(&changesets), Some(5));
+            let rows = changesets[0]
+                .identity_keys
+                .as_ref()
+                .map_or(0, |keys| keys.upserts.len());
+            assert_eq!(rows, if added.is_empty() { 0 } else { 2 });
+            assert_eq!(cached_identity(wallet, &identity_id).await.revision(), 5);
+        }
+
+        let store = Arc::new(FailingStore::default());
+        let wallet = wallet_at_revision_on(4, store.clone()).await;
+        store.0.store(true, Ordering::SeqCst);
+        let error = wallet
+            .identity()
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::Persistence(_)),
+            "{error:?}"
+        );
+    }
+
+    /// Refuses every store once set.
+    #[derive(Default)]
+    struct FailingStore(std::sync::atomic::AtomicBool);
+
+    impl PlatformWalletPersistence for FailingStore {
+        fn store(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+            _: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if self.0.load(Ordering::SeqCst) {
+                return Err(crate::changeset::PersistenceError::backend("store refused"));
+            }
+            Ok(())
+        }
+        fn flush(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
     }
 
     /// Drive's refusal of an update for an identity it holds at `current`,

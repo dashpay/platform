@@ -1052,8 +1052,10 @@ pub struct IdentityKeyEntry {
     /// Precomputed on the Rust side so clients don't need
     /// RIPEMD-160 implementations of their own.
     pub public_key_hash: [u8; 20],
-    /// The wallet whose mnemonic derives this key. `None` for
-    /// watched-only identities with no wallet association.
+    /// The wallet whose mnemonic derives this key. It travels with
+    /// [`Self::derivation_indices`]: `None` alongside them gives no wallet
+    /// either, and an update to a held row keeps the `wallet_id` the row
+    /// already holds, as it keeps the breadcrumb.
     pub wallet_id: Option<[u8; 32]>,
     /// DIP-9 `(identity_index, key_index)` pair the client needs to
     /// re-derive the private key.
