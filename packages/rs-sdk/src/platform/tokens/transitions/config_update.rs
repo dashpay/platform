@@ -69,12 +69,14 @@ impl Sdk {
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
-        ConfigUpdateResult::from_proof_result(proof_result)
+        ConfigUpdateResult::try_from(proof_result)
     }
 }
 
-impl ConfigUpdateResult {
-    fn from_proof_result(proof_result: StateTransitionProofResult) -> Result<Self, Error> {
+impl TryFrom<StateTransitionProofResult> for ConfigUpdateResult {
+    type Error = Error;
+
+    fn try_from(proof_result: StateTransitionProofResult) -> Result<Self, Self::Error> {
         match proof_result {
             StateTransitionProofResult::VerifiedTokenActionWithDocument(document) => {
                 Ok(ConfigUpdateResult::Document(document))
@@ -104,7 +106,7 @@ mod tests {
     fn should_forward_active_group_config_update_without_document() {
         // Drive proves a still-active group action (a proposal, or a co-signature
         // that does not reach the threshold) with no historical document.
-        let result = ConfigUpdateResult::from_proof_result(
+        let result = ConfigUpdateResult::try_from(
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(5, None),
         )
         .expect("an active group action is a verified result, not a proof error");
@@ -116,7 +118,7 @@ mod tests {
 
     #[test]
     fn should_forward_closed_group_config_update_with_document() {
-        let result = ConfigUpdateResult::from_proof_result(
+        let result = ConfigUpdateResult::try_from(
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(
                 7,
                 Some(Document::V0(DocumentV0::default())),
@@ -131,7 +133,7 @@ mod tests {
 
     #[test]
     fn should_reject_a_proof_result_of_another_transition() {
-        let result = ConfigUpdateResult::from_proof_result(
+        let result = ConfigUpdateResult::try_from(
             StateTransitionProofResult::VerifiedTokenBalance(Default::default(), 1),
         );
         assert!(matches!(
