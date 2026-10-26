@@ -18,6 +18,12 @@ protocol ModelFetching: Sendable {
     ) throws -> [T]
 }
 
+private enum AccountSidecarPersistenceError: Error {
+    case requiresChangeset
+    case missingAccount
+    case malformedDigest
+}
+
 private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
@@ -694,6 +700,50 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 $0.outPointHex != hex
             }) else { throw AssetLockPersistenceError.duplicateOperationId }
             record.operationId = operationId
+        }
+    }
+
+    /// Drop every stored pool row of the accounts `keys` names, before the
+    /// round's pool snapshots land: each account was registered again in the
+    /// same round under another xpub. TXOs linked to a dropped row are kept and
+    /// unlinked, so the reset never deletes funds history.
+    func resetAccountAddressPools(walletId: Data, keys: [AccountLookupKey]) throws {
+        try onQueue {
+            guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
+            for key in keys {
+                guard let account = fetchAccount(walletId: walletId, key: key) else { continue }
+                for row in account.coreAddresses {
+                    for txo in row.txos {
+                        txo.coreAddress = nil
+                    }
+                    roundIndex?.coreAddressesByAddress[row.address] = nil
+                    backgroundContext.delete(row)
+                }
+            }
+        }
+    }
+
+    /// Store the digest of the contact request an outbound DashPay account was
+    /// built from on its row, registered earlier in the same round.
+    func persistAccountXpubDigest(walletId: Data, key: AccountLookupKey, digest: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
+            guard digest.count == 32 else { throw AccountSidecarPersistenceError.malformedDigest }
+            guard let account = fetchAccount(walletId: walletId, key: key) else {
+                throw AccountSidecarPersistenceError.missingAccount
+            }
+            account.encryptedXpubDigest = digest
+        }
+    }
+
+    /// The digest stored on the account row `key` names; `nil` when the row
+    /// has none. A missing row is a failed read.
+    func loadAccountXpubDigest(walletId: Data, key: AccountLookupKey) throws -> Data? {
+        try onQueue {
+            guard let account = fetchAccount(walletId: walletId, key: key) else {
+                throw AccountSidecarPersistenceError.missingAccount
+            }
+            return account.encryptedXpubDigest
         }
     }
 
@@ -3296,6 +3346,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_reset_account_address_pools_fn = resetAccountAddressPoolsCallback
+        extensionCallbacks.on_persist_account_xpub_digest_fn = persistAccountXpubDigestCallback
+        extensionCallbacks.on_load_account_xpub_digest_fn = loadAccountXpubDigestCallback
         return extensionCallbacks
     }
 
@@ -11857,6 +11910,71 @@ extension PlatformWalletPersistenceHandler {
             return false
         }
     }
+}
+
+private func accountLookupKey(
+    _ spec: AccountSpecFFI
+) -> PlatformWalletPersistenceHandler.AccountLookupKey {
+    PlatformWalletPersistenceHandler.AccountLookupKey(
+        typeTag: UInt32(spec.type_tag),
+        index: spec.index,
+        standardTag: spec.standard_tag,
+        registrationIndex: spec.registration_index,
+        keyClass: spec.key_class,
+        userIdentityId: withUnsafeBytes(of: spec.user_identity_id) { Data($0) },
+        friendIdentityId: withUnsafeBytes(of: spec.friend_identity_id) { Data($0) }
+    )
+}
+
+private func resetAccountAddressPoolsCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    specs: UnsafePointer<AccountSpecFFI>?, count: UInt
+) -> Int32 {
+    guard let context, let walletId else { return -1 }
+    guard count > 0 else { return 0 }
+    guard let specs else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.resetAccountAddressPools(
+            walletId: Data(bytes: walletId, count: 32),
+            keys: (0..<Int(count)).map { accountLookupKey(specs[$0]) })
+        return 0
+    } catch { return -1 }
+}
+
+private func persistAccountXpubDigestCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    spec: UnsafePointer<AccountSpecFFI>?, digest: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let spec, let digest else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAccountXpubDigest(
+            walletId: Data(bytes: walletId, count: 32), key: accountLookupKey(spec.pointee),
+            digest: Data(bytes: digest, count: 32))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAccountXpubDigestCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    spec: UnsafePointer<AccountSpecFFI>?, outFound: UnsafeMutablePointer<Bool>?,
+    outDigest: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let spec, let outFound, let outDigest else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        // A digest of another length is handed over as none; Rust then
+        // verifies the account by decrypting.
+        if let digest = try handler.loadAccountXpubDigest(
+            walletId: Data(bytes: walletId, count: 32), key: accountLookupKey(spec.pointee)),
+            digest.count == 32 {
+            digest.copyBytes(to: outDigest, count: 32)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
 }
 
 private func persistAssetLockOperationIdCallback(
