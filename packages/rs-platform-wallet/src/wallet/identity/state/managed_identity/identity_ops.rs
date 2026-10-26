@@ -17,7 +17,6 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 /// Compute the 20-byte RIPEMD160(SHA256) hash of the DPP public-key
@@ -89,7 +88,6 @@ impl ManagedIdentity {
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
-            revision_refused_at: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -111,7 +109,6 @@ impl ManagedIdentity {
             identity_index: None,
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
-            revision_refused_at: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -404,51 +401,32 @@ impl ManagedIdentity {
     /// claims none), but they only ever rise, so each shared key keeps the
     /// higher of the two (see `with_raised_limits`) at any revision.
     ///
-    /// A fetch above the cache's revision is otherwise taken whole, key
-    /// states included. So is one at the cache's revision from a block at or
-    /// above the key watermark (`last_synced_keys_block_time`, the block of
-    /// the last fetch taken whole, or none; a proof from that same block
-    /// shows the same key states): a masternode identity's keys are disabled
-    /// and re-enabled by Core at revision 0, so a newer fetch at the same
-    /// revision may re-enable a key the cache holds disabled, or disable one
-    /// it holds enabled. A fetch at the cache's revision from a block below
-    /// the watermark is older than the key states the cache took, so it
-    /// changes no key state; only a raised limit is taken. The watermark is
-    /// stored with the scalar snapshot. A store that restores only the
-    /// balance's block gives that as the watermark (every fetch folded in
-    /// reached it); one that restores neither leaves none, so there the
-    /// first fetch after a restart is taken whole.
-    ///
-    /// Revisions only grow on Platform, so a fetch at a lower revision was
-    /// answered before an update the cache already holds (one applied
-    /// locally after it landed, or a newer refresh, from a node that lags
-    /// behind): the cache keeps its revision and key set; it takes only a
-    /// disable the fetch shows on a key the cache holds enabled (an identity
-    /// update's disable is permanent) and a raised limit. A fetch taken
-    /// whole moves the watermark to its block. Returns whether it was taken
-    /// whole.
+    /// A fetch at the cache's revision or above is otherwise taken whole,
+    /// key states included: a masternode identity's keys are disabled and
+    /// re-enabled by Core at revision 0, so such a fetch may re-enable a key
+    /// the cache holds disabled. Revisions only grow on Platform, so a fetch
+    /// at a lower revision was answered before an update the cache already
+    /// holds (one applied locally after it landed, or a newer refresh, from a
+    /// node that lags behind): the cache keeps its revision and key set; it
+    /// takes only a disable the fetch shows on a key the cache holds enabled
+    /// (an identity update's disable is permanent) and a raised limit.
+    /// Returns whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity, block_time: BlockTime) -> bool {
         let balance = self.identity.balance();
         let cached = self.identity.public_keys().clone();
-        let fold = self.key_fold(fetched, block_time);
-        let taken = fold == KeyFold::Whole;
-        if fetched.revision() >= self.identity.revision() {
-            self.revision_refused_at = None;
-        }
+        let taken = fetched.revision() >= self.identity.revision();
         let mut keys = if taken {
             self.identity = fetched.clone();
             self.identity.set_balance(balance);
-            self.last_synced_keys_block_time =
-                BlockTime::later_watermark(self.last_synced_keys_block_time, Some(block_time));
             fetched.public_keys().clone()
         } else {
             cached.clone()
         };
         for (key_id, key) in keys.iter_mut() {
             if let Some(fetched_key) = fetched.public_keys().get(key_id) {
-                if let Some(folded) = fold_fetched_key(cached.get(key_id), fetched_key, fold) {
+                if let Some(folded) = fold_fetched_key(cached.get(key_id), fetched_key, taken) {
                     *key = folded;
                 }
             }
@@ -456,23 +434,6 @@ impl ManagedIdentity {
         self.identity.set_public_keys(keys);
         self.take_fetched_balance(fetched.balance(), block_time);
         taken
-    }
-
-    /// How the keys of `fetched`, proved at `block_time`, fold into the
-    /// cache's (see [`Self::take_fetched_identity`]).
-    fn key_fold(&self, fetched: &Identity, block_time: BlockTime) -> KeyFold {
-        match fetched.revision().cmp(&self.identity.revision()) {
-            Ordering::Greater => KeyFold::Whole,
-            Ordering::Equal
-                if self
-                    .last_synced_keys_block_time
-                    .is_none_or(|synced| block_time.height >= synced.height) =>
-            {
-                KeyFold::Whole
-            }
-            Ordering::Equal => KeyFold::OlderBlock,
-            Ordering::Less => KeyFold::Older,
-        }
     }
 
     /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the row
@@ -531,7 +492,7 @@ impl ManagedIdentity {
         block_time: BlockTime,
         persister: &WalletPersister,
     ) -> Result<(), PersistenceError> {
-        let decisions = self.key_decisions_for_fetch(fetched, decisions, block_time);
+        let decisions = self.key_decisions_for_fetch(fetched, decisions);
         self.take_fetched_identity(fetched, block_time);
         let keys_cs = self.layer_keys(decisions);
         self.store_keys_and_balance(keys_cs, persister)
@@ -541,24 +502,24 @@ impl ManagedIdentity {
     /// key folded as [`Self::take_fetched_identity`] folds it, so storing its
     /// breadcrumb (a key's derivation never changes) stores what the fold
     /// holds: never a raised limit taken back, nor a disable an older fetch
-    /// lacks. For a fetch taken whole that is the fetched key. For any other
-    /// it is the cache's copy, from an older fetch disabled when only the
-    /// fetch's copy is; either way each limit is the higher of the two. A
-    /// key the cache lacks is left out of the decisions of a fetch not taken
-    /// whole, since such an answer cannot show whether a later update
-    /// disabled it, and a newer fetch will bring it.
+    /// lacks. For a fetch at the cache's
+    /// revision or above that is the fetched key. For an older fetch it is
+    /// the cache's copy, disabled when only the fetch's copy is; either way
+    /// each limit is the higher of the two.
+    /// A key the cache lacks is left out of an older fetch's decisions, since
+    /// an older answer cannot show whether a later update disabled it, and a
+    /// fetch at least as new will bring it.
     fn key_decisions_for_fetch(
         &self,
         fetched: &Identity,
         decisions: Vec<KeyWithBreadcrumb>,
-        block_time: BlockTime,
     ) -> Vec<KeyWithBreadcrumb> {
-        let fold = self.key_fold(fetched, block_time);
+        let taken = fetched.revision() >= self.identity.revision();
         decisions
             .into_iter()
             .filter_map(|mut decision| {
                 let cached = self.identity.public_keys().get(&decision.key.id());
-                decision.key = fold_fetched_key(cached, &decision.key, fold)?;
+                decision.key = fold_fetched_key(cached, &decision.key, taken)?;
                 Some(decision)
             })
             .collect()
@@ -823,39 +784,19 @@ impl ManagedIdentity {
     }
 }
 
-/// How a fetched identity's keys fold into the cache's (see
-/// [`ManagedIdentity::take_fetched_identity`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyFold {
-    /// Above the cache's revision, or at it from a block at or above the key
-    /// watermark: its key states are taken.
-    Whole,
-    /// At the cache's revision from a block below the key watermark: no key
-    /// state is taken.
-    OlderBlock,
-    /// Below the cache's revision: only a disable is taken.
-    Older,
-}
-
 /// How a fetched key lands in the cache, the one rule the identity fold and
-/// its key decisions share. From a fetch taken whole it is the fetched key.
-/// From any other it is the cache's copy, or nothing for a key the cache
-/// lacks; from an older fetch, disabled when only the fetch's copy is.
-/// Either way each limit is the higher of the two copies'.
+/// its key decisions share. From a fetch taken whole (`taken`) it is the
+/// fetched key. From an older fetch it is the cache's copy, disabled when
+/// only the fetch's copy is, or nothing for a key the cache lacks. Either
+/// way each limit is the higher of the two copies'.
 fn fold_fetched_key(
     cached: Option<&IdentityPublicKey>,
     fetched: &IdentityPublicKey,
-    fold: KeyFold,
+    taken: bool,
 ) -> Option<IdentityPublicKey> {
-    match fold {
-        KeyFold::Older => {
-            return cached
-                .map(|cached| with_raised_limits(with_disable_from(cached, fetched), fetched));
-        }
-        KeyFold::OlderBlock => {
-            return cached.map(|cached| with_raised_limits(cached.clone(), fetched));
-        }
-        KeyFold::Whole => {}
+    if !taken {
+        return cached
+            .map(|cached| with_raised_limits(with_disable_from(cached, fetched), fetched));
     }
     let key = fetched.clone();
     let Some(cached) = cached else {
@@ -972,12 +913,11 @@ mod tests {
     /// A fetch at a lower revision than the cache's was answered before an
     /// update the cache holds: the cache keeps its revision and key set, and
     /// takes only a disable the fetch shows on a key it holds enabled and a
-    /// raised limit. A fetch at a higher revision, or at the same one from a
-    /// block at or above the key watermark, replaces the cache, key states
-    /// included, but never takes back a raise. Either way the balance
-    /// follows the proof's block, not the revision.
+    /// raised limit. A fetch at the same revision or higher replaces the
+    /// cache, key states included, but never takes back a raise. Either way
+    /// the balance follows the proof's block, not the revision.
     #[test]
-    fn should_take_a_fetched_identity_whole_only_from_a_newer_revision_or_block() {
+    fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
             IdentityPublicKey::V1(IdentityPublicKeyV1 {
                 id,
@@ -1049,68 +989,16 @@ mod tests {
         assert!(managed.take_fetched_identity(&newer, block(12)));
         assert_eq!(managed.identity, newer);
 
-        // ...key states included, at the cache's revision only from a block
-        // at or above the key watermark the last fetch taken whole set (Core
-        // re-enables a masternode identity's key at revision 0). One from a
-        // block below it is older: it changes no key state, nor a balance
-        // its proof does not order after the cache's.
-        assert_eq!(managed.last_synced_keys_block_time, Some(block(12)));
-        let reenabled = at(7, 35, vec![limited(3, 550, None)]);
-        for height in [10, 11] {
-            assert!(!managed.take_fetched_identity(&reenabled, block(height)));
-            assert_eq!(managed.identity, newer);
+        // ...key states included (Core re-enables a masternode identity's
+        // key at revision 0), except for a balance its proof does not order
+        // after the cache's and a budget the cache holds higher: a delayed
+        // answer cannot take a raise back.
+        let delayed = at(7, 35, vec![limited(3, 550, None)]);
+        for height in [11, 12] {
+            assert!(managed.take_fetched_identity(&delayed, block(height)));
+            assert_eq!(managed.identity, at(7, 40, vec![limited(3, 600, None)]));
             assert_eq!(managed.last_updated_balance_block_time, Some(block(12)));
         }
-        // Taken whole from above it, but a budget the cache holds higher
-        // stays: a delayed answer cannot take a raise back.
-        assert!(managed.take_fetched_identity(&reenabled, block(13)));
-        assert_eq!(managed.identity, at(7, 35, vec![limited(3, 600, None)]));
-        assert_eq!(managed.last_synced_keys_block_time, Some(block(13)));
-    }
-
-    /// Core disables and re-enables a masternode identity's keys at revision
-    /// 0, so key states at one revision are ordered by proof height: a
-    /// lagging answer at the cache's revision brings back neither a disable
-    /// Core lifted nor a key state Core changed since, and a cache with no
-    /// watermark takes its first answer whole.
-    #[test]
-    fn should_order_key_states_at_the_cache_s_revision_by_proof_height() {
-        let identity = |disabled_at: Option<u64>| {
-            let mut key = key(3);
-            if let Some(disabled_at) = disabled_at {
-                key.set_disabled_at(disabled_at);
-            }
-            Identity::V0(IdentityV0 {
-                id: Identifier::from([1u8; 32]),
-                public_keys: BTreeMap::from([(3, key)]),
-                balance: 0,
-                revision: 0,
-            })
-        };
-        let block = |height| BlockTime::new(height, 1, height);
-        let mut managed = ManagedIdentity::new(identity(Some(5)), 0);
-        // No watermark: the answer at block 20, the key re-enabled, is taken.
-        assert!(managed.take_fetched_identity(&identity(None), block(20)));
-        assert_eq!(managed.identity, identity(None));
-        assert_eq!(managed.last_synced_keys_block_time, Some(block(20)));
-        // A lagging answer from before the re-enable does not disable it again.
-        for height in [15, 19] {
-            assert!(!managed.take_fetched_identity(&identity(Some(5)), block(height)));
-            assert_eq!(managed.identity, identity(None), "block {height}");
-        }
-        // Core disables it again at a later block: taken.
-        assert!(managed.take_fetched_identity(&identity(Some(25)), block(25)));
-        assert_eq!(managed.identity, identity(Some(25)));
-        // The decisions stored with a fetch follow the same order.
-        let decisions = managed.key_decisions_for_fetch(
-            &identity(None),
-            vec![KeyWithBreadcrumb {
-                key: key(3),
-                breadcrumb: None,
-            }],
-            block(22),
-        );
-        assert_eq!(decisions[0].key, identity(Some(25)).public_keys()[&3]);
     }
 
     /// Each limit is the higher of the two copies', since consensus only
@@ -1170,13 +1058,12 @@ mod tests {
                 },
             ]
         };
-        let folded =
-            managed.key_decisions_for_fetch(&fetched(5), decisions(), BlockTime::new(1, 0, 0));
+        let folded = managed.key_decisions_for_fetch(&fetched(5), decisions());
         assert_eq!(folded.len(), 1);
         assert_eq!(folded[0].key, disabled);
         assert_eq!(
             managed
-                .key_decisions_for_fetch(&fetched(6), decisions(), BlockTime::new(1, 0, 0))
+                .key_decisions_for_fetch(&fetched(6), decisions())
                 .len(),
             2
         );
@@ -1201,11 +1088,7 @@ mod tests {
                 key: key(3).with_limits(Some(100), None),
                 breadcrumb: None,
             }];
-            let folded = managed.key_decisions_for_fetch(
-                &identity(revision, 100),
-                decisions,
-                BlockTime::new(1, 0, 0),
-            );
+            let folded = managed.key_decisions_for_fetch(&identity(revision, 100), decisions);
             assert_eq!(folded[0].key.total_budget(), Some(500), "at {revision}");
         }
     }

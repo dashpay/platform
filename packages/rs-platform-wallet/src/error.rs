@@ -100,24 +100,6 @@ pub enum PlatformWalletError {
         actual: u64,
     },
 
-    /// Drive refused an identity update asked to carry `refused` for its
-    /// revision, and proofs show the refused transition's nonce spent and
-    /// the identity at `drive_revision`, below the revision it would take:
-    /// the cache is ahead of the chain. Drive charged a processing fee and
-    /// took the nonce, so the refused transition can never execute; nothing
-    /// else changed. The cache is left as it is; the next update may be
-    /// asked to carry `drive_revision + 1` while the cache has not moved
-    /// (`IdentityWallet::next_update_revision` gives it).
-    #[error(
-        "identity {identity_id}: Drive refused the update at revision {refused} and holds \
-         revision {drive_revision}, below the cached identity's"
-    )]
-    IdentityRevisionRefused {
-        identity_id: Identifier,
-        refused: u64,
-        drive_revision: u64,
-    },
-
     /// A DashPay invitation link's voucher key is for the other network (a
     /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
     /// the claim refuses the link before any network work.

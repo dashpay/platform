@@ -3501,13 +3501,6 @@ impl PlatformWalletPersistence for FFIPersister {
                             ));
                         }
                         managed.last_updated_balance_block_time = found.then(|| stamp.into());
-                        // Every fetch folded into the stored key states moved
-                        // the balance's block to its own or above, so it bounds
-                        // their age when the key watermark is not restored.
-                        if managed.last_synced_keys_block_time.is_none() {
-                            managed.last_synced_keys_block_time =
-                                managed.last_updated_balance_block_time;
-                        }
                     }
                 }
             }
@@ -7650,11 +7643,6 @@ mod tests {
                 .identity_manager
                 .wallet_identities[&[42; 32]][&0];
             assert_eq!(managed.last_updated_balance_block_time.is_some(), mode == 1);
-            // The restored balance's block bounds the stored key states' age.
-            assert_eq!(
-                managed.last_synced_keys_block_time,
-                managed.last_updated_balance_block_time
-            );
             assert_eq!(
                 dpp::identity::accessors::IdentityGettersV0::balance(&managed.identity),
                 123

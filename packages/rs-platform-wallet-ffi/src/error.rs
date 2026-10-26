@@ -622,17 +622,6 @@ pub enum PlatformWalletFFIResultCode {
     /// are in the message.
     ErrorIdentityRevisionMismatch = 62,
 
-    /// Maps `PlatformWalletError::IdentityRevisionRefused`: Drive refused an
-    /// identity update asked to carry a revision, for its revision, and
-    /// proofs show its nonce spent and the identity at a revision below the
-    /// one it would take (a cache ahead of the chain). Drive charged a
-    /// processing fee and took the nonce, so the refused update can never
-    /// execute; nothing else changed, and the cache was left as it is. Read
-    /// the revision Drive takes from
-    /// `platform_wallet_identity_next_update_revision`, record it, and
-    /// update again asking for it. The revisions are in the message.
-    ErrorIdentityRevisionRefused = 63,
-
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1049,9 +1038,6 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::IdentityRevisionMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch
-            }
-            PlatformWalletError::IdentityRevisionRefused { .. } => {
-                PlatformWalletFFIResultCode::ErrorIdentityRevisionRefused
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1711,24 +1697,6 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch
         );
         assert_eq!(result.code as i32, 62, "the host ABI code must stay stable");
-        assert_eq!(message_of(&result), rendered);
-    }
-
-    #[test]
-    fn should_preserve_identity_revision_refused_code_and_message() {
-        let error = PlatformWalletError::IdentityRevisionRefused {
-            identity_id: Identifier::from([7; 32]),
-            refused: 7,
-            drive_revision: 5,
-        };
-        let rendered = error.to_string();
-        let result: PlatformWalletFFIResult = error.into();
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorIdentityRevisionRefused
-        );
-        assert_eq!(result.code as i32, 63, "the host ABI code must stay stable");
         assert_eq!(message_of(&result), rendered);
     }
 

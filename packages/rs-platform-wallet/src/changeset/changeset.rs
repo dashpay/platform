@@ -1148,8 +1148,7 @@ impl Merge for IdentityChangeSet {
         // IdentityEntry is a scalar-only snapshot via
         // `IdentityEntry::from_managed`; public keys / private keys
         // live in the sibling `IdentityKeysChangeSet`. "Later wins"
-        // for scalar fields, revision-gated for balance/revision; the
-        // key watermark keeps the later block.
+        // for scalar fields, revision-gated for balance/revision.
         for (id, entry) in other.identities {
             self.identities
                 .entry(id)
@@ -1164,11 +1163,7 @@ impl Merge for IdentityChangeSet {
                         existing.last_updated_balance_block_time =
                             entry.last_updated_balance_block_time;
                     }
-                    // The key watermark only moves up, at any revision.
-                    existing.last_synced_keys_block_time = BlockTime::later_watermark(
-                        existing.last_synced_keys_block_time,
-                        entry.last_synced_keys_block_time,
-                    );
+                    existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
                     existing.status = entry.status;
                     // `wallet_id` is immutable per identity (SHA256 of
                     // root public key + chain code), so LWW and FWW are
@@ -2689,39 +2684,6 @@ mod tests {
                 merged.last_updated_balance_block_time,
                 expected.last_updated_balance_block_time
             );
-        }
-    }
-
-    #[test]
-    fn should_merge_the_later_key_watermark() {
-        let id = Identifier::from([0x54; 32]);
-        let newer = Some(BlockTime::new(20, 50, 2000));
-        for (incoming, expected) in [
-            (None, newer),
-            (Some(BlockTime::new(10, 42, 1000)), newer),
-            (newer, newer),
-            (
-                Some(BlockTime::new(30, 60, 3000)),
-                Some(BlockTime::new(30, 60, 3000)),
-            ),
-        ] {
-            for revision in [6, 7, 8] {
-                let mut old = identity_entry_with_contested(id, &[]);
-                old.revision = 7;
-                old.last_synced_keys_block_time = newer;
-                let mut later_entry = old.clone();
-                later_entry.revision = revision;
-                later_entry.last_synced_keys_block_time = incoming;
-                let mut changes = IdentityChangeSet::default();
-                changes.identities.insert(id, old);
-                let mut later = IdentityChangeSet::default();
-                later.identities.insert(id, later_entry);
-                changes.merge(later);
-                assert_eq!(
-                    changes.identities[&id].last_synced_keys_block_time,
-                    expected
-                );
-            }
         }
     }
 
