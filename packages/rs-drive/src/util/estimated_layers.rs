@@ -19,28 +19,19 @@ use grovedb_merk::estimated_costs::average_case_costs::average_case_merk_propaga
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-/// The level a description gives its layer, `None` for one described by its element count.
-fn estimated_level(layer: &EstimatedLayerInformation) -> Option<u32> {
-    match layer.estimated_layer_count {
-        EstimatedLevel(level, _) => Some(level),
-        _ => None,
-    }
-}
-
-/// Describes the layer at `path` as `layer`, unless the batch already describes it at a level at
-/// least as deep.
+/// Describes the layer at `path` as `layer`, unless the batch already describes it at least as
+/// deep (`estimate_levels`, which gives a description by element count a depth too: one that may
+/// hold the most elements a layer can is 32 levels deep, the worst case).
 pub(crate) fn insert_estimated_layer_keeping_deeper(
     estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     path: KeyInfoPath,
     layer: EstimatedLayerInformation,
 ) {
     if let Some(existing) = estimated_costs_only_with_layer_info.get(&path) {
-        if let (Some(existing_level), Some(level)) =
-            (estimated_level(existing), estimated_level(&layer))
+        if existing.estimated_layer_count.estimate_levels()
+            >= layer.estimated_layer_count.estimate_levels()
         {
-            if existing_level >= level {
-                return;
-            }
+            return;
         }
     }
     estimated_costs_only_with_layer_info.insert(path, layer);
@@ -264,7 +255,7 @@ pub(crate) fn register_keeping_deeper_estimated_layers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
+    use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
     use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
     use grovedb::EstimatedSumTrees::{AllBigSumTrees, NoSumTrees};
     use grovedb::TreeType;
@@ -281,7 +272,12 @@ mod tests {
         estimation: &HashMap<KeyInfoPath, EstimatedLayerInformation>,
         path: &KeyInfoPath,
     ) -> Option<u32> {
-        estimation.get(path).and_then(estimated_level)
+        estimation
+            .get(path)
+            .and_then(|layer| match layer.estimated_layer_count {
+                EstimatedLevel(level, _) => Some(level),
+                _ => None,
+            })
     }
 
     #[test]
@@ -294,16 +290,25 @@ mod tests {
         assert_eq!(level_at(&estimation, &path), Some(2));
         insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(1));
         assert_eq!(level_at(&estimation, &path), Some(2));
-        // A description by element count is replaced as before.
+        // A description by element count has a depth too: one that may hold the most elements
+        // a layer can (32 levels, the worst case) is kept over a shallower level, and one of a
+        // few elements gives way to a deeper level.
+        let at_max = EstimatedLayerInformation {
+            estimated_layer_count: PotentiallyAtMaxElements,
+            ..layer(0)
+        };
+        estimation.insert(path.clone(), at_max);
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(5));
+        assert_eq!(estimation.get(&path), Some(&at_max));
         estimation.insert(
             path.clone(),
             EstimatedLayerInformation {
-                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_count: ApproximateElements(3),
                 ..layer(0)
             },
         );
-        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(1));
-        assert_eq!(level_at(&estimation, &path), Some(1));
+        insert_estimated_layer_keeping_deeper(&mut estimation, path.clone(), layer(5));
+        assert_eq!(level_at(&estimation, &path), Some(5));
     }
 
     /// Two descriptions of one layer merge to the same one in either order: the deeper, then at
