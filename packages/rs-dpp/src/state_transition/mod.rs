@@ -1068,8 +1068,8 @@ fn active_version_range_for_keys_in_creation(
 /// writer never creates.
 ///
 /// Format version 2, the stored format, is active at no protocol version: only state holds it,
-/// so decoding refuses a transition carrying one, whatever its config, as a binary that does
-/// not know the format refuses it by failing to decode it.
+/// so decoding refuses a transition carrying one as undecodable, whatever its config, as a
+/// binary that does not know the format does.
 fn active_version_range_for_contract(
     contract: &DataContractInSerializationFormat,
 ) -> RangeInclusive<ProtocolVersion> {
@@ -1148,6 +1148,16 @@ impl StateTransition {
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
+
+            // A format no protocol version admits, such as the stored contract format, is
+            // refused as undecodable, at every version: the refusal a binary without the format
+            // gives, not a range to report
+            if active_version_range.is_empty() {
+                return Err(ProtocolError::PlatformDeserializationError(format!(
+                    "a {} carries a format no state transition may carry",
+                    state_transition.name()
+                )));
+            }
 
             // Tests are done with very high protocol ranges, while we could put this behind a feature,
             // that would probably be overkill.
@@ -3210,7 +3220,7 @@ mod tests {
 
     // Format version 2 of a contract is the stored format, which only state holds. Software
     // without the format cannot decode a transition carrying one, so software with it refuses
-    // such a transition as not active, at every protocol version.
+    // such a transition as undecodable too, at every protocol version.
     #[test]
     fn should_refuse_a_contract_transition_carrying_the_stored_format_at_every_version() {
         use crate::serialization::PlatformSerializable;
@@ -3265,18 +3275,25 @@ mod tests {
             for protocol_version in 9..=LATEST_VERSION {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("platform version exists");
-                assert!(
-                    matches!(
-                        StateTransition::deserialize_from_bytes_untrusted_in_version(
-                            &bytes,
-                            platform_version
-                        ),
-                        Err(ProtocolError::StateTransitionError(
-                            StateTransitionIsNotActiveError { .. }
-                        ))
+                for decoded in [
+                    StateTransition::deserialize_from_bytes_untrusted_in_version(
+                        &bytes,
+                        platform_version,
                     ),
-                    "protocol version {protocol_version}"
-                );
+                    StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                        &bytes,
+                        platform_version,
+                    ),
+                ] {
+                    assert!(
+                        matches!(
+                            &decoded,
+                            Err(ProtocolError::PlatformDeserializationError(message))
+                                if message.contains("no state transition may carry")
+                        ),
+                        "protocol version {protocol_version}: {decoded:?}"
+                    );
+                }
             }
         }
     }

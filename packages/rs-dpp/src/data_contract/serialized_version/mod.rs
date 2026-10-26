@@ -164,10 +164,13 @@ impl DataContractInSerializationFormat {
             .any(document_schema_grants_moderator_abilities)
     }
 
-    /// The raw document schemas, to change. A format version 2 contract's compiled document
-    /// types are not rebuilt from them: only state transitions and the protocol version 12
-    /// migration change schemas, and neither meets format version 2.
+    /// The raw document schemas, to change. A format version 2 contract becomes its format
+    /// version 1 first, losing its compiled document types, which would no longer be those of
+    /// the schemas changed.
     pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {
+        if let DataContractInSerializationFormat::V2(v2) = self {
+            *self = DataContractInSerializationFormat::V1(v2.clone().into());
+        }
         match self {
             DataContractInSerializationFormat::V0(v0) => &mut v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &mut v1.document_schemas,

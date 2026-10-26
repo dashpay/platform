@@ -316,6 +316,17 @@ impl LazyRegex {
         }
     }
 
+    /// The regex of `regex_str`, compiled now and kept, or the error compiling it returns:
+    /// for a pattern that did not pass through the schema parser's check, such as one read
+    /// back from a stored document type.
+    pub fn try_compiled(regex_str: String) -> Result<Self, regex::Error> {
+        let regex = Regex::new(&regex_str)?;
+        Ok(LazyRegex {
+            regex: OnceLock::from(regex),
+            regex_str,
+        })
+    }
+
     pub fn is_match(&self, string: &str) -> bool {
         let regexp = self
             .regex
