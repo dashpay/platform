@@ -2626,7 +2626,7 @@ typedef GPB_ENUM(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequest
 
 GPB_FINAL @interface GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0 : GPBMessage
 
-/** 32-byte transaction id followed by a 4-byte little-endian output index */
+/** 32 raw transaction-ID bytes in Txid::to_byte_array() order, followed by a 4-byte little-endian output index */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *outpoint;
 
 /** Flag to request a proof as the response */
