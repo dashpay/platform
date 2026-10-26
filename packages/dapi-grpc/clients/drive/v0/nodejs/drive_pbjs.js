@@ -54704,6 +54704,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentityByNonUniquePublicKeyHashRequest
                          * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV0|null} [v0] GetIdentityByNonUniquePublicKeyHashRequest v0
+                         * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1|null} [v1] GetIdentityByNonUniquePublicKeyHashRequest v1
                          */
 
                         /**
@@ -54729,17 +54730,25 @@ $root.org = (function() {
                          */
                         GetIdentityByNonUniquePublicKeyHashRequest.prototype.v0 = null;
 
+                        /**
+                         * GetIdentityByNonUniquePublicKeyHashRequest v1.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                         * @instance
+                         */
+                        GetIdentityByNonUniquePublicKeyHashRequest.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetIdentityByNonUniquePublicKeyHashRequest version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
                          * @instance
                          */
                         Object.defineProperty(GetIdentityByNonUniquePublicKeyHashRequest.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -54769,6 +54778,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -54805,6 +54816,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -54850,6 +54864,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -54869,6 +54893,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -54890,6 +54919,11 @@ $root.org = (function() {
                                 object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
+                            }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
                             }
                             return object;
                         };
@@ -55155,6 +55189,256 @@ $root.org = (function() {
                             return GetIdentityByNonUniquePublicKeyHashRequestV0;
                         })();
 
+                        GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                             * @interface IGetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @property {Uint8Array|null} [publicKeyHash] GetIdentityByNonUniquePublicKeyHashRequestV1 publicKeyHash
+                             * @property {Uint8Array|null} [startAfter] GetIdentityByNonUniquePublicKeyHashRequestV1 startAfter
+                             * @property {boolean|null} [prove] GetIdentityByNonUniquePublicKeyHashRequestV1 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                             * @classdesc Represents a GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @implements IGetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1=} [properties] Properties to set
+                             */
+                            function GetIdentityByNonUniquePublicKeyHashRequestV1(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 publicKeyHash.
+                             * @member {Uint8Array} publicKeyHash
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.publicKeyHash = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentityByNonUniquePublicKeyHashRequestV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1 instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.create = function create(properties) {
+                                return new GetIdentityByNonUniquePublicKeyHashRequestV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashRequestV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.publicKeyHash != null && Object.hasOwnProperty.call(message, "publicKeyHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.publicKeyHash);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.startAfter);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashRequestV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashRequestV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.publicKeyHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashRequestV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityByNonUniquePublicKeyHashRequestV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.publicKeyHash != null && message.hasOwnProperty("publicKeyHash"))
+                                    if (!(message.publicKeyHash && typeof message.publicKeyHash.length === "number" || $util.isString(message.publicKeyHash)))
+                                        return "publicKeyHash: buffer expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityByNonUniquePublicKeyHashRequestV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1();
+                                if (object.publicKeyHash != null)
+                                    if (typeof object.publicKeyHash === "string")
+                                        $util.base64.decode(object.publicKeyHash, message.publicKeyHash = $util.newBuffer($util.base64.length(object.publicKeyHash)), 0);
+                                    else if (object.publicKeyHash.length >= 0)
+                                        message.publicKeyHash = object.publicKeyHash;
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityByNonUniquePublicKeyHashRequestV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.publicKeyHash = "";
+                                    else {
+                                        object.publicKeyHash = [];
+                                        if (options.bytes !== Array)
+                                            object.publicKeyHash = $util.newBuffer(object.publicKeyHash);
+                                    }
+                                    if (options.bytes === String)
+                                        object.startAfter = "";
+                                    else {
+                                        object.startAfter = [];
+                                        if (options.bytes !== Array)
+                                            object.startAfter = $util.newBuffer(object.startAfter);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.publicKeyHash != null && message.hasOwnProperty("publicKeyHash"))
+                                    object.publicKeyHash = options.bytes === String ? $util.base64.encode(message.publicKeyHash, 0, message.publicKeyHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHash) : message.publicKeyHash;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityByNonUniquePublicKeyHashRequestV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentityByNonUniquePublicKeyHashRequestV1;
+                        })();
+
                         return GetIdentityByNonUniquePublicKeyHashRequest;
                     })();
 
@@ -55165,6 +55449,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentityByNonUniquePublicKeyHashResponse
                          * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV0|null} [v0] GetIdentityByNonUniquePublicKeyHashResponse v0
+                         * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1|null} [v1] GetIdentityByNonUniquePublicKeyHashResponse v1
                          */
 
                         /**
@@ -55190,17 +55475,25 @@ $root.org = (function() {
                          */
                         GetIdentityByNonUniquePublicKeyHashResponse.prototype.v0 = null;
 
+                        /**
+                         * GetIdentityByNonUniquePublicKeyHashResponse v1.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                         * @instance
+                         */
+                        GetIdentityByNonUniquePublicKeyHashResponse.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetIdentityByNonUniquePublicKeyHashResponse version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
                          * @instance
                          */
                         Object.defineProperty(GetIdentityByNonUniquePublicKeyHashResponse.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -55230,6 +55523,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -55266,6 +55561,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -55311,6 +55609,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -55330,6 +55638,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -55352,6 +55665,11 @@ $root.org = (function() {
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
+                            }
                             return object;
                         };
 
@@ -55373,7 +55691,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
                              * @interface IGetIdentityByNonUniquePublicKeyHashResponseV0
                              * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityResponse|null} [identity] GetIdentityByNonUniquePublicKeyHashResponseV0 identity
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityByNonUniquePublicKeyHashResponseV0 metadata
                              */
 
@@ -55402,7 +55720,7 @@ $root.org = (function() {
 
                             /**
                              * GetIdentityByNonUniquePublicKeyHashResponseV0 proof.
-                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse|null|undefined} proof
                              * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
                              * @instance
                              */
@@ -55456,10 +55774,10 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
                                     $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.encode(message.identity, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -55497,8 +55815,8 @@ $root.org = (function() {
                                     case 1:
                                         message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.decode(reader, reader.uint32());
                                         break;
-                                    case 4:
-                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.decode(reader, reader.uint32());
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
@@ -55552,7 +55870,7 @@ $root.org = (function() {
                                         return "result: multiple values";
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify(message.proof);
                                         if (error)
                                             return "proof." + error;
                                     }
@@ -55585,7 +55903,7 @@ $root.org = (function() {
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.proof: object expected");
-                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                    message.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.fromObject(object.proof);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
@@ -55615,13 +55933,13 @@ $root.org = (function() {
                                     if (options.oneofs)
                                         object.result = "identity";
                                 }
-                                if (message.metadata != null && message.hasOwnProperty("metadata"))
-                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    object.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.toObject(message.proof, options);
                                     if (options.oneofs)
                                         object.result = "proof";
                                 }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 return object;
                             };
 
@@ -55832,7 +56150,700 @@ $root.org = (function() {
                                 return IdentityResponse;
                             })();
 
+                            GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse = (function() {
+
+                                /**
+                                 * Properties of an IdentityProvedResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
+                                 * @interface IIdentityProvedResponse
+                                 * @property {org.dash.platform.dapi.v0.IProof|null} [grovedbIdentityPublicKeyHashProof] IdentityProvedResponse grovedbIdentityPublicKeyHashProof
+                                 * @property {Uint8Array|null} [identityProofBytes] IdentityProvedResponse identityProofBytes
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityProvedResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
+                                 * @classdesc Represents an IdentityProvedResponse.
+                                 * @implements IIdentityProvedResponse
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse=} [properties] Properties to set
+                                 */
+                                function IdentityProvedResponse(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityProvedResponse grovedbIdentityPublicKeyHashProof.
+                                 * @member {org.dash.platform.dapi.v0.IProof|null|undefined} grovedbIdentityPublicKeyHashProof
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 */
+                                IdentityProvedResponse.prototype.grovedbIdentityPublicKeyHashProof = null;
+
+                                /**
+                                 * IdentityProvedResponse identityProofBytes.
+                                 * @member {Uint8Array} identityProofBytes
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 */
+                                IdentityProvedResponse.prototype.identityProofBytes = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new IdentityProvedResponse instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse instance
+                                 */
+                                IdentityProvedResponse.create = function create(properties) {
+                                    return new IdentityProvedResponse(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityProvedResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse} message IdentityProvedResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityProvedResponse.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && Object.hasOwnProperty.call(message, "grovedbIdentityPublicKeyHashProof"))
+                                        $root.org.dash.platform.dapi.v0.Proof.encode(message.grovedbIdentityPublicKeyHashProof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.identityProofBytes != null && Object.hasOwnProperty.call(message, "identityProofBytes"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.identityProofBytes);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityProvedResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse} message IdentityProvedResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityProvedResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityProvedResponse message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityProvedResponse.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.identityProofBytes = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityProvedResponse message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityProvedResponse.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityProvedResponse message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityProvedResponse.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && message.hasOwnProperty("grovedbIdentityPublicKeyHashProof")) {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.grovedbIdentityPublicKeyHashProof);
+                                        if (error)
+                                            return "grovedbIdentityPublicKeyHashProof." + error;
+                                    }
+                                    if (message.identityProofBytes != null && message.hasOwnProperty("identityProofBytes"))
+                                        if (!(message.identityProofBytes && typeof message.identityProofBytes.length === "number" || $util.isString(message.identityProofBytes)))
+                                            return "identityProofBytes: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityProvedResponse message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 */
+                                IdentityProvedResponse.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse();
+                                    if (object.grovedbIdentityPublicKeyHashProof != null) {
+                                        if (typeof object.grovedbIdentityPublicKeyHashProof !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.grovedbIdentityPublicKeyHashProof: object expected");
+                                        message.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.grovedbIdentityPublicKeyHashProof);
+                                    }
+                                    if (object.identityProofBytes != null)
+                                        if (typeof object.identityProofBytes === "string")
+                                            $util.base64.decode(object.identityProofBytes, message.identityProofBytes = $util.newBuffer($util.base64.length(object.identityProofBytes)), 0);
+                                        else if (object.identityProofBytes.length >= 0)
+                                            message.identityProofBytes = object.identityProofBytes;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityProvedResponse message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} message IdentityProvedResponse
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityProvedResponse.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.grovedbIdentityPublicKeyHashProof = null;
+                                        if (options.bytes === String)
+                                            object.identityProofBytes = "";
+                                        else {
+                                            object.identityProofBytes = [];
+                                            if (options.bytes !== Array)
+                                                object.identityProofBytes = $util.newBuffer(object.identityProofBytes);
+                                        }
+                                    }
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && message.hasOwnProperty("grovedbIdentityPublicKeyHashProof"))
+                                        object.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.grovedbIdentityPublicKeyHashProof, options);
+                                    if (message.identityProofBytes != null && message.hasOwnProperty("identityProofBytes"))
+                                        object.identityProofBytes = options.bytes === String ? $util.base64.encode(message.identityProofBytes, 0, message.identityProofBytes.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityProofBytes) : message.identityProofBytes;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityProvedResponse to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityProvedResponse.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityProvedResponse;
+                            })();
+
                             return GetIdentityByNonUniquePublicKeyHashResponseV0;
+                        })();
+
+                        GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                             * @interface IGetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse|null} [identity] GetIdentityByNonUniquePublicKeyHashResponseV1 identity
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV1 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityByNonUniquePublicKeyHashResponseV1 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                             * @classdesc Represents a GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @implements IGetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1=} [properties] Properties to set
+                             */
+                            function GetIdentityByNonUniquePublicKeyHashResponseV1(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 identity.
+                             * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse|null|undefined} identity
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.identity = null;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.proof = null;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 result.
+                             * @member {"identity"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentityByNonUniquePublicKeyHashResponseV1.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identity", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentityByNonUniquePublicKeyHashResponseV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1 instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.create = function create(properties) {
+                                return new GetIdentityByNonUniquePublicKeyHashResponseV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashResponseV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.encode(message.identity, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashResponseV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashResponseV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashResponseV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityByNonUniquePublicKeyHashResponseV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identity != null && message.hasOwnProperty("identity")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify(message.identity);
+                                        if (error)
+                                            return "identity." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityByNonUniquePublicKeyHashResponseV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1();
+                                if (object.identity != null) {
+                                    if (typeof object.identity !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.identity: object expected");
+                                    message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.fromObject(object.identity);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityByNonUniquePublicKeyHashResponseV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identity != null && message.hasOwnProperty("identity")) {
+                                    object.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.toObject(message.identity, options);
+                                    if (options.oneofs)
+                                        object.result = "identity";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityByNonUniquePublicKeyHashResponseV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse = (function() {
+
+                                /**
+                                 * Properties of an IdentityResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                                 * @interface IIdentityResponse
+                                 * @property {Uint8Array|null} [identity] IdentityResponse identity
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                                 * @classdesc Represents an IdentityResponse.
+                                 * @implements IIdentityResponse
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse=} [properties] Properties to set
+                                 */
+                                function IdentityResponse(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityResponse identity.
+                                 * @member {Uint8Array} identity
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @instance
+                                 */
+                                IdentityResponse.prototype.identity = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new IdentityResponse instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse instance
+                                 */
+                                IdentityResponse.create = function create(properties) {
+                                    return new IdentityResponse(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse} message IdentityResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityResponse.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identity);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse} message IdentityResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityResponse message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityResponse.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identity = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityResponse message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityResponse.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityResponse message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityResponse.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identity != null && message.hasOwnProperty("identity"))
+                                        if (!(message.identity && typeof message.identity.length === "number" || $util.isString(message.identity)))
+                                            return "identity: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityResponse message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 */
+                                IdentityResponse.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse();
+                                    if (object.identity != null)
+                                        if (typeof object.identity === "string")
+                                            $util.base64.decode(object.identity, message.identity = $util.newBuffer($util.base64.length(object.identity)), 0);
+                                        else if (object.identity.length >= 0)
+                                            message.identity = object.identity;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityResponse message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} message IdentityResponse
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityResponse.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.identity = "";
+                                        else {
+                                            object.identity = [];
+                                            if (options.bytes !== Array)
+                                                object.identity = $util.newBuffer(object.identity);
+                                        }
+                                    if (message.identity != null && message.hasOwnProperty("identity"))
+                                        object.identity = options.bytes === String ? $util.base64.encode(message.identity, 0, message.identity.length) : options.bytes === Array ? Array.prototype.slice.call(message.identity) : message.identity;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityResponse to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityResponse.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityResponse;
+                            })();
+
+                            return GetIdentityByNonUniquePublicKeyHashResponseV1;
                         })();
 
                         return GetIdentityByNonUniquePublicKeyHashResponse;
