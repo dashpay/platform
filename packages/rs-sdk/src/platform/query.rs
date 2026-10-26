@@ -149,6 +149,7 @@ macro_rules! impl_wire_query {
 impl_wire_query!(
     proto::BroadcastStateTransitionRequest,
     proto::GetAddressInfoRequest,
+    proto::GetAssetLockOutpointInfoRequest,
     proto::GetAddressesBranchStateRequest,
     proto::GetAddressesInfosRequest,
     proto::GetAddressesTrunkStateRequest,

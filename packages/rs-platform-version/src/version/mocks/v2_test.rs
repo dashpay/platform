@@ -83,6 +83,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 prove_elements: 0,
                 prove_multiple_state_transition_results: 0,
                 prove_state_transition: 0,
+                prove_asset_lock_outpoint_info: 0,
             },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
@@ -105,6 +106,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 add_asset_lock_outpoint: 0,
                 add_estimation_costs_for_adding_asset_lock: 0,
                 fetch_asset_lock_outpoint_info: 0,
+                prove_asset_lock_outpoint_info: 0,
             },
             verify: DRIVE_VERIFY_METHOD_VERSIONS_V1,
             identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,
@@ -176,6 +178,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                         max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: 0,
+            asset_lock_outpoint_info: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             document_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

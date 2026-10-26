@@ -9,6 +9,7 @@ pub struct DriveAbciQueryVersions {
     pub max_returned_elements: u16,
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
+    pub asset_lock_outpoint_info: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
     pub document_history: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query

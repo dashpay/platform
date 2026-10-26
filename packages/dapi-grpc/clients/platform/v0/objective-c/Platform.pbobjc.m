@@ -62,6 +62,11 @@ GPBObjCClassDeclaration(GetAddressesTrunkStateRequest);
 GPBObjCClassDeclaration(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0);
+GPBObjCClassDeclaration(GetAssetLockOutpointInfoRequest);
+GPBObjCClassDeclaration(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0);
+GPBObjCClassDeclaration(GetAssetLockOutpointInfoResponse);
+GPBObjCClassDeclaration(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo);
+GPBObjCClassDeclaration(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0);
 GPBObjCClassDeclaration(GetConsensusParamsRequest);
 GPBObjCClassDeclaration(GetConsensusParamsRequest_GetConsensusParamsRequestV0);
 GPBObjCClassDeclaration(GetConsensusParamsResponse);
@@ -4971,6 +4976,365 @@ typedef struct GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersi
 
 @end
 
+#pragma mark - GetAssetLockOutpointInfoRequest
+
+@implementation GetAssetLockOutpointInfoRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAssetLockOutpointInfoRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0 *v0;
+} GetAssetLockOutpointInfoRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0),
+        .number = GetAssetLockOutpointInfoRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAssetLockOutpointInfoRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAssetLockOutpointInfoRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAssetLockOutpointInfoRequest_ClearVersionOneOfCase(GetAssetLockOutpointInfoRequest *message) {
+  GPBDescriptor *descriptor = [GetAssetLockOutpointInfoRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0
+
+@implementation GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0
+
+@dynamic outpoint;
+@dynamic prove;
+
+typedef struct GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *outpoint;
+} GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "outpoint",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0_FieldNumber_Outpoint,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0__storage_, outpoint),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAssetLockOutpointInfoRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAssetLockOutpointInfoResponse
+
+@implementation GetAssetLockOutpointInfoResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAssetLockOutpointInfoResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 *v0;
+} GetAssetLockOutpointInfoResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0),
+        .number = GetAssetLockOutpointInfoResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAssetLockOutpointInfoResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAssetLockOutpointInfoResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAssetLockOutpointInfoResponse_ClearVersionOneOfCase(GetAssetLockOutpointInfoResponse *message) {
+  GPBDescriptor *descriptor = [GetAssetLockOutpointInfoResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - Enum GetAssetLockOutpointInfoResponse_Status
+
+GPBEnumDescriptor *GetAssetLockOutpointInfoResponse_Status_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "StatusUnspecified\000NotPresent\000PartiallyCo"
+        "nsumed\000FullyConsumed\000";
+    static const int32_t values[] = {
+        GetAssetLockOutpointInfoResponse_Status_StatusUnspecified,
+        GetAssetLockOutpointInfoResponse_Status_NotPresent,
+        GetAssetLockOutpointInfoResponse_Status_PartiallyConsumed,
+        GetAssetLockOutpointInfoResponse_Status_FullyConsumed,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetAssetLockOutpointInfoResponse_Status)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetAssetLockOutpointInfoResponse_Status_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetAssetLockOutpointInfoResponse_Status_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetAssetLockOutpointInfoResponse_Status_StatusUnspecified:
+    case GetAssetLockOutpointInfoResponse_Status_NotPresent:
+    case GetAssetLockOutpointInfoResponse_Status_PartiallyConsumed:
+    case GetAssetLockOutpointInfoResponse_Status_FullyConsumed:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo
+
+@implementation GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo
+
+@dynamic status;
+@dynamic hasRemainingCredits, remainingCredits;
+
+typedef struct GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo__storage_ {
+  uint32_t _has_storage_[1];
+  GetAssetLockOutpointInfoResponse_Status status;
+  uint64_t remainingCredits;
+} GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "status",
+        .dataTypeSpecific.enumDescFunc = GetAssetLockOutpointInfoResponse_Status_EnumDescriptor,
+        .number = GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_Status,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo__storage_, status),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "remainingCredits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_RemainingCredits,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo__storage_, remainingCredits),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAssetLockOutpointInfoResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_Status_RawValue(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *message) {
+  GPBDescriptor *descriptor = [GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_Status];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_Status_RawValue(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_Status];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0
+
+@implementation GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic assetLockOutpointInfo;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *assetLockOutpointInfo;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "assetLockOutpointInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo),
+        .number = GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_AssetLockOutpointInfo,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_, assetLockOutpointInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAssetLockOutpointInfoResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_ClearResultOneOfCase(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetDataContractsLatestVersionsResponse
 
 @implementation GetDataContractsLatestVersionsResponse

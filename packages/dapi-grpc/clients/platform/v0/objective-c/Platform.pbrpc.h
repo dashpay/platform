@@ -24,6 +24,8 @@
 @class GetAddressesInfosResponse;
 @class GetAddressesTrunkStateRequest;
 @class GetAddressesTrunkStateResponse;
+@class GetAssetLockOutpointInfoRequest;
+@class GetAssetLockOutpointInfoResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
 @class GetContestedResourceIdentityVotesRequest;
@@ -250,6 +252,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
 
 - (GRPCUnaryProtoCall *)getDataContractsLatestVersionsWithMessage:(GetDataContractsLatestVersionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAssetLockOutpointInfo(GetAssetLockOutpointInfoRequest) returns (GetAssetLockOutpointInfoResponse)
+
+- (GRPCUnaryProtoCall *)getAssetLockOutpointInfoWithMessage:(GetAssetLockOutpointInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
@@ -622,6 +628,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAssetLockOutpointInfo(GetAssetLockOutpointInfoRequest) returns (GetAssetLockOutpointInfoResponse)
+
+- (void)getAssetLockOutpointInfoWithRequest:(GetAssetLockOutpointInfoRequest *)request handler:(void(^)(GetAssetLockOutpointInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAssetLockOutpointInfoWithRequest:(GetAssetLockOutpointInfoRequest *)request handler:(void(^)(GetAssetLockOutpointInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)

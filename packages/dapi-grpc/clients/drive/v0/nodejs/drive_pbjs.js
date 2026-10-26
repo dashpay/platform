@@ -1090,6 +1090,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getAssetLockOutpointInfo}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getAssetLockOutpointInfoCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} [response] GetAssetLockOutpointInfoResponse
+                         */
+
+                        /**
+                         * Calls getAssetLockOutpointInfo.
+                         * @function getAssetLockOutpointInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest} request GetAssetLockOutpointInfoRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getAssetLockOutpointInfoCallback} callback Node-style callback called with the error, if any, and GetAssetLockOutpointInfoResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getAssetLockOutpointInfo = function getAssetLockOutpointInfo(request, callback) {
+                            return this.rpcCall(getAssetLockOutpointInfo, $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest, $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse, request, callback);
+                        }, "name", { value: "getAssetLockOutpointInfo" });
+
+                        /**
+                         * Calls getAssetLockOutpointInfo.
+                         * @function getAssetLockOutpointInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest} request GetAssetLockOutpointInfoRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDataContracts}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getDataContractsCallback
@@ -19264,6 +19297,1185 @@ $root.org = (function() {
                         })();
 
                         return GetDataContractsLatestVersionsRequest;
+                    })();
+
+                    v0.GetAssetLockOutpointInfoRequest = (function() {
+
+                        /**
+                         * Properties of a GetAssetLockOutpointInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAssetLockOutpointInfoRequest
+                         * @property {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0|null} [v0] GetAssetLockOutpointInfoRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetAssetLockOutpointInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAssetLockOutpointInfoRequest.
+                         * @implements IGetAssetLockOutpointInfoRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest=} [properties] Properties to set
+                         */
+                        function GetAssetLockOutpointInfoRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAssetLockOutpointInfoRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @instance
+                         */
+                        GetAssetLockOutpointInfoRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAssetLockOutpointInfoRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetAssetLockOutpointInfoRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAssetLockOutpointInfoRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest} GetAssetLockOutpointInfoRequest instance
+                         */
+                        GetAssetLockOutpointInfoRequest.create = function create(properties) {
+                            return new GetAssetLockOutpointInfoRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAssetLockOutpointInfoRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest} message GetAssetLockOutpointInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAssetLockOutpointInfoRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAssetLockOutpointInfoRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoRequest} message GetAssetLockOutpointInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAssetLockOutpointInfoRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAssetLockOutpointInfoRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest} GetAssetLockOutpointInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAssetLockOutpointInfoRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAssetLockOutpointInfoRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest} GetAssetLockOutpointInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAssetLockOutpointInfoRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAssetLockOutpointInfoRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAssetLockOutpointInfoRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAssetLockOutpointInfoRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest} GetAssetLockOutpointInfoRequest
+                         */
+                        GetAssetLockOutpointInfoRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAssetLockOutpointInfoRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest} message GetAssetLockOutpointInfoRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAssetLockOutpointInfoRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAssetLockOutpointInfoRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAssetLockOutpointInfoRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetAssetLockOutpointInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                             * @interface IGetAssetLockOutpointInfoRequestV0
+                             * @property {Uint8Array|null} [outpoint] GetAssetLockOutpointInfoRequestV0 outpoint
+                             * @property {boolean|null} [prove] GetAssetLockOutpointInfoRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetAssetLockOutpointInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest
+                             * @classdesc Represents a GetAssetLockOutpointInfoRequestV0.
+                             * @implements IGetAssetLockOutpointInfoRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0=} [properties] Properties to set
+                             */
+                            function GetAssetLockOutpointInfoRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAssetLockOutpointInfoRequestV0 outpoint.
+                             * @member {Uint8Array} outpoint
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @instance
+                             */
+                            GetAssetLockOutpointInfoRequestV0.prototype.outpoint = $util.newBuffer([]);
+
+                            /**
+                             * GetAssetLockOutpointInfoRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @instance
+                             */
+                            GetAssetLockOutpointInfoRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetAssetLockOutpointInfoRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0} GetAssetLockOutpointInfoRequestV0 instance
+                             */
+                            GetAssetLockOutpointInfoRequestV0.create = function create(properties) {
+                                return new GetAssetLockOutpointInfoRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAssetLockOutpointInfoRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0} message GetAssetLockOutpointInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAssetLockOutpointInfoRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.outpoint != null && Object.hasOwnProperty.call(message, "outpoint"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.outpoint);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAssetLockOutpointInfoRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.IGetAssetLockOutpointInfoRequestV0} message GetAssetLockOutpointInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAssetLockOutpointInfoRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAssetLockOutpointInfoRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0} GetAssetLockOutpointInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAssetLockOutpointInfoRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.outpoint = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAssetLockOutpointInfoRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0} GetAssetLockOutpointInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAssetLockOutpointInfoRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAssetLockOutpointInfoRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAssetLockOutpointInfoRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.outpoint != null && message.hasOwnProperty("outpoint"))
+                                    if (!(message.outpoint && typeof message.outpoint.length === "number" || $util.isString(message.outpoint)))
+                                        return "outpoint: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAssetLockOutpointInfoRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0} GetAssetLockOutpointInfoRequestV0
+                             */
+                            GetAssetLockOutpointInfoRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0();
+                                if (object.outpoint != null)
+                                    if (typeof object.outpoint === "string")
+                                        $util.base64.decode(object.outpoint, message.outpoint = $util.newBuffer($util.base64.length(object.outpoint)), 0);
+                                    else if (object.outpoint.length >= 0)
+                                        message.outpoint = object.outpoint;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAssetLockOutpointInfoRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0} message GetAssetLockOutpointInfoRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAssetLockOutpointInfoRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.outpoint = "";
+                                    else {
+                                        object.outpoint = [];
+                                        if (options.bytes !== Array)
+                                            object.outpoint = $util.newBuffer(object.outpoint);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.outpoint != null && message.hasOwnProperty("outpoint"))
+                                    object.outpoint = options.bytes === String ? $util.base64.encode(message.outpoint, 0, message.outpoint.length) : options.bytes === Array ? Array.prototype.slice.call(message.outpoint) : message.outpoint;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAssetLockOutpointInfoRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoRequest.GetAssetLockOutpointInfoRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAssetLockOutpointInfoRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAssetLockOutpointInfoRequestV0;
+                        })();
+
+                        return GetAssetLockOutpointInfoRequest;
+                    })();
+
+                    v0.GetAssetLockOutpointInfoResponse = (function() {
+
+                        /**
+                         * Properties of a GetAssetLockOutpointInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAssetLockOutpointInfoResponse
+                         * @property {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0|null} [v0] GetAssetLockOutpointInfoResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetAssetLockOutpointInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAssetLockOutpointInfoResponse.
+                         * @implements IGetAssetLockOutpointInfoResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoResponse=} [properties] Properties to set
+                         */
+                        function GetAssetLockOutpointInfoResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAssetLockOutpointInfoResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @instance
+                         */
+                        GetAssetLockOutpointInfoResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAssetLockOutpointInfoResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetAssetLockOutpointInfoResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAssetLockOutpointInfoResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} GetAssetLockOutpointInfoResponse instance
+                         */
+                        GetAssetLockOutpointInfoResponse.create = function create(properties) {
+                            return new GetAssetLockOutpointInfoResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAssetLockOutpointInfoResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoResponse} message GetAssetLockOutpointInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAssetLockOutpointInfoResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAssetLockOutpointInfoResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAssetLockOutpointInfoResponse} message GetAssetLockOutpointInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAssetLockOutpointInfoResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAssetLockOutpointInfoResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} GetAssetLockOutpointInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAssetLockOutpointInfoResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAssetLockOutpointInfoResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} GetAssetLockOutpointInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAssetLockOutpointInfoResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAssetLockOutpointInfoResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAssetLockOutpointInfoResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAssetLockOutpointInfoResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} GetAssetLockOutpointInfoResponse
+                         */
+                        GetAssetLockOutpointInfoResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAssetLockOutpointInfoResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse} message GetAssetLockOutpointInfoResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAssetLockOutpointInfoResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAssetLockOutpointInfoResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAssetLockOutpointInfoResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        /**
+                         * Status enum.
+                         * @name org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.Status
+                         * @enum {number}
+                         * @property {number} STATUS_UNSPECIFIED=0 STATUS_UNSPECIFIED value
+                         * @property {number} NOT_PRESENT=1 NOT_PRESENT value
+                         * @property {number} PARTIALLY_CONSUMED=2 PARTIALLY_CONSUMED value
+                         * @property {number} FULLY_CONSUMED=3 FULLY_CONSUMED value
+                         */
+                        GetAssetLockOutpointInfoResponse.Status = (function() {
+                            var valuesById = {}, values = Object.create(valuesById);
+                            values[valuesById[0] = "STATUS_UNSPECIFIED"] = 0;
+                            values[valuesById[1] = "NOT_PRESENT"] = 1;
+                            values[valuesById[2] = "PARTIALLY_CONSUMED"] = 2;
+                            values[valuesById[3] = "FULLY_CONSUMED"] = 3;
+                            return values;
+                        })();
+
+                        GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo = (function() {
+
+                            /**
+                             * Properties of an AssetLockOutpointInfo.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                             * @interface IAssetLockOutpointInfo
+                             * @property {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.Status|null} [status] AssetLockOutpointInfo status
+                             * @property {number|Long|null} [remainingCredits] AssetLockOutpointInfo remainingCredits
+                             */
+
+                            /**
+                             * Constructs a new AssetLockOutpointInfo.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                             * @classdesc Represents an AssetLockOutpointInfo.
+                             * @implements IAssetLockOutpointInfo
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo=} [properties] Properties to set
+                             */
+                            function AssetLockOutpointInfo(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * AssetLockOutpointInfo status.
+                             * @member {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.Status} status
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @instance
+                             */
+                            AssetLockOutpointInfo.prototype.status = 0;
+
+                            /**
+                             * AssetLockOutpointInfo remainingCredits.
+                             * @member {number|Long} remainingCredits
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @instance
+                             */
+                            AssetLockOutpointInfo.prototype.remainingCredits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new AssetLockOutpointInfo instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo} AssetLockOutpointInfo instance
+                             */
+                            AssetLockOutpointInfo.create = function create(properties) {
+                                return new AssetLockOutpointInfo(properties);
+                            };
+
+                            /**
+                             * Encodes the specified AssetLockOutpointInfo message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo} message AssetLockOutpointInfo message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AssetLockOutpointInfo.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).int32(message.status);
+                                if (message.remainingCredits != null && Object.hasOwnProperty.call(message, "remainingCredits"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.remainingCredits);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified AssetLockOutpointInfo message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo} message AssetLockOutpointInfo message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AssetLockOutpointInfo.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an AssetLockOutpointInfo message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo} AssetLockOutpointInfo
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AssetLockOutpointInfo.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.status = reader.int32();
+                                        break;
+                                    case 2:
+                                        message.remainingCredits = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an AssetLockOutpointInfo message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo} AssetLockOutpointInfo
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AssetLockOutpointInfo.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an AssetLockOutpointInfo message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            AssetLockOutpointInfo.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    switch (message.status) {
+                                    default:
+                                        return "status: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                    case 3:
+                                        break;
+                                    }
+                                if (message.remainingCredits != null && message.hasOwnProperty("remainingCredits"))
+                                    if (!$util.isInteger(message.remainingCredits) && !(message.remainingCredits && $util.isInteger(message.remainingCredits.low) && $util.isInteger(message.remainingCredits.high)))
+                                        return "remainingCredits: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates an AssetLockOutpointInfo message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo} AssetLockOutpointInfo
+                             */
+                            AssetLockOutpointInfo.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo();
+                                switch (object.status) {
+                                case "STATUS_UNSPECIFIED":
+                                case 0:
+                                    message.status = 0;
+                                    break;
+                                case "NOT_PRESENT":
+                                case 1:
+                                    message.status = 1;
+                                    break;
+                                case "PARTIALLY_CONSUMED":
+                                case 2:
+                                    message.status = 2;
+                                    break;
+                                case "FULLY_CONSUMED":
+                                case 3:
+                                    message.status = 3;
+                                    break;
+                                }
+                                if (object.remainingCredits != null)
+                                    if ($util.Long)
+                                        (message.remainingCredits = $util.Long.fromValue(object.remainingCredits)).unsigned = true;
+                                    else if (typeof object.remainingCredits === "string")
+                                        message.remainingCredits = parseInt(object.remainingCredits, 10);
+                                    else if (typeof object.remainingCredits === "number")
+                                        message.remainingCredits = object.remainingCredits;
+                                    else if (typeof object.remainingCredits === "object")
+                                        message.remainingCredits = new $util.LongBits(object.remainingCredits.low >>> 0, object.remainingCredits.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an AssetLockOutpointInfo message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo} message AssetLockOutpointInfo
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            AssetLockOutpointInfo.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.status = options.enums === String ? "STATUS_UNSPECIFIED" : 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.remainingCredits = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.remainingCredits = options.longs === String ? "0" : 0;
+                                }
+                                if (message.status != null && message.hasOwnProperty("status"))
+                                    object.status = options.enums === String ? $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.Status[message.status] : message.status;
+                                if (message.remainingCredits != null && message.hasOwnProperty("remainingCredits"))
+                                    if (typeof message.remainingCredits === "number")
+                                        object.remainingCredits = options.longs === String ? String(message.remainingCredits) : message.remainingCredits;
+                                    else
+                                        object.remainingCredits = options.longs === String ? $util.Long.prototype.toString.call(message.remainingCredits) : options.longs === Number ? new $util.LongBits(message.remainingCredits.low >>> 0, message.remainingCredits.high >>> 0).toNumber(true) : message.remainingCredits;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this AssetLockOutpointInfo to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            AssetLockOutpointInfo.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return AssetLockOutpointInfo;
+                        })();
+
+                        GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetAssetLockOutpointInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                             * @interface IGetAssetLockOutpointInfoResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo|null} [assetLockOutpointInfo] GetAssetLockOutpointInfoResponseV0 assetLockOutpointInfo
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetAssetLockOutpointInfoResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetAssetLockOutpointInfoResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetAssetLockOutpointInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse
+                             * @classdesc Represents a GetAssetLockOutpointInfoResponseV0.
+                             * @implements IGetAssetLockOutpointInfoResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0=} [properties] Properties to set
+                             */
+                            function GetAssetLockOutpointInfoResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAssetLockOutpointInfoResponseV0 assetLockOutpointInfo.
+                             * @member {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IAssetLockOutpointInfo|null|undefined} assetLockOutpointInfo
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @instance
+                             */
+                            GetAssetLockOutpointInfoResponseV0.prototype.assetLockOutpointInfo = null;
+
+                            /**
+                             * GetAssetLockOutpointInfoResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @instance
+                             */
+                            GetAssetLockOutpointInfoResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetAssetLockOutpointInfoResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @instance
+                             */
+                            GetAssetLockOutpointInfoResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetAssetLockOutpointInfoResponseV0 result.
+                             * @member {"assetLockOutpointInfo"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetAssetLockOutpointInfoResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["assetLockOutpointInfo", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetAssetLockOutpointInfoResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0} GetAssetLockOutpointInfoResponseV0 instance
+                             */
+                            GetAssetLockOutpointInfoResponseV0.create = function create(properties) {
+                                return new GetAssetLockOutpointInfoResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAssetLockOutpointInfoResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0} message GetAssetLockOutpointInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAssetLockOutpointInfoResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.assetLockOutpointInfo != null && Object.hasOwnProperty.call(message, "assetLockOutpointInfo"))
+                                    $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.encode(message.assetLockOutpointInfo, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAssetLockOutpointInfoResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.IGetAssetLockOutpointInfoResponseV0} message GetAssetLockOutpointInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAssetLockOutpointInfoResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAssetLockOutpointInfoResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0} GetAssetLockOutpointInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAssetLockOutpointInfoResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.assetLockOutpointInfo = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAssetLockOutpointInfoResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0} GetAssetLockOutpointInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAssetLockOutpointInfoResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAssetLockOutpointInfoResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAssetLockOutpointInfoResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.assetLockOutpointInfo != null && message.hasOwnProperty("assetLockOutpointInfo")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.verify(message.assetLockOutpointInfo);
+                                        if (error)
+                                            return "assetLockOutpointInfo." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAssetLockOutpointInfoResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0} GetAssetLockOutpointInfoResponseV0
+                             */
+                            GetAssetLockOutpointInfoResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0();
+                                if (object.assetLockOutpointInfo != null) {
+                                    if (typeof object.assetLockOutpointInfo !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.assetLockOutpointInfo: object expected");
+                                    message.assetLockOutpointInfo = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.fromObject(object.assetLockOutpointInfo);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAssetLockOutpointInfoResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0} message GetAssetLockOutpointInfoResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAssetLockOutpointInfoResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.assetLockOutpointInfo != null && message.hasOwnProperty("assetLockOutpointInfo")) {
+                                    object.assetLockOutpointInfo = $root.org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.AssetLockOutpointInfo.toObject(message.assetLockOutpointInfo, options);
+                                    if (options.oneofs)
+                                        object.result = "assetLockOutpointInfo";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAssetLockOutpointInfoResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAssetLockOutpointInfoResponse.GetAssetLockOutpointInfoResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAssetLockOutpointInfoResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAssetLockOutpointInfoResponseV0;
+                        })();
+
+                        return GetAssetLockOutpointInfoResponse;
                     })();
 
                     v0.GetDataContractsLatestVersionsResponse = (function() {

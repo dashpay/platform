@@ -397,6 +397,11 @@ impl Fetch for dpp::tokens::contract_info::TokenContractInfo {
     type Request = platform_proto::GetTokenContractInfoRequest;
 }
 
+impl Fetch for dpp::asset_lock::StoredAssetLockInfo {
+    type Query = platform_proto::GetAssetLockOutpointInfoRequest;
+    type Request = platform_proto::GetAssetLockOutpointInfoRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::RecentAddressBalanceChanges {
     type Query = platform_proto::GetRecentAddressBalanceChangesRequest;
     type Request = platform_proto::GetRecentAddressBalanceChangesRequest;

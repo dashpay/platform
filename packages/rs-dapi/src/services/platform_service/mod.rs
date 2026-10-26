@@ -417,6 +417,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDataContractsLatestVersionsResponse
     );
 
+    drive_method!(
+        get_asset_lock_outpoint_info,
+        dapi_grpc::platform::v0::GetAssetLockOutpointInfoRequest,
+        dapi_grpc::platform::v0::GetAssetLockOutpointInfoResponse
+    );
+
     // Contract group methods
     drive_method!(
         get_contract_group_info,

@@ -122,6 +122,7 @@ pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
     pub prove_state_transition: FeatureVersion,
+    pub prove_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -150,6 +151,7 @@ pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
     pub fetch_asset_lock_outpoint_info: FeatureVersion,
+    pub prove_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
