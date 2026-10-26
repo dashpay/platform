@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
-use super::contact_requests::external_account_needs_rebuild;
+use super::contact_requests::outbound_account_is_current;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -1360,39 +1360,46 @@ fn reserve_contact_payment_address(
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
 
     // A payment derives only from an outbound account known to be built from
-    // the contact's live request. One the contact rotated away from may no
-    // longer be watched, and one restored without proof of the request it was
-    // built from is confirmed by the drain the payment ran first; until either
-    // is rebuilt or confirmed, nothing is derived from it. A broken channel is
-    // never rebuilt until the contact sends a new request, so it says so
-    // rather than inviting a retry.
-    if let Some(managed) = info.identity_manager.managed_identity(from_identity_id) {
-        let contact = managed.established_contact(to_contact_id);
-        let unconfirmed = managed.outbound_rekeyed(to_contact_id)
-            || contact.is_some_and(|contact| external_account_needs_rebuild(contact, true));
-        if unconfirmed {
-            if contact.is_some_and(|contact| contact.payment_channel_broken) {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "The DashpayExternalAccount for contact {} was built from a request the \
-                     contact rotated away from, and the rotated request is unusable; payments \
-                     resume once the contact sends a new one",
-                    to_contact_id
-                )));
-            }
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "The DashpayExternalAccount for contact {} awaits a rebuild from the contact's \
-                 live request; retry once it has been rebuilt",
-                to_contact_id
-            )));
-        }
-    }
-
-    // Derive the next unused address from the external account's address pool.
+    // the contact's live request (`outbound_account_is_current`, which keeps
+    // a rebuild queued for every account it rejects). One the contact rotated
+    // away from may no longer be watched, and one restored without proof of
+    // the request it was built from is confirmed by the drain the payment ran
+    // first; until then nothing is derived from it. A broken channel is never
+    // rebuilt until the contact sends a new request, so an account it holds is
+    // confirmed only by its marker, and the refusal says so rather than
+    // inviting a retry. A contact with no account at all fails below.
     let key = DashpayAccountKey {
         index: account_index,
         user_identity_id: from_identity_id.to_buffer(),
         friend_identity_id: to_contact_id.to_buffer(),
     };
+    let contact = info
+        .identity_manager
+        .managed_identity(from_identity_id)
+        .and_then(|managed| managed.established_contact(to_contact_id));
+    if info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .contains_key(&key)
+        && !outbound_account_is_current(info, &key, contact)
+    {
+        if contact.is_some_and(|contact| contact.payment_channel_broken) {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "The DashpayExternalAccount for contact {} was built from a request the \
+                 contact rotated away from, and the rotated request is unusable; payments \
+                 resume once the contact sends a new one",
+                to_contact_id
+            )));
+        }
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "The DashpayExternalAccount for contact {} awaits a rebuild from the contact's \
+             live request; retry once it has been rebuilt",
+            to_contact_id
+        )));
+    }
+
+    // Derive the next unused address from the external account's address pool.
     let external_account = info
         .core_wallet
         .accounts
@@ -4225,7 +4232,7 @@ mod tests {
                 let established = managed.dashpay().established_contacts()[contact].clone();
                 assert_eq!(established.external_account_reference, Some(7));
                 assert!(
-                    !external_account_needs_rebuild(&established, true),
+                    !external_account_needs_rebuild(&established),
                     "a restored marker must not read as a rotation"
                 );
             }
@@ -4262,8 +4269,7 @@ mod tests {
                 .unwrap()
                 .apply_established_contact(stripped);
             assert!(external_account_needs_rebuild(
-                &bare.identities[&0].dashpay().established_contacts()[contact],
-                true
+                &bare.identities[&0].dashpay().established_contacts()[contact]
             ));
         }
         let (restarted, _, _) = reload(bare).await;
@@ -4453,8 +4459,7 @@ mod tests {
             let managed = info.identity_manager.managed_identity(&owner).unwrap();
             for contact in &contacts {
                 assert!(!external_account_needs_rebuild(
-                    &managed.dashpay().established_contacts()[contact],
-                    true
+                    &managed.dashpay().established_contacts()[contact]
                 ));
             }
             assert!(
@@ -6389,11 +6394,89 @@ mod tests {
         assert!(refusal(false)
             .await
             .contains("retry once it has been rebuilt"));
+        // After a relaunch nothing records the rotation, but an account a
+        // broken channel holds without a marker for the live request is no
+        // more confirmed.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            managed.clear_outbound_rekey(&contact);
+            let established = managed
+                .established_contact_mut(&contact)
+                .expect("established");
+            established.payment_channel_broken = true;
+            established.external_account_reference = None;
+            assert!(
+                super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact)
+                    .is_err_and(|e| e
+                        .to_string()
+                        .contains("resume once the contact sends a new one"))
+            );
+        }
         let broken = refusal(true).await;
         assert!(broken.contains("resume once the contact sends a new one"));
         assert!(
             broken.contains("DashpayExternalAccount"),
             "hosts map refusals naming the account to a not-ready channel"
+        );
+    }
+
+    /// Every outbound account a payment refuses has a rebuild queued: a
+    /// pending rotation queues it even when its marker already names the live
+    /// request. A contact with no outbound account at all is told so, not
+    /// that a rebuild is pending.
+    #[tokio::test]
+    async fn should_queue_every_outbound_account_a_payment_refuses() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xB1; 32]);
+        let contact = Identifier::from([0x55; 32]);
+        let unbuilt = Identifier::from([0x56; 32]);
+        let shared_key = [0x5Au8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        outbound_account_built_from(
+            iw, &persister, wallet_id, owner, contact, &payload, shared_key,
+        )
+        .await;
+
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed");
+        managed.mark_outbound_rekeyed(&contact);
+        let mut broken = EstablishedContact::new(
+            unbuilt,
+            ContactRequest::new(owner, unbuilt, 0, 0, 0, vec![0u8; 96], 100, 0),
+            ContactRequest::new(unbuilt, owner, 0, 0, 3, vec![0u8; 96], 100, 0),
+        );
+        broken.payment_channel_broken = true;
+        managed.apply_established_contact(broken);
+
+        assert!(
+            super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact).is_err()
+        );
+        assert!(
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
+                wm.get_wallet_info(&wallet_id).expect("info"),
+                &owner,
+            )
+            .len()
+                == 1,
+            "the refused account is queued for its rebuild (the broken channel is not)"
+        );
+        assert!(
+            super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &unbuilt)
+                .is_err_and(|e| e.to_string().contains("No DashpayExternalAccount found")),
+            "a contact without an outbound account is told it has none"
         );
     }
 
@@ -6616,7 +6699,7 @@ mod tests {
             .clone();
         assert_eq!(established.external_account_reference, Some(7));
         assert!(
-            external_account_needs_rebuild(&established, true),
+            external_account_needs_rebuild(&established),
             "the stale marker keeps the repair armed"
         );
     }
@@ -6731,7 +6814,7 @@ mod tests {
             Some(7),
             "the late completion must not stamp request 8"
         );
-        assert!(external_account_needs_rebuild(&after, true));
+        assert!(external_account_needs_rebuild(&after));
         let stamped = persister
             .stores
             .lock()
@@ -6757,7 +6840,7 @@ mod tests {
                 .clone()
         };
         assert_eq!(restored.external_account_reference, Some(7));
-        assert!(external_account_needs_rebuild(&restored, true));
+        assert!(external_account_needs_rebuild(&restored));
 
         // While the bound marker is current, completion still heals the
         // broken flag.
@@ -6911,7 +6994,7 @@ mod tests {
                 restarted.external_account_reference, None,
                 "buffered: {buffered}"
             );
-            assert!(external_account_needs_rebuild(&restarted, true));
+            assert!(external_account_needs_rebuild(&restarted));
         }
     }
 
@@ -7011,7 +7094,7 @@ mod tests {
                 "rotated: {rotated}"
             );
             assert_eq!(
-                external_account_needs_rebuild(&established, true),
+                external_account_needs_rebuild(&established),
                 rotated,
                 "only a pool the current xpub does not derive is rebuilt"
             );

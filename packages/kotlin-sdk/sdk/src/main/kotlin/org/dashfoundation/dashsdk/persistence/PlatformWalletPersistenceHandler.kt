@@ -625,6 +625,9 @@ class PlatformWalletPersistenceHandler(
         friendIdentityId: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
+            // The registration drops its write for a wallet removed meanwhile;
+            // so do the sidecars of its round.
+            if (db.walletDao().getByWalletId(walletId) == null) return@stage
             val account = checkNotNull(
                 fetchAccount(
                     db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,
@@ -655,6 +658,7 @@ class PlatformWalletPersistenceHandler(
             "account xpub digest must be $DIGEST_LENGTH bytes"
         }
         stage(walletId) { db ->
+            if (db.walletDao().getByWalletId(walletId) == null) return@stage
             val account = checkNotNull(
                 fetchAccount(
                     db, walletId, typeTag.toInt() and 0xFF, index, standardTag.toInt() and 0xFF,

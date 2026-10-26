@@ -1102,45 +1102,44 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
     deadline.is_some_and(|d| std::time::Instant::now() >= d)
 }
 
-/// Whether a registered outbound `DashpayExternalAccount` for `contact` is
-/// not known to be built from the contact's current
-/// `incoming_request.account_reference`, so it must be rebuilt — confirmed in
-/// place when the live request decrypts to the same xpub, replaced otherwise —
-/// before a payment derives from it.
+/// Whether `contact`'s outbound `DashpayExternalAccount` is not known to be
+/// built from the contact's current `incoming_request.account_reference`, so
+/// it must be rebuilt — confirmed in place when the live request decrypts to
+/// the same xpub, replaced otherwise — before a payment derives from it.
 ///
-/// Only a **registered** account (`has_external == true`) can be stale — a
-/// missing account is handled by the ordinary build-candidate collection.
-/// A permanently-broken channel is left alone (the sweep never rebuilds
-/// broken contacts; they heal on a superseding request). The staleness test
-/// is `external_account_reference != Some(incoming_request.account_reference)`:
+/// The test is `external_account_reference != Some(incoming_request.account_reference)`:
 /// a mismatch means the contact rotated to a request the account was not
 /// built from, and a `None` marker means nothing vouched for the account at
 /// load — its row carried no digest naming the live request (see
-/// `apply_outbound_account_digests`). The account stays registered meanwhile,
-/// and `reserve_contact_payment_address` refuses to derive from it until the
-/// rebuild confirms or replaces it.
-pub(crate) fn external_account_needs_rebuild(
-    contact: &EstablishedContact,
-    has_external: bool,
-) -> bool {
-    has_external
-        && !contact.payment_channel_broken
-        && contact.external_account_reference != Some(contact.incoming_request.account_reference)
+/// `apply_outbound_account_digests`). Whether an account is registered at all,
+/// and whether a broken channel is worth rebuilding, is the caller's call (see
+/// [`outbound_account_is_current`] and `account_build_candidate`).
+pub(crate) fn external_account_needs_rebuild(contact: &EstablishedContact) -> bool {
+    contact.external_account_reference != Some(contact.incoming_request.account_reference)
 }
 
 /// Whether the outbound account under `key` is registered and, when
-/// `contact` is established, known to be built from its live request, so
-/// registering it again changes nothing.
+/// `contact` is established, known to be built from its live request — its
+/// marker names it and no rotation is pending — so registering it again
+/// changes nothing. `reserve_contact_payment_address` refuses exactly the
+/// registered accounts this rejects, so a refused payment always has a
+/// rebuild queued — except on a broken channel, which `account_build_candidate`
+/// leaves until the contact sends a new request.
 pub(crate) fn outbound_account_is_current(
     info: &PlatformWalletInfo,
     key: &DashpayAccountKey,
     contact: Option<&EstablishedContact>,
 ) -> bool {
+    let rotation_pending = info
+        .identity_manager
+        .managed_identity(&Identifier::from(key.user_identity_id))
+        .is_some_and(|managed| managed.outbound_rekeyed(&Identifier::from(key.friend_identity_id)));
     info.core_wallet
         .accounts
         .dashpay_external_accounts
         .contains_key(key)
-        && !contact.is_some_and(|contact| external_account_needs_rebuild(contact, true))
+        && !rotation_pending
+        && !contact.is_some_and(external_account_needs_rebuild)
 }
 
 /// The build candidate for `contact`: its outbound account is missing or not
@@ -3295,6 +3294,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return;
         }
         *contact = updated;
+        // The account is now known to derive from the live request.
+        managed.clear_outbound_rekey(contact_id);
     }
 
     /// Decrypt the contact's incoming `encryptedAccountLabel` with the ECDH
@@ -4609,8 +4610,7 @@ mod sweep_tests {
         );
         assert!(
             external_account_needs_rebuild(
-                &managed.dashpay().established_contacts()[&Identifier::from([contact; 32])],
-                true
+                &managed.dashpay().established_contacts()[&Identifier::from([contact; 32])]
             ),
             "and re-key the contact, so the sweep queues its outbound account for a rebuild"
         );
@@ -4810,12 +4810,10 @@ mod sweep_tests {
     /// tombstone-less account-registration row rebuilds the contact's OLD
     /// (rotated-away) external xpub while the established contact already
     /// tracks the NEW incoming reference. `external_account_needs_rebuild`
-    /// must flag such a registered-but-stale account for teardown + rebuild —
-    /// including the `None` marker case (a cold restore that did not carry the
-    /// marker), which conservatively forces one rebuild. A registered account
-    /// whose marker MATCHES the tracked reference is healthy (no churn), a
-    /// missing account is not this predicate's job, and a broken channel is
-    /// left alone.
+    /// must flag such a stale account for a rebuild — including the `None`
+    /// marker case (a cold restore with nothing vouching for the account),
+    /// which conservatively forces one rebuild. An account whose marker
+    /// MATCHES the tracked reference is healthy (no churn).
     #[test]
     fn external_account_needs_rebuild_detects_stale_registered_account() {
         let contact_id = Identifier::from([2u8; 32]);
@@ -4827,38 +4825,29 @@ mod sweep_tests {
         // Registered account still built from the OLD reference (100) — stale.
         contact.external_account_reference = Some(100);
         assert!(
-            external_account_needs_rebuild(&contact, true),
+            external_account_needs_rebuild(&contact),
             "a registered account whose marker != the tracked reference is stale"
         );
 
         // Cold restore that did not carry the marker (`None`) — force a rebuild.
         contact.external_account_reference = None;
         assert!(
-            external_account_needs_rebuild(&contact, true),
+            external_account_needs_rebuild(&contact),
             "a None marker after restart must force one rebuild"
         );
 
         // Healthy: marker matches the tracked reference — no rebuild (no churn).
         contact.external_account_reference = Some(200);
         assert!(
-            !external_account_needs_rebuild(&contact, true),
+            !external_account_needs_rebuild(&contact),
             "a registered account built from the current reference is healthy"
         );
 
-        // No registered account: not this predicate's job (ordinary candidate).
-        contact.external_account_reference = None;
-        assert!(
-            !external_account_needs_rebuild(&contact, false),
-            "a missing external account is not a stale-rebuild case"
-        );
-
-        // Broken channel is left alone even if the marker mismatches.
+        // A broken channel's account is no more current for it: the sweep
+        // leaves it alone (`account_build_candidate`), payments refuse it.
         contact.external_account_reference = Some(100);
         contact.payment_channel_broken = true;
-        assert!(
-            !external_account_needs_rebuild(&contact, true),
-            "a broken channel is never re-registered by the sweep"
-        );
+        assert!(external_account_needs_rebuild(&contact));
     }
 
     /// **Test 4 (persistence):** the broken-channel flag round-trips through

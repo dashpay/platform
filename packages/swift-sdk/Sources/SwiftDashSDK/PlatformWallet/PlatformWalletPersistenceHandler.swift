@@ -704,23 +704,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// The account row `key` names. A failed fetch or a missing row throws:
-    /// every caller acts on a row registered earlier, so its absence is an
-    /// error, never "nothing to do".
+    /// every caller acts on a row registered earlier in the round, so its
+    /// absence is an error, never "nothing to do".
     private func requireAccount(walletId: Data, key: AccountLookupKey) throws -> PersistentAccount {
-        let typeTag = key.typeTag
-        let index = key.index
-        let candidates = try backgroundContext.fetch(FetchDescriptor<PersistentAccount>(
-            predicate: #Predicate {
-                $0.wallet.walletId == walletId && $0.accountType == typeTag && $0.accountIndex == index
-            }
-        ))
-        guard let account = candidates.first(where: { acc in
-            acc.standardTag == key.standardTag
-                && acc.registrationIndex == key.registrationIndex
-                && acc.keyClass == key.keyClass
-                && acc.userIdentityId == key.userIdentityId
-                && acc.friendIdentityId == key.friendIdentityId
-        }) else { throw AccountSidecarPersistenceError.missingAccount }
+        guard let account = try matchingAccount(walletId: walletId, key: key) else {
+            throw AccountSidecarPersistenceError.missingAccount
+        }
         return account
     }
 
@@ -731,6 +720,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func resetAccountAddressPools(walletId: Data, keys: [AccountLookupKey]) throws {
         try onQueue {
             guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
+            // The registration drops its write for a wallet removed meanwhile;
+            // so do the sidecars of its round.
+            guard findWalletRecord(walletId: walletId) != nil else { return }
             for key in keys {
                 let account = try requireAccount(walletId: walletId, key: key)
                 for row in account.coreAddresses {
@@ -754,6 +746,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         try onQueue {
             guard inChangeset else { throw AccountSidecarPersistenceError.requiresChangeset }
             if let digest, digest.count != 32 { throw AccountSidecarPersistenceError.malformedDigest }
+            guard findWalletRecord(walletId: walletId) != nil else { return }
             try requireAccount(walletId: walletId, key: key).encryptedXpubDigest = digest
         }
     }
@@ -5704,6 +5697,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         key: AccountLookupKey
     ) -> PersistentAccount? {
+        (try? matchingAccount(walletId: walletId, key: key)) ?? nil
+    }
+
+    /// The account row matching the full identity tuple; a failed fetch
+    /// throws.
+    private func matchingAccount(
+        walletId: Data,
+        key: AccountLookupKey
+    ) throws -> PersistentAccount? {
         let typeTag = key.typeTag
         let index = key.index
         let descriptor = FetchDescriptor<PersistentAccount>(
@@ -5713,8 +5715,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.accountIndex == index
             }
         )
-        let matches = (try? backgroundContext.fetch(descriptor)) ?? []
-        return matches.first { acc in
+        return try backgroundContext.fetch(descriptor).first { acc in
             acc.standardTag == key.standardTag
                 && acc.registrationIndex == key.registrationIndex
                 && acc.keyClass == key.keyClass

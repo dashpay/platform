@@ -5040,6 +5040,18 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR,
     ),
     (
+        "onResetAccountAddressPool",
+        RESET_ACCOUNT_ADDRESS_POOL_DESCRIPTOR,
+    ),
+    (
+        "onPersistAccountXpubDigest",
+        PERSIST_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+    ),
+    (
+        "onLoadAccountXpubDigest",
+        LOAD_ACCOUNT_XPUB_DIGEST_DESCRIPTOR,
+    ),
+    (
         "onWalletChangesetHeader",
         WALLET_CHANGESET_HEADER_DESCRIPTOR,
     ),
