@@ -26,7 +26,6 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
-use super::signing_key::AvailableSigningKey;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -36,7 +35,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose};
+use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
@@ -55,7 +54,8 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
-use super::document::allowed_signing_security_levels;
+use super::document::document_signing_key;
+use super::key_selection::SigningScope;
 use super::*;
 
 /// DPNS document type carrying registered names.
@@ -949,8 +949,8 @@ impl IdentityWallet {
     /// Auto-select the signing key for a DPNS `domain` state transition
     /// on `identity_id`: the identity's first AUTHENTICATION-purpose
     /// ECDSA_SECP256K1 key whose security level satisfies the document
-    /// type's requirement (the same consensus rule
-    /// [`allowed_signing_security_levels`] encodes). Replaces the app
+    /// type's requirement and whose bounds cover `domain` (see
+    /// [`document_signing_key`]). Replaces the app
     /// layer's hardcoded "key id 1".
     async fn select_dpns_signing_key(
         &self,
@@ -966,7 +966,6 @@ impl IdentityWallet {
                 ))
             })?
             .security_level_requirement();
-        let allowed_levels = allowed_signing_security_levels(required_level);
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(
@@ -979,22 +978,23 @@ impl IdentityWallet {
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
-        identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &allowed_levels,
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )?
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No ECDSA authentication key at a security level satisfying \
+        document_signing_key(
+            &identity,
+            signer,
+            required_level,
+            SigningScope::DocumentType {
+                contract_id: contract.id(),
+                document_type_name: DPNS_DOCUMENT_TYPE,
+            },
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No usable ECDSA authentication key at a security level satisfying \
                      {required_level} found on identity {identity_id} \
                      (required to sign a DPNS domain state transition)"
-                ))
-            })
+            ))
+        })
     }
 
     // -----------------------------------------------------------------
@@ -2281,6 +2281,7 @@ mod tests {
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::SecurityLevel;
+    use dpp::identity::{KeyType, Purpose};
 
     fn name_state_entry(
         document_id: Identifier,

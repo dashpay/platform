@@ -1,13 +1,12 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use super::signing_key::AvailableSigningKey;
+use super::document::document_signing_key;
+use super::key_selection::SigningScope;
 
 use dpp::fee::Credits;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyType;
-use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
 
@@ -41,6 +40,23 @@ use super::*;
 /// public FFI surface can pass the iOS `KeychainSigner` by reference
 /// without forcing a clone or `Arc` round-trip per call.
 struct SignerRef<'a, S: ?Sized>(&'a S);
+
+/// The key that signs both DPNS registration documents, `preorder` then `domain`: a HIGH or
+/// CRITICAL AUTHENTICATION ECDSA key whose bounds cover the whole DPNS contract. MASTER is
+/// reserved for identity operations and refused on document writes.
+fn dpns_registration_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    document_signing_key(
+        identity,
+        signer,
+        SecurityLevel::HIGH,
+        SigningScope::Contract {
+            contract_id: dpp::data_contracts::SystemDataContract::DPNS.id(),
+        },
+    )
+}
 
 impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -223,24 +239,10 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             drop(wm);
-            // DPNS name registration writes a document state transition,
-            // which DPP requires to be signed by a HIGH-or-stricter
-            // authentication key. MASTER is intentionally excluded —
-            // it's reserved for identity-self-modification operations
-            // (identity update, key rotation, withdrawal) and is
-            // rejected by the protocol on document-side state
-            // transitions.
-            let key = identity
-                .available_signing_key(
-                    signer,
-                    Purpose::AUTHENTICATION,
-                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-                    &[KeyType::ECDSA_SECP256K1],
-                    false,
-                )?
+            let key = dpns_registration_signing_key(&identity, signer)?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key found on identity \
+                        "No usable HIGH or CRITICAL authentication key found on identity \
                          (required for document state transitions)"
                             .to_string(),
                     )
@@ -546,5 +548,41 @@ impl IdentityWallet {
                     prefix, e
                 ))
             })
+    }
+}
+
+#[cfg(test)]
+mod signing_key_tests {
+    use super::super::key_selection::tests::{bound_key, identity, key};
+    use super::super::signing_key::tests::KeyFilter;
+    use super::*;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+    #[test]
+    fn should_register_with_a_key_that_covers_both_dpns_document_types() {
+        let dpns = dpp::data_contracts::SystemDataContract::DPNS.id();
+        let identity = identity(vec![
+            key(0, SecurityLevel::MASTER),
+            bound_key(
+                1,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: dpns,
+                    document_type_name: "domain".to_string(),
+                }),
+            ),
+            bound_key(
+                2,
+                SecurityLevel::HIGH,
+                Some(ContractBounds::SingleContract { id: dpns }),
+            ),
+        ]);
+        let chosen = dpns_registration_signing_key(&identity, &KeyFilter(|_| true)).unwrap();
+        assert_eq!(
+            chosen.map(|key| key.id()),
+            Some(2),
+            "a key bound to `domain` cannot sign the `preorder` document"
+        );
     }
 }

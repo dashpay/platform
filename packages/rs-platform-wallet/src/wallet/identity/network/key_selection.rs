@@ -206,7 +206,7 @@ pub(crate) fn usable_authentication_key<'a>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::super::signing_key::tests::{available, KeyFilter};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
@@ -222,11 +222,11 @@ mod tests {
     const OTHER_CONTRACT: [u8; 32] = [0x0E; 32];
     const DOCUMENT_TYPE: &str = "profile";
 
-    fn key(id: KeyID, security_level: SecurityLevel) -> IdentityPublicKey {
+    pub(crate) fn key(id: KeyID, security_level: SecurityLevel) -> IdentityPublicKey {
         bound_key(id, security_level, None)
     }
 
-    fn bound_key(
+    pub(crate) fn bound_key(
         id: KeyID,
         security_level: SecurityLevel,
         contract_bounds: Option<ContractBounds>,
@@ -243,7 +243,7 @@ mod tests {
         })
     }
 
-    fn identity(keys: Vec<IdentityPublicKey>) -> Identity {
+    pub(crate) fn identity(keys: Vec<IdentityPublicKey>) -> Identity {
         IdentityV0 {
             id: Identifier::from([1; 32]),
             public_keys: keys

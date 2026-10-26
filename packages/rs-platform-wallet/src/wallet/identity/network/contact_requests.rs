@@ -1,6 +1,5 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
-use super::signing_key::AvailableSigningKey;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -613,17 +612,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         // 5. Build the signing key reference for document signing.
-        let identity_public_key = sender_identity
-            // Contact-request send writes a document state transition,
-            // which DPP requires to be signed by a HIGH-or-stricter
-            // authentication key. MASTER is rejected on document writes.
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-                false,
-            )?
+        let identity_public_key = contact_request_signing_key(&sender_identity, signer)?
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
@@ -1176,6 +1165,25 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
                 .to_string(),
         )
     })
+}
+
+/// The key that signs an outgoing `contactRequest` document. Contact-request send writes a
+/// document state transition, which DPP requires to be signed by a HIGH-or-stricter
+/// authentication key whose bounds cover `contactRequest`; MASTER is rejected on document
+/// writes.
+fn contact_request_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    super::document::document_signing_key(
+        identity,
+        signer,
+        SecurityLevel::HIGH,
+        super::key_selection::SigningScope::DocumentType {
+            contract_id: dpp::data_contracts::SystemDataContract::Dashpay.id(),
+            document_type_name: "contactRequest",
+        },
+    )
 }
 
 /// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
@@ -5914,5 +5922,45 @@ mod pending_enqueue_tests {
         super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
         iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
         assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod contact_request_key_tests {
+    use super::super::key_selection::tests::{bound_key, identity, key};
+    use super::super::signing_key::tests::KeyFilter;
+    use super::*;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+    #[test]
+    fn should_sign_a_contact_request_with_a_key_bound_to_contact_requests_or_unbound() {
+        let dashpay = dpp::data_contracts::SystemDataContract::Dashpay.id();
+        let bound_to = |id, document_type_name: &str| {
+            bound_key(
+                id,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: dashpay,
+                    document_type_name: document_type_name.to_string(),
+                }),
+            )
+        };
+        let pick = |identity: &Identity| {
+            contact_request_signing_key(identity, &KeyFilter(|_| true))
+                .unwrap()
+                .map(|key| key.id())
+        };
+        assert_eq!(
+            pick(&identity(vec![
+                bound_to(1, "contactInfo"),
+                key(2, SecurityLevel::HIGH)
+            ])),
+            Some(2),
+            "a key bound to contactInfo cannot sign a contact request"
+        );
+        assert_eq!(
+            pick(&identity(vec![bound_to(1, "contactRequest")])),
+            Some(1)
+        );
     }
 }
