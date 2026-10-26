@@ -988,6 +988,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_prove_a_higher_height_after_the_lower_fetch_it_joined_fails() {
+        let f = fixture(Network::Testnet);
+        let height = f.target.height;
+        let lower = height - 100;
+        let bootstrap = f.bootstrap.clone();
+        let relay = MockRelay::serve(3, move |request| {
+            Some(if request["height"] == height {
+                reply(200, bootstrap.clone())
+            } else {
+                // The relay cannot serve the lower height, for it or the tip.
+                Answer::Late(Duration::from_millis(300), 502, Vec::new())
+            })
+        });
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let first = fetch(&provider, f.quorum_type, f.quorum_hash, lower);
+        let second = async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            fetch(&provider, f.quorum_type, f.quorum_hash, height).await
+        };
+        let (first, second) = futures::join!(first, second);
+        unavailable_reason(first);
+        assert_eq!(
+            second.expect("the higher height proves itself"),
+            Some(f.key)
+        );
+        let heights = relay.heights();
+        assert_eq!(
+            heights,
+            [json!(lower), json!(0), json!(height)],
+            "{heights:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn should_give_a_caller_one_deadline_across_the_fetches_it_waits_on() {
         let f = fixture(Network::Testnet);
         let bootstrap = f.bootstrap.clone();
