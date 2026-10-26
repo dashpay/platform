@@ -35,7 +35,6 @@ use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIA
     feature = "all-system-contracts"
 ))]
 use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
-#[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
 use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
@@ -62,6 +61,15 @@ use url::Url;
 
 #[cfg(target_arch = "wasm32")]
 const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The token market system contract's id (`SystemDataContract::TokenMarket`). It is spelled out
+/// here so that every build, with or without the contract's feature, refuses to serve a contract
+/// under this id before the contract exists (protocol version 15), a preloaded known contract
+/// included. A test checks it against `SystemDataContract::TokenMarket.id()`.
+const TOKEN_MARKET_CONTRACT_ID: Identifier = Identifier::new([
+    137, 20, 125, 33, 9, 113, 160, 140, 158, 199, 2, 183, 75, 230, 71, 38, 213, 195, 65, 13, 129,
+    32, 10, 91, 226, 116, 230, 164, 77, 101, 0, 147,
+]);
 
 #[cfg(test)]
 type QuorumInsertGate = (SyncSender<()>, Receiver<()>);
@@ -1036,9 +1044,9 @@ impl ContextProvider for TrustedHttpContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         // The token market contract exists only from its activation version: below it no
-        // contract is served under its id, including one preloaded into the known contracts.
-        #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
-        if *id == SystemDataContract::TokenMarket.id()
+        // contract is served under its id, including one preloaded into the known contracts,
+        // whichever contract features this build has.
+        if *id == TOKEN_MARKET_CONTRACT_ID
             && platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
         {
             return Ok(None);
@@ -1209,10 +1217,8 @@ impl ContextProvider for TrustedHttpContextProvider {
             }
 
             #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
-            // Below protocol version 15 the token market contract is absent too.
-            if *id == SystemDataContract::TokenMarket.id()
-                && platform_version.protocol_version >= TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-            {
+            // Below protocol version 15 the lookup was refused before the known contracts.
+            if *id == SystemDataContract::TokenMarket.id() {
                 return load_system_data_contract(
                     SystemDataContract::TokenMarket,
                     platform_version,
@@ -2564,6 +2570,7 @@ mod tests {
         )
         .unwrap();
         let id = SystemDataContract::TokenMarket.id();
+        assert_eq!(id, TOKEN_MARKET_CONTRACT_ID);
 
         assert!(provider
             .get_data_contract(&id, PlatformVersion::get(14).unwrap())
@@ -2585,6 +2592,54 @@ mod tests {
         assert!(provider
             .get_data_contract(&id, PlatformVersion::get(15).unwrap())
             .expect("the lookup must succeed at protocol version 15")
+            .is_some());
+    }
+
+    /// A build without the token market feature still refuses a contract preloaded under the
+    /// token market's id before protocol version 15, and serves it from 15.
+    #[test]
+    fn should_refuse_a_preloaded_token_market_id_before_protocol_15_in_any_build() {
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::v1::DataContractV1;
+        use dpp::version::PlatformVersion;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let contract = DataContract::V1(DataContractV1 {
+            id: TOKEN_MARKET_CONTRACT_ID,
+            version: 1,
+            owner_id: Identifier::from([2u8; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("expected a default config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        });
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap()
+        .with_known_contracts(vec![contract]);
+
+        assert!(provider
+            .get_data_contract(&TOKEN_MARKET_CONTRACT_ID, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&TOKEN_MARKET_CONTRACT_ID, platform_version)
+            .expect("the lookup must succeed from protocol version 15")
             .is_some());
     }
 
