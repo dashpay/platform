@@ -25,11 +25,13 @@ use crate::quorum_refresh::on_local_executor;
 use crate::quorum_refresh::panic_message;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::quorum_refresh::sleep;
-// A `Send` timer on every target, for callers outside the local executor.
+#[cfg(not(target_arch = "wasm32"))]
 use crate::quorum_refresh::sleep as caller_sleep;
 use dash_context_provider::ContextProviderError;
 use dash_core_proof::bootstrap::{self, RecordKind};
 use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
+#[cfg(target_arch = "wasm32")]
+use futures::channel::oneshot;
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared, WeakShared};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -389,8 +391,8 @@ impl ProofFetches {
     /// the quorum as absent.
     ///
     /// A caller may first join a fetch for a lower height near its own, which
-    /// may prove the quorum only up to that height; it then starts a fetch of
-    /// its own, once.
+    /// may prove the quorum only up to that height or fail; it then starts a
+    /// fetch of its own, once, within the same deadline.
     pub(crate) async fn fetch(
         self: Arc<Self>,
         quorum_type: u32,
@@ -411,6 +413,11 @@ impl ProofFetches {
                 .map_err(unavailable)?;
             let remaining = deadline.saturating_duration_since(Instant::now());
             let proven = match select(fetch, pin!(caller_sleep(remaining))).await {
+                // A lower fetch failing says nothing about this height.
+                Either::Left((Err(_), _)) if !covers && may_join_lower => {
+                    may_join_lower = false;
+                    continue;
+                }
                 Either::Left((proven, _)) => proven.map_err(unavailable)?,
                 Either::Right(_) => {
                     return Err(unavailable(format!(
@@ -473,7 +480,6 @@ impl ProofFetches {
     ) -> Result<(SharedFetch, bool), String> {
         let quorum = (quorum_type, quorum_hash);
         let window = self.window;
-        let near = |other: u32| other.abs_diff(height) <= self.window;
         let now = Instant::now();
         let forgotten_after = self.timing.max_quorum_cooldown.saturating_mul(2);
         let mut proven = self.lock();
@@ -497,7 +503,7 @@ impl ProofFetches {
                     height: running,
                     ..
                 } if *other == quorum => {
-                    let covers = height <= *running && *running - height <= window;
+                    let covers = covered(*running, height, window);
                     let lower = may_join_lower && *running < height && height - *running <= window;
                     (covers || lower)
                         .then(|| fetch.upgrade())
@@ -518,7 +524,7 @@ impl ProofFetches {
                     at,
                     failures,
                     height: failed,
-                } if *other == quorum && near(*failed) => Some((*at, *failures)),
+                } if *other == quorum && covered(*failed, height, window) => Some((*at, *failures)),
                 _ => None,
             })
             .max_by_key(|(_, failures)| *failures);
@@ -626,7 +632,7 @@ impl ProofFetches {
         let window = self.window;
         proven.fetches.retain(|(quorum, slot)| match slot {
             Slot::Failed { height, .. } => {
-                *quorum != attempt.quorum || height.abs_diff(attempt.height) > window
+                *quorum != attempt.quorum || !covered(*height, attempt.height, window)
             }
             Slot::Running { .. } => true,
         });
@@ -1044,6 +1050,13 @@ impl ProofFetches {
     }
 }
 
+/// Whether a fetch for `requested` is sure to cover `height`: it proves a
+/// target at or above `requested` minus the window, whose key is served up to
+/// `requested`. A failure counts against the heights it would have covered.
+fn covered(requested: u32, height: u32, window: u32) -> bool {
+    height <= requested && requested - height <= window
+}
+
 /// How many fetches hold one of the places to prove a quorum.
 fn places_taken(proven: &Proven) -> usize {
     proven
@@ -1121,6 +1134,22 @@ where
             Err(format!("quorum proof fetch panicked: {message}"))
         }
     }
+}
+
+/// Wait for `duration` in a `Send` future, for callers outside the local
+/// executor. The browser timer runs in a local task that ends, clearing the
+/// timer, as soon as this future is dropped.
+#[cfg(target_arch = "wasm32")]
+async fn caller_sleep(duration: Duration) {
+    let (cancel, cancelled) = oneshot::channel::<()>();
+    let (fired, done) = oneshot::channel::<()>();
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Either::Left(_) = select(sleep(duration), cancelled).await {
+            let _ = fired.send(());
+        }
+    });
+    let _cancel_on_drop = cancel;
+    let _ = done.await;
 }
 
 /// Run a fetch on the local executor, where browser requests and timers have
@@ -1306,6 +1335,28 @@ mod tests {
                 .any(|(quorum, _)| *quorum == (6, [0; 32])),
             "the oldest goes"
         );
+    }
+
+    #[test]
+    fn should_hold_back_only_heights_a_failed_fetch_would_have_covered() {
+        let fetches = Arc::new(fetches());
+        let quorum = (6, [1; 32]);
+        fetches
+            .lock()
+            .fetches
+            .push((quorum, failed(Instant::now())));
+        for height in [150, 100] {
+            assert!(
+                fetches.join_or_start(6, [1; 32], height).is_err(),
+                "{height}"
+            );
+        }
+        for height in [151, 750] {
+            assert!(
+                fetches.join_or_start(6, [1; 32], height).is_ok(),
+                "{height}"
+            );
+        }
     }
 
     #[test]
