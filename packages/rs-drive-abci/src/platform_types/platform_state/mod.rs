@@ -356,7 +356,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             }
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => Ok(PlatformState::from(v1)),
+                    0 => PlatformState::try_from(v1),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
@@ -530,6 +530,56 @@ mod tests {
                 .expect("state with a test fee generation number rebuilds from its record");
 
             assert_fee_history_survived(&restored, &state);
+        }
+
+        /// A number in the test range that no test schedule carries, so the
+        /// lookup fails even with `mock-versions`, as any number the build
+        /// does not know fails in production.
+        const UNKNOWN_FEE_VERSION_NUMBER: FeeVersionNumber =
+            TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE + 1;
+
+        fn assert_unknown_fee_version_rejected<E: std::fmt::Display>(
+            result: Result<PlatformState, E>,
+        ) {
+            let Err(e) = result else {
+                panic!("a state with an unknown fee version number must not load");
+            };
+            let message = e.to_string();
+            assert!(
+                message.contains(&format!(
+                    "fee version {UNKNOWN_FEE_VERSION_NUMBER} for epoch 4"
+                )),
+                "unexpected error: {message}"
+            );
+        }
+
+        #[test]
+        fn should_reject_an_unknown_fee_generation_number_in_a_standalone_record() {
+            let state = state_with_a_test_generation_boundary();
+            let mut record =
+                PlatformStateForSavingV1::try_from(&state).expect("state converts to its record");
+            record
+                .previous_fee_versions
+                .insert(4, UNKNOWN_FEE_VERSION_NUMBER);
+            let bytes =
+                bincode::encode_to_vec(PlatformStateForSaving::V1(record), PLATFORM_BINCODE_CONFIG)
+                    .expect("record serializes");
+
+            assert_unknown_fee_version_rejected(PlatformState::versioned_deserialize_trusted(
+                &bytes,
+                &TEST_PLATFORM_V4,
+            ));
+        }
+
+        #[test]
+        fn should_reject_an_unknown_fee_generation_number_in_a_structure_1_record() {
+            let state = state_with_a_test_generation_boundary();
+            let mut record = PlatformStateForSavingV2::from(&state);
+            record
+                .previous_fee_versions
+                .insert(4, UNKNOWN_FEE_VERSION_NUMBER);
+
+            assert_unknown_fee_version_rejected(record.into_platform_state(Vec::new(), Vec::new()));
         }
     }
 
