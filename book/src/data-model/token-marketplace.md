@@ -214,8 +214,11 @@ as it does for a listing, and a sale is refused when it would be paid less than
 
 The buyer's credits are checked with the batch's fees, which count the escrow like a purchase. The
 buyer pays the storage of the `bid` and gets it back when the offer closes. A `TokenPlaceBid` is
-proven by its `bid` document, whose terms, untouched `remaining` and escrow (what the offer is
-worth at its decimals) the client checks, and a `TokenFillBid` by the seller's token balance.
+proven by its `bid` document while the offer is open, after sales into it too. The client checks
+the document's terms against the transition's, that `remaining` is between 1 and the amount, and
+that the escrow is what the offer holds after its sales (`TokenOrder::escrow_after_fills`: what it
+is worth at its decimals, rounded up, less what its sellers were paid). A `TokenFillBid` is proven
+by the seller's token balance.
 
 ## Frozen accounts
 
