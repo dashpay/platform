@@ -1,5 +1,7 @@
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
+use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters,
+    DocumentTypeV0Getters, DocumentTypeV0Setters,
 };
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -18,6 +20,7 @@ use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentTypeV0 {
     fn schema_mut(&mut self) -> &mut Value {
         &mut self.schema

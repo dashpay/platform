@@ -36,8 +36,9 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 /// the group registered by this transition. Both are empty on a plain contract creation.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 /// Its decoding refuses a contract in format version 2, the stored format, which only state
-/// holds: bincode at the format's tag, through a private copy of the struct, and serde once the
-/// contract is read.
+/// holds, at the format's tag, before any of the contract is read: bincode through a private copy
+/// of the struct, serde through the contract field's deserializer; both read the contract as a
+/// `TransitionContractFormat`.
 #[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",

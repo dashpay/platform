@@ -29,6 +29,7 @@ pub use v0::*;
 pub use v1::*;
 pub use v2::*;
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentType {
     fn schema_mut(&mut self) -> &mut Value {
         match self {
