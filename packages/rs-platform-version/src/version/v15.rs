@@ -112,9 +112,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11` selects `create_domain_data_trigger`
 ///    2, which keeps only the parent domain checks: a top-level domain only by
 ///    the contract owner, the parent present, no subdomains under a name, and
-///    the parent's subdomain rule. The data trigger bindings stay at 2: their
-///    `domain` Replace and Delete rejects are never reached, as
+///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
+///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
+///    (The bindings move to 3 for the token market contract alone, note 8.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
