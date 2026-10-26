@@ -99,17 +99,20 @@ fn should_refuse_a_stored_form_whose_compiled_types_are_not_those_of_its_schemas
         .expect("expected a document type")
         .clone();
     format.document_types.remove(&name);
-    let error = DataContract::try_from_platform_versioned(
-        DataContractInSerializationFormat::V2(format),
-        true,
-        &mut vec![],
-        PlatformVersion::latest(),
-    )
-    .expect_err("expected the stored form to be refused");
-    assert!(
-        error.to_string().contains("not those of its schemas"),
-        "{error}"
-    );
+    // As Drive reads it and fully validated
+    for full_validation in [false, true] {
+        let error = DataContract::try_from_platform_versioned(
+            DataContractInSerializationFormat::V2(format.clone()),
+            full_validation,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect_err("expected the stored form to be refused");
+        assert!(
+            error.to_string().contains("not those of its schemas"),
+            "full validation {full_validation}: {error}"
+        );
+    }
 }
 
 /// JSON carries the compiled document types as bytes, so they come back exactly; the raw
@@ -133,4 +136,26 @@ fn should_round_trip_the_stored_form_through_json_and_platform_value() {
     let from_value: DataContractInSerializationFormat =
         platform_value::from_value(value).expect("expected the format to convert back");
     assert_eq!(from_value, format);
+}
+
+/// Changing a stored contract's schemas drops its compiled types: it becomes its format version
+/// 1, so it never holds compiled types that are not those of its schemas.
+#[test]
+fn should_drop_the_compiled_types_of_a_stored_form_whose_schemas_change() {
+    let contract = fixture_contract();
+    let compiled = stored(&contract);
+    let mut format = DataContractInSerializationFormat::V2(compiled.clone());
+    let name = compiled
+        .document_schemas
+        .keys()
+        .next()
+        .expect("expected a document type")
+        .clone();
+    format.document_schemas_mut().remove(&name);
+    let DataContractInSerializationFormat::V1(changed) = format else {
+        panic!("expected format version 1, got {format:?}");
+    };
+    let mut expected = DataContractInSerializationFormatV1::from(compiled);
+    expected.document_schemas.remove(&name);
+    assert_eq!(changed, expected);
 }

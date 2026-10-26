@@ -72,10 +72,8 @@ impl DataContractV1 {
                 Ok(data_contract)
             }
             DataContractInSerializationFormat::V2(serialization_format_v2) => {
-                let data_contract = DataContractV1::try_from_platform_versioned_v2(
-                    serialization_format_v2,
-                    full_validation,
-                )?;
+                let data_contract =
+                    DataContractV1::try_from_platform_versioned_v2(serialization_format_v2)?;
 
                 Ok(data_contract)
             }
@@ -204,13 +202,12 @@ impl DataContractV1 {
     }
     /// A stored format version 2 contract, its document types read back from their compiled
     /// forms rather than parsed from their schemas. Only state holds format version 2, written
-    /// by consensus from a contract it fully validated, so `full_validation` checks that the
-    /// compiled types are those of the raw schemas beside them, by name, and does not parse the
+    /// by consensus from a contract it fully validated, so full validation does not parse the
     /// schemas again: parsing them with the reader's parser is what the stored form spares.
-    /// Charges no validation operations.
+    /// Every read refuses compiled types that are not those of the raw schemas beside them, by
+    /// name, which no writer produces. Charges no validation operations.
     pub(in crate::data_contract) fn try_from_platform_versioned_v2(
         data_contract_data: DataContractInSerializationFormatV2,
-        full_validation: bool,
     ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV2 {
             id,
@@ -232,7 +229,7 @@ impl DataContractV1 {
             description,
         } = data_contract_data;
 
-        if full_validation && !document_types.keys().eq(document_schemas.keys()) {
+        if !document_types.keys().eq(document_schemas.keys()) {
             return Err(ProtocolError::CorruptedSerialization(
                 "a stored contract's compiled document types are not those of its schemas"
                     .to_string(),

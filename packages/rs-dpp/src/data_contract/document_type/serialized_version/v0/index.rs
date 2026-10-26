@@ -3,6 +3,7 @@
 //! terminal, the skip set, the indexed array, and a derived property's resolved type.
 
 use super::property::StoredPropertyType;
+use super::stored_error;
 use crate::data_contract::document_type::{
     ContestedIndexFieldMatch, ContestedIndexInformation, ContestedIndexResolution,
     DerivedIndexField, DerivedIndexProperty, DocumentReferenceKind, Index, IndexCountability,
@@ -248,8 +249,12 @@ impl From<&Index> for StoredIndex {
     }
 }
 
-impl From<StoredIndex> for Index {
-    fn from(stored: StoredIndex) -> Self {
+/// Refuses a contested field's regex that does not compile, as the schema parser does: a stored
+/// form can come from anyone through the untrusted decoder.
+impl TryFrom<StoredIndex> for Index {
+    type Error = ProtocolError;
+
+    fn try_from(stored: StoredIndex) -> Result<Self, Self::Error> {
         let StoredIndex {
             name,
             properties,
@@ -276,7 +281,44 @@ impl From<StoredIndex> for Index {
             summable_off_count_index,
             indexed_array,
         } = stored;
-        Index {
+        let contested_index = contested_index
+            .map(|contested| {
+                let field_matches = contested
+                    .field_matches
+                    .into_iter()
+                    .map(|(name, field_match)| {
+                        let field_match = match field_match {
+                            StoredContestedFieldMatch::Regex(pattern) => {
+                                ContestedIndexFieldMatch::Regex(
+                                    LazyRegex::try_compiled(pattern).map_err(|error| {
+                                        stored_error(format!(
+                                            "index {name} has a contested field regex that does \
+                                             not compile: {error}"
+                                        ))
+                                    })?,
+                                )
+                            }
+                            StoredContestedFieldMatch::PositiveIntegerMatch(value) => {
+                                ContestedIndexFieldMatch::PositiveIntegerMatch(value)
+                            }
+                        };
+                        Ok((name, field_match))
+                    })
+                    .collect::<Result<_, ProtocolError>>()?;
+                Ok::<_, ProtocolError>(ContestedIndexInformation {
+                    field_matches,
+                    resolution: match contested.resolution {
+                        StoredContestedResolution::MasternodeVote => {
+                            ContestedIndexResolution::MasternodeVote
+                        }
+                        StoredContestedResolution::MasternodeVoteNoLocking => {
+                            ContestedIndexResolution::MasternodeVoteNoLocking
+                        }
+                    },
+                })
+            })
+            .transpose()?;
+        Ok(Index {
             name,
             properties: properties
                 .into_iter()
@@ -284,33 +326,7 @@ impl From<StoredIndex> for Index {
                 .collect(),
             unique,
             null_searchable,
-            contested_index: contested_index.map(|contested| ContestedIndexInformation {
-                field_matches: contested
-                    .field_matches
-                    .into_iter()
-                    .map(|(name, field_match)| {
-                        (
-                            name,
-                            match field_match {
-                                StoredContestedFieldMatch::Regex(pattern) => {
-                                    ContestedIndexFieldMatch::Regex(LazyRegex::new(pattern))
-                                }
-                                StoredContestedFieldMatch::PositiveIntegerMatch(value) => {
-                                    ContestedIndexFieldMatch::PositiveIntegerMatch(value)
-                                }
-                            },
-                        )
-                    })
-                    .collect(),
-                resolution: match contested.resolution {
-                    StoredContestedResolution::MasternodeVote => {
-                        ContestedIndexResolution::MasternodeVote
-                    }
-                    StoredContestedResolution::MasternodeVoteNoLocking => {
-                        ContestedIndexResolution::MasternodeVoteNoLocking
-                    }
-                },
-            }),
+            contested_index,
             countable: match countable {
                 StoredIndexCountability::NotCountable => IndexCountability::NotCountable,
                 StoredIndexCountability::Countable => IndexCountability::Countable,
@@ -357,7 +373,7 @@ impl From<StoredIndex> for Index {
             skip_if_absent_properties,
             summable_off_count_index,
             indexed_array,
-        }
+        })
     }
 }
 
