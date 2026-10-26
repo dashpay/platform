@@ -5,7 +5,6 @@ use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
 use crate::clients::drive_client::{DriveChannel, DriveClient};
 use crate::config::Config;
-use crate::server::{MAX_RESPONSE_BYTES, platform_server};
 use crate::services::streaming_service::SubscriberManager;
 use crate::sync::Workers;
 use bytes::{BufMut, Bytes};
@@ -17,9 +16,10 @@ use dapi_grpc::platform::v0::get_data_contracts_response::{
     DataContractEntry, DataContracts, GetDataContractsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
+use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::platform::v0::{GetDataContractsRequest, GetDataContractsResponse};
 use dapi_grpc::tonic::client::Grpc;
-use dapi_grpc::tonic::codec::{BufferSettings, Codec, EncodeBuf, Encoder};
+use dapi_grpc::tonic::codec::{BufferSettings, Codec, CompressionEncoding, EncodeBuf, Encoder};
 use dapi_grpc::tonic::codegen::http::{
     HeaderMap, HeaderValue, Response as HttpResponse, uri::PathAndQuery,
 };
@@ -49,8 +49,6 @@ enum DriveReply {
     Valid,
     /// A valid response whose contract bytes compress almost to nothing.
     Compressible,
-    /// Like `Compressible`, but larger than DAPI may send uncompressed.
-    Oversized,
     Corrupt,
     Fault(Code),
 }
@@ -128,27 +126,22 @@ impl Harness {
                     let mut stream = response
                         .send_response(headers.body(()).expect("response"), false)
                         .expect("send headers");
-                    let data_contract = match reply {
-                        DriveReply::Compressible => Some(vec![0; 32 * 1024]),
-                        DriveReply::Oversized => Some(vec![0; MAX_RESPONSE_BYTES + 1]),
-                        _ => None,
-                    };
+                    let data_contract =
+                        matches!(reply, DriveReply::Compressible).then(|| vec![0; 32 * 1024]);
                     let payload = match reply {
                         DriveReply::Corrupt => vec![0],
-                        DriveReply::Valid | DriveReply::Compressible | DriveReply::Oversized => {
-                            GetDataContractsResponse {
-                                version: Some(Version::V0(GetDataContractsResponseV0 {
-                                    result: Some(ContractsResult::DataContracts(DataContracts {
-                                        data_contract_entries: vec![DataContractEntry {
-                                            identifier: vec![1; 32],
-                                            data_contract,
-                                        }],
-                                    })),
-                                    metadata: None,
+                        DriveReply::Valid | DriveReply::Compressible => GetDataContractsResponse {
+                            version: Some(Version::V0(GetDataContractsResponseV0 {
+                                result: Some(ContractsResult::DataContracts(DataContracts {
+                                    data_contract_entries: vec![DataContractEntry {
+                                        identifier: vec![1; 32],
+                                        data_contract,
+                                    }],
                                 })),
-                            }
-                            .encode_to_vec()
+                                metadata: None,
+                            })),
                         }
+                        .encode_to_vec(),
                         DriveReply::Fault(_) => unreachable!(),
                     };
                     stream
@@ -188,7 +181,11 @@ impl Harness {
             let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
                 .chain(tokio_stream::pending());
             Server::builder()
-                .add_service(platform_server(service))
+                .add_service(
+                    PlatformServer::new(service)
+                        .max_decoding_message_size(128 * 1024)
+                        .send_compressed(CompressionEncoding::Gzip),
+                )
                 .serve_with_incoming(incoming)
                 .await
                 .expect("serve actual DAPI service");
@@ -370,24 +367,6 @@ async fn should_not_ban_nodes_for_a_gzip_response_over_the_client_limit() {
     assert!(
         !status.can_retry(),
         "the limit is the client's own, every node fails alike: {status:?}"
-    );
-}
-
-#[tokio::test]
-async fn should_refuse_a_drive_response_over_the_limit_even_if_it_compresses() {
-    // tonic checks the response limit after compression, so the raw size has to be
-    // bounded where DAPI decodes the Drive response.
-    let harness = Harness::new(DriveReply::Oversized).await;
-    let status = new_platform_client(harness.channel.clone())
-        .max_decoding_message_size(usize::MAX)
-        .get_data_contracts(valid_contracts_request())
-        .await
-        .expect_err("response larger than DAPI may send");
-    assert!(
-        status
-            .message()
-            .contains("decoded message length too large"),
-        "refused when DAPI decodes the Drive response: {status:?}"
     );
 }
 

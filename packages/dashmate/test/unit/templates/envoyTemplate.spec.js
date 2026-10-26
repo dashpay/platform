@@ -4,25 +4,18 @@ import renderServiceTemplatesFactory from '../../../src/templates/renderServiceT
 import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.js';
 
 describe('envoy template', () => {
-  let config;
-
-  beforeEach(() => {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
-    config = getBaseConfig();
-  });
-
-  function renderEnvoyConfig() {
-    const renderTemplate = renderTemplateFactory();
-    const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
-
-    return renderServiceTemplates(config)['platform/gateway/envoy.yaml'];
-  }
-
   it('should render admin interface when metrics are enabled even if admin is disabled', () => {
+    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const config = getBaseConfig();
+
     config.set('platform.gateway.metrics.enabled', true);
     config.set('platform.gateway.admin.enabled', false);
 
-    const envoyConfig = renderEnvoyConfig();
+    const renderTemplate = renderTemplateFactory();
+    const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
+    const renderedConfigs = renderServiceTemplates(config);
+
+    const envoyConfig = renderedConfigs['platform/gateway/envoy.yaml'];
 
     expect(envoyConfig).to.include('cluster_name: admin');
     expect(envoyConfig).to.include('address: 127.0.0.1');
@@ -30,7 +23,12 @@ describe('envoy template', () => {
   });
 
   it('should gzip only grpc-web responses, after grpc_web has framed them', () => {
-    const envoyConfig = renderEnvoyConfig();
+    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const config = getBaseConfig();
+
+    const renderTemplate = renderTemplateFactory();
+    const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
+    const envoyConfig = renderServiceTemplates(config)['platform/gateway/envoy.yaml'];
 
     // Encoders run in reverse filter order, so a compressor listed between cors and
     // grpc_web compresses the final grpc-web body, trailer frame included.

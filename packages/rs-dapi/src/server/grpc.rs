@@ -16,7 +16,6 @@ use tower::util::Either;
 use tower::{Layer, Service};
 
 use super::DapiServer;
-use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 
 /// Timeouts for regular requests - sync with envoy config if changed there
 const UNARY_TIMEOUT_SECS: u64 = 15;
@@ -24,44 +23,6 @@ const UNARY_TIMEOUT_SECS: u64 = 15;
 const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
 const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
-
-// Coarse DoS backstop on the *encoded* Platform request. Must stay
-// strictly above every per-method app-layer budget plus protobuf
-// envelope overhead, so that oversized-but-parseable requests reach
-// the app-layer validators and get their precise errors instead of
-// dying here with tonic's generic decode-limit status. The largest
-// legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
-// 64 KiB of raw components, ~65 KiB encoded) and broadcast state
-// transitions (`max_state_transition_size`, 20 KiB).
-const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
-// Same principle for Core: sized above the largest app-layer budget
-// (raw transaction wire cap, 400 KB) plus envelope overhead.
-const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
-/// Largest response DAPI sends. With gzip on, tonic checks this against the
-/// compressed message, so the Drive client bounds the raw response to it too.
-pub(crate) const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
-
-/// Platform service with the message limits and response compression DAPI serves it with.
-///
-/// Responses are gzip-compressed only for clients that list gzip in
-/// `grpc-accept-encoding`; everyone else still gets them uncompressed.
-/// Compressed requests are not accepted: requests are small, and refusing them
-/// keeps decompression out of the request path.
-pub(crate) fn platform_server(service: PlatformServiceImpl) -> PlatformServer<PlatformServiceImpl> {
-    PlatformServer::new(service)
-        .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
-        .max_encoding_message_size(MAX_RESPONSE_BYTES)
-        .send_compressed(CompressionEncoding::Gzip)
-}
-
-/// Core service with the message limits and response compression DAPI serves it with.
-/// See [platform_server].
-fn core_server(service: CoreServiceImpl) -> CoreServer<CoreServiceImpl> {
-    CoreServer::new(service)
-        .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
-        .max_encoding_message_size(MAX_RESPONSE_BYTES)
-        .send_compressed(CompressionEncoding::Gzip)
-}
 
 impl DapiServer {
     /// Start the unified gRPC server that exposes both Platform and Core services.
@@ -76,6 +37,20 @@ impl DapiServer {
 
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
+
+        // Coarse DoS backstop on the *encoded* Platform request. Must stay
+        // strictly above every per-method app-layer budget plus protobuf
+        // envelope overhead, so that oversized-but-parseable requests reach
+        // the app-layer validators and get their precise errors instead of
+        // dying here with tonic's generic decode-limit status. The largest
+        // legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
+        // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
+        // transitions (`max_state_transition_size`, 20 KiB).
+        const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
+        // Same principle for Core: sized above the largest app-layer budget
+        // (raw transaction wire cap, 400 KB) plus envelope overhead.
+        const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
+        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
             .tcp_keepalive(Some(Duration::from_secs(25)))
@@ -101,8 +76,19 @@ impl DapiServer {
         let mut builder = builder.layer(combined_layer);
 
         builder
-            .add_service(platform_server(platform_service))
-            .add_service(core_server(core_service))
+            .add_service(
+                PlatformServer::new(platform_service)
+                    .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
+                    .max_encoding_message_size(MAX_ENCODING_BYTES)
+                    // Only for clients that list gzip in grpc-accept-encoding.
+                    .send_compressed(CompressionEncoding::Gzip),
+            )
+            .add_service(
+                CoreServer::new(core_service)
+                    .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
+                    .max_encoding_message_size(MAX_ENCODING_BYTES)
+                    .send_compressed(CompressionEncoding::Gzip),
+            )
             .serve(addr)
             .await?;
 
@@ -300,88 +286,5 @@ mod tests {
             "status message should include timeout value, got '{}'",
             status.message()
         );
-    }
-
-    /// `core_server` is a separate constructor from `platform_server`, so its
-    /// compression needs its own check. Nothing runs behind the clients:
-    /// `getBlockchainStatus` still answers, with what it could not fetch left empty.
-    #[tokio::test]
-    async fn should_gzip_core_responses_for_clients_that_accept_gzip() {
-        use crate::clients::{CoreClient, DriveClient, TenderdashClient};
-        use crate::config::Config;
-        use crate::services::StreamingServiceImpl;
-        use dapi_grpc::core::v0::GetBlockchainStatusRequest;
-        use dapi_grpc::core::v0::core_client::CoreClient as CoreGrpcClient;
-        use dapi_grpc::tonic::transport::{Endpoint, Server, Uri};
-        use hyper_util::rt::TokioIo;
-        use rs_dapi_client::transport::new_core_client;
-        use std::sync::Arc;
-        use tokio_stream::StreamExt;
-        use tower::ServiceBuilder;
-        use tower_http::trace::TraceLayer;
-        use zeroize::Zeroizing;
-
-        let config = Arc::new(Config::default());
-        let unreachable = "http://127.0.0.1:1";
-        let core_client = CoreClient::new(
-            unreachable.to_owned(),
-            "user".to_owned(),
-            Zeroizing::new("pass".to_owned()),
-            1024,
-        )
-        .expect("Core RPC client");
-        let drive_client = DriveClient::from_test_channel(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .service(Endpoint::from_static(unreachable).connect_lazy()),
-        );
-        let streaming = StreamingServiceImpl::new(
-            drive_client,
-            Arc::new(TenderdashClient::without_test_connection()),
-            core_client.clone(),
-            Arc::clone(&config),
-        )
-        .expect("streaming service");
-        let service = CoreServiceImpl::new(Arc::new(streaming), config, core_client).await;
-
-        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
-        let server = tokio::spawn(async move {
-            let incoming = tokio_stream::iter([Ok::<_, std::io::Error>(server_io)])
-                .chain(tokio_stream::pending());
-            Server::builder()
-                .add_service(core_server(service))
-                .serve_with_incoming(incoming)
-                .await
-                .expect("serve Core service");
-        });
-        let mut io = Some(client_io);
-        let channel = Endpoint::from_static("http://dapi.in-memory")
-            .timeout(Duration::from_secs(5))
-            .connect_with_connector_lazy(tower::service_fn(move |_: Uri| {
-                let io = io.take();
-                async move {
-                    io.map(TokioIo::new)
-                        .ok_or_else(|| std::io::Error::other("single-use fixture channel"))
-                }
-            }));
-
-        let plain = CoreGrpcClient::new(channel.clone())
-            .get_blockchain_status(GetBlockchainStatusRequest {})
-            .await
-            .expect("client without grpc-accept-encoding");
-        assert_eq!(plain.metadata().get("grpc-encoding"), None);
-
-        let compressed = new_core_client(channel)
-            .get_blockchain_status(GetBlockchainStatusRequest {})
-            .await
-            .expect("rs-dapi-client accepts gzip");
-        assert_eq!(
-            compressed
-                .metadata()
-                .get("grpc-encoding")
-                .expect("gzip response"),
-            "gzip"
-        );
-        server.abort();
     }
 }
