@@ -331,8 +331,10 @@ fn should_drop_coverage_for_a_receiving_account_with_no_row() {
     assert!(reload_wallet(&path, &w).dashpay_backfill.is_empty());
 }
 
-/// Re-registering an account (a rotated xpub) rewrites its row; the covered
-/// height on that row must survive, or the next launch would backfill again.
+/// Re-registering the receiving account upserts its row; the covered height
+/// on that row must survive, or the next launch would backfill again. A receiving account's xpub derives from
+/// the wallet's seed at `index'/owner/contact` — the row's key — so the
+/// re-registration carries the same xpub.
 #[test]
 fn should_keep_coverage_when_its_receiving_account_is_re_registered() {
     let (persister, _tmp, path) = fresh_persister();
@@ -345,7 +347,7 @@ fn should_keep_coverage_when_its_receiving_account_is_re_registered() {
         &persister,
         w,
         PlatformWalletChangeSet {
-            account_registrations: vec![receiving_account(&entry, 0x02)],
+            account_registrations: vec![receiving_account(&entry, 0x01)],
             ..Default::default()
         },
     );
@@ -700,14 +702,14 @@ fn contact_request(sender: Identifier, recipient: Identifier) -> ContactRequest 
 /// established contact reads back with no outbound marker (one rebuild) and
 /// every wallet with no backfill recorded (one re-run).
 #[test]
-fn should_upgrade_a_pre_v022_database_to_no_marker_and_no_backfill() {
+fn should_upgrade_a_pre_v020_database_to_no_marker_and_no_backfill() {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
     mig::runner()
         .set_target(refinery::Target::Version(19))
         .run(&mut conn)
-        .expect("migrate to the last pre-V022 schema");
+        .expect("migrate to the last pre-V020 schema");
 
     let w = wid(0x5C);
     let owner = Identifier::from([0x71; 32]);
