@@ -628,8 +628,22 @@ impl ProofFetches {
         if !proven.fetches.iter().any(|(_, slot)| ours(slot)) {
             return;
         }
-        // This fetch's outcome replaces the failures it carried on.
+        // This fetch's outcome replaces the failures it carried on. A failure
+        // recorded in their place keeps the highest height they covered, so
+        // a fetch for a lower height cannot clear a higher one's cooldown.
         let window = self.window;
+        let replaced = proven
+            .fetches
+            .iter()
+            .filter_map(|(quorum, slot)| match slot {
+                Slot::Failed { height, .. }
+                    if *quorum == attempt.quorum && covered(*height, attempt.height, window) =>
+                {
+                    Some(*height)
+                }
+                _ => None,
+            })
+            .max();
         proven.fetches.retain(|(quorum, slot)| match slot {
             Slot::Failed { height, .. } => {
                 *quorum != attempt.quorum || !covered(*height, attempt.height, window)
@@ -656,7 +670,7 @@ impl ProofFetches {
         proven.fetches[index].1 = Slot::Failed {
             at,
             failures,
-            height: attempt.height,
+            height: replaced.map_or(attempt.height, |height| height.max(attempt.height)),
         };
         // Forget the oldest failure rather than remember without bound.
         let failed: Vec<_> = proven
@@ -1334,6 +1348,60 @@ mod tests {
                 .iter()
                 .any(|(quorum, _)| *quorum == (6, [0; 32])),
             "the oldest goes"
+        );
+    }
+
+    #[test]
+    fn should_hold_back_heights_down_to_a_window_below_a_failure() {
+        let fetches = Arc::new(fetches());
+        let failure = Slot::Failed {
+            at: Instant::now(),
+            failures: 1,
+            height: 1000,
+        };
+        fetches.lock().fetches.push(((6, [1; 32]), failure));
+        assert!(fetches.join_or_start(6, [1; 32], 400).is_err());
+        assert!(fetches.join_or_start(6, [1; 32], 399).is_ok());
+    }
+
+    #[test]
+    fn should_keep_a_higher_failures_reach_when_a_lower_fetch_fails() {
+        let fetches = Arc::new(fetches());
+        let quorum = (6, [1; 32]);
+        let long_ago = Instant::now()
+            .checked_sub(Duration::from_secs(70))
+            .expect("the clock has been running longer than the cooldown");
+        // Past the longest cooldown, but not yet forgotten.
+        let failure = Slot::Failed {
+            at: long_ago,
+            failures: 4,
+            height: 1000,
+        };
+        fetches.lock().fetches.push((quorum, failure));
+        // The cooldown has passed, so a fetch for 500 starts and fails.
+        let _lower = fetches.join_or_start(6, [1; 32], 500).expect("cooled down");
+        let id = running_id(&fetches, quorum, 500).expect("running");
+        let lower = Attempt {
+            height: 500,
+            failures: 4,
+            failed_at: Some(long_ago),
+            ..attempt(quorum, id, holding(&fetches, quorum))
+        };
+        fetches.finish(&lower, &Err("failed".to_string()), true);
+        let recorded = fetches
+            .lock()
+            .fetches
+            .iter()
+            .find_map(|(_, slot)| match slot {
+                Slot::Failed {
+                    failures, height, ..
+                } => Some((*failures, *height)),
+                Slot::Running { .. } => None,
+            });
+        assert_eq!(recorded, Some((5, 1000)));
+        assert!(
+            fetches.join_or_start(6, [1; 32], 900).is_err(),
+            "900 is still held back"
         );
     }
 
