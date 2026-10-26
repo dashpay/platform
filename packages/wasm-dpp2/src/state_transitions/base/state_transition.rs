@@ -288,7 +288,6 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<StateTransitionWasm> {
         let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
-        st.ensure_admitted_by_some_version()?;
 
         Ok(st.into())
     }
@@ -299,7 +298,6 @@ impl StateTransitionWasm {
             decode(&hex, Encoding::Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
-        st.ensure_admitted_by_some_version()?;
 
         Ok(st.into())
     }
@@ -310,7 +308,6 @@ impl StateTransitionWasm {
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
-        st.ensure_admitted_by_some_version()?;
 
         Ok(st.into())
     }

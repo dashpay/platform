@@ -1067,22 +1067,16 @@ fn active_version_range_for_keys_in_creation(
 /// do; admitting it would also store a moderated contract whose list trees the earlier storage
 /// writer never creates.
 ///
-/// Format version 2, the stored format, is active at no protocol version: only state holds it,
-/// so decoding refuses a transition carrying one as undecodable, whatever its config, as a
-/// binary that does not know the format does.
+/// Format version 2, the stored format, is active at no protocol version, whatever its config:
+/// only state holds it, and decoding a contract transition refuses one carrying it.
 fn active_version_range_for_contract(
     contract: &DataContractInSerializationFormat,
 ) -> RangeInclusive<ProtocolVersion> {
-    if matches!(contract, DataContractInSerializationFormat::V2(_)) {
-        return NO_VERSION;
-    }
-    if matches!(contract.config(), DataContractConfig::V2(_)) {
-        return 14..=LATEST_VERSION;
-    }
     match contract {
+        DataContractInSerializationFormat::V2(_) => NO_VERSION,
+        _ if matches!(contract.config(), DataContractConfig::V2(_)) => 14..=LATEST_VERSION,
         DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
         DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
-        DataContractInSerializationFormat::V2(_) => NO_VERSION,
     }
 }
 
@@ -1145,7 +1139,6 @@ impl StateTransition {
             .map(usize::from);
         let state_transition =
             platform_value::with_value_decode_depth_limit(max_value_depth, || decode(bytes))?;
-        state_transition.ensure_admitted_by_some_version()?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
@@ -1168,21 +1161,6 @@ impl StateTransition {
         }
         #[cfg(not(all(feature = "state-transitions", feature = "validation")))]
         Ok(state_transition)
-    }
-
-    /// Refuses a transition carrying a format no protocol version admits, such as the stored
-    /// contract format, as undecodable (`PlatformDeserializationError`): the refusal a binary
-    /// without the format gives, at every protocol version and whatever features are built.
-    /// The versioned decoders run it before checking the active range; every other decoder of
-    /// a transition from outside should run it too.
-    pub fn ensure_admitted_by_some_version(&self) -> Result<(), ProtocolError> {
-        if self.active_version_range().is_empty() {
-            return Err(ProtocolError::PlatformDeserializationError(format!(
-                "a {} carries a format no state transition may carry",
-                self.name()
-            )));
-        }
-        Ok(())
     }
 
     pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
@@ -3225,12 +3203,25 @@ mod tests {
     }
 
     // Format version 2 of a contract is the stored format, which only state holds. Software
-    // without the format cannot decode a transition carrying one, so software with it refuses
-    // such a transition as undecodable too, at every protocol version.
+    // without the format cannot decode a transition carrying one, so a contract transition's own
+    // decoding refuses one too: every decoder of a transition, at every protocol version.
     #[test]
-    fn should_refuse_a_contract_transition_carrying_the_stored_format_at_every_version() {
-        use crate::serialization::PlatformSerializable;
+    fn should_refuse_a_contract_transition_carrying_the_stored_format_in_every_decoder() {
+        use crate::serialization::{
+            PlatformDeserializableTrusted, PlatformDeserializableUntrusted, PlatformSerializable,
+        };
         use crate::state_transition::state_transition_factory::StateTransitionFactory;
+
+        // Refused at the contract's format tag, as an unknown variant
+        fn assert_refused<T: std::fmt::Debug>(decoded: Result<T, ProtocolError>, decoder: &str) {
+            let refusal = format!("{decoded:?}");
+            assert!(
+                decoded.is_err()
+                    && refusal.contains("UnexpectedVariant")
+                    && refusal.contains("TransitionContractFormat"),
+                "{decoder}: {refusal}"
+            );
+        }
 
         let mut storing = PlatformVersion::latest().clone();
         storing
@@ -3279,29 +3270,53 @@ mod tests {
             assert!(transition.active_version_range().is_empty());
             let bytes =
                 PlatformSerializable::serialize_to_bytes(&transition).expect("serialize succeeds");
-            assert!(StateTransitionFactory.create_from_buffer(&bytes).is_err());
+            assert_refused(
+                StateTransition::deserialize_from_bytes_trusted(&bytes),
+                "trusted",
+            );
+            assert_refused(
+                StateTransition::deserialize_from_bytes_untrusted(&bytes),
+                "untrusted",
+            );
+            assert_refused(
+                StateTransition::deserialize_many_untrusted(std::slice::from_ref(&bytes)),
+                "many",
+            );
+            assert_refused(StateTransitionFactory.create_from_buffer(&bytes), "factory");
+            let untagged = match &transition {
+                StateTransition::DataContractCreate(create) => {
+                    PlatformSerializable::serialize_to_bytes(create)
+                }
+                StateTransition::DataContractUpdate(update) => {
+                    PlatformSerializable::serialize_to_bytes(update)
+                }
+                other => panic!("expected a contract transition, got {other:?}"),
+            }
+            .expect("serialize succeeds");
+            assert_refused(
+                StateTransition::deserialize_untagged_untrusted_exact(
+                    transition.state_transition_type(),
+                    &untagged,
+                ),
+                "untagged",
+            );
             for protocol_version in 1..=LATEST_VERSION {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("platform version exists");
-                for decoded in [
+                assert_refused(
                     StateTransition::deserialize_from_bytes_untrusted_in_version(
                         &bytes,
                         platform_version,
                     ),
+                    "in version",
+                );
+                assert_refused(
                     StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
                         &bytes,
                         platform_version,
                     ),
-                ] {
-                    assert!(
-                        matches!(
-                            &decoded,
-                            Err(ProtocolError::PlatformDeserializationError(message))
-                                if message.contains("no state transition may carry")
-                        ),
-                        "protocol version {protocol_version}: {decoded:?}"
-                    );
-                }
+                    "exact in version",
+                );
             }
         }
     }

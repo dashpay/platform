@@ -10,6 +10,8 @@ use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use crate::data_contract::serialized_version::TransitionContractFormat;
+use crate::state_transition::state_transitions::contract::stored_contract_format::decode_through;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_version::version::PlatformVersion;
@@ -22,7 +24,9 @@ use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, DecodeUntrusted)]
+/// Decoded through [`DataContractUpdateTransitionV0Decoded`], which refuses the stored contract
+/// format at its tag.
+#[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -41,6 +45,41 @@ pub struct DataContractUpdateTransitionV0 {
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
+
+/// [`DataContractUpdateTransitionV0`] as decoding reads it: the same fields in the same order,
+/// its contract read as a [`TransitionContractFormat`].
+#[derive(Decode, DecodeUntrusted)]
+struct DataContractUpdateTransitionV0Decoded {
+    identity_contract_nonce: IdentityNonce,
+    data_contract: TransitionContractFormat,
+    user_fee_increase: UserFeeIncrease,
+    signature_public_key_id: KeyID,
+    signature: BinaryData,
+}
+
+impl From<DataContractUpdateTransitionV0Decoded> for DataContractUpdateTransitionV0 {
+    fn from(decoded: DataContractUpdateTransitionV0Decoded) -> Self {
+        let DataContractUpdateTransitionV0Decoded {
+            identity_contract_nonce,
+            data_contract,
+            user_fee_increase,
+            signature_public_key_id,
+            signature,
+        } = decoded;
+        Self {
+            identity_contract_nonce,
+            data_contract: data_contract.into(),
+            user_fee_increase,
+            signature_public_key_id,
+            signature,
+        }
+    }
+}
+
+decode_through!(
+    DataContractUpdateTransitionV0,
+    DataContractUpdateTransitionV0Decoded
+);
 
 impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransitionV0 {
     type Error = ProtocolError;

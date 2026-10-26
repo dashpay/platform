@@ -126,6 +126,26 @@ pub enum DataContractInSerializationFormat {
     V2(DataContractInSerializationFormatV2),
 }
 
+/// The contract of a contract state transition as decoding reads it: the variants of
+/// [`DataContractInSerializationFormat`] a transition may carry, at the same tags, so the same
+/// bytes decode to the same contract, and none at the tag of format version 2, the stored format,
+/// which only state holds. Decoding refuses that tag before reading any of the contract, as
+/// software without the format refuses it.
+#[derive(Decode, DecodeUntrusted)]
+pub(crate) enum TransitionContractFormat {
+    V0(DataContractInSerializationFormatV0),
+    V1(DataContractInSerializationFormatV1),
+}
+
+impl From<TransitionContractFormat> for DataContractInSerializationFormat {
+    fn from(format: TransitionContractFormat) -> Self {
+        match format {
+            TransitionContractFormat::V0(v0) => DataContractInSerializationFormat::V0(v0),
+            TransitionContractFormat::V1(v1) => DataContractInSerializationFormat::V1(v1),
+        }
+    }
+}
+
 impl DataContractInSerializationFormat {
     /// Returns the unique identifier for the data contract.
     pub fn id(&self) -> Identifier {
