@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use bincode::de::{DecodeUntrusted, UntrustedDecoder};
 use bincode::error::DecodeError;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
 
 /// Maximum number of encoded bytes accepted for a single caller-supplied,
@@ -181,9 +182,7 @@ where
             return None;
         }
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<MAX_DECODED_INDEX_VALUE_BYTES>();
+        let config = PLATFORM_BINCODE_CONFIG.with_limit::<MAX_DECODED_INDEX_VALUE_BYTES>();
 
         let (DepthLimitedValue(value), consumed) =
             bincode::decode_from_slice_untrusted::<DepthLimitedValue, _>(serialized_value, config)
@@ -203,6 +202,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// The exact ten-byte `Value::Bytes` payload from the advisory: enum
     /// discriminant 10, variable-integer marker `0xfd`, then a big-endian
@@ -269,8 +269,7 @@ mod tests {
     fn rejects_trailing_bytes() {
         // A valid encoding of Value::U8(1) is `[0x08, 0x01]`; append a stray byte.
         let mut encoded =
-            bincode::encode_to_vec(Value::U8(1), bincode::config::standard().with_big_endian())
-                .expect("encode");
+            bincode::encode_to_vec(Value::U8(1), PLATFORM_BINCODE_CONFIG).expect("encode");
         encoded.push(0x00);
         let result = decode_serialized_index_value(&encoded, || "invalid".to_string());
         assert!(matches!(result, Err(QueryError::InvalidArgument(_))));
@@ -278,11 +277,9 @@ mod tests {
 
     #[test]
     fn round_trips_a_valid_value() {
-        let encoded = bincode::encode_to_vec(
-            Value::Text("hello".to_string()),
-            bincode::config::standard().with_big_endian(),
-        )
-        .expect("encode");
+        let encoded =
+            bincode::encode_to_vec(Value::Text("hello".to_string()), PLATFORM_BINCODE_CONFIG)
+                .expect("encode");
         let decoded =
             decode_serialized_index_value(&encoded, || "invalid".to_string()).expect("decode");
         assert_eq!(decoded, Value::Text("hello".to_string()));
@@ -292,8 +289,7 @@ mod tests {
     fn round_trips_a_valid_nested_value() {
         let value = Value::Array(vec![Value::U8(1); 512]);
         let encoded =
-            bincode::encode_to_vec(value.clone(), bincode::config::standard().with_big_endian())
-                .expect("encode");
+            bincode::encode_to_vec(value.clone(), PLATFORM_BINCODE_CONFIG).expect("encode");
         assert!(encoded.len() < MAX_ENCODED_INDEX_VALUE_BYTES);
 
         let decoded =
@@ -330,11 +326,8 @@ mod tests {
         ];
 
         for value in values {
-            let encoded = bincode::encode_to_vec(
-                value.clone(),
-                bincode::config::standard().with_big_endian(),
-            )
-            .expect("encode");
+            let encoded =
+                bincode::encode_to_vec(value.clone(), PLATFORM_BINCODE_CONFIG).expect("encode");
             let decoded =
                 decode_serialized_index_value(&encoded, || "invalid".to_string()).expect("decode");
             assert_eq!(decoded, value);

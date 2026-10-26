@@ -21,6 +21,7 @@ use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
@@ -1506,9 +1507,7 @@ impl SdkBuilder {
 }
 
 pub fn prettify_proof(proof: &Proof) -> String {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit();
+    let config = PLATFORM_BINCODE_CONFIG;
     let grovedb_proof: Result<GroveDBProof, DecodeError> =
         bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map(|(a, _)| a);
 

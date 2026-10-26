@@ -3087,6 +3087,7 @@ impl<L: Length> IntoOption for L {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
@@ -3863,7 +3864,7 @@ mod tests {
     #[test]
     fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
         for version in [0, 1] {
-            let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
+            let proof = bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
                 .expect("V0 envelope discriminant");
             let err = non_unique_lookup_error(
                 non_unique_request(version, vec![0u8; 20], None),
@@ -6510,14 +6511,12 @@ mod tests {
         use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dpp::data_contract::group::Group;
         use dpp::tokens::contract_info::TokenContractInfo;
+        use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
         fn legacy_proof() -> Proof {
             Proof {
-                grovedb_proof: bincode::encode_to_vec(
-                    0u32,
-                    bincode::config::standard().with_big_endian(),
-                )
-                .expect("V0 envelope discriminant should encode"),
+                grovedb_proof: bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                    .expect("V0 envelope discriminant should encode"),
                 ..Proof::default()
             }
         }
