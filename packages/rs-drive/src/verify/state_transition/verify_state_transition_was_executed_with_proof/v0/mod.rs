@@ -1427,6 +1427,18 @@ impl Drive {
                                                 order_id
                                             ))));
                                         }
+                                        // A token that keeps transfer history recorded the
+                                        // placement too, and the proof holds the record beside
+                                        // the order: it must be there, hold the transition's
+                                        // terms and authenticate against the same root.
+                                        if keeps_transfer_history {
+                                            let (history_root_hash, _) = historical_query(true)?;
+                                            if history_root_hash != root_hash {
+                                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                                    "the order and its history record were proved against different roots".to_string(),
+                                                )));
+                                            }
+                                        }
                                         Ok((
                                             root_hash,
                                             VerifiedDocuments(BTreeMap::from([(
@@ -1504,6 +1516,18 @@ impl Drive {
                                                 "proof of the offer {} does not hold the terms of state transition (token place bid)",
                                                 order_id
                                             ))));
+                                        }
+                                        // A token that keeps transfer history recorded the
+                                        // placement too, and the proof holds the record beside
+                                        // the order: it must be there, hold the transition's
+                                        // terms and authenticate against the same root.
+                                        if keeps_transfer_history {
+                                            let (history_root_hash, _) = historical_query(true)?;
+                                            if history_root_hash != root_hash {
+                                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                                    "the order and its history record were proved against different roots".to_string(),
+                                                )));
+                                            }
                                         }
                                         Ok((
                                             root_hash,

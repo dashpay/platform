@@ -2946,6 +2946,7 @@ mod history {
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::Value;
     use drive::query::DriveDocumentQuery;
+    use drive::query::SingleDocumentDriveQuery;
 
     impl Market {
         /// Every document of `document_type_name` in the token history contract.
@@ -3226,6 +3227,71 @@ mod history {
         let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
         market.assert_executes(&sale, &BlockInfo::default());
         refused(&market, &place);
+    }
+
+    /// An open order of a token that keeps transfer history is proved by its document and its
+    /// `orderPlaced` record together: a proof of the document alone, without the record, is
+    /// refused, for a listing and an offer, while the node's proof of both verifies.
+    #[tokio::test]
+    async fn should_not_prove_an_open_order_without_its_placement_record() {
+        let platform_version = PlatformVersion::latest();
+        let mut market = tradeable_market();
+        let (place_ask, ask_id) = market.place_ask(1_000, PRICE, 1).await;
+        market.assert_executes(&place_ask, &BlockInfo::default());
+        let (place_bid, bid_id) = market.place_bid(1_000, PRICE, 1).await;
+        market.assert_executes(&place_bid, &BlockInfo::default());
+        let token_market_contract_id = market
+            .platform
+            .drive
+            .token_market_contract_fetch_info(platform_version)
+            .expect("expected the token market contract")
+            .contract
+            .id();
+
+        for (transition, side, order_id) in [
+            (&place_ask, TokenOrderSide::Ask, ask_id),
+            (&place_bid, TokenOrderSide::Bid, bid_id),
+        ] {
+            let path_query = SingleDocumentDriveQuery::latest_not_contested(
+                token_market_contract_id.to_buffer(),
+                side.document_type_name().to_string(),
+                false,
+                order_id.to_buffer(),
+            )
+            .construct_path_query(platform_version)
+            .expect("expected the order's path query");
+            let order_only = market
+                .platform
+                .drive
+                .grove
+                .get_proved_path_query(
+                    &path_query,
+                    None,
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected a proof of the order alone");
+            let contract = Arc::new(market.contract.clone());
+            let lookup = |_id: &Identifier| Ok(Some(Arc::clone(&contract)));
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                transition,
+                &BlockInfo::default(),
+                order_only.as_slice(),
+                &lookup,
+                platform_version,
+            );
+            // GroveDB refuses it: the proof holds nothing for the record's query.
+            assert!(
+                result.is_err(),
+                "{side:?}: a proof without the placement record: {result:?}"
+            );
+            assert_matches!(
+                market.prove_and_verify(transition),
+                StateTransitionProofResult::VerifiedDocuments(documents)
+                    if documents.get(&order_id).is_some_and(Option::is_some)
+            );
+        }
     }
 
     /// A token can reach more decimals than a contract may declare (16) through a conventions
