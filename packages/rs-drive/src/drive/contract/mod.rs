@@ -31,6 +31,10 @@ pub(crate) mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "server")]
 mod refresh_cache;
+#[cfg(feature = "server")]
+mod storage_serialization;
+#[cfg(feature = "server")]
+pub(crate) use storage_serialization::serialize_contract_for_storage;
 #[cfg(all(feature = "server", any(test, feature = "structure")))]
 pub(crate) mod structure;
 #[cfg(feature = "fixtures-and-mocks")]

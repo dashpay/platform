@@ -1,4 +1,5 @@
 use crate::drive::contract::paths;
+use crate::drive::contract::serialize_contract_for_storage;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
@@ -15,12 +16,9 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
-
 use crate::drive::votes::paths::{
     CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
 };
-use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
@@ -48,17 +46,7 @@ impl Drive {
             None
         };
 
-        let serialized_contract =
-            contract.serialize_to_bytes_with_platform_version(platform_version)?;
-
-        if serialized_contract.len() as u64 > u32::MAX as u64
-            || serialized_contract.len() as u32
-                > platform_version.dpp.contract_versions.max_serialized_size
-        {
-            // This should normally be caught by DPP, but there is a rare possibility that the
-            // re-serialized size is bigger than the original serialized data contract.
-            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
-        }
+        let serialized_contract = serialize_contract_for_storage(contract, platform_version)?;
 
         let contract_element = Element::Item(
             serialized_contract,

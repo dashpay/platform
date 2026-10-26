@@ -9,8 +9,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
-
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path;
 use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
 use dpp::version::PlatformVersion;
@@ -109,9 +107,7 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            contract
-                                .serialize_to_bytes_with_platform_version(platform_version)?
-                                .len() as u32, //todo: fix this
+                            contract.serialize_to_storage_bytes(platform_version)?.len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),

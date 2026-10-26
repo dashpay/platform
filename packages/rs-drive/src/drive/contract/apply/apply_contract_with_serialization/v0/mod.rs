@@ -43,7 +43,8 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        let batch_operations = self.apply_contract_with_serialization_operations_v0(
+        // Through the dispatcher: generation 1 shares this wrapper and differs in its operations
+        let batch_operations = self.apply_contract_with_serialization_operations(
             contract,
             contract_serialization,
             &block_info,
@@ -90,6 +91,37 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // The stored contract is unchanged when its bytes are the new serialization
+        self.apply_contract_with_serialization_operations_comparing(
+            contract,
+            contract_serialization,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            storage_flags,
+            transaction,
+            |stored, serialization| Ok(stored == serialization),
+            platform_version,
+        )
+    }
+
+    /// The operations of [`Self::apply_contract_with_serialization_operations_v0`], deciding
+    /// with `unchanged`, given the stored bytes and the new serialization, whether the stored
+    /// contract is the one applied, in which case nothing is written. Shared with generation 1,
+    /// which compares otherwise.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn apply_contract_with_serialization_operations_comparing(
+        &self,
+        contract: &DataContract,
+        contract_serialization: Vec<u8>,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+        unchanged: impl Fn(&[u8], &[u8]) -> Result<bool, Error>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // overlying structure
@@ -125,7 +157,7 @@ impl Drive {
                 match stored_element {
                     Element::Item(stored_contract_bytes, _) => {
                         already_exists = true;
-                        if contract_serialization != stored_contract_bytes {
+                        if !unchanged(&stored_contract_bytes, &contract_serialization)? {
                             original_contract_stored_data = stored_contract_bytes;
                         }
                     }
@@ -148,7 +180,7 @@ impl Drive {
                             )))?;
                         match stored_element {
                             Element::Item(stored_contract_bytes, _) => {
-                                if contract_serialization != stored_contract_bytes {
+                                if !unchanged(&stored_contract_bytes, &contract_serialization)? {
                                     original_contract_stored_data = stored_contract_bytes;
                                 }
                             }

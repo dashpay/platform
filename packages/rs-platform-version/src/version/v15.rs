@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
@@ -160,9 +160,24 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    has its documents checked natively (note 6). The parser is generation 3
 ///    at both versions, and loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0.
+///
+/// 8. **Contracts stored compiled**: `CONTRACT_VERSIONS_V7` selects
+///    `contract_storage_serialization_version` 2: Drive stores a contract it creates or
+///    updates in format version 2, its schemas with each document type compiled
+///    (`DocumentTypeInSerializationFormat` 0), and reads such a contract back without parsing
+///    its schemas, so it keeps the meaning it was compiled with. State transitions, unproved
+///    query responses and JSON keep format version 1 (`contract_serialization_version`), and
+///    a transition carrying format version 2 is refused while decoding at every version. The
+///    65,000-byte cap still applies to the contract's format version 1 bytes; the compiled
+///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
+///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
+///    writes nothing when a contract's format version 1 bytes match the stored one's.
+///    Contracts stored before this version stay in their format until their next update.
+///    Protocol v14 and earlier keep format version 1 (0 before v9) and
+///    `apply_contract_with_serialization` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock

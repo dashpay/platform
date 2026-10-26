@@ -9,8 +9,6 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
-
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -66,7 +64,7 @@ impl Drive {
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract_bytes = contract.serialize_to_bytes_with_platform_version(platform_version)?;
+        let contract_bytes = contract.serialize_to_storage_bytes(platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(

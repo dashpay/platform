@@ -7,7 +7,6 @@ use dpp::ProtocolError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
 use dpp::version::PlatformVersion;
 use drive::dpp::identity::TimestampMillis;
@@ -26,8 +25,7 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let serialization =
-            data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
+        let serialization = data_contract.serialize_to_storage_bytes(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Borrowed(data_contract),

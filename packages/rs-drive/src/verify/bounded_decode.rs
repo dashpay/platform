@@ -23,11 +23,23 @@ const MAX_VOTE_REFERENCE_DECODE_BYTES: usize = 64 * 1024;
 /// compact length prefixes before a proof root is trusted.
 const MAX_CONTRACT_DECODE_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
+/// The first byte of a contract stored in format version 2, the compiled form: its format
+/// version, which bincode writes as a single byte.
+const COMPILED_CONTRACT_FORMAT_TAG: u8 = 2;
+
 pub(super) fn decode_proof_data_contract(
     serialized_contract: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, Error> {
-    let max_serialized_size = platform_version.dpp.contract_versions.max_serialized_size as usize;
+    // The protocol caps a contract's bytes in the format state transitions carry. A contract
+    // stored compiled holds those bytes' fields and each document type compiled, about twice
+    // as many and not capped themselves, so only the decode budget bounds them
+    let max_serialized_size = if serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
+    {
+        MAX_CONTRACT_DECODE_MEMORY_BYTES
+    } else {
+        platform_version.dpp.contract_versions.max_serialized_size as usize
+    };
     if serialized_contract.len() > max_serialized_size {
         return Err(ProtocolError::PlatformDeserializationError(format!(
             "serialized proof data contract exceeds the protocol limit of {max_serialized_size} bytes"
@@ -135,6 +147,25 @@ mod tests {
             .expect("serialize contract fixture");
         bytes.push(0);
 
+        assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
+    }
+
+    #[test]
+    fn proof_contract_decoder_reads_a_contract_stored_compiled() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let mut bytes = contract
+            .serialize_to_storage_bytes(platform_version)
+            .expect("serialize contract fixture for storage");
+        assert_eq!(bytes[0], COMPILED_CONTRACT_FORMAT_TAG);
+
+        assert_eq!(
+            decode_proof_data_contract(&bytes, platform_version)
+                .expect("decode the compiled contract"),
+            contract
+        );
+        bytes.push(0);
         assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
     }
 

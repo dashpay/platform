@@ -6,7 +6,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::{BackwardsReferences, Element, Transaction};
@@ -117,10 +116,8 @@ impl Drive {
         }
 
         // A system contract, stored without storage flags
-        let contract_element = Element::Item(
-            contract.serialize_to_bytes_with_platform_version(platform_version)?,
-            None,
-        );
+        let contract_element =
+            Element::Item(contract.serialize_to_storage_bytes(platform_version)?, None);
         let mut drive_operations = vec![];
         self.update_contract_add_operations(
             contract_element,
