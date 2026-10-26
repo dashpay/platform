@@ -305,8 +305,8 @@ comparing.
 together with `CodecBudget` (the running counters), `BoundsError` (fixed-width
 fields only, so it can become wire-visible later without depending on the word
 size), `BoundedSliceReader` (a slice reader that reports its unread remainder),
-`canonical_config()` (the same big-endian varint configuration as the native
-path) and `bounded_decode_from_slice`, which rejects trailing bytes. Its
+`canonical_config()` (which returns `PLATFORM_BINCODE_CONFIG`, the native
+configuration) and `bounded_decode_from_slice`, which rejects trailing bytes. Its
 closure gets an ordinary bincode decoder, so the bounds cover only what the
 closure reads through the bounded helpers: decoding a `Vec` or `String` with
 bincode's own `Decode` inside it allocates from the declared length.
