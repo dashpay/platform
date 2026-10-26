@@ -383,6 +383,26 @@
              responseClass:[GetDataContractsLatestVersionsResponse class]];
 }
 
+#pragma mark getAssetLockOutpointInfo(GetAssetLockOutpointInfoRequest) returns (GetAssetLockOutpointInfoResponse)
+
+- (void)getAssetLockOutpointInfoWithRequest:(GetAssetLockOutpointInfoRequest *)request handler:(void(^)(GetAssetLockOutpointInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetAssetLockOutpointInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetAssetLockOutpointInfoWithRequest:(GetAssetLockOutpointInfoRequest *)request handler:(void(^)(GetAssetLockOutpointInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getAssetLockOutpointInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetAssetLockOutpointInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getAssetLockOutpointInfoWithMessage:(GetAssetLockOutpointInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getAssetLockOutpointInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetAssetLockOutpointInfoResponse class]];
+}
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler{

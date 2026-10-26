@@ -7979,3 +7979,4 @@ mod tests {
         }
     }
 }
+pub mod asset_lock_outpoint_info;
