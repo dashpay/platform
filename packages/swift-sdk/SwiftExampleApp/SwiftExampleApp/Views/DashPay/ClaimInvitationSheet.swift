@@ -233,7 +233,9 @@ struct ClaimInvitationSheet: View {
                     // records, or one an earlier claim at this index created
                     // without recording it, which is loaded like any identity
                     // of this wallet. Only the identity the error names counts.
-                    if let recorded = identities.first(where: { $0.identityIdBase58 == claimedId }) {
+                    if let recorded = identities.first(where: {
+                        $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
+                    }) {
                         newIdentityId = recorded.identityId
                     } else {
                         let loaded: Identifier?

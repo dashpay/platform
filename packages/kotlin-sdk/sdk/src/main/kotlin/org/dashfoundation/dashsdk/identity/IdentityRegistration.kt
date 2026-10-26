@@ -474,6 +474,7 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         identityIndex: Int,
     ): ByteArray? = gate.op {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         val id = mapNativeErrors {
             IdentityNative.loadIdentityAtIndex(walletHandle, mnemonicResolverHandle, identityIndex)
         }

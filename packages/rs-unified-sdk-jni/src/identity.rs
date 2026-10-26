@@ -940,6 +940,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_loadId
     identity_index: jint,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
         let mut found = false;
         let mut id = [0u8; 32];
         let result = unsafe {

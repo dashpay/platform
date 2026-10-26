@@ -180,8 +180,10 @@ fun ClaimInvitationSheet(
                         // any identity of this wallet. Only the identity the
                         // error names counts.
                         val claimedId = Base58.decodeIdentifier(e.identityId) ?: throw e
-                        walletOwned.firstOrNull { it.identityId.contentEquals(claimedId) }
-                            ?.identityId
+                        walletOwned.firstOrNull {
+                            it.walletId?.contentEquals(wallet.walletId) == true &&
+                                it.identityId.contentEquals(claimedId)
+                        }?.identityId
                             ?: identityAt(wallet.handle, mgr, identityIndex) { cause ->
                                 "This invitation already created identity ${e.identityId} " +
                                     "in this wallet, but loading it failed: $cause. Try again."
