@@ -71,6 +71,9 @@ impl TotalTokensBalance {
             ));
         }
 
+        // Every protocol version runs this check. The escrow term is zero below protocol
+        // version 15, where `calculate_total_tokens_balance` 0 and 1 report none, so this
+        // refusal and its share of the sum below cannot change their verdict.
         if total_token_order_escrow_balances < 0 {
             return Err(ProtocolError::CriticalCorruptedCreditsCodeExecution(
                 "Tokens in order escrow are less than 0".to_string(),

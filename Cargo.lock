@@ -6612,6 +6612,7 @@ dependencies = [
  "arc-swap",
  "dash-async",
  "dash-context-provider",
+ "data-contracts",
  "dpp",
  "futures",
  "gloo-timers",
