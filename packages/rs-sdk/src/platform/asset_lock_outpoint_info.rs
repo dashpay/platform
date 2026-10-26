@@ -17,15 +17,20 @@ pub struct AssetLockOutpointInfoQuery {
 
 fn request_for_outpoint(
     outpoint: &OutPoint,
-    _settings: &QuerySettings<'_>,
+    settings: &QuerySettings<'_>,
 ) -> Result<GetAssetLockOutpointInfoRequest, Error> {
+    if !settings.prove {
+        return Err(Error::Config(
+            "unproved queries are not supported for this query; enable proofs".to_string(),
+        ));
+    }
     let mut bytes = outpoint.txid.to_byte_array().to_vec();
     bytes.extend_from_slice(&outpoint.vout.to_le_bytes());
     Ok(GetAssetLockOutpointInfoRequest {
         version: Some(get_asset_lock_outpoint_info_request::Version::V0(
             GetAssetLockOutpointInfoRequestV0 {
                 outpoint: bytes,
-                prove: true,
+                prove: settings.prove,
             },
         )),
     })
