@@ -975,11 +975,48 @@ mod tests {
         // higher, so its own fetch fails; it does not fail for having joined.
         let heights = relay.heights();
         assert_eq!(heights[..2], [json!(lower), json!(higher)], "{heights:?}");
+        assert_eq!(
+            relay.most_open(),
+            1,
+            "the higher caller did not ask at once"
+        );
         let reason = unavailable_reason(second);
         assert!(
             reason.contains(&format!("for core height {higher}")),
             "{reason}"
         );
+    }
+
+    #[tokio::test]
+    async fn should_give_a_caller_one_deadline_across_the_fetches_it_waits_on() {
+        let f = fixture(Network::Testnet);
+        let bootstrap = f.bootstrap.clone();
+        let mut answered = 0;
+        let relay = MockRelay::serve(2, move |_| {
+            answered += 1;
+            Some(if answered == 1 {
+                Answer::Late(Duration::from_millis(1500), 200, bootstrap.clone())
+            } else {
+                Answer::Hang(Duration::from_secs(20))
+            })
+        });
+        let timing = Timing {
+            deadline: Duration::from_secs(2),
+            request_timeout: Duration::from_secs(2),
+            ..quick()
+        };
+        let provider = provider_for(&f, vec![relay.url.clone()], timing);
+        let lower = f.target.height + 600;
+        let first = fetch(&provider, f.quorum_type, f.quorum_hash, lower);
+        let started = Instant::now();
+        let second = fetch(&provider, f.quorum_type, f.quorum_hash, lower + 1);
+        let (first, second) = futures::join!(first, second);
+        assert!(first.is_ok());
+        // The lower fetch took 1.5 s; the caller's own fetch gets only what
+        // is left of its 2 s, not another 2 s.
+        let reason = unavailable_reason(second);
+        assert!(reason.contains("not proven within"), "{reason}");
+        assert!(started.elapsed() < Duration::from_secs(3), "{reason}");
     }
 
     #[tokio::test]
@@ -1196,6 +1233,21 @@ mod tests {
         unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await);
         // The hung request was cut short by the deadline; the refusal was not.
         assert_eq!(provider.inner.fetches.cooling(), [false, true]);
+    }
+
+    #[tokio::test]
+    async fn should_stop_asking_a_relay_that_stays_busy() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn((0..8).map(|_| reply(503, Vec::new())).collect());
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let started = Instant::now();
+        let reason = unavailable_reason(
+            fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await,
+        );
+        assert!(reason.contains("not asked again"), "{reason}");
+        assert_eq!(relay.requests().len(), 3);
+        assert!(started.elapsed() < Duration::from_secs(10), "{reason}");
+        assert_eq!(provider.inner.fetches.cooling(), [false]);
     }
 
     #[tokio::test]
