@@ -177,7 +177,10 @@ async fn should_accept_an_ordinary_contract_in_check_tx() {
 /// The depth check resolves every `$ref`. The block checks the long form a property type
 /// shorthand stands for, so a reference to a keyword only that form writes resolves there;
 /// `check_tx` checks the same rewritten schema and admits what the block accepts, as it does
-/// the contract written in full.
+/// the contract written in full. Protocol version 14 registers the type. From protocol version
+/// 15 every type registered needs a typed validation schema, and the `$ref` here reaches
+/// `byteArray`'s value, the schema `true`, which the validation schema does not represent: the
+/// block refuses the type, paid, after `check_tx` admits it.
 #[tokio::test]
 async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
     let hash = |property: Value| {
@@ -204,25 +207,38 @@ async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
             "contains": contains.clone()
         })),
     ] {
-        let outcome = register_contract_with_schema(
-            schema.clone(),
-            PlatformVersion::latest().protocol_version,
-        )
-        .await
-        .outcome;
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let outcome = register_contract_with_schema(schema.clone(), protocol_version)
+                .await
+                .outcome;
 
-        assert_matches!(
-            outcome.check_tx.as_deref(),
-            Ok([]),
-            "check_tx of {schema:?}: {:?}",
-            outcome.check_tx
-        );
-        assert_matches!(
-            &outcome.block,
-            StateTransitionExecutionResult::SuccessfulExecution { .. },
-            "block of {schema:?}: {:?}",
-            outcome.block
-        );
+            assert_matches!(
+                outcome.check_tx.as_deref(),
+                Ok([]),
+                "check_tx of {schema:?} at protocol version {protocol_version}: {:?}",
+                outcome.check_tx
+            );
+            if protocol_version == 14 {
+                assert_matches!(
+                    &outcome.block,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "block of {schema:?} at protocol version 14: {:?}",
+                    outcome.block
+                );
+            } else {
+                assert_matches!(
+                    &outcome.block,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(BasicError::ContractError(
+                            DataContractError::InvalidContractStructure(message)
+                        )),
+                        ..
+                    } if message.contains("a schema must be an object"),
+                    "block of {schema:?} at protocol version {protocol_version}: {:?}",
+                    outcome.block
+                );
+            }
+        }
     }
 }
 
