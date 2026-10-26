@@ -172,6 +172,13 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::SchemaHistoryMissing,
         ),
         (
+            "UnregisteredContactPoolClaim",
+            WalletStorageError::UnregisteredContactPoolClaim {
+                account: "dashpay_external[0]".into(),
+                claims: 1,
+            },
+        ),
+        (
             "SchemaVersionUnsupported",
             WalletStorageError::SchemaVersionUnsupported {
                 found: 9,

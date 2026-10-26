@@ -446,19 +446,26 @@ pub fn apply_persisted_core_state(
 /// deepest, as sync would. Without this a relaunch hands such an address out
 /// again, linking two payments on-chain.
 ///
-/// Degraded: a claim on a contact account this wallet does not register,
-/// and one whose slot does not derive the stored address — a re-sent
-/// contact request replaced the contact's xpub under the same account key,
-/// or the row is corrupt. The slot of such a claim is still kept used: the
-/// writer keys its rows on `(pool_type, address_index)`, and a skipped index
-/// costs less than an address paid twice.
+/// Degraded: a claim whose slot does not derive the stored address — a
+/// re-sent contact request replaced the contact's xpub under the same
+/// account key, or the row is corrupt. The slot of such a claim is still
+/// kept used: the writer keys its rows on `(pool_type, address_index)`, and
+/// a skipped index costs less than an address paid twice.
 ///
-/// Fatal under Strict, as on the funds accounts: a failed gap refill, a
-/// claimed slot that cannot be derived into the pool — no xpub for it, or a
-/// pool type the account has no pool for — and a claim past
-/// [`MAX_REHYDRATION_DERIVATION_INDEX`], which takes that many payments to
-/// one contact. The load cannot restore such a claim, and the refill past
-/// the claims below it could hand its address out as fresh.
+/// Fatal under Strict:
+/// - a claim on a contact account this wallet does not register. A
+///   contact's registration is written in the same round as its pool rows
+///   and removed only with the wallet, so such rows are corrupt; they could
+///   be a funds row relabelled as a contact's, whose used state
+///   [`core_pool::load_used_addresses_with_ctx`] then leaves out. A row
+///   moved onto a registered contact's key is not told apart from that
+///   contact's own and keeps only its slot used there.
+/// - as on the funds accounts, a failed gap refill, a claimed slot that
+///   cannot be derived into the pool — no xpub for it, or a pool type the
+///   account has no pool for — and a claim past
+///   [`MAX_REHYDRATION_DERIVATION_INDEX`], which takes that many payments to
+///   one contact. The load cannot restore such a claim, and the refill past
+///   the claims below it could hand its address out as fresh.
 ///
 /// Never touches key material — the xpub is the keyless account public key.
 pub fn restore_contact_pool_claims(
@@ -485,8 +492,6 @@ pub fn restore_contact_pool_claims(
             .push(claim);
     }
 
-    let mut missing_accounts: Vec<String> = Vec::new();
-    let mut missing_claims = 0usize;
     for (key, claims) in &by_account {
         let account_type = AccountType::DashpayExternalAccount {
             index: key.index,
@@ -494,13 +499,25 @@ pub fn restore_contact_pool_claims(
             friend_identity_id: key.friend_identity_id,
         };
         let Some(account) = wallet_info.accounts.dashpay_external_accounts.get_mut(key) else {
-            missing_accounts.push(format!(
+            let account = format!(
                 "dashpay_external[{}] {}→{}",
                 key.index,
                 hex::encode(key.user_identity_id),
                 hex::encode(key.friend_identity_id)
-            ));
-            missing_claims += claims.len();
+            );
+            ctx.tolerate_at(
+                LoadSite::UnregisteredContactPoolClaim,
+                SiteCoords {
+                    wallet_id: Some(wallet_id),
+                    account_type: &account,
+                    affected: claims.len(),
+                    detail: None,
+                },
+                WalletStorageError::UnregisteredContactPoolClaim {
+                    account: account.clone(),
+                    claims: claims.len(),
+                },
+            )?;
             continue;
         };
         let key_source = manifest
@@ -590,19 +607,6 @@ pub fn restore_contact_pool_claims(
                 refill_gap_window(pool, key_source, &account_type, wallet_id, ctx)?;
             }
         }
-    }
-    if !missing_accounts.is_empty() {
-        ctx.note_degraded(
-            LoadSite::OrphanedUtxoOwner,
-            SiteCoords {
-                wallet_id: Some(wallet_id),
-                account_type: &missing_accounts,
-                affected: missing_claims,
-                detail: None,
-            },
-            "used contact-payment addresses belong to DashPay external accounts this wallet \
-             does not register; their used state is not restored",
-        );
     }
     Ok(())
 }

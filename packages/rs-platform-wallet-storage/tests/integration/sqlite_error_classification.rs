@@ -329,6 +329,10 @@ fn samples() -> Vec<WalletStorageError> {
             pool_owner: "Standard[0]".into(),
             utxo_owner: "CoinJoin[0]".into(),
         },
+        WalletStorageError::UnregisteredContactPoolClaim {
+            account: "dashpay_external[0]".into(),
+            claims: 1,
+        },
         WalletStorageError::UnownedIdentityHasRegistrationIndex {
             identity_id: [0xEF; 32],
             identity_index: 3,
@@ -485,6 +489,9 @@ fn tc_p2_005_is_transient_table() {
             }
             WalletStorageError::UsedAddressOwnerConflict { .. } => {
                 (false, "used_address_owner_conflict")
+            }
+            WalletStorageError::UnregisteredContactPoolClaim { .. } => {
+                (false, "unregistered_contact_pool_claim")
             }
             WalletStorageError::UnownedIdentityHasRegistrationIndex { .. } => {
                 (false, "unowned_identity_has_registration_index")

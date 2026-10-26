@@ -536,12 +536,16 @@ fn contact_claim_on_a_missing_pool_type_fails_a_strict_load() {
     );
 }
 
-/// Claims on a contact account the wallet does not register restore
-/// nothing; a Strict load goes ahead with every such claim counted.
+/// Claims on a contact account the wallet does not register are corrupt
+/// rows — a contact's registration lands with its pool rows — and could be a
+/// funds row relabelled as a contact's, whose used state would then be lost.
+/// A Strict load fails on them; a Recovery load goes ahead with every such
+/// claim counted.
 #[test]
-fn contact_claims_on_an_unregistered_account_degrade_a_strict_load() {
+fn contact_claims_on_an_unregistered_account_fail_a_strict_load() {
     use key_wallet::managed_account::address_pool::AddressState;
     use platform_wallet_storage::sqlite::LoadSite;
+    use platform_wallet_storage::LoadPolicy;
 
     let fixture = contact_fixture(0x47);
     let persister = reopen(&fixture.path);
@@ -570,8 +574,22 @@ fn contact_claims_on_an_unregistered_account_degrade_a_strict_load() {
         .unwrap();
     drop(persister);
 
-    let persister = reopen(&fixture.path);
-    let (_, reloaded) = fixture.pool(&persister);
+    let error = format!(
+        "{:?}",
+        reopen(&fixture.path)
+            .load()
+            .expect_err("a Strict load fails on the claims")
+    );
+    assert!(
+        error.contains("a DashPay external account this wallet does not register"),
+        "the error names the unregistered claims: {error}"
+    );
+
+    let recovery = SqlitePersister::open(
+        SqlitePersisterConfig::new(&fixture.path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .expect("reopen");
+    let (_, reloaded) = fixture.pool(&recovery);
     assert!(
         reloaded
             .iter()
@@ -579,13 +597,13 @@ fn contact_claims_on_an_unregistered_account_degrade_a_strict_load() {
         "the registered contact's pool is untouched"
     );
     assert_eq!(
-        persister
+        recovery
             .last_load_degradation()
             .by_site
-            .get(&LoadSite::OrphanedUtxoOwner)
+            .get(&LoadSite::UnregisteredContactPoolClaim)
             .copied(),
         Some(3),
-        "each lost claim is counted"
+        "each claim is counted"
     );
 }
 
