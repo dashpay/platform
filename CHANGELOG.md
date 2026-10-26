@@ -68,6 +68,13 @@
   `bip38_encrypt_private_key` and `bip38_decrypt_private_key`. Both were
   unsupported-operation stubs that upstream removed; direct C and Swift callers
   must drop their calls.
+- **Breaking (Rust features):** `platform-value` and `platform-serialization`
+  build an allocation-only `no_std` profile with `default-features = false`.
+  Default builds are unchanged. A consumer that disables default features adds
+  `std` for the native helpers, `platform-version` for the version-aware encode
+  and decode APIs (on `Identifier` and throughout `platform-serialization`), and
+  `random` for the random identifier constructors. `json` and `cbor` stay
+  opt-in as before.
 
 - **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
   SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
