@@ -227,6 +227,13 @@ pub(crate) trait ValueLeafReader<D: Decoder> {
         Ok(())
     }
 
+    /// Called before each open container is pushed onto the traversal stack. The native and
+    /// untrusted readers keep the infallible push; the bounded guest reader reserves fallibly so
+    /// an allocator failure is a decode error rather than an abort.
+    fn reserve_frame<T>(&mut self, _frames: &mut Vec<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// Reads the payload of [`Value::Bytes`] or [`Value::EnumU8`].
     fn bytes(&mut self, decoder: &mut D) -> Result<Vec<u8>, Self::Error>;
 
@@ -411,6 +418,7 @@ where
                     leaves.container_end();
                     Value::Array(values)
                 } else {
+                    leaves.reserve_frame(&mut frames)?;
                     frames.push(ValueDecodeFrame::Array {
                         values,
                         remaining: len,
@@ -426,6 +434,7 @@ where
                     leaves.container_end();
                     Value::Map(entries)
                 } else {
+                    leaves.reserve_frame(&mut frames)?;
                     frames.push(ValueDecodeFrame::Map {
                         entries,
                         remaining: len,
