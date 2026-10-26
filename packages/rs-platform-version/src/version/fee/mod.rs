@@ -100,19 +100,7 @@ impl FeeVersion {
     }
 
     pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
-        if version > 0 {
-            #[cfg(feature = "mock-versions")]
-            {
-                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
-                    return TEST_FEE_VERSIONS
-                        .iter()
-                        .find(|fee_version| fee_version.fee_version_number == version);
-                }
-            }
-            FEE_VERSIONS.get(version as usize - 1)
-        } else {
-            None
-        }
+        Self::get(version).ok()
     }
 
     pub fn first<'a>() -> &'a Self {

@@ -397,14 +397,6 @@ mod tests {
             TEST_PLATFORM_V4, TEST_PROTOCOL_VERSION_4,
         };
 
-        const COST_ITEMS: [KnownCostItem; 5] = [
-            KnownCostItem::StorageDiskUsageCreditPerByte,
-            KnownCostItem::StorageProcessingCreditPerByte,
-            KnownCostItem::StorageLoadCreditPerByte,
-            KnownCostItem::NonStorageLoadCreditPerByte,
-            KnownCostItem::StorageSeekCost,
-        ];
-
         fn fresh_state(protocol_version: ProtocolVersion) -> PlatformState {
             PlatformState::default_with_protocol_versions(
                 protocol_version,
@@ -496,15 +488,16 @@ mod tests {
                 ]
             );
 
+            // Every epoch must resolve to the whole schedule it had before the
+            // round trip, not only to the same number, so every cost the
+            // schedule prices is covered.
             for epoch_index in 0..=5 {
                 let epoch = Epoch::new(epoch_index).expect("epoch");
-                for cost_item in COST_ITEMS {
-                    assert_eq!(
-                        epoch.cost_for_known_cost_item(&restored.previous_fee_versions, cost_item),
-                        epoch.cost_for_known_cost_item(&original.previous_fee_versions, cost_item),
-                        "epoch {epoch_index} costs must survive the saved-state round trip"
-                    );
-                }
+                assert_eq!(
+                    epoch.active_fee_version(&restored.previous_fee_versions),
+                    epoch.active_fee_version(&original.previous_fee_versions),
+                    "epoch {epoch_index} must resolve to the same fee schedule after the saved-state round trip"
+                );
             }
         }
 

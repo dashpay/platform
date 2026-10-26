@@ -71,7 +71,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
 // We use OnceLock to be able to modify the version mocks
 pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::new();
 #[cfg(feature = "mock-versions")]
-pub const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] =
+pub(crate) const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] =
     &[TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4];
 
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V15;
