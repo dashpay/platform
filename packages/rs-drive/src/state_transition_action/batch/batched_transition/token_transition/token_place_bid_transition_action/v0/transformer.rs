@@ -7,10 +7,7 @@ use dpp::state_transition::batch_transition::token_place_bid_transition::v0::Tok
 use dpp::tokens::token_order::TokenOrder;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::ProtocolError;
-use dpp::consensus::state::token::TokenOrderDecimalsMismatchError;
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
@@ -96,25 +93,13 @@ impl TokenPlaceBidTransitionActionV0 {
             false => return bump(base_action_validation_result.errors, fee_result),
         };
 
-        let token_decimals = match base_action.token_configuration_or_position_error() {
-            Ok(token_configuration) => token_configuration.conventions().decimals(),
-            Err(error) => return bump(vec![error], fee_result),
-        };
-        // The offer's escrow is what it is worth at the decimals it was signed at, so they must be
-        // the token's before anything is worked out from them: a change of the token's decimals
-        // between signing and execution would otherwise reprice the offer.
-        let decimals = *decimals;
-        if decimals != token_decimals {
-            return bump(
-                vec![TokenOrderDecimalsMismatchError::new(
-                    base.token_id(),
-                    decimals,
-                    token_decimals,
-                )
-                .into()],
-                fee_result,
-            );
+        if let Err(error) = base_action.token_configuration_or_position_error() {
+            return bump(vec![error], fee_result);
         }
+        // The offer's escrow is what it is worth at the decimals it was signed at. The batch's
+        // advanced structure refuses the offer unless they are the token's
+        // (`TokenOrderDecimalsMismatchError`), as it does a listing's, before anything executes.
+        let decimals = *decimals;
         // The transition's structure validation refuses an offer worth more than an order holds
         // (`InvalidTokenOrderValueError`), so this is worked out for one that fits.
         let escrow = TokenOrder::order_value(*amount, *price, decimals).ok_or(Error::Drive(
