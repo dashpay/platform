@@ -2020,6 +2020,8 @@ mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_token_tests;
 #[cfg(test)]
 mod keep_history_tests;
 #[cfg(all(test, feature = "validation"))]
