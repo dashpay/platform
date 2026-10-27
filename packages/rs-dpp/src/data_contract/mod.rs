@@ -66,6 +66,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
@@ -149,9 +150,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
@@ -163,9 +162,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize consume DataContract: {}", e))
         })
@@ -185,20 +182,18 @@ impl DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format =
             DataContractInSerializationFormat::try_from_data_contract_for_storage(
-                self.clone(),
+                self,
                 platform_version,
             )?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        bincode::encode_to_vec(serialization_format, config).map_err(|e| {
+        bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
     }
 }
 
 /// Decodes the stored serialization format with the ordinary decoder: bytes
-/// this node wrote itself (Drive state, wallet storage).
+/// this node wrote itself (Drive state, wallet storage). A contract in the stored
+/// format is read back from its compiled document types.
 fn decode_serialization_format_trusted<C: Config>(
     data: &[u8],
     config: C,
@@ -209,7 +204,10 @@ fn decode_serialization_format_trusted<C: Config>(
 }
 
 /// Decodes the serialization format with the untrusted decoder: bytes from a
-/// peer, a client, a proof or a host caller.
+/// peer, a client, a proof or a host caller. The untrusted entry points never take a
+/// contract in the stored format at its compiled types, which nothing vouches for
+/// ([`untrusted_form`]). Proof verification, whose bytes the proof authenticates, reads
+/// them with `DataContract::try_from_platform_versioned`.
 fn decode_serialization_format_untrusted<C: Config>(
     data: &[u8],
     config: C,
@@ -219,17 +217,27 @@ fn decode_serialization_format_untrusted<C: Config>(
         .map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", what, e)))
 }
 
+/// The format an untrusted entry point reads `format` as: a contract in the stored format
+/// from its schemas ([`DataContractInSerializationFormat::into_schema_form`]), or, fully
+/// validated, from its schemas with its compiled types checked against what they compile to.
+fn untrusted_form(
+    format: DataContractInSerializationFormat,
+    full_validation: bool,
+) -> DataContractInSerializationFormat {
+    if full_validation {
+        format
+    } else {
+        format.into_schema_form()
+    }
+}
+
 fn no_limit_config() -> Configuration<BigEndian, Varint, NoLimit> {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn contract_limit_config() -> Configuration<BigEndian, Varint, Limit<CONTRACT_DESERIALIZATION_LIMIT>>
 {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
+    PLATFORM_BINCODE_CONFIG.with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
 }
 
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for DataContract {
@@ -264,7 +272,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntruste
         let (data_contract_in_serialization_format, _) =
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            untrusted_form(data_contract_in_serialization_format, full_validation),
             full_validation,
             &mut vec![],
             platform_version,
@@ -308,7 +316,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted for DataC
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         Ok((
             DataContract::try_from_platform_versioned(
-                data_contract_in_serialization_format,
+                untrusted_form(data_contract_in_serialization_format, full_validation),
                 full_validation,
                 &mut vec![],
                 platform_version,

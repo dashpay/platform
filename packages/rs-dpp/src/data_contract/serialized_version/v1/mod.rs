@@ -74,7 +74,7 @@ pub struct DataContractInSerializationFormatV1 {
     pub description: Option<String>,
 }
 
-pub(in crate::data_contract::serialized_version) fn deserialize_u16_group_map<'de, D>(
+fn deserialize_u16_group_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<GroupContractPosition, Group>, D::Error>
 where
@@ -89,10 +89,7 @@ where
         })
         .collect()
 }
-pub(in crate::data_contract::serialized_version) fn deserialize_u16_token_configuration_map<
-    'de,
-    D,
->(
+fn deserialize_u16_token_configuration_map<'de, D>(
     deserializer: D,
 ) -> Result<BTreeMap<TokenContractPosition, TokenConfiguration>, D::Error>
 where

@@ -1,7 +1,7 @@
 #[cfg(feature = "validation-schema")]
-use crate::data_contract::document_type::schema::validation_schema::{
-    DocumentSchemaValidator, ValidationSchema,
-};
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
+#[cfg(feature = "validation-schema")]
+use crate::data_contract::document_type::serialized_version::v0::EncodedValidationSchema;
 #[cfg(feature = "validation-schema")]
 use crate::data_contract::errors::DataContractError;
 use crate::validation::JsonSchemaValidator;
@@ -20,26 +20,48 @@ use std::sync::{Arc, OnceLock};
 /// Beside the `jsonschema` validator it holds the native one, built on demand the same
 /// way, or the refusal of a document type's schema that has no validation schema, whose
 /// documents protocol version 15 refuses: one slot for each generation of the validation
-/// schema's builder (`validation_schema`).
+/// schema's builder (`validation_schema`). Registration fills the slot when it checks the
+/// schema, so the same build serves document validation and the type's stored form.
 ///
-/// A document type read back from its stored, compiled form also holds the typed validation
-/// schema stored with it ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
-/// keeps it, so its documents keep being checked against the schema the type was registered
-/// with, by the generation that built it. `PartialEq` and `Debug` leave it out, as the stored
-/// form is compiled from the schema the document type holds.
+/// A document type read back from its stored, compiled form also holds what it was stored with
+/// to check its documents ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
+/// keeps it, so its documents keep being checked as the version that stored it checks them.
+/// `PartialEq` and `Debug` leave it out: equality compares what a document type declares, not
+/// how its documents are checked. A type read back from state equals the type parsed from the
+/// same schema even where the two check documents differently, the read-back one with the
+/// builder generation of the version that stored it, or refusing its documents where that
+/// version built no validation schema. Drive relies on it: rebuilding a system contract's
+/// document types (`Drive::apply_contract_rebuilding_document_types`) leaves a type whose
+/// stored form equals the new one as it is, so running it again over its own result deletes
+/// nothing; if a type read back from compiled storage never equaled a parsed one, every run
+/// would delete its documents again. To compare how two types check their documents, compare
+/// their `loaded_validation_schema()` as well.
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")] [NativeValidatorSlot; 1],
     #[cfg(feature = "validation-schema")] Option<Arc<LoadedValidationSchema>>,
 );
 
-/// The typed validation schema a document type was read back with from its stored form, and
-/// the generation of the validation schema's builder that built it.
+/// What a document type read back from its stored form was stored with to check its
+/// documents: the typed validation schema, as stored, and the generation of the validation
+/// schema's builder that built it; or the refusal of its documents, when the builder of the
+/// version that stored it refused its schema, or that version selected no builder. Either way
+/// they are checked as that version checks them, at every later version: a later builder that
+/// would accept the schema does not make them valid.
 #[cfg(feature = "validation-schema")]
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct LoadedValidationSchema {
-    pub(crate) generation: FeatureVersion,
-    pub(crate) schema: ValidationSchema,
+pub(crate) enum LoadedValidationSchema {
+    /// Built by builder `generation`; `schema` is its encoding, decoded on first use.
+    Built {
+        generation: FeatureVersion,
+        schema: EncodedValidationSchema,
+    },
+    /// Refused by builder `generation`, or, with none, because the version that stored the
+    /// type selected no builder.
+    Refused {
+        generation: Option<FeatureVersion>,
+        refusal: DataContractError,
+    },
 }
 
 /// What document validation builds of a document type's schema with one generation of the
@@ -64,8 +86,8 @@ impl StatelessJsonSchemaLazyValidator {
         )
     }
 
-    /// The validator of a document type read back from its stored form with `loaded`, its
-    /// stored typed validation schema.
+    /// The validator of a document type read back from its stored form with `loaded`, what it
+    /// was stored with to check its documents.
     #[cfg(feature = "validation-schema")]
     pub(crate) fn with_loaded_validation_schema(loaded: LoadedValidationSchema) -> Self {
         Self(
@@ -75,7 +97,7 @@ impl StatelessJsonSchemaLazyValidator {
         )
     }
 
-    /// The typed validation schema the document type was read back with from its stored form,
+    /// What the document type was read back with from its stored form to check its documents,
     /// `None` for a document type parsed from its schema.
     #[cfg(feature = "validation-schema")]
     pub(crate) fn loaded_validation_schema(&self) -> Option<&LoadedValidationSchema> {
@@ -92,8 +114,8 @@ impl StatelessJsonSchemaLazyValidator {
 }
 
 /// Prints the `jsonschema` validator alone, as before the native one was added: the native
-/// validator is a cache of what the document type's schema builds, which `PartialEq` and
-/// `Clone` leave out too, so a document type prints the same whether or not it is built.
+/// validator is a cache of what the document type's schema builds, which `PartialEq` leaves
+/// out too, so a document type prints the same whether or not it is built.
 impl fmt::Debug for StatelessJsonSchemaLazyValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("StatelessJsonSchemaLazyValidator")
@@ -110,20 +132,26 @@ impl Deref for StatelessJsonSchemaLazyValidator {
     }
 }
 
+/// Always equal: the validators are caches built from the document type's schema, and the
+/// stored validation schema is left out so equality compares what a document type declares
+/// (see [`StatelessJsonSchemaLazyValidator`]).
 impl PartialEq for StatelessJsonSchemaLazyValidator {
-    // We assume that validator is stateless and initialized by the schema from DocumentType
     fn eq(&self, _other: &Self) -> bool {
         true
     }
 }
 
-/// Leaves the caches empty and keeps the stored typed validation schema, which is data.
+/// Keeps the native validators built so far, which share their validation schema, and the
+/// stored typed validation schema, which is data; resets the `jsonschema` validator, which
+/// rebuilds on first use. A clone holds the same schema, so what was built of it holds for the
+/// clone too; a document type whose schema changes in place drops what was built
+/// (`DocumentTypeV0MutGetters::schema_mut`).
 impl Clone for StatelessJsonSchemaLazyValidator {
     fn clone(&self) -> Self {
         Self(
             JsonSchemaValidator::new(),
             #[cfg(feature = "validation-schema")]
-            [OnceLock::new()],
+            self.1.clone(),
             #[cfg(feature = "validation-schema")]
             self.2.clone(),
         )

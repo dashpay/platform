@@ -1,11 +1,14 @@
 //! Generation 0 of a document type's stored form: every field of [`DocumentTypeV2`] that
 //! parsing decides, in a form of its own, so that a change to the in-memory types never changes
 //! stored bytes. Left out: the name and the contract id, which the contract holds; the schema,
-//! which the contract stores beside the compiled types; the index structure, which this
-//! generation's loader rebuilds from the indexes with generation 0 of its builder; and the
-//! validators, caches built on first use. The typed validation schema is stored, with the
-//! generation of the builder that built it, so the type's documents keep being checked against
-//! it.
+//! which the contract stores beside the compiled types; what this generation's loader derives,
+//! by rules of its own, from what is stored: the index structure, rebuilt from the indexes with
+//! generation 0 of its builder (`index_levels_from_indices` 0, the only one this generation is
+//! written under) and stamped with the typed arrays stored resolved, and the paths declaring
+//! `distinctFrom` and `generatedFrom`, read off the flattened properties; and the validators,
+//! caches built on first use. What the type's documents are checked against is stored
+//! ([`StoredValidation`]): the typed validation schema, as the bytes of its encoding, with the
+//! generation of the builder that built it, or that builder's refusal.
 //!
 //! This module is frozen once released: a change to what is stored, or to how it is read back,
 //! is a new generation.
@@ -18,6 +21,7 @@ mod rules;
 mod validation_schema;
 
 use crate::data_contract::config::moderation::SettledDeletionRule;
+use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
@@ -30,22 +34,26 @@ use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use costs::{StoredActionFees, StoredTokenCosts, StoredTradeMode, StoredTransferable};
 use index::{StoredDerivedIndexProperty, StoredIndex};
+use indexmap::IndexMap;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
-use property::{properties_from_stored, stored_properties, StoredGeneratedFrom, StoredProperties};
+use property::{properties_from_stored, stored_properties, StoredProperties};
 use rules::StoredRule;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use validation_schema::StoredValidationSchema;
+use validation_schema::StoredValidation;
 
-#[cfg(feature = "validation-schema")]
-use crate::data_contract::document_type::schema::validation_schema::{
-    validated_schema, ValidationSchema,
-};
+#[cfg(feature = "validation")]
+pub(crate) use validation_schema::EncodedValidationSchema;
+
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::native_validator_of;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::{
     LoadedValidationSchema, StatelessJsonSchemaLazyValidator,
 };
+#[cfg(feature = "validation")]
+use crate::data_contract::errors::DataContractError;
 
 /// The error of a stored document type that does not read back.
 fn stored_error(message: String) -> ProtocolError {
@@ -58,6 +66,10 @@ pub struct DocumentTypeInSerializationFormatV0 {
     properties: StoredProperties,
     flattened_properties: StoredProperties,
     indices: BTreeMap<String, StoredIndex>,
+    /// The typed arrays the index structure's levels fan documents out over, with their
+    /// `maxItems`, as the parse stamped them: stored resolved, so reading back stamps the same
+    /// levels whatever a later parser resolves.
+    indexed_arrays: BTreeMap<String, u16>,
     identifier_paths: BTreeSet<String>,
     binary_paths: BTreeSet<String>,
     required_fields: BTreeSet<String>,
@@ -65,8 +77,6 @@ pub struct DocumentTypeInSerializationFormatV0 {
     immutable_fields: BTreeSet<String>,
     immutable_field_conditions: BTreeMap<String, StoredRule>,
     retracted_when: Option<StoredRule>,
-    distinct_from_fields: Vec<String>,
-    generated_from_fields: Vec<(String, StoredGeneratedFrom)>,
     entry_payload: BTreeSet<String>,
     documents_keep_history: bool,
     documents_keep_transfer_history: bool,
@@ -101,31 +111,41 @@ pub struct DocumentTypeInSerializationFormatV0 {
     delete_constraints: BTreeMap<String, StoredRule>,
     documents_ttl_seconds: Option<u32>,
     derived_index_properties: BTreeMap<String, StoredDerivedIndexProperty>,
-    validation_schema: Option<StoredValidationSchema>,
+    validation: StoredValidation,
 }
 
 impl DocumentTypeInSerializationFormatV0 {
     /// `document_type`, of a contract whose `$defs` are `schema_defs`, compiled. A type parsed
     /// by an earlier generation into an earlier structure is compiled as the latest structure
-    /// holds it.
+    /// holds it. Refuses a protocol version whose index structure builder
+    /// (`index_levels_from_indices`) is not generation 0, the one this generation's loader
+    /// rebuilds index structures with.
     pub(super) fn try_from_document_type(
         document_type: DocumentTypeRef,
         schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
+        let index_builder = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .index_versions
+            .index_levels_from_indices;
+        if index_builder != 0 {
+            return Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentTypeInSerializationFormatV0::try_from_document_type \
+                         (index_levels_from_indices)"
+                    .to_string(),
+                known_versions: vec![0],
+                received: index_builder,
+            });
+        }
         let document_type: Cow<DocumentTypeV2> = match document_type {
             DocumentTypeRef::V0(v0) => Cow::Owned(v0.clone().into()),
             DocumentTypeRef::V1(v1) => Cow::Owned(v1.clone().into()),
             DocumentTypeRef::V2(v2) => Cow::Borrowed(v2),
         };
-        #[cfg(feature = "validation-schema")]
-        let validation_schema =
-            stored_validation_schema(&document_type, schema_defs, platform_version)?;
-        #[cfg(not(feature = "validation-schema"))]
-        let validation_schema = {
-            let _ = (schema_defs, platform_version);
-            None
-        };
+        let validation = stored_validation(&document_type, schema_defs, platform_version)?;
         let rules = |rules: &BTreeMap<String, _>| {
             rules
                 .iter()
@@ -136,7 +156,7 @@ impl DocumentTypeInSerializationFormatV0 {
             name: _,
             schema: _,
             indices,
-            index_structure: _,
+            index_structure,
             flattened_properties,
             properties,
             identifier_paths,
@@ -146,8 +166,8 @@ impl DocumentTypeInSerializationFormatV0 {
             immutable_fields,
             immutable_field_conditions,
             retracted_when,
-            distinct_from_fields,
-            generated_from_fields,
+            distinct_from_fields: _,
+            generated_from_fields: _,
             entry_payload,
             documents_keep_history,
             documents_keep_transfer_history,
@@ -193,6 +213,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .iter()
                 .map(|(name, index)| (name.clone(), StoredIndex::from(index)))
                 .collect(),
+            indexed_arrays: stamped_indexed_arrays(index_structure),
             identifier_paths: identifier_paths.clone(),
             binary_paths: binary_paths.clone(),
             required_fields: required_fields.clone(),
@@ -200,11 +221,6 @@ impl DocumentTypeInSerializationFormatV0 {
             immutable_fields: immutable_fields.clone(),
             immutable_field_conditions: rules(immutable_field_conditions),
             retracted_when: retracted_when.as_ref().map(StoredRule::from),
-            distinct_from_fields: distinct_from_fields.clone(),
-            generated_from_fields: generated_from_fields
-                .iter()
-                .map(|(path, generated_from)| (path.clone(), generated_from.into()))
-                .collect(),
             entry_payload: entry_payload.clone(),
             documents_keep_history: *documents_keep_history,
             documents_keep_transfer_history: *documents_keep_transfer_history,
@@ -242,8 +258,42 @@ impl DocumentTypeInSerializationFormatV0 {
                 .iter()
                 .map(|(name, derived)| (name.clone(), StoredDerivedIndexProperty::from(derived)))
                 .collect(),
-            validation_schema,
+            validation,
         })
+    }
+
+    /// Whether this stored form is what `document_type`, of a contract whose `$defs` are
+    /// `schema_defs`, compiles to at `platform_version`: the same stored form, what its
+    /// documents are checked against included. A build without `validation`, which cannot
+    /// compile a type, compares the type this form reads back as with `document_type`.
+    pub(super) fn is_compiled_from(
+        &self,
+        document_type: DocumentTypeRef,
+        schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, ProtocolError> {
+        #[cfg(feature = "validation")]
+        {
+            Ok(
+                *self
+                    == Self::try_from_document_type(document_type, schema_defs, platform_version)?,
+            )
+        }
+        #[cfg(not(feature = "validation"))]
+        {
+            let _ = (schema_defs, platform_version);
+            let parsed: DocumentTypeV2 = match document_type {
+                DocumentTypeRef::V0(v0) => v0.clone().into(),
+                DocumentTypeRef::V1(v1) => v1.clone().into(),
+                DocumentTypeRef::V2(v2) => v2.clone(),
+            };
+            let read_back = self.clone().into_document_type(
+                &parsed.name,
+                parsed.data_contract_id,
+                parsed.schema.clone(),
+            )?;
+            Ok(read_back == DocumentType::V2(parsed))
+        }
     }
 
     /// The document type `name` of the contract `data_contract_id` read back, with `schema`, the
@@ -265,6 +315,7 @@ impl DocumentTypeInSerializationFormatV0 {
             properties,
             flattened_properties,
             indices,
+            indexed_arrays,
             identifier_paths,
             binary_paths,
             required_fields,
@@ -272,8 +323,6 @@ impl DocumentTypeInSerializationFormatV0 {
             immutable_fields,
             immutable_field_conditions,
             retracted_when,
-            distinct_from_fields,
-            generated_from_fields,
             entry_payload,
             documents_keep_history,
             documents_keep_transfer_history,
@@ -308,7 +357,7 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
-            validation_schema,
+            validation,
         } = self;
 
         let properties = properties_from_stored(properties)?;
@@ -318,34 +367,46 @@ impl DocumentTypeInSerializationFormatV0 {
             .map(|(name, index)| Ok((name, Index::try_from(index)?)))
             .collect::<Result<_, ProtocolError>>()?;
         let mut index_structure = IndexLevel::try_from_indices_v0(indices.values(), name)?;
-        // The levels named after a typed array fan the document out over its elements. Only a
-        // generation that admits indexed arrays sets an index's `indexed_array`, so stamping
-        // every one that names one is what the parse did.
-        let indexed_arrays: BTreeMap<String, u16> = indices
-            .values()
-            .filter_map(|index| {
-                let array = index.indexed_array.as_ref()?;
-                index
-                    .indexed_array_fan_out(&flattened_properties)
-                    .map(|(_, max_items)| (array.clone(), max_items))
-            })
-            .collect();
+        // The levels named after a typed array fan the document out over its elements, as the
+        // parse stamped them when the type was stored
         if !indexed_arrays.is_empty() {
-            index_structure.stamp_indexed_arrays(&indexed_arrays);
+            stamp_stored_indexed_arrays(&mut index_structure, &indexed_arrays);
         }
 
+        let distinct_from_fields = stored_distinct_from_fields(&flattened_properties);
+        let generated_from_fields = stored_generated_from_fields(&flattened_properties);
+
+        // The documents are checked against the validation schema stored, decoded on first
+        // use, by the generation that built it; a stored refusal keeps them refused, as the
+        // version that stored the type refuses them, rather than leaving them to the builder of
+        // whatever version reads it
         #[cfg(feature = "validation")]
-        let json_schema_validator = match validation_schema {
-            Some(stored) => {
-                let (schema, generation) = stored.into_validation_schema()?;
-                StatelessJsonSchemaLazyValidator::with_loaded_validation_schema(
-                    LoadedValidationSchema { generation, schema },
-                )
-            }
-            None => StatelessJsonSchemaLazyValidator::new(),
-        };
+        let json_schema_validator =
+            StatelessJsonSchemaLazyValidator::with_loaded_validation_schema(match validation {
+                StoredValidation::Built { generation, schema } => LoadedValidationSchema::Built {
+                    generation,
+                    schema: EncodedValidationSchema::new(schema),
+                },
+                StoredValidation::Refused { generation } => LoadedValidationSchema::Refused {
+                    generation: Some(generation),
+                    refusal: DataContractError::InvalidContractStructure(format!(
+                        "validation schema builder {generation} refused its schema when the \
+                         type was stored"
+                    )),
+                },
+                StoredValidation::NoBuilder => LoadedValidationSchema::Refused {
+                    generation: None,
+                    refusal: DataContractError::InvalidContractStructure(
+                        "the protocol version that stored the type selected no validation \
+                         schema builder"
+                            .to_string(),
+                    ),
+                },
+            });
+        // Without `validation` a document type has no validator to hold it: read past, and such
+        // a build does not store a document type compiled again
         #[cfg(not(feature = "validation"))]
-        let _ = validation_schema;
+        let _ = validation;
 
         Ok(DocumentType::V2(DocumentTypeV2 {
             name: name.to_string(),
@@ -362,10 +423,7 @@ impl DocumentTypeInSerializationFormatV0 {
             immutable_field_conditions: rules(immutable_field_conditions),
             retracted_when: retracted_when.map(Into::into),
             distinct_from_fields,
-            generated_from_fields: generated_from_fields
-                .into_iter()
-                .map(|(path, generated_from)| (path, generated_from.into()))
-                .collect(),
+            generated_from_fields,
             entry_payload,
             documents_keep_history,
             documents_keep_transfer_history,
@@ -410,25 +468,88 @@ impl DocumentTypeInSerializationFormatV0 {
     }
 }
 
-/// The typed validation schema to store with `document_type`: the one it was read back with
-/// from a stored form, or the one the builder `platform_version` selects builds from its
-/// schema. `None` when that version selects no builder, or when the builder refuses the schema,
-/// whose documents are then refused, as they are without a stored form.
-#[cfg(feature = "validation-schema")]
-fn stored_validation_schema(
+/// The typed arrays the levels of `index_structure` fan documents out over, with their
+/// `maxItems`: what the parse stamped on them.
+fn stamped_indexed_arrays(index_structure: &IndexLevel) -> BTreeMap<String, u16> {
+    fn collect(level: &IndexLevel, stamped: &mut BTreeMap<String, u16>) {
+        for (key, sub_level) in level.sub_levels() {
+            if let Some(max_items) = sub_level.indexed_array_max_items() {
+                stamped.insert(key.clone(), max_items);
+            }
+            collect(sub_level, stamped);
+        }
+    }
+    let mut stamped = BTreeMap::new();
+    collect(index_structure, &mut stamped);
+    stamped
+}
+
+/// Stamps every level of `index_structure` keyed by one of `indexed_arrays` with its stored
+/// `maxItems`, at any depth, as generation 0 reads them back. Generation 0's own walk, apart
+/// from the parser's (`IndexLevel::stamp_indexed_arrays`), so that a change to how the parser
+/// stamps a fresh index structure never changes what generation 0 bytes read back as.
+fn stamp_stored_indexed_arrays(level: &mut IndexLevel, indexed_arrays: &BTreeMap<String, u16>) {
+    for (key, sub_level) in level.sub_levels_mut().iter_mut() {
+        if let Some(max_items) = indexed_arrays.get(key) {
+            sub_level.set_indexed_array_max_items(Some(*max_items));
+        }
+        stamp_stored_indexed_arrays(sub_level, indexed_arrays);
+    }
+}
+
+/// The paths of the flattened properties that declare `distinctFrom`, in their (schema)
+/// order, as generation 0 reads them back.
+fn stored_distinct_from_fields(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<String> {
+    flattened_properties
+        .iter()
+        .filter(|(_, property)| property.distinct_from.is_some())
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// The flattened properties that declare `generatedFrom`, with their declarations, in their
+/// (schema) order, as generation 0 reads them back.
+fn stored_generated_from_fields(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<(String, GeneratedFrom)> {
+    flattened_properties
+        .iter()
+        .filter_map(|(path, property)| Some((path.clone(), property.generated_from.clone()?)))
+        .collect()
+}
+
+/// What `document_type`'s documents are checked against, to store: what it was read back with
+/// from a stored form, as stored; otherwise what the builder `platform_version` selects makes of
+/// its schema, the build registration kept when there is one ([`native_validator_of`]), or none
+/// when that version selects no builder.
+#[cfg(feature = "validation")]
+fn stored_validation(
     document_type: &DocumentTypeV2,
     schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
     platform_version: &PlatformVersion,
-) -> Result<Option<StoredValidationSchema>, ProtocolError> {
-    #[cfg(feature = "validation")]
-    if let Some(loaded) = document_type
-        .json_schema_validator
-        .loaded_validation_schema()
-    {
-        return Ok(Some(StoredValidationSchema::new(
-            &loaded.schema,
-            loaded.generation,
-        )));
+) -> Result<StoredValidation, ProtocolError> {
+    let validators = &document_type.json_schema_validator;
+    match validators.loaded_validation_schema() {
+        Some(LoadedValidationSchema::Built { generation, schema }) => {
+            return Ok(StoredValidation::Built {
+                generation: *generation,
+                schema: schema.bytes().to_vec(),
+            })
+        }
+        Some(LoadedValidationSchema::Refused {
+            generation: Some(generation),
+            ..
+        }) => {
+            return Ok(StoredValidation::Refused {
+                generation: *generation,
+            })
+        }
+        Some(LoadedValidationSchema::Refused {
+            generation: None, ..
+        }) => return Ok(StoredValidation::NoBuilder),
+        None => {}
     }
     let Some(generation) = platform_version
         .dpp
@@ -437,14 +558,40 @@ fn stored_validation_schema(
         .schema
         .validation_schema
     else {
-        return Ok(None);
+        return Ok(StoredValidation::NoBuilder);
     };
-    let root = validated_schema(&document_type.schema, schema_defs, platform_version)?;
-    match ValidationSchema::build(&root, platform_version) {
-        Ok((schema, _)) => Ok(Some(StoredValidationSchema::new(&schema, generation))),
-        Err(ProtocolError::DataContractError(_)) => Ok(None),
-        Err(error) => Err(error),
-    }
+    Ok(
+        match native_validator_of(
+            validators,
+            &document_type.schema,
+            schema_defs,
+            platform_version,
+        )? {
+            Ok(validator) => StoredValidation::Built {
+                generation: validator.generation(),
+                schema: EncodedValidationSchema::encode(validator.schema())?
+                    .bytes()
+                    .to_vec(),
+            },
+            Err(_) => StoredValidation::Refused { generation },
+        },
+    )
+}
+
+/// Without `validation` a document type holds no validation schema read back from a stored
+/// form (it has no validator to hold one), so the stored form written here could differ from
+/// the one a node writes for the same contract: storing a document type compiled needs it.
+#[cfg(not(feature = "validation"))]
+fn stored_validation(
+    _document_type: &DocumentTypeV2,
+    _schema_defs: Option<&BTreeMap<DefinitionName, Value>>,
+    _platform_version: &PlatformVersion,
+) -> Result<StoredValidation, ProtocolError> {
+    Err(ProtocolError::NotSupported(
+        "storing a document type compiled needs the validation feature, whose document types \
+         keep the validation schema they were read back with"
+            .to_string(),
+    ))
 }
 
 #[cfg(test)]

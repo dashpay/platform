@@ -178,7 +178,9 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     }
     // A leaf that parses, so the non-validating parse would not stop at the first one.
     defs.insert(format!("d{levels}"), platform_value!({ "type": "integer" }));
-    let schemas = contract.document_schemas_mut();
+    let schemas = contract
+        .document_schemas_mut()
+        .expect("expected a transport format's schemas");
     schemas.insert(
         "item".to_string(),
         platform_value!({

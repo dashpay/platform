@@ -8,6 +8,7 @@ use crate::utils::WithJsError;
 use crate::{with_js_error, IdentityPublicKeyWasm};
 use dpp::identifier::Identifier;
 use dpp::identity::KeyType;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization::PlatformSerializable;
@@ -282,9 +283,7 @@ impl MasternodeVoteTransitionWasm {
                         )
                         .unwrap();
 
-                        let config = bincode::config::standard()
-                            .with_big_endian()
-                            .with_no_limit();
+                        let config = PLATFORM_BINCODE_CONFIG;
 
                         let serialized_index_values = contested_document_resource_vote_poll
                             .index_values
