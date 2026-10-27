@@ -68,7 +68,6 @@ describe('Token Market Contract', () => {
     price: 100,
     amount: 1000,
     remaining: 1000,
-    minFill: 1,
     decimals: 2,
     ...extra,
   });
@@ -81,7 +80,7 @@ describe('Token Market Contract', () => {
         expect(validate(type, raw()).isValid()).to.be.true();
       });
 
-      ['tokenId', 'price', 'amount', 'remaining', 'minFill', 'decimals'].forEach((property) => {
+      ['tokenId', 'price', 'amount', 'remaining', 'decimals'].forEach((property) => {
         it(`should require ${property}`, () => {
           const document = raw();
           delete document[property];
@@ -93,7 +92,7 @@ describe('Token Market Contract', () => {
         });
       });
 
-      ['price', 'amount', 'remaining', 'minFill'].forEach((property) => {
+      ['price', 'amount', 'remaining'].forEach((property) => {
         it(`should refuse a ${property} below 1`, () => {
           const error = expectJsonSchemaError(validate(type, raw({ [property]: 0 })));
 

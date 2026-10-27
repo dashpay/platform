@@ -36,7 +36,7 @@ const TS_TYPES: &str = r#"
  *   - BurnFromPool: { $type: "burnFromPool", amount, actionsDigest, publicNote }
  *   - ClaimToPool: { $type: "claimToPool", amount }
  *   - DirectPurchaseToPool: { $type: "directPurchaseToPool", amount, credits }
- *   - OrderPlaced: { $type: "orderPlaced", orderId, side, amount, price, minFill, decimals }
+ *   - OrderPlaced: { $type: "orderPlaced", orderId, side, amount, price, decimals }
  *   - OrderFilled: { $type: "orderFilled", orderId, side, maker, amount, credits, decimals }
  *   - OrderCancelled: { $type: "orderCancelled", orderId, side }
  *

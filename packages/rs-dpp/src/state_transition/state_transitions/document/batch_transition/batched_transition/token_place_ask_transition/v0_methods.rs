@@ -49,28 +49,4 @@ impl TokenPlaceAskTransitionV0Methods for TokenPlaceAskTransition {
             TokenPlaceAskTransition::V0(v0) => v0.set_price(price),
         }
     }
-
-    fn decimals(&self) -> u8 {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.decimals(),
-        }
-    }
-
-    fn set_decimals(&mut self, decimals: u8) {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.set_decimals(decimals),
-        }
-    }
-
-    fn min_fill(&self) -> TokenAmount {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.min_fill(),
-        }
-    }
-
-    fn set_min_fill(&mut self, min_fill: TokenAmount) {
-        match self {
-            TokenPlaceAskTransition::V0(v0) => v0.set_min_fill(min_fill),
-        }
-    }
 }

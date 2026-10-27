@@ -12,6 +12,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -512,7 +513,7 @@ impl Drive {
                         let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
-                                let expected_document = Document::try_from_create_transition(
+                                let mut expected_document = Document::try_from_create_transition(
                                     create_transition,
                                     documents_batch_transition.owner_id(),
                                     block_info,
@@ -520,6 +521,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -538,7 +545,7 @@ impl Drive {
                             }
                             DocumentTransition::Replace(replace_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
-                                let expected_document = Document::try_from_replace_transition(
+                                let mut expected_document = Document::try_from_replace_transition(
                                     replace_transition,
                                     documents_batch_transition.owner_id(),
                                     document.created_at(), //we can trust the created at (as we don't care)
@@ -552,6 +559,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -723,6 +736,13 @@ impl Drive {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Burn(_) => Some(vec!["burnFromId", "note"]),
+                                    // The decimals a placement records are the token's when it
+                                    // executed, which the platform wrote and the transition does
+                                    // not name: the client holds the token's current ones, which
+                                    // may have changed since
+                                    TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_) => {
+                                        Some(vec!["decimals"])
+                                    }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
                                     TokenTransition::DirectPurchase(_) => {
                                         let purchase_cost: Credits =
@@ -1411,16 +1431,17 @@ impl Drive {
                                             &document,
                                             TokenOrderSide::Ask,
                                         )?;
+                                        // The decimals are the token's when the listing was
+                                        // placed, which the platform recorded and the proof
+                                        // holds; the transition does not name them.
                                         if order.token_id != token_id
                                             || order.maker_id != owner_id
                                             || order.price != token_place_ask_transition.price()
-                                            || order.decimals != token_place_ask_transition.decimals()
                                             || order.amount != token_place_ask_transition.amount()
                                             // Fills lower what is open, never to 0 (a listing filled
                                             // entirely is deleted) nor above what was listed.
                                             || order.remaining == 0
                                             || order.remaining > order.amount
-                                            || order.min_fill != token_place_ask_transition.min_fill()
                                         {
                                             return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                                                 "proof of the listing {} does not hold the terms of state transition (token place ask)",
@@ -1500,17 +1521,16 @@ impl Drive {
                                             &document,
                                             TokenOrderSide::Bid,
                                         )?;
+                                        // The decimals are the token's when the offer was
+                                        // placed, which the platform recorded and the proof
+                                        // holds; the escrow is checked at them.
                                         if order.token_id != token_id
                                             || order.maker_id != owner_id
                                             || order.price != token_place_bid_transition.price()
-                                            || order.decimals
-                                                != token_place_bid_transition.decimals()
                                             || order.amount != token_place_bid_transition.amount()
                                             || order.remaining == 0
                                             || order.remaining > order.amount
                                             || Some(order.escrow) != order.escrow_after_fills()
-                                            || order.min_fill
-                                                != token_place_bid_transition.min_fill()
                                         {
                                             return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                                                 "proof of the offer {} does not hold the terms of state transition (token place bid)",

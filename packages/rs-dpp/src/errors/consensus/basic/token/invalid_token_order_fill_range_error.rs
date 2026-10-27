@@ -8,8 +8,9 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A token order's fill range is empty: a listing or an offer whose minimum fill is 0 or above
-/// its amount, or a fill whose minimum is 0 or above its maximum.
+/// A token order's fill range is empty: a listing or an offer of less than its token's minimum
+/// fill (`min` the minimum fill, `max` the order's amount), a tradeable token whose minimum fill is
+/// 0 or above `i64::MAX` (`max`), or a fill whose minimum is 0 or above its maximum.
 #[derive(
     Error,
     Debug,

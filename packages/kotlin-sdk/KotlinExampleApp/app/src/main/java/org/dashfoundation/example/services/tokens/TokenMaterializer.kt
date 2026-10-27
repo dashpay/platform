@@ -123,7 +123,7 @@ object TokenMaterializer {
 
         // Marketplace rules.
         val marketplace = dict.obj("marketplaceRules")
-        val tradeMode = marketplace?.str("tradeMode") ?: "NotTradeable"
+        val tradeMode = marketplace?.tradeMode("tradeMode") ?: "NotTradeable"
         val tradeModeChange = marketplace?.rule("tradeModeChangeRules")
 
         // History-keeping: nested object or a single boolean for all.
@@ -207,6 +207,17 @@ object TokenMaterializer {
 
     private fun JsonObject.rule(key: String): ChangeControlRules? =
         (this[key] as? JsonObject)?.let(ChangeControlRules::parse)
+
+    /**
+     * rs-dpp writes `TokenTradeMode` externally tagged: `NotTradeable` as a
+     * bare string, and `Tradeable` (protocol version 15) as an object holding
+     * its fields, `{"Tradeable":{"minFill":1000}}`. The variant name, the
+     * string or the object's single key, is the mode the column keeps;
+     * `minFill` is not persisted. Port of `parseTokenTradeMode` in
+     * `DataContractParser.swift`.
+     */
+    private fun JsonObject.tradeMode(key: String): String? =
+        str(key) ?: obj(key)?.keys?.singleOrNull()
 
     /**
      * u64-safe supply extraction — port of `extractTokenSupply`
