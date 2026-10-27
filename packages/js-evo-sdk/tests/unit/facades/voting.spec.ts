@@ -114,6 +114,20 @@ describe('VotingFacade', () => {
 
       expect(getContestedResourceIdentityVotesStub).to.be.calledOnceWithExactly(query);
     });
+
+    it('should return each vote with its count by vote poll id', async () => {
+      const votes = new Map([
+        [
+          'AYjR8WFgxoQqeVqKhFNxQvPsaJSZPvzqDJdw4YrFBEhT',
+          Object.create(wasmSDKPackage.ResourceVoteWithCount.prototype),
+        ],
+      ]);
+      getContestedResourceIdentityVotesStub.resolves(votes);
+
+      const result = await client.voting.contestedResourceIdentityVotes({ identityId });
+
+      expect(result).to.equal(votes);
+    });
   });
 
   describe('contestedResourceIdentityVotesWithProof()', () => {

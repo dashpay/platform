@@ -5,10 +5,13 @@ use crate::data_contract::associated_token::token_distribution_key::{
 };
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::document_type::ContestedIndexFieldMatch;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::batched_transition::{
     BatchedTransition, DocumentTransition, TokenTransition,
 };
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -122,6 +125,7 @@ impl JsonSafeFields for crate::voting::votes::Vote {}
 // `DocumentBaseTransition` wraps `DocumentBaseTransitionV0` / `V1`, both of
 // which are `#[json_safe_fields]`-annotated, so the wrapper enum is safe by
 // induction: every u64 inside is protected by `json_safe_u64`.
+#[cfg(feature = "state-transitions")]
 impl JsonSafeFields for DocumentBaseTransition {}
 // `TokenPaymentInfo` (v0 wrapper) — V0 is `#[json_safe_fields]`-annotated.
 impl JsonSafeFields for TokenPaymentInfo {}
@@ -133,13 +137,17 @@ impl JsonSafeFields for ContractGroupMembership {}
 // itself (named `u16` / `Identifier` / `bool` fields) — no manual marker needed.
 // `TokenBaseTransition` wraps `TokenBaseTransitionV0` which is
 // `#[json_safe_fields]`-annotated, so the wrapper is safe by induction.
+#[cfg(feature = "state-transitions")]
 impl JsonSafeFields for TokenBaseTransition {}
 // BatchTransition family wrappers — each variant's outer enum is itself
 // safe by induction (every V0 inner is `#[json_safe_fields]`-annotated;
 // the outer-enum manual `impl JsonConvertible` doesn't auto-impl
 // JsonSafeFields, so we declare it explicitly here).
+#[cfg(feature = "state-transitions")]
 impl JsonSafeFields for DocumentTransition {}
+#[cfg(feature = "state-transitions")]
 impl JsonSafeFields for TokenTransition {}
+#[cfg(feature = "state-transitions")]
 impl JsonSafeFields for BatchedTransition {}
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}

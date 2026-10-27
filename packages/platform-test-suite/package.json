@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "5.0.0-rc.4",
+  "version": "5.0.0-rc.8",
   "description": "Dash Network end-to-end tests",
   "engines": {
     "node": ">=22"
@@ -78,7 +78,7 @@
     "utf-8-validate": "^5.0.9",
     "util": "^0.12.4",
     "webpack": "^5.104.0",
-    "ws": "^8.17.1"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "eslint": "^9.18.0"

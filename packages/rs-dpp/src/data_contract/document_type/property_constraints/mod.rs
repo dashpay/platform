@@ -121,6 +121,7 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
+use platform_version::version::PlatformVersion;
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1039,7 +1040,8 @@ pub enum AggregateKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AggregateBinding {
     /// The document's property at the dotted `path`; `kind` is how it
-    /// compares, `None` for an integer.
+    /// compares, `None` for an integer. `EqualityKind::Bytes`, a byte array,
+    /// only under `parse_property_constraints` 1 (protocol version 15).
     Property {
         path: String,
         kind: Option<EqualityKind>,
@@ -1366,11 +1368,13 @@ impl ConstraintExpression {
                 for binding in read.filter.values() {
                     if let AggregateBinding::Property { path, kind } = binding {
                         let read = match kind {
-                            // Never bytes: the parse reads a byte array as an
-                            // integer here, which the parsed type refuses
-                            None | Some(EqualityKind::Bytes) => PropertyRead::Value,
+                            None => PropertyRead::Value,
                             Some(EqualityKind::Text) => PropertyRead::Text,
                             Some(EqualityKind::Identifier) => PropertyRead::Identifier,
+                            // Only from `parse_property_constraints` 1: before it the
+                            // parse reads a byte array here as an integer, which the
+                            // parsed type refuses
+                            Some(EqualityKind::Bytes) => PropertyRead::Bytes { extent: 0 },
                         };
                         visit(path, read)?;
                     }
@@ -2935,12 +2939,40 @@ impl PropertyConstraint {
     }
 }
 
+/// How a property of the document, of equality kind `kind` (as the parse's `property_kind`
+/// says), compares as the value a `countOf` or `sumOf` filter binds to a key. Versioned on
+/// `parse_property_constraints`: before 1 (and where no rule parses) a byte array matches no
+/// key and is read as an integer, which the parsed document type refuses; from 1 (protocol
+/// version 15) it is the byte array it is, which a byte array key of the counted type takes.
+fn aggregate_binding_kind(
+    kind: Option<EqualityKind>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<EqualityKind>, String> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None | Some(0) => Ok(kind.filter(|kind| *kind != EqualityKind::Bytes)),
+        Some(1) => Ok(kind),
+        Some(version) => Err(format!(
+            "is parsed under parse_property_constraints version {version}, which is not \
+             supported"
+        )),
+    }
+}
+
 /// What the parse of one document type's rules knows of the type: its name,
 /// which tells an aggregate of the type's own documents from one of another
-/// type's, and `property_kind` ([`parse_property_constraints`]).
+/// type's, and `property_kind` ([`parse_property_constraints`]); and the
+/// platform version, whose `parse_property_constraints` selects the grammar's
+/// versioned parts ([`aggregate_binding_kind`]).
 struct ParseContext<'a> {
     document_type_name: &'a str,
     property_kind: &'a dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &'a PlatformVersion,
 }
 
 impl ParseContext<'_> {
@@ -2996,12 +3028,14 @@ pub fn parse_property_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::PROPERTY_CONSTRAINTS,
         document_type_name,
         property_kind,
+        platform_version,
     )
 }
 
@@ -3017,12 +3051,14 @@ pub fn parse_delete_constraints(
     schema: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     parse_named_rules(
         schema,
         property_names::DELETE_CONSTRAINTS,
         document_type_name,
         property_kind,
+        platform_version,
     )
 }
 
@@ -3033,6 +3069,7 @@ fn parse_named_rules(
     keyword: &str,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
@@ -3061,6 +3098,7 @@ fn parse_named_rules(
     let context = ParseContext {
         document_type_name,
         property_kind,
+        platform_version,
     };
     let mut constraints = BTreeMap::new();
     for (name, rule) in rules {
@@ -3092,10 +3130,12 @@ pub fn parse_property_constraint_condition(
     condition: &Value,
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    platform_version: &PlatformVersion,
 ) -> Result<PropertyConstraint, String> {
     let context = ParseContext {
         document_type_name,
         property_kind,
+        platform_version,
     };
     parse_condition(condition, &mut String::new(), 0, &context)
 }
@@ -4300,10 +4340,11 @@ fn parse_aggregate(
                          $ownerId and $id"
                     ))
                 }
-                // A byte array matches no key: it reads as an integer, which the
-                // parsed document type refuses
                 Value::Text(path) => AggregateBinding::Property {
-                    kind: (context.property_kind)(path).filter(|kind| *kind != EqualityKind::Bytes),
+                    kind: aggregate_binding_kind(
+                        (context.property_kind)(path),
+                        context.platform_version,
+                    )?,
                     path: path.clone(),
                 },
                 binding if is_number(binding) => {

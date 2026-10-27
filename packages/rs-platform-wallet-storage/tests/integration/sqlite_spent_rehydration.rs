@@ -4,7 +4,7 @@ use crate::common;
 
 use std::collections::BTreeMap;
 
-use common::{chain_lock, registration, Case};
+use common::{authorize, authorize_with_mode, chain_lock, registration, Case};
 use dashcore::{hashes::Hash, Address, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use key_wallet::{
     managed_account::{
@@ -60,9 +60,14 @@ async fn assert_corrupt_record_body_is_rejected(policy: LoadPolicy) {
         &[OutPoint::new(funding.txid(), 0)],
         vec![pay(99_000, &address)],
     );
-    let pending = spend_of(
-        &[OutPoint::new(funding.txid(), 1)],
-        vec![pay(19_000, &address)],
+    let pending = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(
+            &[OutPoint::new(funding.txid(), 1)],
+            vec![pay(19_000, &address)],
+        ),
     );
     let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
     records.extend(records_of(&mut info, &mut wallet, &settled, block(101)).await);
@@ -340,6 +345,8 @@ fn typed_error(error: platform_wallet::changeset::PersistenceError) -> WalletSto
 }
 
 struct Fixture {
+    signer: Wallet,
+    signer_info: ManagedWalletInfo,
     persister: SqlitePersister,
     _dir: tempfile::TempDir,
     wallet_id: [u8; 32],
@@ -367,7 +374,12 @@ impl Fixture {
             vec![pay(100_000, &address), pay(20_000, &address)],
         );
         let [spent, available] = [0, 1].map(|vout| OutPoint::new(funding.txid(), vout));
-        let spending = spend_of(&[spent], vec![burn(99_000)]);
+        let spending = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[spent], vec![burn(99_000)]),
+        );
         let mut records = records_of(&mut info, &mut wallet, &funding, funding_context).await;
         let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
         let (new_utxos, spent_coin) = (coins.values().cloned().collect(), coins[&spent].clone());
@@ -400,6 +412,8 @@ impl Fixture {
             assert_eq!((height, has_record), (Some(100), false));
         }
         Self {
+            signer: wallet.clone(),
+            signer_info: info.clone(),
             persister,
             _dir: dir,
             wallet_id: wallet.wallet_id,
@@ -574,9 +588,12 @@ async fn should_keep_spent_output_excluded_after_restart_and_funding_redelivery(
         }
         if case.persisted_chain_lock {
             let account = &info.accounts.standard_bip44_accounts[&0];
-            assert!(account
-                .keys()
-                .transaction_is_finalized(&fixture.funding.txid()));
+            assert!(
+                !account
+                    .keys()
+                    .transaction_is_finalized(&fixture.funding.txid()),
+                "a higher checkpoint alone cannot prove branch membership"
+            );
             info.update_synced_height(300);
         }
         if case.pruned {
@@ -811,7 +828,12 @@ async fn assert_conflict_restart(case: ConflictCase) {
         })
         .collect();
     let (shared, extra) = (coins[0].outpoint, coins[1].outpoint);
-    let loser = spend_of(&[shared, extra], vec![pay(119_000, &address)]);
+    let loser = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(&[shared, extra], vec![pay(119_000, &address)]),
+    );
     let winner = spend_of(&[shared], vec![burn(99_000)]);
     let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
     if !record_funding {
@@ -822,7 +844,12 @@ async fn assert_conflict_restart(case: ConflictCase) {
     records.extend(records_of(&mut competing, &mut wallet, &winner, MEMPOOL).await);
     let mut surviving_txid = None;
     if surviving_claim {
-        let extra_spender = spend_of(&[extra], vec![burn(19_000)]);
+        let extra_spender = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[extra], vec![burn(19_000)]),
+        );
         surviving_txid = Some(extra_spender.txid());
         records.extend(records_of(&mut other_spender, &mut wallet, &extra_spender, MEMPOOL).await);
     }
@@ -1282,7 +1309,12 @@ async fn stage_replay_amounts(
     let parents: Vec<_> = (0..values.len() as u32)
         .map(|vout| OutPoint::new(parent, vout))
         .collect();
-    record.transaction = spend_of(&parents, vec![pay(received, &address)]);
+    record.transaction = authorize(
+        &fixture.signer,
+        &fixture.signer_info,
+        &address,
+        spend_of(&parents, vec![pay(received, &address)]),
+    );
     record.input_details = (0..)
         .zip(values)
         .map(|(index, value)| InputDetail {
@@ -1376,12 +1408,17 @@ async fn should_restore_mempool_record_with_unsafe_input_amounts_without_its_inp
 async fn should_load_wallet_holding_mempool_receipt_with_overflowing_foreign_output() {
     let (mut wallet, mut info, address) = wallet_with_receive_address();
     // Unminable, but nothing rejects it on the way in: only the owned output is accounted.
-    let receipt = spend_of(
-        &[outside(81)],
-        vec![
-            pay(5_000, &address),
-            pay(i64::MAX as u64, &foreign_address(82)),
-        ],
+    let receipt = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(
+            &[outside(81)],
+            vec![
+                pay(5_000, &address),
+                pay(i64::MAX as u64, &foreign_address(82)),
+            ],
+        ),
     );
     let records = records_of(&mut info, &mut wallet, &receipt, MEMPOOL).await;
     assert_eq!(records.len(), 1, "the live checker records the receipt");
@@ -1411,7 +1448,7 @@ async fn should_load_wallet_holding_mempool_receipt_with_overflowing_foreign_out
 }
 
 #[tokio::test]
-async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreign_output() {
+async fn should_release_forged_mempool_spend_with_overflowing_foreign_output() {
     let (mut wallet, mut info, address) = wallet_with_receive_address();
     let funding = spend_of(&[outside(83)], vec![pay(100_000, &address)]);
     let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
@@ -1436,7 +1473,7 @@ async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreig
     let core = CoreChangeSet {
         records,
         new_utxos: vec![coin.clone(), change_coin],
-        spent_utxos: vec![coin],
+        spent_utxos: vec![coin.clone()],
         ..Default::default()
     };
     let (persister, _dir) = store_then_reopen(&wallet, core);
@@ -1450,10 +1487,10 @@ async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreig
     check(info, wallet, &funding, block(100)).await;
     assert_eq!(
         coin_set(info),
-        vec![change],
-        "the reserved coin stays out of the spendable set through funding redelivery"
+        vec![coin.outpoint],
+        "an unauthenticated spend must not reserve a real coin or credit forged change"
     );
-    assert_eq!(info.balance.total(), 1_000);
+    assert_eq!(info.balance.total(), 100_000);
 }
 
 /// How a forged, unminable mempool transaction makes its amounts unsafe.
@@ -1504,7 +1541,12 @@ impl StoredLoser {
                     pay(i64::MAX as u64, &foreign_address(87)),
                     pay(1_000, &address),
                 ];
-                let forged = spend_of(&[shared.outpoint, extra.outpoint], outputs);
+                let forged = authorize(
+                    &wallet,
+                    &info,
+                    &address,
+                    spend_of(&[shared.outpoint, extra.outpoint], outputs),
+                );
                 records.extend(records_of(&mut info, &mut wallet, &forged, MEMPOOL).await);
                 assert_eq!(
                     records.len(),
@@ -1541,7 +1583,12 @@ impl StoredLoser {
                 let shared = outside(95);
                 let value = UNREPRESENTABLE_HALF;
                 let outputs = vec![pay(value, &address), pay(value, &address)];
-                let forged = spend_of(&[shared, extra], outputs);
+                let forged = authorize(
+                    &wallet,
+                    &info,
+                    &address,
+                    spend_of(&[shared, extra], outputs),
+                );
                 let winner = spend_of(&[shared], vec![pay(1_000, &address)]);
                 let (mut scratch, mut scratch_wallet) = (info.clone(), wallet.clone());
                 let mut records =
@@ -1724,14 +1771,24 @@ async fn should_recompute_unsafe_mempool_record_when_its_funding_arrives_after_r
     let funding = spend_of(&[outside(88)], vec![pay(100_000, &address)]);
     let coin = OutPoint::new(funding.txid(), 0);
     // Seen before its funding, so stored without the input's amount.
-    let forged = spend_of(
-        &[coin],
-        vec![
-            pay(i64::MAX as u64, &foreign_address(89)),
-            pay(1_000, &address),
-        ],
+    let forged = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(
+            &[coin],
+            vec![
+                pay(i64::MAX as u64, &foreign_address(89)),
+                pay(1_000, &address),
+            ],
+        ),
     );
-    let rival = spend_of(&[coin], vec![pay(500, &address)]);
+    let rival = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(&[coin], vec![pay(500, &address)]),
+    );
     let (mut scratch, mut scratch_wallet) = (info.clone(), wallet.clone());
     let mut records = records_of(&mut scratch, &mut scratch_wallet, &forged, MEMPOOL).await;
     records.extend(records_of(&mut info, &mut wallet, &rival, MEMPOOL).await);
@@ -1777,8 +1834,18 @@ async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_
             [100_000, 20_000, 5_000].map(|v| pay(v, &address)).into(),
         );
         let coin = |vout| OutPoint::new(funding.txid(), vout);
-        let loser = spend_of(&[coin(0), coin(1)], vec![foreign(91, 119_000)]);
-        let survivor = spend_of(&[coin(1), coin(2)], vec![foreign(92, 24_000)]);
+        let loser = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[coin(0), coin(1)], vec![foreign(91, 119_000)]),
+        );
+        let survivor = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[coin(1), coin(2)], vec![foreign(92, 24_000)]),
+        );
         let winner = spend_of(&[coin(0)], vec![pay(99_000, &address)]);
         let final_spend = spend_of(&[coin(2)], vec![foreign(93, 4_000)]);
 
@@ -1863,6 +1930,9 @@ async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_
 struct TwoAccountShape {
     /// Value of each of the two owned outputs.
     value: u64,
+    /// Pays only the second account, so the stored record names and details
+    /// that account alone.
+    second_only: bool,
     /// Adds a foreign output no chain could hold.
     foreign_output: bool,
     /// The wallet-level record names the first account, not the second.
@@ -1902,30 +1972,47 @@ impl TwoAccountReceipt {
             inputs.push(OutPoint::new(funding.txid(), 0));
         }
         let mut outputs = vec![pay(shape.value, &first), pay(shape.value, &second)];
+        if shape.second_only {
+            outputs.remove(0);
+        }
         if shape.foreign_output {
             outputs.push(pay(i64::MAX as u64, &foreign_address(98)));
         }
-        let receipt = spend_of(&inputs, outputs);
+        let receipt = authorize(&wallet, &info, &first, spend_of(&inputs, outputs));
         let winner = spend_of(&[shared], vec![pay(1_000, &first)]);
         let mut records = records_of(&mut info, &mut wallet, &receipt, MEMPOOL).await;
-        assert_eq!(records.len(), 2, "the checker records it in both accounts");
-        // One wallet-level record per transaction, as a sync folds the
-        // per-account slices: it names one account and details both.
-        if !shape.recorded_under_first {
-            records.reverse();
-        }
-        let other = records.pop().unwrap();
-        records[0].output_details.extend(other.output_details);
-        records[0].output_details.sort_by_key(|detail| detail.index);
-        let mut new_utxos = vec![
-            stored_utxo(&receipt, 0, first.clone()),
-            stored_utxo(&receipt, 1, second.clone()),
-        ];
+        let mut new_utxos = if shape.second_only {
+            assert_eq!(
+                records.len(),
+                1,
+                "the checker records it in the second account"
+            );
+            vec![stored_utxo(&receipt, 0, second.clone())]
+        } else {
+            assert_eq!(records.len(), 2, "the checker records it in both accounts");
+            // One wallet-level record per transaction, as a sync folds the
+            // per-account slices: it names one account and details both.
+            if !shape.recorded_under_first {
+                records.reverse();
+            }
+            let other = records.pop().unwrap();
+            records[0].output_details.extend(other.output_details);
+            records[0].output_details.sort_by_key(|detail| detail.index);
+            vec![
+                stored_utxo(&receipt, 0, first.clone()),
+                stored_utxo(&receipt, 1, second.clone()),
+            ]
+        };
         let mut spent_utxos = Vec::new();
         let child = shape.child.then(|| {
-            spend_of(
-                &[OutPoint::new(receipt.txid(), 0)],
-                vec![pay(1_500, &first)],
+            authorize(
+                &wallet,
+                &info,
+                &first,
+                spend_of(
+                    &[OutPoint::new(receipt.txid(), 0)],
+                    vec![pay(1_500, &first)],
+                ),
             )
         });
         if let Some(child) = &child {
@@ -1934,7 +2021,12 @@ impl TwoAccountReceipt {
             new_utxos.push(stored_utxo(child, 0, first.clone()));
         }
         if shape.unfunded_input {
-            let rival = spend_of(&[OutPoint::new(funding.txid(), 0)], vec![pay(500, &first)]);
+            let rival = authorize(
+                &wallet,
+                &info,
+                &first,
+                spend_of(&[OutPoint::new(funding.txid(), 0)], vec![pay(500, &first)]),
+            );
             records.extend(records_of(&mut info, &mut wallet, &rival, MEMPOOL).await);
             new_utxos.push(stored_utxo(&rival, 0, first.clone()));
         }
@@ -1996,6 +2088,14 @@ async fn should_settle_two_account_mempool_receipt_against_final_winner_after_re
         TwoAccountShape {
             unrouted: true,
             ..unrepresentable
+        },
+        // Load parks the coin in the first account, which the record never
+        // names: settlement must still find it there.
+        TwoAccountShape {
+            second_only: true,
+            foreign_output: true,
+            unrouted: true,
+            ..shape(7_000)
         },
     ] {
         let _case = Case(format!("{shape:?}"));
@@ -2201,9 +2301,14 @@ impl ForgedInputSpend {
         let receipt_coins = receipts
             .each_ref()
             .map(|receipt| OutPoint::new(receipt.txid(), 0));
-        let spend = spend_of(
-            &[shared, extra, receipt_coins[0], receipt_coins[1]],
-            outputs,
+        let spend = authorize(
+            &wallet,
+            &info,
+            &first,
+            spend_of(
+                &[shared, extra, receipt_coins[0], receipt_coins[1]],
+                outputs,
+            ),
         );
         let winner = spend_of(&[shared], vec![pay(49_000, &foreign_address(74))]);
 
@@ -2237,7 +2342,12 @@ impl ForgedInputSpend {
             new_utxos.push(stored_utxo(&spend, 1, second.clone()));
         }
         if shape.late_funding {
-            let rival = spend_of(&[shared], vec![pay(500, &first)]);
+            let rival = authorize(
+                &wallet,
+                &info,
+                &first,
+                spend_of(&[shared], vec![pay(500, &first)]),
+            );
             records.extend(records_of(&mut info, &mut wallet, &rival, MEMPOOL).await);
             new_utxos.push(stored_utxo(&rival, 0, first.clone()));
         }
@@ -2407,9 +2517,14 @@ async fn settle_payment_at_load(
     let funding = spend_of(&[outside(91)], vec![pay(100_000, &address)]);
     let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
     let coin = OutPoint::new(funding.txid(), 0);
-    let loser = spend_of(
-        &[coin],
-        vec![pay(59_000, &foreign_address(92)), pay(40_000, &address)],
+    let loser = authorize(
+        &wallet,
+        &info,
+        &address,
+        spend_of(
+            &[coin],
+            vec![pay(59_000, &foreign_address(92)), pay(40_000, &address)],
+        ),
     );
     records.extend(records_of(&mut info, &mut wallet, &loser, MEMPOOL).await);
     let winner = spend_of(&[coin], vec![pay(99_000, &address)]);
@@ -2551,4 +2666,322 @@ async fn should_settle_the_dashpay_payment_of_a_transaction_a_load_settlement_re
         let outcome = settle_payment_at_load(payment, status, policy).await;
         assert_eq!(outcome, expected, "{label}");
     }
+}
+
+/// A later ChainLock does not prove that a stored block belongs to its branch.
+#[tokio::test]
+async fn should_preserve_instant_send_replacement_when_stale_branch_has_lower_height() {
+    for lock_height in [101, 102] {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(&[outside(94)], vec![pay(100_000, &address)]);
+        let coin = OutPoint::new(funding.txid(), 0);
+        let stale = spend_of(&[coin], vec![pay(60_000, &address)]);
+        let replacement = spend_of(&[coin], vec![pay(50_000, &address)]);
+        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let mut fork = info.clone();
+        records.extend(records_of(&mut fork, &mut wallet, &stale, block(101)).await);
+        let lock = dashcore::InstantLock {
+            txid: replacement.txid(),
+            inputs: vec![coin],
+            ..Default::default()
+        };
+        records.extend(
+            records_of(
+                &mut info,
+                &mut wallet,
+                &replacement,
+                TransactionContext::InstantSend(lock.clone()),
+            )
+            .await,
+        );
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: vec![
+                    stored_utxo(&stale, 0, address.clone()),
+                    stored_utxo(&replacement, 0, address),
+                ],
+                instant_locks_for_non_final_records: BTreeMap::from([(replacement.txid(), lock)]),
+                last_applied_chain_lock: Some(chain_lock(lock_height, 95)),
+                ..Default::default()
+            },
+        );
+        for _ in 0..2 {
+            let loaded = persister.load().unwrap();
+            let restored = &loaded.wallets[&wallet.wallet_id].wallet_info;
+            let account = &restored.accounts.standard_bip44_accounts[&0];
+            assert!(
+                account.transactions().contains_key(&replacement.txid()),
+                "height {lock_height}: a stale branch must not erase the authenticated replacement"
+            );
+            assert!(account
+                .utxos
+                .contains_key(&OutPoint::new(replacement.txid(), 0)));
+            assert!(
+                !account.keys().transaction_is_finalized(&stale.txid()),
+                "height alone is not branch membership"
+            );
+            assert!(persister
+                .get_core_tx_record(wallet.wallet_id, &replacement.txid())
+                .unwrap()
+                .is_some());
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_repair_invalid_claims_without_releasing_authorized_competitors() {
+    for context in [
+        MEMPOOL,
+        block(101),
+        TransactionContext::InstantSend(Default::default()),
+    ] {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(
+            &[outside(96)],
+            vec![pay(100_000, &address), pay(20_000, &address)],
+        );
+        let shared = OutPoint::new(funding.txid(), 0);
+        let extra = OutPoint::new(funding.txid(), 1);
+        let mut bad = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[shared, extra], vec![pay(119_000, &address)]),
+        );
+        bad.output[0].value -= 1; // A peer cannot modify an authorized transaction.
+        let survivor = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(&[shared], vec![pay(99_000, &address)]),
+        );
+        let child = authorize(
+            &wallet,
+            &info,
+            &address,
+            spend_of(
+                &[OutPoint::new(bad.txid(), 0)],
+                vec![pay(118_000, &address)],
+            ),
+        );
+        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let mut alternative = info.clone();
+        records.extend(records_of(&mut info, &mut wallet, &bad, MEMPOOL).await);
+        records.extend(records_of(&mut info, &mut wallet, &child, MEMPOOL).await);
+        let context = if matches!(context, TransactionContext::InstantSend(_)) {
+            TransactionContext::InstantSend(dashcore::InstantLock {
+                txid: survivor.txid(),
+                inputs: vec![shared],
+                ..Default::default()
+            })
+        } else {
+            context
+        };
+        records.extend(records_of(&mut alternative, &mut wallet, &survivor, context).await);
+        let funding_coins: Vec<_> = (0..2)
+            .map(|i| stored_utxo(&funding, i, address.clone()))
+            .collect();
+        let bad_coin = stored_utxo(&bad, 0, address.clone());
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: funding_coins
+                    .iter()
+                    .cloned()
+                    .chain([
+                        bad_coin.clone(),
+                        stored_utxo(&survivor, 0, address.clone()),
+                        stored_utxo(&child, 0, address.clone()),
+                    ])
+                    .collect(),
+                spent_utxos: funding_coins.into_iter().chain([bad_coin]).collect(),
+                ..Default::default()
+            },
+        );
+        for _ in 0..2 {
+            let mut state = persister.load().unwrap();
+            let restored = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+            let mut expected = vec![extra, OutPoint::new(survivor.txid(), 0)];
+            expected.sort();
+            assert_eq!(coin_set(&restored.wallet_info), expected);
+            check(
+                &mut restored.wallet_info,
+                &mut restored.wallet,
+                &funding,
+                block(100),
+            )
+            .await;
+            assert_eq!(
+                coin_set(&restored.wallet_info),
+                expected,
+                "funding redelivery must retain the authorized reservation"
+            );
+            for rejected in [&bad, &child] {
+                assert!(persister
+                    .get_core_tx_record(wallet.wallet_id, &rejected.txid())
+                    .unwrap()
+                    .is_none());
+            }
+            assert!(persister
+                .get_core_tx_record(wallet.wallet_id, &survivor.txid())
+                .unwrap()
+                .is_some());
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_keep_authorization_repair_atomic_and_recovery_read_only() {
+    for case in ["sql_failure", "unsupported_signature", "recovery"] {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(&[outside(97)], vec![pay(100_000, &address)]);
+        let coin = OutPoint::new(funding.txid(), 0);
+        let bad = spend_of(&[coin], vec![pay(99_000, &address)]);
+        let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let mut alternative = info.clone();
+        records.extend(records_of(&mut info, &mut wallet, &bad, MEMPOOL).await);
+        if case == "unsupported_signature" {
+            let unsupported = authorize_with_mode(
+                &wallet,
+                &alternative,
+                &address,
+                spend_of(&[coin], vec![pay(98_000, &address)]),
+                2,
+            );
+            records.extend(records_of(&mut alternative, &mut wallet, &unsupported, MEMPOOL).await);
+        }
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: vec![
+                    stored_utxo(&funding, 0, address.clone()),
+                    stored_utxo(&bad, 0, address.clone()),
+                ],
+                spent_utxos: vec![stored_utxo(&funding, 0, address)],
+                ..Default::default()
+            },
+        );
+        if case == "sql_failure" {
+            persister.lock_conn_for_test().execute_batch(
+                "CREATE TRIGGER refuse_release BEFORE UPDATE OF spent ON core_utxos \
+                 WHEN OLD.spent = 1 AND NEW.spent = 0 BEGIN SELECT RAISE(ABORT, 'release refused'); END;"
+            ).unwrap();
+        }
+        let path = persister.config_for_test().path.clone();
+        drop(persister);
+        let policy = if case == "recovery" {
+            LoadPolicy::Recovery
+        } else {
+            LoadPolicy::Strict
+        };
+        let persister =
+            SqlitePersister::open(SqlitePersisterConfig::new(path).with_load_policy(policy))
+                .unwrap();
+        let result = persister.load();
+        if case == "recovery" {
+            assert_eq!(
+                coin_set(&result.unwrap().wallets[&wallet.wallet_id].wallet_info),
+                vec![coin]
+            );
+        } else {
+            let error = typed_error(result.unwrap_err());
+            if case == "unsupported_signature" {
+                assert!(matches!(error, WalletStorageError::SpendAuthorization(_)));
+            } else {
+                assert!(matches!(error, WalletStorageError::Sqlite(_)));
+            }
+        }
+        assert!(
+            persister
+                .get_core_tx_record(wallet.wallet_id, &bad.txid())
+                .unwrap()
+                .is_some(),
+            "{case}: no rejected body may disappear on an unsuccessful or recovery load"
+        );
+        let held: bool = persister
+            .lock_conn_for_test()
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                rusqlite::params![
+                    wallet.wallet_id.as_slice(),
+                    blob::encode_outpoint(&coin).unwrap()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            held,
+            "{case}: durable reservation must roll back with its record"
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_remove_drifted_unauthorized_rows_from_the_recovery_snapshot() {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let funding = spend_of(&[outside(98)], vec![pay(100_000, &address)]);
+    let coin = OutPoint::new(funding.txid(), 0);
+    let bad = spend_of(&[coin], vec![pay(99_000, &address)]);
+    let mut records = records_of(&mut info, &mut wallet, &funding, block(100)).await;
+    records.extend(records_of(&mut info, &mut wallet, &bad, MEMPOOL).await);
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: vec![
+                stored_utxo(&funding, 0, address.clone()),
+                stored_utxo(&bad, 0, address.clone()),
+            ],
+            spent_utxos: vec![stored_utxo(&funding, 0, address)],
+            ..Default::default()
+        },
+    );
+    let path = persister.config_for_test().path.clone();
+    drop(persister);
+    // Deliberately corrupt the physical key without cascading related rows.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    conn.execute(
+        "UPDATE core_transactions SET txid = ?1 WHERE txid = ?2",
+        rusqlite::params![
+            [0xE1u8; 32].as_slice(),
+            bad.txid().as_byte_array().as_slice()
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE core_transaction_inputs SET txid = ?1 WHERE txid = ?2",
+        rusqlite::params![
+            [0xE1u8; 32].as_slice(),
+            bad.txid().as_byte_array().as_slice()
+        ],
+    )
+    .unwrap();
+    drop(conn);
+    let persister = SqlitePersister::open(
+        SqlitePersisterConfig::new(path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let state = persister.load().unwrap();
+        let restored = &state.wallets[&wallet.wallet_id];
+        assert_eq!(
+            coin_set(&restored.wallet_info),
+            vec![coin],
+            "unauthorized drifted body must not restore a reservation"
+        );
+    }
+    let count: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT count(*) FROM core_transactions WHERE txid = ?1",
+            [[0xE1u8; 32].as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "Recovery repairs only its rolled-back snapshot");
 }

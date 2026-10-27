@@ -74,7 +74,7 @@ fn prior_record(
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
-pub(super) fn index_record(
+pub(crate) fn index_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     record: &TransactionRecord,
