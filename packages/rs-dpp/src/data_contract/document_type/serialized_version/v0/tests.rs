@@ -96,3 +96,75 @@ fn should_refuse_a_stored_contested_regex_that_does_not_compile() {
         "{name}: {error}"
     );
 }
+
+/// A type indexing a typed array reads back with the index structure its parse built: the
+/// levels named after the array stamped with its `maxItems`, from the fan-out the stored form
+/// holds resolved.
+#[test]
+fn should_read_back_an_indexed_typed_array_with_the_index_structure_its_parse_built() {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::{platform_value, Identifier};
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("expected a default config");
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 10,
+                "items": { "type": "string", "minLength": 1, "maxLength": 61 },
+                "position": 0
+            },
+            "language": { "type": "string", "maxLength": 2, "position": 1 }
+        },
+        "required": ["$createdAt"],
+        "indices": [
+            { "name": "byHashtagTime", "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }] },
+            { "name": "byLanguageHashtag", "properties": [{ "language": "asc" }, { "hashtags": "asc" }] }
+        ],
+        "additionalProperties": false
+    });
+    let contract_id = Identifier::new([1; 32]);
+    let document_type = DocumentType::try_from_schema(
+        contract_id,
+        1,
+        config.version(),
+        "post",
+        schema.clone(),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("expected the type to parse");
+
+    let read_back = DocumentTypeInSerializationFormat::try_from_document_type(
+        document_type.as_ref(),
+        None,
+        platform_version,
+    )
+    .expect("expected the type to compile")
+    .into_document_type("post", contract_id, schema)
+    .expect("expected the type to read back");
+
+    assert_eq!(read_back.index_structure(), document_type.index_structure());
+    let index_structure = read_back.index_structure();
+    let by_hashtag = index_structure
+        .sub_levels()
+        .get("hashtags")
+        .expect("expected the hashtags level");
+    assert_eq!(by_hashtag.indexed_array_max_items(), Some(10));
+    let under_language = index_structure
+        .sub_levels()
+        .get("language")
+        .and_then(|level| level.sub_levels().get("hashtags"))
+        .expect("expected the hashtags level under language");
+    assert_eq!(under_language.indexed_array_max_items(), Some(10));
+}

@@ -352,6 +352,10 @@ impl IndexLevel {
     /// their properties' types; the document type parser calls this with the arrays it
     /// resolved. A level key is the property's name except on a bucketed first level, whose
     /// source is a timestamp or an integer, never a typed array.
+    ///
+    /// Generation 0 of the stored document type stamps with it too, from the arrays it stored
+    /// resolved: changing what it stamps changes how stored contracts read back, so a change
+    /// belongs in a new function the parser and a new stored generation select.
     pub fn stamp_indexed_arrays(&mut self, array_properties: &BTreeMap<String, u16>) {
         for (level_key, sub_level) in self.sub_index_levels.iter_mut() {
             if let Some(max_items) = array_properties.get(level_key) {

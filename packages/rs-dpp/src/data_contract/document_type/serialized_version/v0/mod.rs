@@ -60,6 +60,10 @@ pub struct DocumentTypeInSerializationFormatV0 {
     properties: StoredProperties,
     flattened_properties: StoredProperties,
     indices: BTreeMap<String, StoredIndex>,
+    /// The typed arrays the index structure's levels fan documents out over, with their
+    /// `maxItems`, as the parse stamped them: stored resolved, so reading back stamps the same
+    /// levels whatever a later parser resolves.
+    indexed_arrays: BTreeMap<String, u16>,
     identifier_paths: BTreeSet<String>,
     binary_paths: BTreeSet<String>,
     required_fields: BTreeSet<String>,
@@ -132,7 +136,7 @@ impl DocumentTypeInSerializationFormatV0 {
             name: _,
             schema: _,
             indices,
-            index_structure: _,
+            index_structure,
             flattened_properties,
             properties,
             identifier_paths,
@@ -189,6 +193,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .iter()
                 .map(|(name, index)| (name.clone(), StoredIndex::from(index)))
                 .collect(),
+            indexed_arrays: stamped_indexed_arrays(index_structure),
             identifier_paths: identifier_paths.clone(),
             binary_paths: binary_paths.clone(),
             required_fields: required_fields.clone(),
@@ -261,6 +266,7 @@ impl DocumentTypeInSerializationFormatV0 {
             properties,
             flattened_properties,
             indices,
+            indexed_arrays,
             identifier_paths,
             binary_paths,
             required_fields,
@@ -314,18 +320,8 @@ impl DocumentTypeInSerializationFormatV0 {
             .map(|(name, index)| Ok((name, Index::try_from(index)?)))
             .collect::<Result<_, ProtocolError>>()?;
         let mut index_structure = IndexLevel::try_from_indices_v0(indices.values(), name)?;
-        // The levels named after a typed array fan the document out over its elements. Only a
-        // generation that admits indexed arrays sets an index's `indexed_array`, so stamping
-        // every one that names one is what the parse did.
-        let indexed_arrays: BTreeMap<String, u16> = indices
-            .values()
-            .filter_map(|index| {
-                let array = index.indexed_array.as_ref()?;
-                index
-                    .indexed_array_fan_out(&flattened_properties)
-                    .map(|(_, max_items)| (array.clone(), max_items))
-            })
-            .collect();
+        // The levels named after a typed array fan the document out over its elements, as the
+        // parse stamped them when the type was stored
         if !indexed_arrays.is_empty() {
             index_structure.stamp_indexed_arrays(&indexed_arrays);
         }
@@ -415,6 +411,22 @@ impl DocumentTypeInSerializationFormatV0 {
                 .collect::<Result<_, ProtocolError>>()?,
         }))
     }
+}
+
+/// The typed arrays the levels of `index_structure` fan documents out over, with their
+/// `maxItems`: what the parse stamped on them.
+fn stamped_indexed_arrays(index_structure: &IndexLevel) -> BTreeMap<String, u16> {
+    fn collect(level: &IndexLevel, stamped: &mut BTreeMap<String, u16>) {
+        for (key, sub_level) in level.sub_levels() {
+            if let Some(max_items) = sub_level.indexed_array_max_items() {
+                stamped.insert(key.clone(), max_items);
+            }
+            collect(sub_level, stamped);
+        }
+    }
+    let mut stamped = BTreeMap::new();
+    collect(index_structure, &mut stamped);
+    stamped
 }
 
 /// The typed validation schema to store with `document_type`: what it was read back with from
