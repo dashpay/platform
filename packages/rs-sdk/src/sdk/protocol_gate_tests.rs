@@ -738,7 +738,7 @@ fn assert_stale<T: std::fmt::Debug>(result: Result<T, Error>, context: &str) {
     assert!(
         matches!(
             result,
-            Err(Error::StaleNode(StaleNodeError::ProtocolVersion {
+            Err(Error::StaleNode(StaleNodeError::BehindProtocolUpgrade {
                 required: V14,
                 signed: V13,
             }))

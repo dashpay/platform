@@ -191,7 +191,7 @@ impl Sdk {
             Some(required)
                 if metadata.protocol_version < required && self.enforces_protocol_gate() =>
             {
-                Err(StaleNodeError::ProtocolVersion {
+                Err(StaleNodeError::BehindProtocolUpgrade {
                     required,
                     signed: metadata.protocol_version,
                 }

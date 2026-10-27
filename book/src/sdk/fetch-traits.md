@@ -317,9 +317,23 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    `FromProof::maybe_from_proof_with_metadata`, which verifies the GroveDB proof
    against quorum signatures.
 
+   Document queries (documents, counts, sums, averages and their split forms,
+   ranked, having, composite and chained queries) are rebuilt with the rules of
+   the protocol version they are verified with, so an answer signed at an older
+   protocol version than the SDK's is not verified with them. Once a verified
+   answer has shown the network running the SDK's protocol version, an answer
+   from a node still on an older version fails with a retryable proof error: the
+   request moves to another node, and the node behind is banned. Until then such
+   an answer also moves the request to another node but bans no node, since the
+   SDK may be set to a newer protocol version than its network runs; a query whose
+   every attempt ends this way fails with `Error::Config`. An answer outside the
+   height or time tolerance still fails as stale, and its node is banned.
+
 5. **Metadata validation**: The SDK checks that the response metadata (height, time)
    is fresh enough based on the configured tolerances. An answer to a request that needs a
-   protocol version, signed below it, comes from a stale node and is retried elsewhere.
+   protocol version, signed below it, comes from a node behind the network's upgrade
+   (`StaleNodeError::BehindProtocolUpgrade`): the node is banned and the request is
+   retried elsewhere.
 
 6. **Result return**: The verified object (or `None`) is returned to the caller.
 

@@ -552,7 +552,8 @@ impl WasmSdkBuilder {
     /// - 2: Platform version 2
     /// - ... up to latest version
     ///
-    /// Defaults to latest version if not specified.
+    /// When not set, the SDK follows the network's protocol version instead of
+    /// pinning one.
     #[wasm_bindgen(js_name = "withVersion")]
     pub fn with_version(
         self,

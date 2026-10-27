@@ -94,7 +94,7 @@ Rust apps can tell the two apart with `Error::is_transient_protocol_version_refu
 
 When the network activates protocol 14, a node that has not caught up yet still answers
 at protocol 13. An answer to one of these requests signed below 14 is treated as coming
-from a stale node (`StaleNodeError::ProtocolVersion`): it is discarded, the node is
+from a stale node (`StaleNodeError::BehindProtocolUpgrade`): it is discarded, the node is
 banned, and the SDK asks another one. On FFI this is a network error.
 
 The question the SDK asks for the network's version can reach such a node too. Its fresh

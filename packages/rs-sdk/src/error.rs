@@ -229,6 +229,37 @@ impl Error {
             _ => false,
         }
     }
+
+    /// Whether the node that sent the answer leaves the request's rotation without a ban:
+    /// the answer cannot be used, but does not show that the node is at fault.
+    pub(crate) fn spares_responder(&self) -> bool {
+        matches!(
+            self,
+            Self::StaleNode(StaleNodeError::ProtocolVersion { .. })
+        )
+    }
+
+    /// The error a request reports when every one of its attempts ended with this kind of
+    /// error and no attempt is left.
+    ///
+    /// When every node asked answered a document query at an older protocol version than the
+    /// SDK's, while no verified answer has shown the network running the SDK's version, the
+    /// request fails as a configuration error: the SDK may be set ahead of its network.
+    pub(crate) fn into_exhausted_error(self) -> Self {
+        match self {
+            Self::StaleNode(StaleNodeError::ProtocolVersion {
+                received_protocol_version: signed,
+                expected_protocol_version: sdk,
+            }) => Self::Config(format!(
+                "the last answer names protocol version {signed}, below the SDK's protocol \
+                 version {sdk}, and no verified answer has yet shown the network running \
+                 {sdk}; if the SDK was set ahead of its network, let it follow the network's \
+                 protocol version instead, or seed it with the network's version \
+                 (with_initial_version)"
+            )),
+            error => error,
+        }
+    }
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
@@ -527,10 +558,29 @@ pub enum StaleNodeError {
         /// Newer epoch index that the server's own proof showed as already started
         proven_epoch: EpochIndex,
     },
+    /// Server answered a document query at an older protocol version than the SDK's, and no
+    /// verified answer has yet shown the network running the SDK's version
+    ///
+    /// A document query answer is not verified with the rules of another protocol version than
+    /// the one that signed it. The SDK may be set ahead of its network, where every node answers
+    /// this way, so the node is not banned: the request moves to another node. A request whose
+    /// every attempt ends with this error fails with [`Error::Config`] instead, also when no
+    /// node is left to ask.
+    #[error("received protocol version {received_protocol_version} is below the SDK's protocol version {expected_protocol_version}; try another server")]
+    ProtocolVersion {
+        /// Protocol version the SDK verifies the query with
+        expected_protocol_version: u32,
+        /// Protocol version named in the server's response metadata
+        received_protocol_version: u32,
+    },
     /// Server answered a request that needs a newer protocol version with a response
     /// signed at an older one: it is behind the network's protocol upgrade.
+    ///
+    /// Such a request is sent only once a verified answer has shown the network running
+    /// `required`, so unlike [`StaleNodeError::ProtocolVersion`] the node is at fault: it is
+    /// banned, and the request moves to another node.
     #[error("received an answer signed at protocol version {signed} to a request that needs {required}; try another server")]
-    ProtocolVersion {
+    BehindProtocolUpgrade {
         /// Protocol version from which every node serves the request
         required: u32,
         /// Protocol version in the response metadata
@@ -603,11 +653,15 @@ mod tests {
             Some(Error::Generic("offline".into()))
         ))
         .is_some());
-        assert!(Error::StaleNode(StaleNodeError::ProtocolVersion {
+        let behind = Error::StaleNode(StaleNodeError::BehindProtocolUpgrade {
             required: 14,
             signed: 13,
-        })
-        .can_retry());
+        });
+        assert!(behind.can_retry());
+        assert!(
+            !behind.spares_responder(),
+            "a node behind an upgrade the network has proven is banned"
+        );
     }
 
     /// A refusal may lift soon only when the SDK could not learn the network's version for a
