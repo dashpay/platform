@@ -50,6 +50,8 @@ use crate::data_contract::document_type::property_names::{
     RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -745,13 +747,14 @@ fn check_document_type_schema(
 /// 15) adds once a document type is parsed: the type, whose expanded schema is `schema`, with
 /// the contract's expanded `$defs`, must have a typed validation schema, which its documents
 /// are checked against natively. Version 0 requires nothing. Run last, so that a schema the
-/// parser refuses is refused with the parser's error.
+/// parser refuses is refused with the parser's error. Returns the native validator version 1
+/// built, for the type to keep.
 #[cfg(feature = "validation")]
 pub(super) fn require_validation_schema(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     platform_version: &PlatformVersion,
-) -> Result<(), ProtocolError> {
+) -> Result<Option<DocumentSchemaValidator>, ProtocolError> {
     match platform_version
         .dpp
         .contract_versions
@@ -759,8 +762,10 @@ pub(super) fn require_validation_schema(
         .schema
         .check_document_type_schema
     {
-        0 => Ok(()),
-        1 => native_schema::check_validation_schema(schema, schema_defs, platform_version),
+        0 => Ok(None),
+        1 => {
+            native_schema::check_validation_schema(schema, schema_defs, platform_version).map(Some)
+        }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::require_validation_schema".to_string(),
             known_versions: vec![0, 1],
