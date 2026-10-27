@@ -15,7 +15,11 @@ impl Drive {
     /// ([`DriveOperation::append_low_level_drive_operations_after_ttl_drain`]). Two deletions
     /// that empty an index tree together remove it, and an insert into a tree an earlier deletion
     /// of the batch empties keeps the tree. Credits that repaid an identity's debt and ephemeral
-    /// operations are refused as by version 0, for the same reasons.
+    /// operations are refused as by version 0, for the same reasons. A batch writing one token
+    /// balance, supply, pool total or escrow more than once is refused first, as
+    /// `apply_drive_operations` refuses it
+    /// ([`DriveOperation::refuse_repeated_token_balance_writes`]): each such write sets the value
+    /// computed from state before the batch, so all but the last would be lost.
     #[inline(always)]
     pub(super) fn convert_drive_operations_to_grove_operations_v2(
         &self,
@@ -24,6 +28,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        DriveOperation::refuse_repeated_token_balance_writes(&drive_batch_operations)?;
         self.refuse_repeated_counter_moves(
             &drive_batch_operations,
             block_info,

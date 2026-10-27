@@ -246,6 +246,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::batch::drive_op_batch::{
         PrefundedSpecializedBalanceOperationType, TokenOperationType,
     };
@@ -337,6 +339,45 @@ mod tests {
                     .processing_fee
                     .max(deep_first_before.processing_fee)
         );
+    }
+
+    /// From protocol version 15 the converter that returns a batch instead of applying it
+    /// refuses a batch writing one token key twice, as this generation does: a frozen holding
+    /// destroy naming one listing twice, and two destroys of one holding.
+    #[test]
+    fn should_refuse_repeated_token_writes_through_the_raw_converter() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(latest));
+        let destroy = |listings: Vec<(Identifier, u64)>| {
+            DriveOperation::TokenOperation(TokenOperationType::TokenDestroyFrozenHolding {
+                token_id: Identifier::from([5; 32]),
+                holder_id: Identifier::from([6; 32]),
+                balance_amount: 10,
+                listings,
+            })
+        };
+        let listing = Identifier::from([7; 32]);
+        for (case, operations) in [
+            (
+                "one listing twice",
+                vec![destroy(vec![(listing, 1), (listing, 1)])],
+            ),
+            ("one holding twice", vec![destroy(vec![]), destroy(vec![])]),
+        ] {
+            let refused = drive.convert_drive_operations_to_grove_operations(
+                operations,
+                &BlockInfo::default(),
+                None,
+                latest,
+            );
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ),
+                "{case}: {refused:?}"
+            );
+        }
     }
 
     mod batch_document_writes {

@@ -67,7 +67,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         batch_operations: DriveBatchOperationsMethodVersion {
-            convert_drive_operations_to_grove_operations: 2, // changed in v10: each operation is built against the batch's earlier ones
+            convert_drive_operations_to_grove_operations: 2, // changed in v10: each operation is built against the batch's earlier ones, and a batch writing one token balance, supply, pool total or escrow twice is refused
             apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
