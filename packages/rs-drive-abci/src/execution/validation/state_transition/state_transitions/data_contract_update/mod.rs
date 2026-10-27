@@ -122,7 +122,10 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::platform_value::BinaryData;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+        PlatformSerializable, PlatformSerializableWithPlatformVersion,
+    };
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
     use dpp::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -787,6 +790,17 @@ mod tests {
         contract.set_owner_id(identity.id());
         // Upgrade config to V1 (required since protocol version 12)
         contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+        // The document types were parsed under the fixture's config, and integer widths
+        // follow the config: parse them again under the one set, as a transition carrying
+        // the contract would be, since Drive stores the types as they are
+        let contract = DataContract::versioned_deserialize_trusted(
+            &contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize the contract"),
+            true,
+            platform_version,
+        )
+        .expect("expected the contract to parse again");
 
         platform
             .drive

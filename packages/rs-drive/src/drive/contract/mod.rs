@@ -864,13 +864,9 @@ mod tests {
             platform_version,
         )
         .expect("should verify single contract proof");
-        assert!(verified_contract.is_some(), "contract should be in proof");
-        assert_eq!(
-            verified_contract
-                .expect("verified contract should exist")
-                .id(),
-            contract.id()
-        );
+        // At the latest protocol version the contract is stored compiled (format version 2),
+        // and the proof gives it back as it was applied
+        assert_eq!(verified_contract, Some(contract));
     }
 
     #[test]

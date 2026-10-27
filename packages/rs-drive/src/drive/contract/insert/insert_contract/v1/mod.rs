@@ -85,6 +85,8 @@ impl Drive {
             None
         };
 
+        // Edited in place: protocol versions 9 to 13 select this generation, and store and cap
+        // contracts in format version 1 there, the bytes it serialized before
         let serialized_contract = serialize_contract_for_storage(contract, platform_version)?;
 
         Ok(Element::Item(

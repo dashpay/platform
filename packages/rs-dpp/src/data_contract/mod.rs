@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Config, Configuration, Limit, NoLimit, Varint};
+use bincode::enc::write::SizeWriter;
 use once_cell::sync::Lazy;
 
 pub mod errors;
@@ -188,6 +189,40 @@ impl DataContract {
         bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
+    }
+
+    /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
+    /// format state transitions carry (`contract_serialization_version`), the bytes the
+    /// protocol caps. Stored compiled, a contract holds those bytes' fields as its base, so
+    /// they are measured rather than serialized again; otherwise it is stored in that format.
+    pub fn serialize_to_storage_bytes_with_carried_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<u8>, usize), ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self,
+                platform_version,
+            )?;
+        let carried_size = match &serialization_format {
+            // Format version 1 bytes are the format version, one byte, then the base's fields
+            DataContractInSerializationFormat::V2(compiled) => {
+                let mut size = SizeWriter::default();
+                bincode::encode_into_writer(&compiled.base, &mut size, no_limit_config()).map_err(
+                    |e| {
+                        PlatformSerializationError(format!("unable to measure DataContract: {}", e))
+                    },
+                )?;
+                Some(1 + size.bytes_written)
+            }
+            _ => None,
+        };
+        let bytes =
+            bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
+                PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+            })?;
+        let carried_size = carried_size.unwrap_or(bytes.len());
+        Ok((bytes, carried_size))
     }
 }
 

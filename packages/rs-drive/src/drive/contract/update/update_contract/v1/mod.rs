@@ -64,6 +64,8 @@ impl Drive {
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
+        // Edited in place: protocol versions 9 to 13 select this generation, and store contracts
+        // in format version 1 there, the bytes it serialized before
         let contract_bytes = contract.serialize_to_storage_bytes(platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags

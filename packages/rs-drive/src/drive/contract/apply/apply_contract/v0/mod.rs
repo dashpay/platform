@@ -51,6 +51,9 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         self.apply_contract_with_serialization(
             contract,
+            // Edited in place: every protocol version selects this generation; through 14 it
+            // stores the bytes it serialized before, and from 15 it stores contracts compiled
+            // (format version 2, v15 note 8)
             contract.serialize_to_storage_bytes(platform_version)?,
             block_info,
             apply,
@@ -75,6 +78,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // Edited in place: every protocol version selects this generation; through 14 it
+        // stores and caps the bytes it serialized before, and from 15 it stores contracts
+        // compiled (format version 2, v15 note 8)
         let serialized_contract = serialize_contract_for_storage(contract, platform_version)?;
 
         self.apply_contract_with_serialization_operations(

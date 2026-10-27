@@ -17,11 +17,13 @@ const MAX_VOTE_REFERENCE_DECODE_BYTES: usize = 64 * 1024;
 
 /// Maximum in-memory decode budget for a proof-derived data contract.
 ///
-/// Contract input bytes are separately capped by the active protocol
-/// version's `max_serialized_size` (currently 65,000 bytes). Bincode charges
-/// this budget for decoded containers rather than wire bytes, so the larger
-/// value preserves ample compatibility headroom while still bounding hostile
-/// compact length prefixes before a proof root is trusted.
+/// Contract input bytes in the format state transitions carry are separately capped by the
+/// active protocol version's `max_serialized_size` (currently 65,000 bytes). A contract stored
+/// compiled (format version 2), from a protocol version whose storage selector is 2, holds
+/// those bytes' fields and each document type compiled, which no cap bounds: its input is
+/// bounded by this budget instead. Bincode charges this budget for decoded containers rather
+/// than wire bytes, so the larger value preserves ample compatibility headroom while still
+/// bounding hostile compact length prefixes before a proof root is trusted.
 const MAX_CONTRACT_DECODE_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
 /// The first byte of a contract stored in format version 2, the compiled form: its format
@@ -33,17 +35,21 @@ pub(super) fn decode_proof_data_contract(
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, Error> {
     // The protocol caps a contract's bytes in the format state transitions carry. A contract
-    // stored compiled holds those bytes' fields and each document type compiled, about twice
-    // as many and not capped themselves, so only the decode budget bounds them
-    let max_serialized_size = if serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
+    // stored compiled holds those bytes' fields and each document type compiled, about 1.8
+    // times as many and not capped themselves, so only the decode budget bounds them, and only
+    // where the verifier's protocol version stores contracts compiled
+    let contract_versions = &platform_version.dpp.contract_versions;
+    let max_size = if contract_versions.contract_storage_serialization_version
+        >= u16::from(COMPILED_CONTRACT_FORMAT_TAG)
+        && serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
     {
         MAX_CONTRACT_DECODE_MEMORY_BYTES
     } else {
-        platform_version.dpp.contract_versions.max_serialized_size as usize
+        contract_versions.max_serialized_size as usize
     };
-    if serialized_contract.len() > max_serialized_size {
+    if serialized_contract.len() > max_size {
         return Err(ProtocolError::PlatformDeserializationError(format!(
-            "serialized proof data contract exceeds the protocol limit of {max_serialized_size} bytes"
+            "serialized proof data contract exceeds the limit of {max_size} bytes for its format"
         ))
         .into());
     }
@@ -149,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn proof_contract_decoder_reads_a_contract_stored_compiled() {
+    fn should_decode_a_proof_contract_stored_compiled() {
         let platform_version = PlatformVersion::latest();
         let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -165,6 +171,48 @@ mod tests {
         );
         bytes.push(0);
         assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
+    }
+
+    /// A compiled contract's bytes: its format version, then `len` more bytes
+    fn compiled_contract_bytes(len: usize) -> Vec<u8> {
+        let mut bytes = vec![0; len + 1];
+        bytes[0] = COMPILED_CONTRACT_FORMAT_TAG;
+        bytes
+    }
+
+    fn refused_for_size(result: Result<DataContract, Error>) -> bool {
+        result.is_err_and(|error| error.to_string().contains("exceeds the limit"))
+    }
+
+    #[test]
+    fn should_bound_a_proof_contract_stored_compiled_by_the_decode_budget() {
+        let platform_version = PlatformVersion::latest();
+        let over_the_wire_cap =
+            platform_version.dpp.contract_versions.max_serialized_size as usize + 1;
+
+        // Over the wire cap, a compiled contract is decoded, here refused as malformed
+        let result = decode_proof_data_contract(
+            &compiled_contract_bytes(over_the_wire_cap),
+            platform_version,
+        );
+        assert!(result.is_err() && !refused_for_size(result));
+        // Over the decode budget, it is refused for its size
+        assert!(refused_for_size(decode_proof_data_contract(
+            &compiled_contract_bytes(MAX_CONTRACT_DECODE_MEMORY_BYTES),
+            platform_version,
+        )));
+    }
+
+    #[test]
+    fn should_cap_a_proof_contract_tagged_compiled_at_the_wire_size_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let over_the_wire_cap =
+            platform_version.dpp.contract_versions.max_serialized_size as usize + 1;
+
+        assert!(refused_for_size(decode_proof_data_contract(
+            &compiled_contract_bytes(over_the_wire_cap),
+            platform_version,
+        )));
     }
 
     #[test]

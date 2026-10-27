@@ -172,12 +172,19 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
 ///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
 ///    writes nothing when a contract's format version 1 bytes match the stored one's.
-///    Contracts stored before this version stay in their format until their next update.
+///    Contracts stored before this version stay in their format until their next write, a
+///    contract update or a token configuration update, which re-stores them compiled: its
+///    sender pays the growth, for a token configuration update the group member whose action
+///    closes it, not the owner. A chain started at this version stores every system contract
+///    compiled at genesis, while a chain upgraded to it keeps them in the format they were
+///    stored in, so a transition reading one pays more on the first. A proof of a contract
+///    stored compiled carries the compiled bytes, about 1.8 times as large, and clients need a
+///    decoder that reads format version 2 to verify it.
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10,
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
@@ -193,7 +200,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

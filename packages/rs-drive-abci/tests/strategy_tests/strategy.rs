@@ -45,7 +45,6 @@ use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
@@ -458,7 +457,7 @@ impl NetworkStrategy {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .serialize_to_storage_bytes(platform_version)
                     .expect("expected to serialize");
                 drive
                     .apply_contract_with_serialization(

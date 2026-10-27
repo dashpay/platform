@@ -81,6 +81,11 @@ impl DriveHighLevelBatchOperationConverter for TokenConfigUpdateTransitionAction
                 }
 
                 if self.base().perform_action() {
+                    // From protocol version 15 the contract is stored compiled from this copy
+                    // of the cached contract: one stored before then in format version 1 is
+                    // re-stored compiled here, and this transition's sender pays its growth
+                    // (v15 note 8). The compiled bytes follow the version that parsed the
+                    // cache entry, which compiles a contract the same at 14 and 15.
                     let mut contract = self.data_contract_fetch_info().contract.clone();
                     contract.increment_version();
                     let mut token_configuration = self.base().token_configuration()?.clone();

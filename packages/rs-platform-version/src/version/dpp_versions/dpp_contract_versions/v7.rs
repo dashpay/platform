@@ -43,7 +43,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions
     },
-    // changed: contracts are stored with their document types compiled
+    // changed: contracts are stored with their document types compiled, about 1.8 times the
+    // bytes in state and in proofs (v15 note 8)
     contract_storage_serialization_version: 2,
     ..CONTRACT_VERSIONS_V6
 };

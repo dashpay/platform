@@ -25,6 +25,8 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Edited in place: a chain started at protocol version 14 or earlier stores the bytes
+        // it serialized before; one started at 15 stores its system contracts compiled
         let serialization = data_contract.serialize_to_storage_bytes(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
             DataContractOperationType::ApplyContractWithSerialization {

@@ -197,6 +197,9 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
+                            // Edited in place: protocol versions 12 to 14 select this generation
+                            // and store contracts in format version 1, the bytes it sized before;
+                            // protocol version 15 also selects it, and sizes them compiled
                             contract.serialize_to_storage_bytes(platform_version)?.len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,

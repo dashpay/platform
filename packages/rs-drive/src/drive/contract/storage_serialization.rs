@@ -3,7 +3,6 @@
 use crate::error::contract::DataContractError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 
 /// The bytes Drive stores `contract` as at `platform_version`
@@ -15,28 +14,16 @@ pub(crate) fn serialize_contract_for_storage(
     contract: &DataContract,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, Error> {
-    let contract_versions = &platform_version.dpp.contract_versions;
-    let stored = contract.serialize_to_storage_bytes(platform_version)?;
-    let capped_size = if contract_versions.contract_storage_serialization_version
-        == contract_versions
-            .contract_serialization_version
-            .default_current_version
-    {
-        stored.len()
-    } else {
-        contract
-            .serialize_to_bytes_with_platform_version(platform_version)?
-            .len()
-    };
-    if capped_size as u64 > u32::MAX as u64
-        || capped_size as u32 > contract_versions.max_serialized_size
-    {
+    let max_serialized_size = platform_version.dpp.contract_versions.max_serialized_size;
+    let (stored, capped_size) =
+        contract.serialize_to_storage_bytes_with_carried_size(platform_version)?;
+    if capped_size as u64 > u64::from(max_serialized_size) {
         // This should normally be caught by DPP, but there is a rare possibility that the
         // re-serialized size is bigger than the original serialized data contract.
         return Err(Error::DataContract(DataContractError::ContractTooBig(
             format!(
                 "Trying to insert a data contract of size {} that is over the max allowed insertion size {}",
-                capped_size, contract_versions.max_serialized_size
+                capped_size, max_serialized_size
             ),
         )));
     }
@@ -49,8 +36,10 @@ mod tests {
     use crate::drive::Drive;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use grovedb::Element;
@@ -124,36 +113,51 @@ mod tests {
     }
 
     #[test]
-    fn should_not_rewrite_an_unchanged_contract_stored_before_protocol_version_15() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let contract = fixture_contract(protocol_version_14());
-        apply(&drive, &contract, protocol_version_14());
-        let stored = stored_bytes(&drive, &contract);
-        assert_eq!(stored[0], 1);
-
-        apply(&drive, &contract, PlatformVersion::latest());
-        assert_eq!(stored_bytes(&drive, &contract), stored);
-    }
-
-    #[test]
-    fn should_store_a_contract_updated_from_protocol_version_15_compiled() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let mut contract = fixture_contract(protocol_version_14());
-        apply(&drive, &contract, protocol_version_14());
-        assert_eq!(stored_bytes(&drive, &contract)[0], 1);
-
-        contract.set_version(2);
-        apply(&drive, &contract, PlatformVersion::latest());
-        assert_eq!(stored_bytes(&drive, &contract)[0], 2);
-    }
-
-    #[test]
-    fn should_prove_a_contract_stored_compiled() {
+    fn should_store_and_prove_a_contract_compiled_over_the_cap_its_carried_bytes_are_under() {
         let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(None);
-        let contract = fixture_contract(platform_version);
-        apply(&drive, &contract, platform_version);
+        let max_serialized_size =
+            platform_version.dpp.contract_versions.max_serialized_size as usize;
+        let mut contract = fixture_contract(platform_version);
+        let schema = contract
+            .document_schemas()
+            .get("indexedDocument")
+            .map(|schema| (*schema).clone())
+            .expect("expected the fixture's indexed document type");
+        // Copies of a document type until the contract's compiled bytes are over the cap
+        let mut copies = 0;
+        while contract
+            .serialize_to_storage_bytes(platform_version)
+            .expect("expected to serialize the contract for storage")
+            .len()
+            <= max_serialized_size
+        {
+            contract
+                .set_document_schema(
+                    &format!("copy{copies}"),
+                    schema.clone(),
+                    false,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to add a document type");
+            copies += 1;
+        }
+        let carried_size = contract
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to serialize the contract")
+            .len();
+        assert!(carried_size <= max_serialized_size);
+        assert_eq!(
+            contract
+                .serialize_to_storage_bytes_with_carried_size(platform_version)
+                .expect("expected to serialize the contract for storage")
+                .1,
+            carried_size
+        );
 
+        let drive = setup_drive_with_initial_state_structure(None);
+        apply(&drive, &contract, platform_version);
+        assert!(stored_bytes(&drive, &contract).len() > max_serialized_size);
         let proof = drive
             .prove_contract(contract.id().to_buffer(), None, platform_version)
             .expect("expected to prove the contract");

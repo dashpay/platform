@@ -733,7 +733,7 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // twice its bytes, which are byte-billed
+            // 1.8 times its bytes, which are byte-billed
             24004401940
         );
 
@@ -1402,7 +1402,7 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // twice its bytes, which are byte-billed
+            // 1.8 times its bytes, which are byte-billed
             24008803880
         );
 
@@ -1486,8 +1486,8 @@ mod tests {
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
             // we have enough balance only for 1 insertion (this is where this test is different);
-            // from protocol version 15 one insertion stores the contract compiled, about twice its
-            // bytes, so it needs more
+            // from protocol version 15 one insertion stores the contract compiled, about 1.8
+            // times its bytes, so it needs more
             balance: 24_300_000_000,
             revision: 0,
         }
@@ -1885,7 +1885,7 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // twice its bytes, which are byte-billed
+            // 1.8 times its bytes, which are byte-billed
             24004401940
         );
 
@@ -1981,7 +1981,7 @@ mod tests {
             // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
-            // about twice its bytes, which are byte-billed
+            // about 1.8 times its bytes, which are byte-billed
             29005125330
         );
 
@@ -2574,7 +2574,7 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // twice its bytes, which are byte-billed
+            // 1.8 times its bytes, which are byte-billed
             24004401940
         );
 

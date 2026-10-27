@@ -26,7 +26,8 @@ pub enum DataContractOperationType<'a> {
     ApplyContractWithSerialization {
         /// The contract
         contract: Cow<'a, DataContract>,
-        /// The serialized contract
+        /// The bytes Drive stores the contract as (`DataContract::serialize_to_storage_bytes`):
+        /// from protocol version 15 its compiled form, not the bytes state transitions carry
         serialized_contract: Vec<u8>,
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
