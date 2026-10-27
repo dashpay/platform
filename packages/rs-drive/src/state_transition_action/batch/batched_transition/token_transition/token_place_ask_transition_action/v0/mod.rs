@@ -19,10 +19,9 @@ pub struct TokenPlaceAskTransitionActionV0 {
     pub amount: TokenAmount,
     /// The credits asked per whole token
     pub price: Credits,
-    /// The smallest fill the seller accepts unless it takes everything open
-    pub min_fill: TokenAmount,
-    /// The token's decimals the listing was signed at, which its price is at and its order
-    /// records; the structure validation refuses them unless they are the token's
+    /// The token's decimals when the listing is placed, which its price is at and its order
+    /// records (what the token market contract's `generatedFrom`, `sys.tokens.decimals`,
+    /// generates)
     pub decimals: u8,
     /// The listing's `ask` document, stamped with the block that places it
     pub order_document: Document,
@@ -47,10 +46,7 @@ pub trait TokenPlaceAskTransitionActionAccessorsV0 {
     /// The credits asked per whole token
     fn price(&self) -> Credits;
 
-    /// The smallest fill the seller accepts
-    fn min_fill(&self) -> TokenAmount;
-
-    /// The token's decimals the listing was signed at
+    /// The token's decimals when the listing is placed
     fn decimals(&self) -> u8;
 
     /// The listing's `ask` document
@@ -94,10 +90,6 @@ impl TokenPlaceAskTransitionActionAccessorsV0 for TokenPlaceAskTransitionActionV
 
     fn price(&self) -> Credits {
         self.price
-    }
-
-    fn min_fill(&self) -> TokenAmount {
-        self.min_fill
     }
 
     fn decimals(&self) -> u8 {

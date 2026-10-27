@@ -855,7 +855,7 @@ mod tests {
 
         #[test]
         fn should_refuse_making_a_token_tradeable_before_protocol_version_15() {
-            let result = trade_mode_update(TokenTradeMode::Tradeable)
+            let result = trade_mode_update(TokenTradeMode::Tradeable { min_fill: 1 })
                 .validate_is_allowed(protocol_version_14())
                 .expect("should not error");
             assert_matches!(
@@ -882,7 +882,7 @@ mod tests {
         fn should_allow_making_a_token_tradeable_from_protocol_version_15() {
             let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
                 .expect("the version that introduced the token marketplace");
-            let result = trade_mode_update(TokenTradeMode::Tradeable)
+            let result = trade_mode_update(TokenTradeMode::Tradeable { min_fill: 1 })
                 .validate_is_allowed(platform_version)
                 .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
@@ -894,11 +894,12 @@ mod tests {
         #[test]
         fn should_run_the_check_on_a_contract_with_a_tradeable_token() {
             let platform_version = PlatformVersion::latest();
-            assert!(
-                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
-                    .has_is_allowed_validation()
-                    .expect("should not error")
-            );
+            assert!(contract_create_with_trade_mode(
+                TokenTradeMode::Tradeable { min_fill: 1 },
+                platform_version
+            )
+            .has_is_allowed_validation()
+            .expect("should not error"));
             assert!(!contract_create_with_trade_mode(
                 TokenTradeMode::NotTradeable,
                 platform_version
@@ -910,10 +911,12 @@ mod tests {
         #[test]
         fn should_refuse_a_contract_with_a_tradeable_token_before_protocol_version_15() {
             let platform_version = protocol_version_14();
-            let result =
-                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
-                    .validate_is_allowed(platform_version)
-                    .expect("should not error");
+            let result = contract_create_with_trade_mode(
+                TokenTradeMode::Tradeable { min_fill: 1 },
+                platform_version,
+            )
+            .validate_is_allowed(platform_version)
+            .expect("should not error");
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
@@ -927,10 +930,12 @@ mod tests {
         fn should_allow_a_contract_with_a_tradeable_token_from_protocol_version_15() {
             let platform_version = PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
                 .expect("the version that introduced the token marketplace");
-            let result =
-                contract_create_with_trade_mode(TokenTradeMode::Tradeable, platform_version)
-                    .validate_is_allowed(platform_version)
-                    .expect("should not error");
+            let result = contract_create_with_trade_mode(
+                TokenTradeMode::Tradeable { min_fill: 1 },
+                platform_version,
+            )
+            .validate_is_allowed(platform_version)
+            .expect("should not error");
             assert!(result.is_valid(), "{:?}", result.errors);
         }
 

@@ -544,7 +544,7 @@ async fn should_keep_registering_a_dotted_summable_name_at_protocol_version_13()
 #[tokio::test]
 async fn should_refuse_a_contract_with_a_tradeable_token_unpaid_at_protocol_version_13() {
     let outcome = register_contract_with(
-        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable { min_fill: 1 }),
         13,
         dash_to_credits!(1.0),
     )

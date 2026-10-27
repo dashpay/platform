@@ -129,7 +129,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 5. **Tradeable tokens**: `TokenTradeMode::Tradeable`
 ///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`) lets a token's holders list it and make
-///    offers for it. Before this version a contract whose token is tradeable, and a
+///    offers for it, with the token's minimum fill (`min_fill`, from 1 to `i64::MAX`, else
+///    `InvalidTokenOrderFillRangeError` 10463 unpaid on contract create and update, and charged
+///    on a `TokenConfigUpdate`). Before this version a contract whose token is tradeable, and a
 ///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
 ///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
 ///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
@@ -212,13 +214,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
 ///    to its owner). The batch's `is_allowed` gate refuses each, unpaid, before this version,
 ///    as software that cannot decode them refuses them. The checks that read nothing beyond the
-///    contract (a tradeable token, its decimals) run with the batch
-///    `advanced_structure` 2, so check_tx refuses them too; the others with state validation.
-///    A listing's terms and what it is worth at the decimals it signs (at most `i64::MAX` credits,
-///    `InvalidTokenOrderValueError` 10465), are checked with the transition's structure, unpaid. A listing signs the decimals
-///    its price is at and is refused unless they are the token's (`TokenOrderDecimalsMismatchError`
-///    40758, with the batch `advanced_structure`); it records them and its fills are priced at
-///    them; a listing of a token its contract does not define bumps the nonce with the token base
+///    contract (a tradeable token, an amount of at least its minimum fill, what the listing is
+///    worth at its decimals: at most `i64::MAX` credits, `InvalidTokenOrderValueError` 10465) run
+///    with the batch `advanced_structure` 2, so check_tx refuses them too; the others with state
+///    validation. A listing's amount and price (1 to `i64::MAX`) are checked with the
+///    transition's structure, unpaid. A listing names no decimals and no minimum fill: it records
+///    the token's decimals as the token has them when it is placed (the token market contract's
+///    `generatedFrom` `sys.tokens.decimals`, note 8), and its fills are priced at them; the
+///    token's minimum fill (`TokenTradeMode::Tradeable`'s `min_fill`, from 1 to `i64::MAX`) is
+///    read by every fill as the token has it then, and a listing of less is refused
+///    (`InvalidTokenOrderFillRangeError` 10463). A listing of a token its contract does not
+///    define bumps the nonce with the token base
 ///    rules' error. An order of a token with 39 decimals or more (decimals are a `u8`, and a
 ///    `Conventions` update is not held to the 16 a contract is) has a whole token of more base
 ///    units than any amount times any price: it is worth one credit rounded up, so a listing's

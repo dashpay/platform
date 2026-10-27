@@ -1,7 +1,8 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::token::TokenOrderDecimalsMismatchError;
+use dpp::consensus::state::token::TokenNotTradeableError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use dpp::state_transition::batch_transition::batched_transition::token_order_terms::validate_token_order_terms_for_token;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
@@ -21,10 +22,9 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 
 impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransitionAction {
     /// What a listing needs that reads nothing beyond the contract the action carries: a
-    /// tradeable token, and the decimals it was signed at being the token's (its price is per
-    /// whole token, so a change of the token's decimals between signing and execution would
-    /// reprice it). What the listing is worth at the decimals it signs is checked with the
-    /// transition's structure.
+    /// tradeable token, an amount of at least the token's minimum fill, and a worth of at most
+    /// `i64::MAX` credits at the token's decimals (`validate_token_order_terms_for_token`), both
+    /// as the token has them now.
     fn validate_structure_v0(
         &self,
         _block_info: &BlockInfo,
@@ -35,19 +35,17 @@ impl TokenPlaceAskTransitionActionStructureValidationV0 for TokenPlaceAskTransit
             return Ok(validation_result);
         }
 
-        let token_decimals = self.base().token_configuration()?.conventions().decimals();
-        let decimals = self.decimals();
-        if decimals != token_decimals {
+        let token_configuration = self.base().token_configuration()?;
+        let Some(min_fill) = token_configuration.min_fill() else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                TokenOrderDecimalsMismatchError::new(
-                    self.base().token_id(),
-                    decimals,
-                    token_decimals,
-                )
-                .into(),
+                TokenNotTradeableError::new(self.base().token_id()).into(),
             ));
-        }
-
-        Ok(SimpleConsensusValidationResult::new())
+        };
+        Ok(validate_token_order_terms_for_token(
+            self.amount(),
+            self.price(),
+            min_fill,
+            token_configuration.conventions().decimals(),
+        ))
     }
 }

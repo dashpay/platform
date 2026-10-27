@@ -1503,8 +1503,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         token_contract_position: u16,
         amount: TokenAmount,
         price: Credits,
-        decimals: u8,
-        min_fill: TokenAmount,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -1522,8 +1520,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             }),
             amount,
             price,
-            decimals,
-            min_fill,
         });
 
         let batch_transition: BatchTransition = BatchTransitionV1 {
