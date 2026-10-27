@@ -35,7 +35,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     {
         use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 
-        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
+        check_token_signing_key(
+            signing_key,
+            signer,
+            &data_contract,
+            token_position,
+            &TOKEN_SIGNING_PURPOSES,
+        )?;
 
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
             data_contract,
@@ -77,7 +83,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     > {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self
-            .token_resolve_signing_key(&identity_id, token_contract_id, signer)
+            .token_resolve_signing_key(&identity_id, token_contract_id, token_position, signer)
             .await?;
 
         self.token_destroy_frozen_funds_with_signer(

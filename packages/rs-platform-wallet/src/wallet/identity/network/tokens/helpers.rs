@@ -19,7 +19,7 @@ use super::super::key_selection::{
 use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
@@ -32,11 +32,12 @@ use crate::wallet::identity::network::IdentityWallet;
 /// batch with a token transition.
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
-/// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
-/// ECDSA key whose bounds cover the whole contract, since token operations are contract-wide.
+/// The key that signs an operation on the token at `position` of `token_contract_id`: a
+/// CRITICAL AUTHENTICATION ECDSA key whose bounds cover that token.
 fn token_signing_key<'a>(
     identity: &'a Identity,
     token_contract_id: Identifier,
+    position: TokenContractPosition,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     usable_signing_key(
@@ -45,8 +46,9 @@ fn token_signing_key<'a>(
         Purpose::AUTHENTICATION,
         &TOKEN_SIGNING_LEVELS,
         &WALLET_SIGNING_KEY_TYPES,
-        SigningScope::Contract {
+        SigningScope::Token {
             contract_id: token_contract_id,
+            position,
         },
     )
 }
@@ -59,7 +61,8 @@ pub(super) const TOKEN_SIGNING_PURPOSES: [Purpose; 1] = [Purpose::AUTHENTICATION
 pub(super) const LONE_TOKEN_TRANSFER_SIGNING_PURPOSES: [Purpose; 2] =
     [Purpose::AUTHENTICATION, Purpose::TRANSFER];
 
-/// Check a key the caller chose to sign a token operation of `data_contract`, with one of
+/// Check a key the caller chose to sign an operation on the token at `position` of
+/// `data_contract`, with one of
 /// `purposes`, by the rules [`token_signing_key`] applies except that any key type Platform
 /// verifies is accepted, so a key Platform would refuse fails before any request. Contract
 /// bounds limit only an AUTHENTICATION key.
@@ -67,6 +70,7 @@ pub(super) fn check_token_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
     data_contract: &DataContract,
+    position: TokenContractPosition,
     purposes: &[Purpose],
 ) -> Result<(), dash_sdk::Error> {
     check_signing_key(
@@ -75,8 +79,9 @@ pub(super) fn check_token_signing_key(
         purposes,
         &TOKEN_SIGNING_LEVELS,
         &PLATFORM_SIGNING_KEY_TYPES,
-        SigningScope::Contract {
+        SigningScope::Token {
             contract_id: data_contract.id(),
+            position,
         },
     )
 }
@@ -97,6 +102,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         &self,
         identity_id: &Identifier,
         token_contract_id: Identifier,
+        token_position: TokenContractPosition,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
@@ -111,7 +117,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
 
-        let signing_key = token_signing_key(&identity, token_contract_id, signer)?
+        let signing_key = token_signing_key(&identity, token_contract_id, token_position, signer)?
             .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
@@ -384,7 +390,7 @@ mod signing_tests {
         let wallet = wallet_with_identity(identity).await;
         let error = wallet
             .identity()
-            .token_resolve_signing_key(&identity_id, Identifier::default(), &KeyFilter(|_| true))
+            .token_resolve_signing_key(&identity_id, Identifier::default(), 0, &KeyFilter(|_| true))
             .await
             .unwrap_err();
         assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
@@ -396,7 +402,7 @@ mod signing_tests {
         let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
-            .token_resolve_signing_key(&Identifier::default(), Identifier::default(), &signer)
+            .token_resolve_signing_key(&Identifier::default(), Identifier::default(), 0, &signer)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("available to signer"), "{error}");
@@ -421,7 +427,7 @@ mod signing_tests {
             key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
             key(3, SecurityLevel::CRITICAL),
         ]);
-        let chosen = token_signing_key(&identity, token_contract, &KeyFilter(|_| true)).unwrap();
+        let chosen = token_signing_key(&identity, token_contract, 0, &KeyFilter(|_| true)).unwrap();
         assert_eq!(
             chosen.map(|key| key.id()),
             Some(3),

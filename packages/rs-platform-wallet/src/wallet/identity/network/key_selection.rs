@@ -7,6 +7,7 @@ use dpp::consensus::signature::{
     PublicKeyIsDisabledError, SignatureError,
 };
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::TokenContractPosition;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
@@ -48,9 +49,14 @@ pub enum SigningScope<'a> {
         contract_id: Identifier,
         document_type_name: &'a str,
     },
-    /// A batch acting on all of `contract_id`: a token operation, or a flow that writes more
-    /// than one of its document types.
+    /// A batch acting on all of `contract_id`: a flow that writes more than one of its
+    /// document types.
     Contract { contract_id: Identifier },
+    /// A batch acting on the token at `position` of `contract_id`.
+    Token {
+        contract_id: Identifier,
+        position: TokenContractPosition,
+    },
 }
 
 impl SigningScope<'_> {
@@ -72,6 +78,10 @@ impl SigningScope<'_> {
                 ContractBoundsScope::DocumentType(document_type_name),
             ),
             SigningScope::Contract { contract_id } => (contract_id, ContractBoundsScope::Contract),
+            SigningScope::Token {
+                contract_id,
+                position,
+            } => (contract_id, ContractBoundsScope::Token(position)),
         };
         match key.contract_bounds() {
             Some(bounds) if key.purpose() == Purpose::AUTHENTICATION => {
@@ -867,6 +877,56 @@ pub(super) mod tests {
         assert!(
             matches!(refusal, Err(dash_sdk::Error::Config(_))),
             "an explicit key with an expiry is refused without a clock: {refusal:?}"
+        );
+    }
+
+    #[test]
+    fn should_report_a_token_scope_as_the_token_consensus_checks() {
+        use dpp::contract_group::ContractGroupMember;
+        let contract_id = Identifier::from(CONTRACT);
+        let token = SigningScope::Token {
+            contract_id,
+            position: 3,
+        };
+        let group_bound = bound_key(
+            1,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::ContractGroup {
+                id: Identifier::from(OTHER_CONTRACT),
+            }),
+        );
+        assert!(
+            matches!(
+                token.bounds_check(&group_bound),
+                BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                    contract_id: member_contract,
+                    member: ContractGroupMember::Token(3),
+                    ..
+                } if member_contract == contract_id
+            ),
+            "{:?}",
+            token.bounds_check(&group_bound)
+        );
+        let bound_here = bound_key(
+            2,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContract { id: contract_id }),
+        );
+        assert_eq!(
+            token.bounds_check(&bound_here),
+            BatchedTransitionBoundsCheck::Allowed
+        );
+        let bound_to_a_document_type = bound_key(
+            3,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name: DOCUMENT_TYPE.to_string(),
+            }),
+        );
+        assert_eq!(
+            token.bounds_check(&bound_to_a_document_type),
+            BatchedTransitionBoundsCheck::Denied
         );
     }
 }
