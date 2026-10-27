@@ -88,6 +88,38 @@
   (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
   [#5578](https://github.com/dashpay/platform/pull/5578).
 
+### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes (#5561)
+
+### Bug Fixes
+
+* **drive-abci:** answer queries for features not active yet with INVALID_ARGUMENT ([#5557](https://github.com/dashpay/platform/issues/5557))
+* **sdk:** check document query shapes before sending them ([#5558](https://github.com/dashpay/platform/issues/5558))
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes ([#5561](https://github.com/dashpay/platform/issues/5561))
+* **sdk:** retry document queries answered by nodes on an older protocol version ([#5560](https://github.com/dashpay/platform/issues/5560))
+
+
+### Tests
+
+* **sdk:** run operation-proof tests in CI and select the verifier generation from the verifier ([#5559](https://github.com/dashpay/platform/issues/5559))
+
+## [5.0.0](https://github.com/dashpay/platform/compare/v5.0.0-rc.8...v5.0.0) (2026-10-26)
+
+
+### Bug Fixes
+
+* **platform-wallet-storage:** open the wallet store on Android ([#5352](https://github.com/dashpay/platform/issues/5352))
+
+
+### Miscellaneous Chores
+
+* bump rs-tenderdash-abci to v1.8.1 for zip RUSTSEC-2026-0367/0368/0369 ([#5583](https://github.com/dashpay/platform/issues/5583))
+* bump rustls-webpki and webpki-roots for RUSTSEC-2026-0381/0382/0383 ([#5582](https://github.com/dashpay/platform/issues/5582))
+
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 
 
