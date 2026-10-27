@@ -164,5 +164,23 @@ describe('Vote', () => {
       vote.free();
       yesNoPoll.free();
     });
+
+    it('should refuse a resource vote on a yes/no poll from JSON or an object', () => {
+      const yesNoPoll = wasm.VotePoll.fromJSON({
+        $type: 'yesNoVotePoll',
+        ...yesNoVoteJSON.votePoll,
+      });
+      const vote = new wasm.Vote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+
+      wasm.Vote.fromJSON(vote.toJSON()).free();
+      wasm.Vote.fromObject(vote.toObject()).free();
+      expect(() => wasm.Vote.fromJSON({ ...vote.toJSON(), votePoll: yesNoPoll.toJSON() }))
+        .to.throw();
+      expect(() => wasm.Vote.fromObject({ ...vote.toObject(), votePoll: yesNoPoll.toObject() }))
+        .to.throw();
+
+      vote.free();
+      yesNoPoll.free();
+    });
   });
 });

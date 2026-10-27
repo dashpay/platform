@@ -20,17 +20,23 @@ impl YesNoVoteReferenceStorageForm {
     }
 
     /// Decodes the form stored in the identity votes index, a stored form that does not
-    /// decode being corrupted state.
+    /// decode, or carries bytes past the form, being corrupted state, as the proof decoder
+    /// treats it.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
-            .map(|(form, _)| form)
-            .map_err(|e| {
-                Error::Drive(DriveError::CorruptedSerialization(format!(
-                    "serialization of yes/no vote reference {} is corrupted: {}",
-                    hex::encode(bytes),
-                    e
-                )))
-            })
+        let corrupted = |reason: String| {
+            Error::Drive(DriveError::CorruptedSerialization(format!(
+                "serialization of yes/no vote reference {} is corrupted: {}",
+                hex::encode(bytes),
+                reason
+            )))
+        };
+        let (form, consumed) =
+            bincode::decode_from_slice(bytes, bincode::config::standard().with_big_endian())
+                .map_err(|e| corrupted(e.to_string()))?;
+        if consumed != bytes.len() {
+            return Err(corrupted("it carries trailing bytes".to_string()));
+        }
+        Ok(form)
     }
 }
 
@@ -49,5 +55,19 @@ mod tests {
             YesNoVoteReferenceStorageForm::deserialize(&bytes).expect("deserialize"),
             form
         );
+    }
+
+    #[test]
+    fn should_refuse_trailing_bytes() {
+        let form = YesNoVoteReferenceStorageForm {
+            vote_choice: YesNoAbstainVoteChoice::Yes,
+            identity_vote_times: 1,
+        };
+        let mut bytes = form.serialize().expect("serialize");
+        bytes.push(0);
+        assert!(matches!(
+            YesNoVoteReferenceStorageForm::deserialize(&bytes),
+            Err(Error::Drive(DriveError::CorruptedSerialization(_)))
+        ));
     }
 }

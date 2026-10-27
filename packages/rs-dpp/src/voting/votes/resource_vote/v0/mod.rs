@@ -26,12 +26,32 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(rename_all = "camelCase"),
+    serde(try_from = "ResourceVoteV0Inner")
 )]
 #[platform_serialize(unversioned)]
 pub struct ResourceVoteV0 {
     pub vote_poll: VotePoll,
     pub resource_vote_choice: ResourceVoteChoice,
+}
+
+/// The fields of a resource vote read from a plain object or JSON, built into one through
+/// [`ResourceVoteV0::try_new`] so those conversions refuse a yes/no poll as `try_new` does.
+#[cfg(feature = "serde-conversion")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceVoteV0Inner {
+    vote_poll: VotePoll,
+    resource_vote_choice: ResourceVoteChoice,
+}
+
+#[cfg(feature = "serde-conversion")]
+impl TryFrom<ResourceVoteV0Inner> for ResourceVoteV0 {
+    type Error = ProtocolError;
+
+    fn try_from(value: ResourceVoteV0Inner) -> Result<Self, Self::Error> {
+        ResourceVoteV0::try_new(value.vote_poll, value.resource_vote_choice)
+    }
 }
 
 impl Default for ResourceVoteV0 {
