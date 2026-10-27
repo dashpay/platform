@@ -433,15 +433,19 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// Query construction follows the producer, while security checks keep the caller's
-// verifier version. Metadata is untrusted until the signature binds it to the root.
-// A producer newer than this build is read with the newest known construction rules,
-// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
-// data the signed root does not hold, and a changed layout is expected to fail
-// verification for answers that return data. An absence answer can still verify at a
-// location a newer protocol no longer uses, so relocating such an index needs an SDK
-// update. Reserved mock versions also sit above the newest one, so their tables are
-// never looked up.
+// The producer's signed version selects how the producer laid out its proof, while
+// security checks keep the caller's verifier version. For the non-unique identity
+// lookup it selects the GroveDB version its merged queries are built with and, for a
+// two-proof answer, the tables that decode the identity after the strict checks. For a
+// state transition outcome it selects only whether the proof carries the owner balance:
+// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// the signature binds it to the root. A producer newer than this build is read with the
+// newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
+// cannot authenticate data the signed root does not hold, and a changed layout is
+// expected to fail verification for answers that return data. An absence answer can
+// still verify at a location a newer protocol no longer uses, so relocating such an
+// index needs an SDK update. Reserved mock versions also sit above the newest one, so
+// their tables are never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,
 ) -> Result<&'static PlatformVersion, Error> {

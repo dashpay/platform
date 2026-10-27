@@ -5,12 +5,15 @@
 //! proof bytes are arbitrary: an answer the verifier refuses is refused before its proof is
 //! read, and one it lets through fails on the proof bytes, so no case reaches the signature
 //! check.
+//!
+//! These tests check drive-proof-verifier but live here, because building the queries needs
+//! drive's server feature, which the client crate must not enable even as a dev-dependency.
+//! The guard scan reads drive-proof-verifier's source.
 
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0, Version,
 };
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
-use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -42,7 +45,8 @@ use drive_proof_verifier::{
     verify_point_lookup_count_and_sum_proof, verify_point_lookup_count_proof,
     verify_point_lookup_sum_proof, verify_primary_key_count_sum_tree_proof,
     verify_primary_key_count_tree_proof, verify_primary_key_sum_tree_proof,
-    verify_ranked_top_k_proof, DocumentCount, Error, FromProof,
+    verify_ranked_top_k_proof, ContextProvider, ContextProviderError, DocumentCount, Error,
+    FromProof,
 };
 use std::sync::Arc;
 
@@ -574,7 +578,10 @@ fn assert_checks_version_before_reading_the_proof(item: &str, at: &str) -> usize
 ///   impl does the same.
 #[test]
 fn should_read_every_document_query_proof_after_checking_its_version() {
-    let source_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+    let source_dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rs-drive-proof-verifier/src"
+    );
     let mut checked = 0;
     for entry in std::fs::read_dir(format!("{source_dir}/proof")).unwrap() {
         let path = entry.unwrap().path();

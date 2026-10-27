@@ -17,7 +17,6 @@ use dapi_grpc::platform::v0::{
     GetIdentityByNonUniquePublicKeyHashResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::Message;
-use dash_context_provider::ContextProvider;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -28,7 +27,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::PathQuery;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use drive_proof_verifier::{Error, FromProof};
+use drive_proof_verifier::{ContextProvider, Error, FromProof};
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use Lookup::{V0, V1};
 
@@ -304,16 +303,16 @@ fn assert_proof_refused(result: Result<Option<Identity>, Box<Error>>, context: &
         "{context}: {error}"
     );
 }
-/// The versions this test signs answers with: every version that serves V0, the first
-/// that serves V1, and one newer than this build.
+/// The versions this test signs answers with: every version that serves V0, every
+/// version that serves V1 and protocol 13 before them, and one newer than this build.
 fn signed_versions(lookup: Lookup) -> Vec<u32> {
-    let latest = PlatformVersion::latest().protocol_version;
-    match lookup {
-        V0 => vec![12, 13, latest, latest + 1],
+    let first = match lookup {
+        V0 => 12,
         // No honest node answers V1 below 14, but such an answer is still a sound proof
         // of the signed state, so it verifies.
-        V1 => vec![13, latest, latest + 1],
-    }
+        V1 => 13,
+    };
+    (first..=PlatformVersion::latest().protocol_version + 1).collect()
 }
 /// The newest table this build knows for a signed version.
 fn producer_for(signed: u32) -> u32 {
@@ -736,8 +735,8 @@ fn should_export_nonunique_sdk_fixtures() {
         eprintln!("skipped: set DASH_SDK_EXPORT_NONUNIQUE_VECTORS=1 to rewrite the vectors");
         return;
     }
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/identity-discovery");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/identity-discovery");
     std::fs::create_dir_all(&directory).unwrap();
     // The versions on either side of protocol 14, fixed so that re-running on a later
     // branch rewrites the same files the SDK tests read.

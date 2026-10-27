@@ -158,7 +158,7 @@ mod tests {
     /// not yet verified a protocol 14 answer, rely on that.
     #[test]
     fn should_answer_v0_with_separate_proofs_at_every_served_version() {
-        for protocol in [12, 13, PlatformVersion::latest().protocol_version] {
+        for protocol in 12..=PlatformVersion::latest().protocol_version {
             let (platform, state, version) = setup_platform(None, Network::Testnet, Some(protocol));
             let response = platform
                 .query_identity_by_non_unique_public_key_hash(request(0, true), &state, version)
@@ -184,20 +184,26 @@ mod tests {
 
     #[test]
     fn should_answer_v1_with_one_proof_from_protocol_14() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let response = platform
-            .query_identity_by_non_unique_public_key_hash(request(1, true), &state, version)
-            .expect("expected query to succeed")
-            .into_data()
-            .expect("expected an answer");
-        let wire = GetIdentityByNonUniquePublicKeyHashResponse::decode(
-            response.encode_to_vec().as_slice(),
-        )
-        .expect("decodes");
-        let Some(ResponseVersion::V1(v1)) = wire.version else {
-            panic!("a V1 request must get a V1 response")
-        };
-        assert!(matches!(v1.result, Some(V1Result::Proof(_))));
+        for protocol in 14..=PlatformVersion::latest().protocol_version {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, Some(protocol));
+            let response = platform
+                .query_identity_by_non_unique_public_key_hash(request(1, true), &state, version)
+                .expect("expected query to succeed")
+                .into_data()
+                .expect("expected an answer");
+            let wire = GetIdentityByNonUniquePublicKeyHashResponse::decode(
+                response.encode_to_vec().as_slice(),
+            )
+            .expect("decodes");
+            let Some(ResponseVersion::V1(v1)) = wire.version else {
+                panic!("PV{protocol}: a V1 request must get a V1 response")
+            };
+            assert_eq!(v1.metadata.expect("metadata").protocol_version, protocol);
+            assert!(
+                matches!(v1.result, Some(V1Result::Proof(_))),
+                "PV{protocol}: a proved V1 answer carries one proof"
+            );
+        }
     }
 
     /// Protocol 13 nodes refuse V1, as 4.1 nodes do, so a network below protocol 14

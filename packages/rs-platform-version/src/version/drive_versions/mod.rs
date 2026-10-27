@@ -121,6 +121,11 @@ pub struct DriveFetchMethodVersions {
 pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
+    /// Also selects the layout `verify_state_transition_was_executed_with_proof`
+    /// expects from a producer at this version: from 1, the proof of an owned,
+    /// fee-paying transition carries the owner's credit balance. A new generation
+    /// needs a mapping in `Drive::proof_carries_owner_balance`, which refuses an
+    /// unmapped one with `UnknownVersionMismatch`.
     pub prove_state_transition: FeatureVersion,
 }
 
