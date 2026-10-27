@@ -3095,7 +3095,10 @@ mod tests {
         // (`documentsCountable` / `rangeCountable`) — the latter must also be
         // stripped from pre-v12 contracts so the v2 parser cannot revive them
         // and reinterpret a NormalTree contract as a count tree post-upgrade.
-        for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (_doc_type_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
@@ -3380,7 +3383,11 @@ mod tests {
             )
             .expect("convert to serialization format");
 
-        for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+        for (_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
+        {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("historicalSmuggled".to_string()),
@@ -3610,7 +3617,11 @@ mod tests {
                 )
                 .expect("convert to serialization format");
 
-            for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+            for (_name, schema_value) in serialization_format
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .iter_mut()
+            {
                 if let Some(map) = schema_value.as_map_mut() {
                     map.push((
                         PlatformValue::Text(smuggled_key.to_string()),

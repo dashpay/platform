@@ -15,8 +15,12 @@ use serde::{Deserialize, Serialize};
 use crate::contract_group::{ContractGroupMembership, ContractGroupRegistration};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::data_contract::serialized_version::TransitionContractFormat;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::stored_contract_format::decode_through;
+#[cfg(feature = "serde-conversion")]
+use crate::state_transition::state_transitions::contract::stored_contract_format::deserialize_transition_contract_format;
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
@@ -31,13 +35,21 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 /// its tokens to contract groups the owner may add to: groups registered earlier by an owner, or
 /// the group registered by this transition. Both are empty on a plain contract creation.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable, DecodeUntrusted)]
+/// Its decoding refuses a contract in format version 2, the stored format, which only state
+/// holds, at the format's tag, so none of its compiled types is built: bincode through a private
+/// copy of the struct, serde through the contract field's deserializer; both read the contract as
+/// a `TransitionContractFormat`, which says what each reads before the tag.
+#[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct DataContractCreateTransitionV1 {
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(deserialize_with = "deserialize_transition_contract_format")
+    )]
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
     #[cfg_attr(feature = "serde-conversion", serde(default))]
@@ -50,6 +62,47 @@ pub struct DataContractCreateTransitionV1 {
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
+
+/// [`DataContractCreateTransitionV1`] as decoding reads it: the same fields in the same order,
+/// its contract read as a [`TransitionContractFormat`].
+#[derive(Decode, DecodeUntrusted)]
+struct DataContractCreateTransitionV1Decoded {
+    data_contract: TransitionContractFormat,
+    identity_nonce: IdentityNonce,
+    contract_group: Option<ContractGroupRegistration>,
+    contract_group_memberships: Vec<ContractGroupMembership>,
+    user_fee_increase: UserFeeIncrease,
+    signature_public_key_id: KeyID,
+    signature: BinaryData,
+}
+
+impl From<DataContractCreateTransitionV1Decoded> for DataContractCreateTransitionV1 {
+    fn from(decoded: DataContractCreateTransitionV1Decoded) -> Self {
+        let DataContractCreateTransitionV1Decoded {
+            data_contract,
+            identity_nonce,
+            contract_group,
+            contract_group_memberships,
+            user_fee_increase,
+            signature_public_key_id,
+            signature,
+        } = decoded;
+        Self {
+            data_contract: data_contract.into(),
+            identity_nonce,
+            contract_group,
+            contract_group_memberships,
+            user_fee_increase,
+            signature_public_key_id,
+            signature,
+        }
+    }
+}
+
+decode_through!(
+    DataContractCreateTransitionV1,
+    DataContractCreateTransitionV1Decoded
+);
 
 impl From<DataContractCreateTransitionV1> for StateTransition {
     fn from(value: DataContractCreateTransitionV1) -> Self {

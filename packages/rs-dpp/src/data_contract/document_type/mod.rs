@@ -18,6 +18,7 @@ pub use index_level::IndexType;
 pub mod random_document;
 pub mod restricted_creation;
 pub mod schema;
+pub mod serialized_version;
 
 mod token_costs;
 mod validate_required_since_within_contract_version;
