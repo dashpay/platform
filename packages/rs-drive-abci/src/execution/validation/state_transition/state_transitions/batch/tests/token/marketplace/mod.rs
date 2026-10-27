@@ -3558,7 +3558,6 @@ mod frozen {
         /// A listing by the buyer at block time `time_ms`, and its order id.
         async fn buyer_lists(&mut self, amount: u64, time_ms: u64) -> Identifier {
             let platform_version = PlatformVersion::latest();
-            let decimals = self.token_decimals();
             let nonce = self.buyer.take_nonce();
             let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.buyer.id(), nonce);
             let place = BatchTransition::new_token_place_ask_transition(
@@ -3568,8 +3567,6 @@ mod frozen {
                 0,
                 amount,
                 PRICE,
-                decimals,
-                1,
                 &self.buyer.key,
                 nonce,
                 0,
@@ -3866,7 +3863,7 @@ mod frozen {
         let frozen_listing = market.buyer_lists(3_000, 1).await;
 
         // Another holder's listing of the same token.
-        let (place, sellers_listing) = market.place_ask(500, PRICE, 1).await;
+        let (place, sellers_listing) = market.place_ask(500, PRICE).await;
         market.assert_executes(&place, &BlockInfo::default());
 
         // The frozen identity's listing of another token, of a contract it owns.
@@ -3889,8 +3886,6 @@ mod frozen {
             0,
             400,
             PRICE,
-            market.token_decimals(),
-            1,
             &market.buyer.key,
             other_nonce,
             0,
@@ -4004,7 +3999,7 @@ mod frozen {
     async fn should_leave_a_frozen_identitys_offers() {
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
         market.give_buyer(100).await;
-        let (place, order_id) = market.place_bid(1_000, PRICE, 1).await;
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
         market.assert_executes(&place, &BlockInfo::default());
         market.freeze_buyer().await;
 

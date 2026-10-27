@@ -251,7 +251,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     v2. The marketplace transitions of a token that keeps transfer history write the matching
 ///     history document.
 ///
-/// 12. **Frozen listings**: a `TokenDestroyFrozenFunds` also destroys what the frozen identity's
+/// 13. **Frozen listings**: a `TokenDestroyFrozenFunds` also destroys what the frozen identity's
 ///     open listings of the token hold in escrow, the oldest first and at most
 ///     `max_frozen_listings_destroyed_per_transition` (16) per transition, and deletes their
 ///     `ask` documents. `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads them

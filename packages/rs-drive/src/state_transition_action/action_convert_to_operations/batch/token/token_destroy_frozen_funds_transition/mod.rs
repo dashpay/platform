@@ -165,7 +165,6 @@ mod tests {
             price: 1,
             amount: remaining,
             remaining,
-            min_fill: 1,
             escrow: 0,
             decimals: 0,
         }
