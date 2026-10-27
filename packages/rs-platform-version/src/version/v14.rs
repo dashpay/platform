@@ -3025,6 +3025,13 @@ mod tests {
     fn grove_v4_cleanup_gates_activate_at_v14() {
         assert_eq!(PLATFORM_V13.drive.grove_version.protocol_version, 3);
         assert_eq!(PLATFORM_V14.drive.grove_version.protocol_version, 4);
+        assert_eq!(
+            crate::version::v15::PLATFORM_V15
+                .drive
+                .grove_version
+                .protocol_version,
+            5
+        );
     }
 
     #[test]
