@@ -109,6 +109,7 @@ impl Drive {
             path: pool_path.clone(),
             query: SizedQuery {
                 query: Query {
+                    offset: None,
                     read_mode: None,
                     limit: None,
                     items: vec![QueryItem::Key(vec![SHIELDED_NOTES_KEY])],
@@ -298,6 +299,7 @@ mod tests {
             path: shielded_credit_pool_path_vec(),
             query: SizedQuery {
                 query: Query {
+                    offset: None,
                     read_mode: None,
                     limit: None,
                     items: vec![QueryItem::Key(vec![SHIELDED_NOTES_KEY])],

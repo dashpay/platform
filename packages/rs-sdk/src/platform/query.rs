@@ -315,7 +315,7 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             get_document_history_request_v1::{Cursor, Filter},
             GetDocumentHistoryRequestV1,
         };
-        // Every history fetch verifies the two GroveDB proofs; there is no
+        // Every history fetch verifies its GroveDB proof; there is no
         // unproved decoding path, so a proof-disabled request would only fail
         // after the round trip.
         if !settings.prove {
@@ -1749,6 +1749,7 @@ mod history_query_tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
             prove: true,
         };
         for limit in [u16::MAX as u32 + 1, u32::MAX] {
@@ -1772,6 +1773,7 @@ mod history_query_tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
             prove: false,
         };
         let query = DocumentHistoryQuery {
@@ -1791,6 +1793,7 @@ mod history_query_tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::get(15).unwrap(),
+            verified_protocol_version: 0,
             prove: true,
         };
         let mut query = DocumentHistoryQuery {
@@ -1852,6 +1855,7 @@ mod history_query_tests {
             let settings = QuerySettings {
                 request_settings: &request_settings,
                 protocol_version: version,
+                verified_protocol_version: 0,
                 prove: true,
             };
             for (filter, limit) in [
