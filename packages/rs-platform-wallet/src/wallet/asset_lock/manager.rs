@@ -245,6 +245,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// SDK used for Platform queries by this manager.
+    pub(crate) fn sdk(&self) -> &dash_sdk::Sdk {
+        &self.sdk
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sdk_mut(&mut self) -> &mut dash_sdk::Sdk {
+        std::sync::Arc::get_mut(&mut self.sdk)
+            .expect("test manager must be the SDK's only Arc owner")
+    }
+
     /// Wallet id this manager operates on. Exposed so FFI callers that
     /// build a `MnemonicResolverCoreSigner` (or similar) on demand can
     /// thread the wallet id through to the resolver callback without
