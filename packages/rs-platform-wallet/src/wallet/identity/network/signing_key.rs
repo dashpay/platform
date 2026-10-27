@@ -84,11 +84,14 @@ pub(super) fn master_signing_key<'a>(
     )
 }
 
-/// The key that signs a credit transfer or withdrawal: a TRANSFER key, or an OWNER key when
-/// `allow_owner`, which only a withdrawal to the identity's payout address sets. An explicit
-/// key is never substituted; it is checked by the rules automatic selection applies, and
-/// refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER keys before
-/// OWNER.
+/// The security levels a credit transfer or withdrawal accepts, whatever the key's purpose.
+const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+
+/// The key that signs a credit transfer or withdrawal: a CRITICAL TRANSFER key, or a CRITICAL
+/// OWNER key when `allow_owner`, which only a withdrawal to the identity's payout address sets.
+/// An explicit key is never substituted; it is checked by the rules automatic selection
+/// applies, and refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER
+/// keys before OWNER.
 pub(super) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
@@ -104,7 +107,7 @@ pub(super) fn credit_signing_key<'a>(
             key,
             signer,
             &purposes,
-            &SecurityLevel::full_range(),
+            &CREDIT_SIGNING_LEVELS,
             &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         )?;
@@ -116,7 +119,7 @@ pub(super) fn credit_signing_key<'a>(
             identity,
             signer,
             purpose,
-            &SecurityLevel::full_range(),
+            &CREDIT_SIGNING_LEVELS,
             &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         ) {
@@ -295,6 +298,44 @@ pub(super) mod tests {
             (AUTH, CRITICAL, HASH160),
         ] {
             assert_eq!(select(purpose, level, key_type), None);
+        }
+    }
+
+    #[test]
+    fn should_sign_credit_operations_only_with_a_critical_key() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_HASH160,
+        );
+        let mut critical = identity.public_keys().get(&2).unwrap().clone();
+        critical.set_id(3);
+        critical.set_security_level(SecurityLevel::CRITICAL);
+        identity.add_public_key(critical);
+        let mut owner = identity.public_keys().get(&2).unwrap().clone();
+        owner.set_id(4);
+        owner.set_purpose(Purpose::OWNER);
+        identity.add_public_key(owner);
+        let signer = available(&[1, 2, 3, 4]);
+        assert_eq!(
+            credit_signing_key(&identity, None, &signer, true)
+                .unwrap()
+                .id(),
+            3,
+            "the HIGH TRANSFER keys 1 and 2 are skipped"
+        );
+        for id in [1, 4] {
+            let refusal =
+                credit_signing_key(&identity, identity.public_keys().get(&id), &signer, true);
+            assert!(
+                matches!(
+                    refusal,
+                    Err(dash_sdk::Error::Protocol(
+                        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+                    ))
+                ),
+                "credit transitions take only a CRITICAL key: {refusal:?}"
+            );
         }
     }
 
