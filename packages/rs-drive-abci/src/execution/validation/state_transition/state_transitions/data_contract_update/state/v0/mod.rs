@@ -502,15 +502,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             )
         })
         .and_then(|action| {
-            // Full validation holds a contract stored compiled to its size cap; without it, as
-            // check_tx parses, hold it here, so check_tx refuses it as a block does rather than
-            // failing to estimate its storage. Edited in place: through protocol version 14,
-            // which stores no contract compiled, this refuses and compiles nothing
-            if !full_validation {
-                action
-                    .data_contract_ref()
-                    .ensure_compiled_size(platform_version)?;
-            }
+            // A contract stored compiled must fit its cap, measured on the action's contract,
+            // with the fields the action adds, so check_tx refuses it as a block does. The
+            // compile is charged. Edited in place: through protocol version 14, which stores
+            // no contract compiled, this refuses, compiles and charges nothing
+            action
+                .data_contract_ref()
+                .ensure_compiled_size(&mut validation_operations, platform_version)?;
             Ok(action)
         });
 

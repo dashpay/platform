@@ -25,7 +25,7 @@ use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
-use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
+use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
@@ -214,7 +214,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
     fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V4,
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

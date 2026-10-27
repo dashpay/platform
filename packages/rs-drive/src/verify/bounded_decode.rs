@@ -41,7 +41,12 @@ pub(super) fn decode_proof_data_contract(
         >= u16::from(COMPILED_CONTRACT_FORMAT_TAG)
         && serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
     {
-        platform_version.system_limits.max_compiled_contract_size as usize
+        platform_version
+            .system_limits
+            .max_compiled_contract_size
+            .map_or(MAX_CONTRACT_DECODE_MEMORY_BYTES, |max_compiled_size| {
+                max_compiled_size as usize
+            })
     } else {
         contract_versions.max_serialized_size as usize
     };
@@ -197,7 +202,11 @@ mod tests {
         // Over the compiled size cap, it is refused for its size
         assert!(refused_for_size(decode_proof_data_contract(
             &compiled_contract_bytes(
-                platform_version.system_limits.max_compiled_contract_size as usize
+                platform_version
+                    .system_limits
+                    .max_compiled_contract_size
+                    .expect("expected the latest version to cap compiled contracts")
+                    as usize
             ),
             platform_version,
         )));
@@ -229,7 +238,11 @@ mod tests {
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         let platform_version = PlatformVersion::latest();
-        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size as usize;
+        let max_compiled_size = platform_version
+            .system_limits
+            .max_compiled_contract_size
+            .expect("expected the latest version to cap compiled contracts")
+            as usize;
         let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let schema = fixture
@@ -342,7 +355,11 @@ mod tests {
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         let platform_version = PlatformVersion::latest();
-        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size as usize;
+        let max_compiled_size = platform_version
+            .system_limits
+            .max_compiled_contract_size
+            .expect("expected the latest version to cap compiled contracts")
+            as usize;
         let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let with_dense_type = |objects: u32, fields: u32, indices: u32| {

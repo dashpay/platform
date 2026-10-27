@@ -7,11 +7,15 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 };
 
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait TokenConfigUpdateTransitionActionStructureValidationV0
 {
     fn validate_structure_v0(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
@@ -27,9 +31,10 @@ impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdat
     /// Then, for an update that is performed, the contract it stores held to the compiled size
     /// cap (`DataContractCompiledMaxSizeExceededError`, 10282), as contract create and update
     /// are: the update re-stores the whole contract compiled, a contract stored before
-    /// protocol version 15 for the first time.
+    /// protocol version 15 for the first time. The compile is charged to `execution_context`.
     fn validate_structure_v0(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         if let TokenConfigurationChangeItem::MarketplaceTradeMode(trade_mode) =
@@ -47,9 +52,12 @@ impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdat
         if !self.base().perform_action() {
             return Ok(SimpleConsensusValidationResult::new());
         }
-        Ok(self
+        let mut validation_operations = vec![];
+        let result = self
             .updated_contract()?
-            .validate_compiled_size(platform_version)?)
+            .validate_compiled_size(&mut validation_operations, platform_version)?;
+        execution_context.add_dpp_operations(validation_operations);
+        Ok(result)
     }
 }
 
@@ -67,6 +75,7 @@ mod tests {
         TokenBaseTransitionAction, TokenBaseTransitionActionV0,
     };
     use drive::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::TokenConfigUpdateTransitionActionV0;
+    use platform_version::DefaultForPlatformVersion;
     use std::sync::Arc;
 
     /// A max supply update of a token added to the DPNS contract, performed or not.
@@ -92,17 +101,25 @@ mod tests {
         })
     }
 
+    fn execution_context(platform_version: &PlatformVersion) -> StateTransitionExecutionContext {
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("expected an execution context")
+    }
+
     /// The latest protocol version with a compiled size cap every contract is over.
     fn latest_with_a_tiny_compiled_size_cap() -> PlatformVersion {
         let mut platform_version = PlatformVersion::latest().clone();
-        platform_version.system_limits.max_compiled_contract_size = 100;
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
         platform_version
     }
 
     #[test]
     fn should_admit_a_performed_update_whose_contract_compiles_under_the_cap() {
         let result = max_supply_update(true)
-            .validate_structure_v0(PlatformVersion::latest())
+            .validate_structure_v0(
+                &mut execution_context(PlatformVersion::latest()),
+                PlatformVersion::latest(),
+            )
             .expect("expected the check to run");
         assert!(result.is_valid(), "{:?}", result.errors);
     }
@@ -110,7 +127,10 @@ mod tests {
     #[test]
     fn should_refuse_a_performed_update_whose_contract_compiles_over_the_cap() {
         let result = max_supply_update(true)
-            .validate_structure_v0(&latest_with_a_tiny_compiled_size_cap())
+            .validate_structure_v0(
+                &mut execution_context(PlatformVersion::latest()),
+                &latest_with_a_tiny_compiled_size_cap(),
+            )
             .expect("expected the check to run");
         assert!(matches!(
             result.errors.as_slice(),
@@ -123,7 +143,10 @@ mod tests {
     #[test]
     fn should_not_hold_an_update_that_is_not_performed_to_the_cap() {
         let result = max_supply_update(false)
-            .validate_structure_v0(&latest_with_a_tiny_compiled_size_cap())
+            .validate_structure_v0(
+                &mut execution_context(PlatformVersion::latest()),
+                &latest_with_a_tiny_compiled_size_cap(),
+            )
             .expect("expected the check to run");
         assert!(result.is_valid(), "{:?}", result.errors);
     }

@@ -437,15 +437,13 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             )
         })
         .and_then(|action| {
-            // Full validation holds a contract stored compiled to its size cap; without it, as
-            // check_tx parses, hold it here, so check_tx refuses it as a block does rather than
-            // failing to estimate its storage. Edited in place: through protocol version 14,
-            // which stores no contract compiled, this refuses and compiles nothing
-            if !full_validation {
-                action
-                    .data_contract_ref()
-                    .ensure_compiled_size(platform_version)?;
-            }
+            // A contract stored compiled must fit its cap, measured on the action's contract,
+            // with the fields the action adds, so check_tx refuses it as a block does. The
+            // compile is charged. Edited in place: through protocol version 14, which stores
+            // no contract compiled, this refuses, compiles and charges nothing
+            action
+                .data_contract_ref()
+                .ensure_compiled_size(&mut validation_operations, platform_version)?;
             Ok(action)
         });
 
@@ -1003,7 +1001,7 @@ mod tests {
         #[test]
         fn should_refuse_in_check_tx_a_contract_compiled_over_the_cap() {
             let mut platform_version = PlatformVersion::latest().clone();
-            platform_version.system_limits.max_compiled_contract_size = 100;
+            platform_version.system_limits.max_compiled_contract_size = Some(100);
             let identity_nonce = IdentityNonce::default();
             let data_contract =
                 get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)

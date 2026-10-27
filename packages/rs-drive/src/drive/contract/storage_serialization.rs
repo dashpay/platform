@@ -29,13 +29,9 @@ pub(crate) fn serialize_contract_for_storage(
             ),
         )));
     }
-    let stored_compiled = platform_version
-        .dpp
-        .contract_versions
-        .contract_storage_serialization_version
-        >= 2;
-    let max_compiled_size = platform_version.system_limits.max_compiled_contract_size;
-    if stored_compiled && stored.len() as u64 > u64::from(max_compiled_size) {
+    if let Some(max_compiled_size) = compiled_contract_size_cap(platform_version)
+        .filter(|max_compiled_size| stored.len() as u64 > u64::from(*max_compiled_size))
+    {
         return Err(Error::DataContract(DataContractError::ContractTooBig(
             format!(
                 "Trying to insert a data contract compiled to {} bytes, over the max allowed compiled size {}",
@@ -47,11 +43,9 @@ pub(crate) fn serialize_contract_for_storage(
     Ok(stored)
 }
 
-/// The size a fee estimate reads a stored contract at, as an estimate cannot read it:
-/// `estimated_contract_max_serialized_size` where contracts are stored in the format
-/// transitions carry, and `max_compiled_contract_size`, the most a contract stored compiled
-/// takes, where they are stored compiled.
-pub(crate) fn estimated_stored_contract_size(platform_version: &PlatformVersion) -> u32 {
+/// The most a contract stored compiled takes at `platform_version`
+/// (`max_compiled_contract_size`), or `None` where contracts are not stored compiled.
+fn compiled_contract_size_cap(platform_version: &PlatformVersion) -> Option<u32> {
     if platform_version
         .dpp
         .contract_versions
@@ -60,10 +54,19 @@ pub(crate) fn estimated_stored_contract_size(platform_version: &PlatformVersion)
     {
         platform_version.system_limits.max_compiled_contract_size
     } else {
+        None
+    }
+}
+
+/// The size a fee estimate reads a stored contract at, as an estimate cannot read it:
+/// `max_compiled_contract_size`, the most a contract stored compiled takes, where contracts
+/// are stored compiled, and `estimated_contract_max_serialized_size` otherwise.
+pub(crate) fn estimated_stored_contract_size(platform_version: &PlatformVersion) -> u32 {
+    compiled_contract_size_cap(platform_version).unwrap_or(
         platform_version
             .system_limits
-            .estimated_contract_max_serialized_size as u32
-    }
+            .estimated_contract_max_serialized_size as u32,
+    )
 }
 
 #[cfg(test)]
@@ -212,7 +215,7 @@ mod tests {
     #[test]
     fn should_refuse_to_store_a_contract_compiled_over_the_cap() {
         let mut platform_version = PlatformVersion::latest().clone();
-        platform_version.system_limits.max_compiled_contract_size = 100;
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
         let contract = fixture_contract(PlatformVersion::latest());
         assert!(matches!(
             super::serialize_contract_for_storage(&contract, &platform_version),
@@ -222,7 +225,7 @@ mod tests {
         ));
         // Where contracts are not stored compiled, the cap is not read
         let mut platform_version = protocol_version_14().clone();
-        platform_version.system_limits.max_compiled_contract_size = 100;
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
         assert!(super::serialize_contract_for_storage(
             &fixture_contract(protocol_version_14()),
             &platform_version

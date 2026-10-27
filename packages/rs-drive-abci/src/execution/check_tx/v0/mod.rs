@@ -733,8 +733,9 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // 1.8 times its bytes, which are byte-billed
-            24004401940
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         let check_result = platform
@@ -1402,8 +1403,9 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // 1.8 times its bytes, which are byte-billed
-            24008803880
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24008953360
         );
 
         let check_result = platform
@@ -1885,8 +1887,9 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // 1.8 times its bytes, which are byte-billed
-            24004401940
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform
@@ -1981,8 +1984,9 @@ mod tests {
             // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
-            // about 1.8 times its bytes, which are byte-billed
-            29005125330
+            // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
+            // is charged per compiled byte
+            29005214530
         );
 
         let check_result = platform
@@ -2574,8 +2578,9 @@ mod tests {
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
-            // 1.8 times its bytes, which are byte-billed
-            24004401940
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform

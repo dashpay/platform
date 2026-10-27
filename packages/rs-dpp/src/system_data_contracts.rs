@@ -193,11 +193,14 @@ mod tests {
                     .serialize_to_storage_bytes(platform_version)
                     .expect("expected the system contract to serialize for storage")
                     .len();
-                assert!(
-                    stored_size
-                        <= platform_version.system_limits.max_compiled_contract_size as usize,
-                    "{origin} is stored in {stored_size} bytes"
-                );
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
             }
         }
     }

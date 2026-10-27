@@ -60,6 +60,8 @@ use crate::util::hash::hash_double_to_vec;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::DataContractCompiledMaxSizeExceededError;
 #[cfg(feature = "validation")]
+use crate::validation::operations::ProtocolValidationOperation;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -198,25 +200,33 @@ impl DataContract {
     /// Refuses the contract when a node would store it compiled
     /// (`contract_storage_serialization_version` 2, from protocol version 15) and its compiled
     /// bytes are over `max_compiled_contract_size`, with a
-    /// [`DataContractCompiledMaxSizeExceededError`]: compiling inlines every `$ref` into each
-    /// property that uses it, so a contract within the format transitions carry, which
-    /// `max_serialized_size` caps, can compile much larger. Refuses nothing where contracts are
-    /// stored in that format.
+    /// [`DataContractCompiledMaxSizeExceededError`]: compiling turns a contract into more bytes
+    /// than its schemas take, and only the format transitions carry is capped by
+    /// `max_serialized_size`. The compile and serialization it takes is recorded in
+    /// `validation_operations`, charged per compiled byte. Refuses, compiles and records
+    /// nothing where contracts are not stored compiled.
     #[cfg(feature = "validation")]
     pub fn validate_compiled_size(
         &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if platform_version
+        let stored_compiled = platform_version
             .dpp
             .contract_versions
             .contract_storage_serialization_version
-            < 2
-        {
+            >= 2;
+        let Some(max_compiled_size) = platform_version.system_limits.max_compiled_contract_size
+        else {
+            return Ok(SimpleConsensusValidationResult::new());
+        };
+        if !stored_compiled {
             return Ok(SimpleConsensusValidationResult::new());
         }
         let compiled_size = self.serialize_to_storage_bytes(platform_version)?.len() as u64;
-        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size;
+        validation_operations.extend(std::iter::once(
+            ProtocolValidationOperation::ContractCompiledSizeValidation(compiled_size),
+        ));
         if compiled_size > u64::from(max_compiled_size) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 DataContractCompiledMaxSizeExceededError::new(compiled_size, max_compiled_size)
@@ -233,10 +243,11 @@ impl DataContract {
     #[cfg(feature = "validation")]
     pub fn ensure_compiled_size(
         &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self
-            .validate_compiled_size(platform_version)?
+            .validate_compiled_size(validation_operations, platform_version)?
             .errors
             .into_iter()
             .next()
@@ -713,5 +724,75 @@ mod tests {
                 .requires_identity_encryption_bounded_key(),
             Some(StorageKeyRequirements::MultipleReferenceToLatest)
         );
+    }
+}
+
+#[cfg(all(test, feature = "validation"))]
+mod compiled_size_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::tests::fixtures::get_data_contract_fixture;
+
+    fn fixture_contract() -> DataContract {
+        get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+            .data_contract_owned()
+    }
+
+    /// `platform_version` with a compiled size cap every contract is over.
+    fn with_a_tiny_compiled_size_cap(platform_version: &PlatformVersion) -> PlatformVersion {
+        let mut platform_version = platform_version.clone();
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
+        platform_version
+    }
+
+    #[test]
+    fn should_refuse_a_contract_compiled_over_the_cap_and_charge_for_compiling_it() {
+        let platform_version = with_a_tiny_compiled_size_cap(PlatformVersion::latest());
+        let contract = fixture_contract();
+        let compiled_size = contract
+            .serialize_to_storage_bytes(&platform_version)
+            .expect("expected the contract to compile")
+            .len() as u64;
+        let mut operations = vec![];
+        let refused = contract.ensure_compiled_size(&mut operations, &platform_version);
+        assert!(
+            matches!(
+                &refused,
+                Err(ProtocolError::ConsensusError(error)) if matches!(
+                    error.as_ref(),
+                    ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    ) if error.max_compiled_size() == 100
+                        && error.compiled_size() == compiled_size
+                )
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(
+            operations,
+            vec![ProtocolValidationOperation::ContractCompiledSizeValidation(
+                compiled_size
+            )]
+        );
+
+        // Under the cap of the latest version, admitted and charged alike
+        let mut operations = vec![];
+        contract
+            .ensure_compiled_size(&mut operations, PlatformVersion::latest())
+            .expect("expected the contract to fit the cap");
+        assert_eq!(operations.len(), 1);
+    }
+
+    #[test]
+    fn should_neither_refuse_nor_charge_where_contracts_are_not_stored_compiled() {
+        let platform_version = with_a_tiny_compiled_size_cap(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        let mut operations = vec![];
+        fixture_contract()
+            .ensure_compiled_size(&mut operations, &platform_version)
+            .expect("expected nothing refused at protocol version 14");
+        assert!(operations.is_empty());
     }
 }

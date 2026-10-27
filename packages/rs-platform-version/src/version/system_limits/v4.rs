@@ -122,11 +122,6 @@ use crate::version::system_limits::SystemLimits;
 ///   `chooseFirst` reads at most 1,000 competitors of the commitment it found
 ///   (`max_choose_first_candidates`, backfilled into the earlier tables, whose validation never
 ///   reads it).
-/// * Contracts stored compiled (protocol version 15): a contract stored compiled takes at most
-///   1 MiB (`max_compiled_contract_size`), refused at registration, update and token
-///   configuration update and by proof verification. It joined this table in place, read only
-///   where contracts are stored compiled, and was backfilled into the earlier tables, which
-///   never store one.
 /// * Unsigned index value keys (protocol version 14): the first block of the version rewrites
 ///   the keys of unsigned integer index values, applying its moves in batches of 10,000 moves
 ///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
@@ -142,7 +137,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
-    max_compiled_contract_size: 1_048_576, // contracts stored compiled (new in v15): a contract compiled takes at most 1 MiB
+    max_compiled_contract_size: None,   // no contract is stored compiled before protocol version 15
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
