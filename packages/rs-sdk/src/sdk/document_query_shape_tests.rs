@@ -239,7 +239,7 @@ async fn should_refuse_counts_of_a_ranked_query_without_sending_it() {
 
 /// Refuses every request, naming the protocol version it was checked at.
 #[derive(Debug, Default)]
-struct CheckedAt;
+pub(super) struct CheckedAt;
 
 impl FromProof<DocumentQuery> for CheckedAt {
     type Request = DocumentQuery;

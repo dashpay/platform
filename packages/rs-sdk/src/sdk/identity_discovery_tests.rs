@@ -392,13 +392,14 @@ fn should_send_nonunique_v1_after_another_query_verified_protocol_14() {
         encoded(&sdk),
         dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version::V0(_)
     ));
-    sdk.verify_response_metadata(
+    sdk.accept_verified_metadata(
         "get_epochs_info",
         &dapi_grpc::platform::v0::ResponseMetadata {
             protocol_version: 14,
             height: 10,
             ..Default::default()
         },
+        None,
     )
     .unwrap();
     assert!(matches!(
