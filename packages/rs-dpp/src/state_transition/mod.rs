@@ -1984,15 +1984,15 @@ impl StateTransition {
         &self,
         identity_public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        if identity_public_key.purpose() != Purpose::AUTHENTICATION {
-            return Ok(());
-        }
-        let Some(bounds) = identity_public_key.contract_bounds() else {
-            return Ok(());
-        };
         match self {
             StateTransition::Batch(batch) => {
                 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+                if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+                    return Ok(());
+                }
+                let Some(bounds) = identity_public_key.contract_bounds() else {
+                    return Ok(());
+                };
                 if batch.transitions_iter().all(|member| {
                     bounds.check_batched_transition(member) != BatchedTransitionBoundsCheck::Denied
                 }) {
@@ -2003,6 +2003,7 @@ impl StateTransition {
                     )))
                 }
             }
+            _ if identity_public_key.can_sign_non_batch() => Ok(()),
             _ => Err(ProtocolError::ConsensusError(Box::new(
                 ContractBoundedKeyNonBatchError::new(identity_public_key.id()).into(),
             ))),
