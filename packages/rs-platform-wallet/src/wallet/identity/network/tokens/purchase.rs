@@ -15,6 +15,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 
+use super::helpers::check_token_signing_key;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -36,6 +37,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, dash_sdk::Error>
     {
+        check_token_signing_key(signing_key, signer, &data_contract)?;
         use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
 
         let mut builder = TokenDirectPurchaseTransitionBuilder::new(

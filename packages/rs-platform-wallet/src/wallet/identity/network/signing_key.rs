@@ -1,10 +1,11 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
-use super::key_selection::{usable_signing_key, SigningScope};
+use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::state_transition::errors::WrongPublicKeyPurposeError;
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -81,21 +82,38 @@ pub(super) fn master_signing_key<'a>(
     )
 }
 
-/// Respect explicit keys; automatic withdrawals exhaust enabled TRANSFER keys before OWNER.
+/// The key that signs a credit transfer, or a withdrawal when `allow_owner`. An explicit key
+/// is never substituted; it is checked by the rules automatic selection applies, and refused
+/// with Platform's typed error. Automatic withdrawals exhaust TRANSFER keys before OWNER.
 pub(super) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
     signer: &impl Signer<IdentityPublicKey>,
     allow_owner: bool,
 ) -> Result<&'a IdentityPublicKey, dash_sdk::Error> {
-    if let Some(key) = explicit {
-        return require_available(key, signer);
-    }
-    let mut unavailable = None;
-    for purpose in [Purpose::TRANSFER]
+    let purposes: Vec<Purpose> = [Purpose::TRANSFER]
         .into_iter()
         .chain(allow_owner.then_some(Purpose::OWNER))
-    {
+        .collect();
+    if let Some(key) = explicit {
+        if !purposes.contains(&key.purpose()) {
+            return Err(ProtocolError::WrongPublicKeyPurposeError(
+                WrongPublicKeyPurposeError::new(key.purpose(), purposes),
+            )
+            .into());
+        }
+        check_signing_key(
+            key,
+            signer,
+            key.purpose(),
+            &SecurityLevel::full_range(),
+            &KeyType::all_key_types(),
+            SigningScope::NonBatch,
+        )?;
+        return Ok(key);
+    }
+    let mut unavailable = None;
+    for purpose in purposes {
         match usable_signing_key(
             identity,
             signer,
@@ -404,6 +422,52 @@ pub(super) mod tests {
             credit_signing_key(&identity, Some(second), &available(&[1, 2]), false).unwrap(),
             second
         );
+    }
+
+    #[test]
+    fn should_refuse_an_explicit_credit_key_platform_would_refuse() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let mut owner = identity.public_keys().get(&2).unwrap().clone();
+        owner.set_id(3);
+        owner.set_purpose(Purpose::OWNER);
+        identity.add_public_key(owner);
+        identity
+            .public_keys_mut()
+            .get_mut(&1)
+            .unwrap()
+            .set_disabled_at(1);
+        let explicit = |id: u32, allow_owner| {
+            credit_signing_key(
+                &identity,
+                identity.public_keys().get(&id),
+                &available(&[1, 2, 3]),
+                allow_owner,
+            )
+            .map(|key| key.id())
+        };
+        assert!(
+            matches!(
+                explicit(1, true),
+                Err(dash_sdk::Error::Protocol(
+                    ProtocolError::PublicKeyIsDisabledError(_)
+                ))
+            ),
+            "Platform refuses a disabled signing key"
+        );
+        assert!(
+            matches!(
+                explicit(3, false),
+                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
+                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER]
+            ),
+            "a credit transfer takes only a TRANSFER key"
+        );
+        assert_eq!(explicit(3, true).unwrap(), 3, "a withdrawal may take OWNER");
+        assert_eq!(explicit(2, false).unwrap(), 2);
     }
 
     #[tokio::test]

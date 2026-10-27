@@ -12,9 +12,10 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::key_selection::{usable_signing_key, SigningScope};
+use super::super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use std::sync::Arc;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -28,6 +29,9 @@ use crate::wallet::identity::network::IdentityWallet;
 /// batch with a token transition.
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
+/// The key types [`token_signing_key`] accepts.
+const TOKEN_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+
 /// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
 /// ECDSA key whose bounds cover the whole contract, since token operations are contract-wide.
 fn token_signing_key<'a>(
@@ -40,9 +44,28 @@ fn token_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &TOKEN_SIGNING_LEVELS,
-        &[KeyType::ECDSA_SECP256K1],
+        &TOKEN_SIGNING_KEY_TYPES,
         SigningScope::Contract {
             contract_id: token_contract_id,
+        },
+    )
+}
+
+/// Check a key the caller chose to sign a token operation of `data_contract` by the rules
+/// [`token_signing_key`] applies, so a key Platform would refuse fails before any request.
+pub(super) fn check_token_signing_key(
+    key: &IdentityPublicKey,
+    signer: &impl Signer<IdentityPublicKey>,
+    data_contract: &DataContract,
+) -> Result<(), dash_sdk::Error> {
+    check_signing_key(
+        key,
+        signer,
+        Purpose::AUTHENTICATION,
+        &TOKEN_SIGNING_LEVELS,
+        &TOKEN_SIGNING_KEY_TYPES,
+        SigningScope::Contract {
+            contract_id: data_contract.id(),
         },
     )
 }
@@ -130,6 +153,79 @@ mod signing_tests {
         wallet_with_identity, wallet_with_signing_keys, KeyFilter,
     };
     use dpp::identity::accessors::IdentityGettersV0;
+
+    #[tokio::test]
+    async fn should_refuse_an_explicit_token_key_before_any_network_call() {
+        use crate::wallet::identity::network::key_selection::tests::{bound_key, key};
+        use dpp::consensus::signature::SignatureError;
+        use dpp::consensus::ConsensusError;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contracts::SystemDataContract;
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        use dpp::system_data_contracts::load_system_data_contract;
+        use dpp::version::PlatformVersion;
+        use dpp::ProtocolError;
+
+        let wallet = wallet_with_signing_keys().await;
+        let contract = Arc::new(
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("bundled DPNS contract"),
+        );
+        let burn = |signing_key: IdentityPublicKey| {
+            let wallet = &wallet;
+            let contract = Arc::clone(&contract);
+            async move {
+                wallet
+                    .identity()
+                    .token_burn_with_signer(
+                        contract,
+                        0,
+                        Identifier::from([1; 32]),
+                        1,
+                        &signing_key,
+                        &KeyFilter(|_| true),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .err()
+                    .expect("the key must be refused")
+            }
+        };
+        let error = burn(key(1, SecurityLevel::HIGH)).await;
+        assert!(
+            matches!(
+                error,
+                dash_sdk::Error::Protocol(
+                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+                )
+            ),
+            "a token transition takes only a CRITICAL key: {error:?}"
+        );
+        let bound_to_one_document_type = bound_key(
+            1,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: contract.id(),
+                document_type_name: "domain".to_string(),
+            }),
+        );
+        let error = burn(bound_to_one_document_type).await;
+        assert!(
+            matches!(
+                &error,
+                dash_sdk::Error::Protocol(ProtocolError::ConsensusError(consensus))
+                    if matches!(
+                        consensus.as_ref(),
+                        ConsensusError::SignatureError(
+                            SignatureError::ContractBoundedKeyOutOfBoundsError(_)
+                        )
+                    )
+            ),
+            "a token transition needs bounds covering the whole contract: {error:?}"
+        );
+    }
 
     #[tokio::test]
     async fn should_report_no_usable_token_key_as_a_typed_error() {
