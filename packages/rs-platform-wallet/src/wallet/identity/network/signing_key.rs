@@ -654,6 +654,14 @@ pub(super) mod tests {
 
     /// A mock-SDK wallet that owns `identity`.
     pub(crate) async fn wallet_with_identity(identity: Identity) -> Arc<PlatformWallet> {
+        wallet_with_identity_on(dash_sdk::SdkBuilder::new_mock().build().unwrap(), identity).await
+    }
+
+    /// A wallet on `sdk` that owns `identity`.
+    pub(crate) async fn wallet_with_identity_on(
+        sdk: dash_sdk::Sdk,
+        identity: Identity,
+    ) -> Arc<PlatformWallet> {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::wallet::persister::NoPlatformPersistence;
         use crate::PlatformWalletManager;
@@ -663,7 +671,7 @@ pub(super) mod tests {
         impl EventHandler for Events {}
         impl PlatformEventHandler for Events {}
         let manager = PlatformWalletManager::new(
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::new(sdk),
             Arc::new(NoPlatformPersistence),
             Arc::new(Events),
         );

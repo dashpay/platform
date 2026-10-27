@@ -518,6 +518,16 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
+        let signing_key = self
+            .resolve_authentication_signing_key(
+                owner_identity_id,
+                signing_key_id,
+                &data_contract,
+                document_type_name,
+                signer,
+            )
+            .await?;
+
         // Owned `DocumentType` to sanitize the supplied properties
         // against the schema — same conversion the create path runs.
         let document_type = data_contract
@@ -559,16 +569,6 @@ impl IdentityWallet {
                 "Failed to increment document revision: {e}"
             ))
         })?;
-
-        let signing_key = self
-            .resolve_authentication_signing_key(
-                owner_identity_id,
-                signing_key_id,
-                &data_contract,
-                document_type_name,
-                signer,
-            )
-            .await?;
 
         let builder = DocumentReplaceTransitionBuilder::new(
             data_contract,
@@ -752,15 +752,6 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
-        let mut document = self
-            .fetch_current_document(&data_contract, document_type_name, document_id)
-            .await?;
-        document.increment_revision().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to increment document revision: {e}"
-            ))
-        })?;
-
         let signing_key = self
             .resolve_authentication_signing_key(
                 owner_identity_id,
@@ -770,6 +761,15 @@ impl IdentityWallet {
                 signer,
             )
             .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
 
         let builder = DocumentTransferTransitionBuilder::new(
             data_contract,
@@ -821,15 +821,6 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
-        let mut document = self
-            .fetch_current_document(&data_contract, document_type_name, document_id)
-            .await?;
-        document.increment_revision().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to increment document revision: {e}"
-            ))
-        })?;
-
         let signing_key = self
             .resolve_authentication_signing_key(
                 owner_identity_id,
@@ -839,6 +830,15 @@ impl IdentityWallet {
                 signer,
             )
             .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
 
         let builder = DocumentSetPriceTransitionBuilder::new(
             data_contract,
@@ -893,15 +893,6 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
-        let mut document = self
-            .fetch_current_document(&data_contract, document_type_name, document_id)
-            .await?;
-        document.increment_revision().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to increment document revision: {e}"
-            ))
-        })?;
-
         let signing_key = self
             .resolve_authentication_signing_key(
                 purchaser_identity_id,
@@ -911,6 +902,15 @@ impl IdentityWallet {
                 signer,
             )
             .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
 
         let builder = DocumentPurchaseTransitionBuilder::new(
             data_contract,
@@ -980,8 +980,119 @@ fn delete_preparation_error(error: dash_sdk::Error) -> PlatformWalletError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys};
+    use super::super::key_selection::tests::signature_refusal_of;
+    use super::super::signing_key::tests::{
+        identity as identity_with_keys, lock_checking_signer, wallet_with_identity_on,
+        wallet_with_signing_keys,
+    };
     use super::*;
+    use dpp::consensus::signature::SignatureError;
+    use dpp::identity::accessors::IdentityGettersV0;
+
+    /// A wallet whose SDK answers only the fetch of the DashPay contract, owning an identity
+    /// whose key 1 is disabled.
+    async fn wallet_answering_only_the_contract() -> (Arc<crate::PlatformWallet>, Identifier) {
+        let contract = super::super::dashpay_contract().unwrap();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        sdk.mock()
+            .expect_fetch::<DataContract, Identifier>(contract.id(), Some((*contract).clone()))
+            .await
+            .unwrap();
+        let mut identity = identity_with_keys(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        identity
+            .public_keys_mut()
+            .get_mut(&1)
+            .unwrap()
+            .set_disabled_at(1);
+        let owner = identity.id();
+        (wallet_with_identity_on(sdk, identity).await, owner)
+    }
+
+    fn assert_disabled_refusal(result: Result<Document, PlatformWalletError>) {
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::Sdk(error))
+                    if matches!(
+                        signature_refusal_of(error),
+                        Some(SignatureError::PublicKeyIsDisabledError(_))
+                    )
+            ),
+            "the key is refused before the document is fetched: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_explicit_key_before_fetching_the_document() {
+        let contract_id = super::super::dashpay_contract().unwrap().id();
+        let document_id = Identifier::from([9; 32]);
+        let signer = KeyFilter(|_| true);
+
+        let (wallet, owner) = wallet_answering_only_the_contract().await;
+        assert_disabled_refusal(
+            wallet
+                .identity()
+                .replace_document_with_signer(
+                    &owner,
+                    &contract_id,
+                    "profile",
+                    &document_id,
+                    "{}",
+                    1,
+                    &signer,
+                )
+                .await,
+        );
+        let (wallet, owner) = wallet_answering_only_the_contract().await;
+        assert_disabled_refusal(
+            wallet
+                .identity()
+                .transfer_document_with_signer(
+                    &owner,
+                    &contract_id,
+                    "profile",
+                    &document_id,
+                    &Identifier::from([3; 32]),
+                    1,
+                    &signer,
+                )
+                .await,
+        );
+        let (wallet, owner) = wallet_answering_only_the_contract().await;
+        assert_disabled_refusal(
+            wallet
+                .identity()
+                .set_document_price_with_signer(
+                    &owner,
+                    &contract_id,
+                    "profile",
+                    &document_id,
+                    5,
+                    1,
+                    &signer,
+                )
+                .await,
+        );
+        let (wallet, owner) = wallet_answering_only_the_contract().await;
+        assert_disabled_refusal(
+            wallet
+                .identity()
+                .purchase_document_with_signer(
+                    &owner,
+                    &contract_id,
+                    "profile",
+                    &document_id,
+                    5,
+                    1,
+                    &signer,
+                )
+                .await,
+        );
+    }
 
     #[tokio::test]
     async fn should_reject_unavailable_explicit_document_key_outside_wallet_lock() {
