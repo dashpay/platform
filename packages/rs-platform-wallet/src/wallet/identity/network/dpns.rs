@@ -1,6 +1,8 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use super::document::{check_document_signing_key, document_signing_key};
+use super::document::{
+    check_document_signing_key, document_signing_key, DOCUMENT_SIGNING_KEY_TYPES,
+};
 use super::key_selection::SigningScope;
 use dpp::data_contracts::SystemDataContract;
 
@@ -272,6 +274,7 @@ impl IdentityWallet {
                     security_levels: SecurityLevel::accepted_for_requirement(
                         DPNS_REGISTRATION_REQUIREMENT,
                     ),
+                    key_types: DOCUMENT_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a DPNS name registration".to_string(),
                 })?
                 .clone();

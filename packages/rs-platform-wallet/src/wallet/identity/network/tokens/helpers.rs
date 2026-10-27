@@ -118,6 +118,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
+                key_types: TOKEN_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a token transition of contract {token_contract_id}"),
             })?
             .clone();

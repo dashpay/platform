@@ -54,7 +54,7 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
-use super::document::document_signing_key;
+use super::document::{document_signing_key, DOCUMENT_SIGNING_KEY_TYPES};
 use super::key_selection::SigningScope;
 use super::*;
 
@@ -992,6 +992,7 @@ impl IdentityWallet {
             identity_id: *identity_id,
             purpose: Purpose::AUTHENTICATION,
             security_levels: SecurityLevel::accepted_for_requirement(required_level),
+            key_types: DOCUMENT_SIGNING_KEY_TYPES.to_vec(),
             transition: format!("a DPNS {DPNS_DOCUMENT_TYPE} document transition"),
         })
     }

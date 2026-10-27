@@ -18,7 +18,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
-use super::signing_key::{master_signing_key, MASTER_SIGNING_LEVELS};
+use super::signing_key::{master_signing_key, IDENTITY_SIGNING_KEY_TYPES, MASTER_SIGNING_LEVELS};
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -139,6 +139,7 @@ impl IdentityWallet {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: MASTER_SIGNING_LEVELS.to_vec(),
+                key_types: IDENTITY_SIGNING_KEY_TYPES.to_vec(),
                 transition: "an identity update".to_string(),
             })?;
 

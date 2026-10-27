@@ -52,6 +52,9 @@ pub(super) const CONTRACT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::C
 /// The security levels [`master_signing_key`] accepts.
 pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MASTER];
 
+/// The key types [`contract_signing_key`] and [`master_signing_key`] pick from.
+pub(super) const IDENTITY_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+
 /// The key that signs a contract create or update: a CRITICAL AUTHENTICATION ECDSA key.
 /// These are not batches, so a contract-bound key cannot sign them.
 pub(super) fn contract_signing_key<'a>(
@@ -63,7 +66,7 @@ pub(super) fn contract_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &CONTRACT_SIGNING_LEVELS,
-        &[KeyType::ECDSA_SECP256K1],
+        &IDENTITY_SIGNING_KEY_TYPES,
         SigningScope::NonBatch,
     )
 }
@@ -78,7 +81,7 @@ pub(super) fn master_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &MASTER_SIGNING_LEVELS,
-        &[KeyType::ECDSA_SECP256K1],
+        &IDENTITY_SIGNING_KEY_TYPES,
         SigningScope::NonBatch,
     )
 }
@@ -592,8 +595,11 @@ pub(super) mod tests {
                     identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels,
+                    key_types,
                     ..
-                } if *identity_id == identity && security_levels == &[level]
+                } if *identity_id == identity
+                    && security_levels == &[level]
+                    && key_types == &[KeyType::ECDSA_SECP256K1]
             ),
             "{error:?}"
         );

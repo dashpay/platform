@@ -1,6 +1,6 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
-use super::document::document_signing_key;
+use super::document::{document_signing_key, DOCUMENT_SIGNING_KEY_TYPES};
 use super::key_selection::SigningScope;
 use dpp::data_contracts::SystemDataContract;
 use dpp::document::DocumentV0Getters;
@@ -626,6 +626,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 security_levels: SecurityLevel::accepted_for_requirement(
                     CONTACT_REQUEST_REQUIREMENT,
                 ),
+                key_types: DOCUMENT_SIGNING_KEY_TYPES.to_vec(),
                 transition: "a contactRequest document transition".to_string(),
             })?;
 

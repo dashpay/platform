@@ -1380,6 +1380,7 @@ mod tests {
             identity_id,
             purpose: dpp::identity::Purpose::AUTHENTICATION,
             security_levels: vec![dpp::identity::SecurityLevel::CRITICAL],
+            key_types: vec![dpp::identity::KeyType::ECDSA_SECP256K1],
             transition: "an identity update".to_string(),
         });
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
@@ -1392,6 +1393,7 @@ mod tests {
             identity.as_str(),
             "AUTHENTICATION",
             "CRITICAL",
+            "ECDSA_SECP256K1",
             "an identity update",
         ] {
             assert!(message.contains(part), "{message}");

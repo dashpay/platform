@@ -102,6 +102,9 @@ where
     }
 }
 
+/// The key types [`document_signing_key`] picks from.
+pub(super) const DOCUMENT_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+
 /// The key that signs a document batch in `scope` whose document type requires
 /// `requirement`: an AUTHENTICATION, ECDSA_SECP256K1 key at a level consensus accepts.
 pub(super) fn document_signing_key<'a>(
@@ -115,7 +118,7 @@ pub(super) fn document_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &SecurityLevel::accepted_for_requirement(requirement),
-        &[KeyType::ECDSA_SECP256K1],
+        &DOCUMENT_SIGNING_KEY_TYPES,
         scope,
     )
 }
@@ -306,6 +309,7 @@ impl IdentityWallet {
                 identity_id: *owner_identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: SecurityLevel::accepted_for_requirement(required_level),
+                key_types: DOCUMENT_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a {document_type_name} document transition"),
             })?
             .clone()
