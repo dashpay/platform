@@ -26,9 +26,10 @@ impl TokenPlaceBidTransitionActionV0 {
     /// token's decimals, rounded up (the transition's structure refuses an offer worth more than
     /// an order holds); one naming a token its contract
     /// does not define with `ContractHasNoTokensError` or `InvalidTokenPositionError`. The offer
-    /// signs the decimals its price is at and is refused with `TokenOrderDecimalsMismatchError`
-    /// unless they are the token's; it records them, and they price every sale into it. The buyer's credits are checked with
-    /// the batch's fees, which count the escrow as a purchase.
+    /// signs the decimals its price is at, which this conversion takes as given: the batch's
+    /// advanced-structure validation refuses them with `TokenOrderDecimalsMismatchError` unless
+    /// they are the token's. The order records them, and they price every sale into it. The
+    /// buyer's credits are checked with the batch's fees, which count the escrow as a purchase.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_bid_transition_with_contract_lookup(
         drive: &Drive,
