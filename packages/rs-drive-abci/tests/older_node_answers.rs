@@ -461,12 +461,13 @@ fn should_refuse_an_older_node_answer_to_a_chained_query() {
         let request = GetDocumentsRequest::try_from_platform_versioned(query.clone(), sender)
             .expect("encode the chained query");
         let answer = node.answer_as_older_node(&request, v14());
-        // The answer is a genuine, verifiable answer to the inner query.
+        // The answer is a genuine, verifiable answer to the inner query, under the rules of
+        // the protocol version that signed it.
         let likes = <Documents as FromProof<DocumentQuery>>::maybe_from_proof(
             inner.clone(),
             answer.clone(),
             Network::Testnet,
-            v14(),
+            v13(),
             &Provider,
         )
         .expect("the answer proves the inner query")
