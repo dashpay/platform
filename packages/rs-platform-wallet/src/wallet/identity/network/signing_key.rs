@@ -92,7 +92,7 @@ const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 /// An explicit key is never substituted; it is checked by the rules automatic selection
 /// applies, and refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER
 /// keys before OWNER.
-pub(super) fn credit_signing_key<'a>(
+pub(crate) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
     signer: &impl Signer<IdentityPublicKey>,

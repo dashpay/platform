@@ -60,7 +60,7 @@ use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_re
 use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
 use crate::wallet::core::is_signable_funding_account;
 use crate::wallet::identity::network::{
-    select_owner_withdrawal_key, select_transfer_withdrawal_key,
+    credit_signing_key, select_owner_withdrawal_key, select_transfer_withdrawal_key,
 };
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
@@ -450,6 +450,14 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
         path,
         expected_key_hash160: expected_hash160,
     };
+    // The checks an identity withdrawal runs on its key: a CRITICAL key, enabled and unexpired,
+    // of a type Platform verifies, and OWNER only for a withdrawal to the payout address.
+    credit_signing_key(
+        &identity,
+        Some(&identity_key),
+        &identity_signer,
+        destination.is_none(),
+    )?;
 
     let definitive = |e: dash_sdk::Error| {
         crate::error::preserve_signer_key_unavailable_or(e, |e| {
@@ -879,5 +887,80 @@ mod tests {
         };
         assert!(transfer.can_withdraw());
         assert!(transfer.can_choose_destination());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_withdrawal_key_platform_would_refuse() {
+        use crate::wallet::identity::network::signature_refusal_of;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        use dpp::identity::v0::IdentityV0;
+
+        let pro_tx_hash = [0x5A; 32];
+        let mut id_bytes = pro_tx_hash;
+        id_bytes.reverse();
+        let identity_id = Identifier::from(id_bytes);
+        let withdraw = |key: IdentityPublicKey, destination: Option<DashAddress>| async move {
+            let (signer, hash, _) = fixture();
+            let identity: Identity = IdentityV0 {
+                id: identity_id,
+                public_keys: [(key.id(), key)].into_iter().collect(),
+                balance: 1_000_000,
+                revision: 0,
+            }
+            .into();
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            sdk.mock()
+                .expect_fetch::<Identity, Identifier>(identity_id, Some(identity))
+                .await
+                .unwrap();
+            execute_masternode_withdrawal(
+                &sdk,
+                pro_tx_hash,
+                1,
+                MasternodeWithdrawalKey::Owner,
+                hash,
+                DerivationPath::from_str("m/9'/1'/3'/2'/0").unwrap(),
+                destination,
+                &signer,
+            )
+            .await
+        };
+        let refusal = |result: &Result<u64, PlatformWalletError>| match result {
+            Err(PlatformWalletError::Sdk(error)) => signature_refusal_of(error).cloned(),
+            _ => None,
+        };
+        let (_, _, owner_key) = fixture();
+
+        let mut disabled = owner_key.clone();
+        disabled.set_disabled_at(1);
+        let result = withdraw(disabled, None).await;
+        assert!(
+            matches!(
+                refusal(&result),
+                Some(SignatureError::PublicKeyIsDisabledError(_))
+            ),
+            "{result:?}"
+        );
+
+        let result = withdraw(
+            owner_key.clone(),
+            Some(DashAddress::dummy(Network::Testnet, 1)),
+        )
+        .await;
+        assert!(
+            matches!(
+                refusal(&result),
+                Some(SignatureError::InvalidSignaturePublicKeyPurposeError(_))
+            ),
+            "an OWNER key cannot withdraw to a chosen address: {result:?}"
+        );
+
+        let result = withdraw(owner_key, None).await;
+        assert_eq!(
+            refusal(&result),
+            None,
+            "a CRITICAL ECDSA_HASH160 OWNER key passes and the withdrawal goes on: {result:?}"
+        );
     }
 }
