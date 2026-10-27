@@ -45,6 +45,7 @@ async fn update_contract_adding_schema(
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("item".to_string(), schema);
         },
         protocol_version,
@@ -120,6 +121,7 @@ async fn update_expiring_summed_amount(amount: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("tally".to_string(), expiring_summed_schema(amount));
         },
         platform_version,
@@ -184,6 +186,7 @@ async fn update_tagged_like(like: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("like".to_string(), like);
         },
         platform_version,

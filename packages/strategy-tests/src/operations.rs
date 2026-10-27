@@ -46,6 +46,7 @@ use dpp::data_contract::{DataContract as Contract, DataContract, TokenContractPo
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyCount};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
@@ -128,9 +129,7 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
             use_identity_with_id,
             action,
         };
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(document_op, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DocumentOp: {}", e))
         })
@@ -146,9 +145,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let token_op_in_serialization_format: TokenOpInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -263,9 +260,7 @@ impl PlatformSerializableWithPlatformVersion for DocumentOp {
             document_type_name: document_type.name().clone(),
             action,
         };
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(document_op, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DocumentOp: {}", e))
         })
@@ -281,9 +276,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let document_op_in_serialization_format: DocumentOpInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -360,9 +353,7 @@ impl PlatformSerializableWithPlatformVersion for Operation {
             op_type: op_type_serialized,
             frequency,
         };
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(operation, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize Operation: {}", e))
         })
@@ -378,9 +369,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let operation_in_serialization_format: OperationInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -485,9 +474,7 @@ impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
             document_type: document_type_in_serialization_format,
         };
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(update_op_in_serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("Unable to serialize DataContractUpdateOp: {}", e))
         })
@@ -505,9 +492,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let deserialized: DataContractUpdateOpInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -1000,9 +985,7 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 extra_keys,
             ),
         };
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(op, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize OperationType: {}", e))
         })
@@ -1018,9 +1001,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let operation_type: OperationTypeInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {

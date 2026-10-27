@@ -14,6 +14,10 @@
 //! admits is spelled out below as literals rather than looked up in a version
 //! table.
 //!
+//! From protocol version 15 (`check_document_type_schema` 1), full validation checks a
+//! schema natively ([`super::native_schema`]) instead of against the document meta-schema
+//! through the `jsonschema` crate, and requires the type to have a typed validation schema.
+//!
 //! The parsing steps themselves are shared with the earlier generations in
 //! [`super::common`]. What stays here is what only generation 3 has: the ranked
 //! index-key length ceilings, and the constants they are derived from.
@@ -60,6 +64,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::keep_native_validator;
 #[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
@@ -460,8 +466,8 @@ fn parse_generation_3(
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
-            // CONTRACT_VERSIONS_V6 is the only table that selects this parser,
-            // and it is the only table naming meta-schema v3. So every constant
+            // CONTRACT_VERSIONS_V6 and V7 are the only tables that select this
+            // parser, and the only tables naming meta-schema v3. So every constant
             // here is a property of the generation, not of a platform version,
             // and none of them is read out of a table.
             document_type_schema_version: 3,
@@ -711,6 +717,19 @@ fn parse_generation_3(
         // hand
         validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // `check_document_type_schema` 1 then requires a typed validation schema; last, so
+    // that a schema the parser refuses is refused with the parser's error. The type keeps the
+    // native validator it built, which its documents are checked with and its stored form
+    // holds the schema of
+    #[cfg(feature = "validation")]
+    if full_validation {
+        if let Some(validator) =
+            common::require_validation_schema(&v2.schema, schema_defs, platform_version)?
+        {
+            keep_native_validator(&v2.json_schema_validator, validator);
+        }
     }
 
     // Every stage above read the expanded schema; the document type holds the
