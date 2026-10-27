@@ -827,7 +827,11 @@ async fn should_check_a_gated_request_at_the_version_the_probe_learned() {
         };
         match result {
             Err(Error::Config(message)) => {
-                assert_eq!(message, format!("checked at protocol version {V14}"), "{case}")
+                assert_eq!(
+                    message,
+                    format!("checked at protocol version {V14}"),
+                    "{case}"
+                )
             }
             other => panic!("{case}: must be refused by the check, got {other:?}"),
         }
