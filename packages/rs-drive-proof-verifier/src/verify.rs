@@ -166,8 +166,11 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
-    let cache_key = [sign_digest.as_slice(), &signature, &pubkey_bytes].concat();
-    if verified_signatures::contains(&cache_key) {
+    let cache_key = verified_signatures::key(&sign_digest, &signature, &pubkey_bytes);
+    if cache_key
+        .as_ref()
+        .is_some_and(verified_signatures::contains)
+    {
         tracing::trace!(
             sign_digest = hex::encode(&sign_digest),
             "signature already verified"
@@ -190,7 +193,9 @@ pub(crate) fn verify_tenderdash_signature(
 
     match verify_signature_digest(&sign_digest, &signature, &pubkey)? {
         true => {
-            verified_signatures::insert(cache_key);
+            if let Some(key) = cache_key {
+                verified_signatures::insert(key);
+            }
             Ok(())
         }
         false => Err(Error::InvalidSignature {
@@ -217,15 +222,32 @@ mod verified_signatures {
     /// Responses come from the last few heights, so a handful of entries is enough.
     const CAPACITY: usize = 16;
 
-    static CACHE: Mutex<VecDeque<Vec<u8>>> = Mutex::new(VecDeque::new());
+    /// Sign digest, signature and quorum public key side by side, in a fixed array so a lookup
+    /// allocates nothing.
+    pub(super) type Key = [u8; 32 + 96 + 48];
 
-    pub(super) fn contains(key: &[u8]) -> bool {
-        CACHE
-            .lock()
-            .is_ok_and(|cache| cache.iter().any(|cached| cached == key))
+    static CACHE: Mutex<VecDeque<Key>> = Mutex::new(VecDeque::new());
+
+    /// The cache key for a check, or `None` for a digest that is not 32 bytes, which is never
+    /// cached.
+    pub(super) fn key(
+        sign_digest: &[u8],
+        signature: &[u8; 96],
+        public_key: &[u8; 48],
+    ) -> Option<Key> {
+        let sign_digest: &[u8; 32] = sign_digest.try_into().ok()?;
+        let mut key = [0; 32 + 96 + 48];
+        key[..32].copy_from_slice(sign_digest);
+        key[32..128].copy_from_slice(signature);
+        key[128..].copy_from_slice(public_key);
+        Some(key)
     }
 
-    pub(super) fn insert(key: Vec<u8>) {
+    pub(super) fn contains(key: &Key) -> bool {
+        CACHE.lock().is_ok_and(|cache| cache.contains(key))
+    }
+
+    pub(super) fn insert(key: Key) {
         if let Ok(mut cache) = CACHE.lock() {
             // Two callers can verify the same signature concurrently; keep one entry.
             if cache.contains(&key) {
