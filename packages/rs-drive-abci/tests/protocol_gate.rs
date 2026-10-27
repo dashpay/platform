@@ -23,7 +23,6 @@ use dapi_grpc::platform::v0::{
     GetDataContractsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, ResponseMetadata,
 };
 use dapi_grpc::Message;
-use dash_context_provider::ContextProvider;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
@@ -31,7 +30,7 @@ use drive::drive::Drive;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use drive_proof_verifier::types::data_contracts_by_range::DataContractsByRange;
 use drive_proof_verifier::types::data_contracts_latest_versions::DataContractsLatestVersions;
-use drive_proof_verifier::FromProof;
+use drive_proof_verifier::{ContextProvider, FromProof};
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
 use std::path::PathBuf;
 
@@ -39,7 +38,8 @@ use std::path::PathBuf;
 const CONTRACT_ID: [u8; 32] = [0x42; 32];
 
 fn directory() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/protocol-gate")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/protocol-gate")
 }
 
 /// A node's state at `protocol_version`, as initialized at genesis.
