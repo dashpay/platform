@@ -80,18 +80,18 @@
         "description": "The token amount, in base units, still open. The order is deleted when it is filled entirely",
         "position": 3
       },
-      "minFill": {
-        "type": "integer",
-        "minimum": 1,
-        "description": "The smallest amount, in base units, a fill may take, unless it takes everything still open. A fill may not leave less than this open either",
-        "position": 4
-      },
       "decimals": {
         "type": "integer",
         "minimum": 0,
         "maximum": 255,
-        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
-        "position": 5
+        "description": "The token's decimals when the order was placed, generated from tokenId: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "generatedFrom": {
+          "function": "sys.tokens.decimals",
+          "params": [
+            "tokenId"
+          ]
+        },
+        "position": 4
       }
     },
     "required": [
@@ -99,7 +99,6 @@
       "price",
       "amount",
       "remaining",
-      "minFill",
       "decimals",
       "$createdAt",
       "$updatedAt"
@@ -187,24 +186,24 @@
         "description": "The token amount, in base units, still open. The order is deleted when it is filled entirely",
         "position": 3
       },
-      "minFill": {
-        "type": "integer",
-        "minimum": 1,
-        "description": "The smallest amount, in base units, a fill may take, unless it takes everything still open. A fill may not leave less than this open either",
-        "position": 4
-      },
       "escrow": {
         "type": "integer",
         "minimum": 0,
         "description": "The credits still held in escrow for the order. They cover what the open amount costs at the order's price; what is left once it is filled goes back to the buyer",
-        "position": 5
+        "position": 4
       },
       "decimals": {
         "type": "integer",
         "minimum": 0,
         "maximum": 255,
-        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
-        "position": 6
+        "description": "The token's decimals when the order was placed, generated from tokenId: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "generatedFrom": {
+          "function": "sys.tokens.decimals",
+          "params": [
+            "tokenId"
+          ]
+        },
+        "position": 5
       }
     },
     "required": [
@@ -212,7 +211,6 @@
       "price",
       "amount",
       "remaining",
-      "minFill",
       "decimals",
       "escrow",
       "$createdAt",

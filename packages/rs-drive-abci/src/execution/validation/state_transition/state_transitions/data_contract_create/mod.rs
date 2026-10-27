@@ -395,7 +395,9 @@ mod tests {
         match &mut state_transition {
             StateTransition::DataContractCreate(create) => {
                 let mut data_contract = create.data_contract().clone();
-                let schemas = data_contract.document_schemas_mut();
+                let schemas = data_contract
+                    .document_schemas_mut()
+                    .expect("expected a transport format's schemas");
                 schemas.clear();
                 schemas.insert("note".to_string(), malicious_schema);
                 create.set_data_contract(data_contract);

@@ -1049,18 +1049,12 @@
         "description": "The order's price in credits per whole token",
         "position": 4
       },
-      "minFill": {
-        "type": "integer",
-        "minimum": 1,
-        "description": "The least a fill takes unless it takes everything left, in base units",
-        "position": 5
-      },
       "decimals": {
         "type": "integer",
         "minimum": 0,
         "maximum": 255,
         "description": "The token's decimals when the order was placed: its price is per whole token at this scale",
-        "position": 6
+        "position": 5
       }
     },
     "required": [
@@ -1069,7 +1063,6 @@
       "side",
       "amount",
       "price",
-      "minFill",
       "decimals",
       "$createdAt",
       "$createdAtBlockHeight"

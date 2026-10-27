@@ -11,12 +11,12 @@ price and each purchase mints new tokens and pays the contract owner.
 
 ## Making a token tradeable
 
-A token opts in through its `marketplaceRules`:
+A token opts in through its `marketplaceRules`, with its minimum fill:
 
 ```json
 "marketplaceRules": {
   "$formatVersion": "0",
-  "tradeMode": "Tradeable",
+  "tradeMode": { "Tradeable": { "minFill": 1000 } },
   "tradeModeChangeRules": {
     "$formatVersion": "0",
     "authorizedToMakeChange": { "$type": "contractOwner" },
@@ -27,6 +27,16 @@ A token opts in through its `marketplaceRules`:
   }
 }
 ```
+
+`minFill` is the smallest amount, in base units, a fill of one of the token's orders takes,
+unless it takes everything the order has left, and the least a fill leaves open: no order is
+ever left holding less than a trade. An order of less is refused when it is placed
+(`InvalidTokenOrderFillRangeError`, 10463, the minimum and the amount). It is the token's, not the
+order's: every fill reads it as the token has it when the fill executes, so raising or lowering it
+(a `MarketplaceTradeMode` configuration update, under `tradeModeChangeRules`) applies to the open
+orders too. An order already holding less than a raised minimum is still filled, whole. It is from
+1 to `i64::MAX` (`InvalidTokenOrderFillRangeError` on contract create or update, or on the
+configuration update).
 
 | `tradeMode` | Meaning |
 |---|---|
@@ -70,13 +80,14 @@ document's `$revision` is a variable-length integer, 7 bits to a byte: a fill th
 revision past one of those widths (from 127 to 128, then from 16,383 to 16,384, and so on) adds a
 byte, and no other fill adds storage.
 
-An order's price is in credits per whole token, so the token's decimals set what it is worth. Its
-signer signs the decimals the price is at (`decimals`), and the order is refused
-(`TokenOrderDecimalsMismatchError`, 40758) unless they are the token's when it executes: a change of
-the token's decimals between signing and execution, by whoever controls its conventions, cannot
-reprice it. Each order records those decimals (`decimals`). Every fill prices the order at that scale, so a later change to the
-token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
-open offer pays. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
+An order's price is in credits per whole token, so the token's decimals set what it is worth. The
+signer names no decimals: each order records the token's decimals as the token has them when the
+order is placed (`decimals`, declared `generatedFrom` `sys.tokens.decimals` of `tokenId`, so it
+is generated when the order is created and kept after). Every fill prices the order at that
+scale, so a later change to the token's decimals (a `Conventions` update) changes neither what an
+open listing costs nor what an open offer pays. Whoever controls the token's conventions can
+change its decimals while a signed order waits to execute, and the order is then placed at the new
+scale: a listing asks, and an offer escrows, its price per whole token of the new decimals. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
 then `price`), so a book query and a depth sum name the token's decimals and never mix prices of
 different scales. After a token changes its decimals, the orders placed before the change stay
 under the old decimals until they close; a client showing them alongside the new ones queries both
@@ -104,7 +115,7 @@ Three token transitions of a batch work with listings. Each is refused before pr
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceAsk` | `amount`, `price`, `decimals`, `minFill` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
+| `TokenPlaceAsk` | `amount`, `price` | Moves `amount` base units from the seller's balance into escrow and records an `ask` |
 | `TokenFillAsk` | `orderId`, `minAmount`, `maxAmount`, `maxTotalPrice` | Moves part or all of the listing from escrow to the buyer, and its cost from the buyer's credits to the seller's |
 | `TokenCancelOrder` | `orderId`, `side` | Returns what an order holds to its owner and deletes the order |
 
@@ -116,11 +127,10 @@ A listing's id follows from the token, the seller and the transition's identity 
 `price` is in credits per whole token, 10 to the power of the token's decimals base units. The
 listing records those decimals when it is placed and every fill prices it at them, so a later
 change to the token's decimals does not change what the rest of the listing costs. A fill
-takes as much as it may: everything open, up to `maxAmount`. A listing never keeps less than
-`minFill` open, so a fill that would leave less takes less, leaving exactly `minFill`; a fill
-that does not take everything open takes at least `minFill`. A `minFill` equal to `amount` makes
-the listing all-or-nothing. The fill is refused when the amount it would take is under
-`minAmount`, or when it costs more than `maxTotalPrice`.
+takes as much as it may: everything open, up to `maxAmount`. A listing never keeps less than the
+token's `minFill` open, so a fill that would leave less takes less, leaving exactly `minFill`; a
+fill that does not take everything open takes at least `minFill`. The fill is refused when the
+amount it would take is under `minAmount`, or when it costs more than `maxTotalPrice`.
 
 Each fill pays the change in the listing's running total rounded up, so splitting a purchase
 never changes what it costs in all:
@@ -137,11 +147,11 @@ The rounding favours the seller and is never more than one credit per fill.
 
 | Rule | Refused with |
 |---|---|
-| `amount` and `price` from 1 to `i64::MAX`, `minFill` from 1 to `amount`, and what the order is worth at the `decimals` it signs at most `i64::MAX` credits | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462), `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465) |
+| `amount` and `price` from 1 to `i64::MAX` | `InvalidTokenAmountError` (10458), `InvalidTokenOrderPriceError` (10462) |
 | A fill's `minAmount` from 1 to `maxAmount`, `maxAmount` up to `i64::MAX` | `InvalidTokenOrderFillRangeError` (10463) |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
 | The token is tradeable (to place or fill) | `TokenNotTradeableError` (40750) |
-| A listing's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758) |
+| `amount` at least the token's `minFill`, and what the order is worth at the token's decimals at most `i64::MAX` credits | `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465) |
 | The order is open, for this token | `TokenOrderNotFoundError` (40751) |
 | The fill range meets the listing | `TokenOrderFillAmountError` (40753) |
 | The fill costs at most `maxTotalPrice` | `TokenOrderPriceLimitError` (40754) |
@@ -153,8 +163,9 @@ The rounding favours the seller and is never more than one credit per fill.
 
 The rules on a transition's own fields (the first two rows) are checked before anything is read and
 refused unpaid. The state rules are paid: a refused transition bumps the signer's nonce and charges
-the work that ran. The rules that read nothing beyond the contract (a tradeable token and the
-decimals a listing signs) run with the batch's advanced structure, so check_tx refuses them too. A
+the work that ran. The rules that read nothing beyond the contract (a tradeable token, its minimum
+fill and what the listing is worth at its decimals) run with the batch's advanced structure, so
+check_tx refuses them too. A
 cancel has no rule beyond ownership, so an order can always be withdrawn, also when the token is paused, no longer tradeable or the owner's account is frozen. The buyer's credits are
 checked with the batch's fees, which count a fill's cost like a direct purchase.
 
@@ -183,12 +194,13 @@ an offer.
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceBid` | `amount`, `price`, `decimals`, `minFill` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
+| `TokenPlaceBid` | `amount`, `price` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
 | `TokenFillBid` | `orderId`, `minAmount`, `maxAmount`, `minTotalReceived` | Moves part or all of the amount still wanted from the seller to the buyer, and its price from the escrow to the seller |
 
 An offer holds what it is worth, its amount at its price rounded up, and its `escrow` property
 says what is left. Like a listing it records the token's decimals when it is placed, and its
-escrow and every sale into it are worked out at them. Each sale is paid the change in the offer's running total rounded down, so the
+escrow and every sale into it are worked out at them: what an offer commits depends on the
+token's decimals when it executes, which the transition does not name. Each sale is paid the change in the offer's running total rounded down, so the
 payments never add up past the escrow; when the offer closes, by a sale that takes everything
 still wanted or by a cancel, whatever is left goes back to the buyer:
 
@@ -203,9 +215,9 @@ as it does for a listing, and a sale is refused when it would be paid less than
 
 | Rule | Refused with |
 |---|---|
-| The terms of a listing (amount, price, minimum fill, value), and a sale's fill range | The listing's basic errors (10458, 10462, 10463, 10465), unpaid |
+| The amount and price of a listing, and a sale's fill range | The listing's basic errors (10458, 10462, 10463), unpaid |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
-| An offer's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758), in check_tx too |
+| The amount at least the token's `minFill`, and what the offer is worth at the token's decimals at most `i64::MAX` credits | `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465), in check_tx too |
 | The token is tradeable (to place or sell into) | `TokenNotTradeableError` (40750), in check_tx too |
 | A seller does not sell into their own offer | `TokenOrderSelfFillError` (40756) |
 | The seller holds the amount the sale takes | `IdentityDoesNotHaveEnoughTokenBalanceError` |
@@ -244,7 +256,7 @@ signer of each transition owns the record and pays its storage, as for a transfe
 
 | Document type | Written by | Properties |
 |---|---|---|
-| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `minFill`, `decimals` |
+| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `decimals` |
 | `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits`, `decimals` |
 | `orderCancelled` | `TokenCancelOrder` | `tokenId`, `orderId`, `side` |
 

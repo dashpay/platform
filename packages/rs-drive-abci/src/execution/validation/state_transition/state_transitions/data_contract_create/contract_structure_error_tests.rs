@@ -64,7 +64,9 @@ async fn register_contract_with_schema_and_balance(
 ) -> Registration {
     register_contract_with(
         |contract| {
-            let schemas = contract.document_schemas_mut();
+            let schemas = contract
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas");
             schemas.clear();
             schemas.insert("item".to_string(), schema);
         },
@@ -137,7 +139,10 @@ async fn register_contract_with(
 async fn should_refuse_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
     let outcome = register_contract_with(
         |contract| {
-            contract.document_schemas_mut().clear();
+            contract
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .clear();
             add_ref_dag_document_type(contract, 12);
         },
         PlatformVersion::latest().protocol_version,
@@ -177,7 +182,10 @@ async fn should_accept_an_ordinary_contract_in_check_tx() {
 /// The depth check resolves every `$ref`. The block checks the long form a property type
 /// shorthand stands for, so a reference to a keyword only that form writes resolves there;
 /// `check_tx` checks the same rewritten schema and admits what the block accepts, as it does
-/// the contract written in full.
+/// the contract written in full. Protocol version 14 registers the type. From protocol version
+/// 15 every type registered needs a typed validation schema, and the `$ref` here reaches
+/// `byteArray`'s value, the schema `true`, which the validation schema does not represent: the
+/// block refuses the type, paid, after `check_tx` admits it.
 #[tokio::test]
 async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
     let hash = |property: Value| {
@@ -204,25 +212,33 @@ async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
             "contains": contains.clone()
         })),
     ] {
-        let outcome = register_contract_with_schema(
-            schema.clone(),
-            PlatformVersion::latest().protocol_version,
-        )
-        .await
-        .outcome;
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let outcome = register_contract_with_schema(schema.clone(), protocol_version)
+                .await
+                .outcome;
 
-        assert_matches!(
-            outcome.check_tx.as_deref(),
-            Ok([]),
-            "check_tx of {schema:?}: {:?}",
-            outcome.check_tx
-        );
-        assert_matches!(
-            &outcome.block,
-            StateTransitionExecutionResult::SuccessfulExecution { .. },
-            "block of {schema:?}: {:?}",
-            outcome.block
-        );
+            assert_matches!(
+                outcome.check_tx.as_deref(),
+                Ok([]),
+                "check_tx of {schema:?} at protocol version {protocol_version}: {:?}",
+                outcome.check_tx
+            );
+            if protocol_version == 14 {
+                assert_matches!(
+                    &outcome.block,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "block of {schema:?} at protocol version 14: {:?}",
+                    outcome.block
+                );
+            } else {
+                // Refused, paid: the nonce bumped and the owner charged
+                assert_paid_contract_structure_error_in_block(
+                    &outcome,
+                    "a schema must be an object",
+                    1,
+                );
+            }
+        }
     }
 }
 
@@ -528,7 +544,7 @@ async fn should_keep_registering_a_dotted_summable_name_at_protocol_version_13()
 #[tokio::test]
 async fn should_refuse_a_contract_with_a_tradeable_token_unpaid_at_protocol_version_13() {
     let outcome = register_contract_with(
-        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable { min_fill: 1 }),
         13,
         dash_to_credits!(1.0),
     )

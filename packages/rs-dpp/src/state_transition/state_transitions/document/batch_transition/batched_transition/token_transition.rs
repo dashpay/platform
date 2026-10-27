@@ -995,8 +995,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Ask,
                 place_ask.amount(),
                 place_ask.price(),
-                place_ask.min_fill(),
-                place_ask.decimals(),
+                token_configuration.conventions().decimals(),
             ),
             // Before the order is read the maker, how much the fill takes and what it costs, and the
             // decimals the order was placed at are unknown: this gives the fill's limits and the
@@ -1023,8 +1022,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Bid,
                 place_bid.amount(),
                 place_bid.price(),
-                place_bid.min_fill(),
-                place_bid.decimals(),
+                token_configuration.conventions().decimals(),
             ),
             // As for a listing's fill: the sale's limits and the token's current decimals, not the
             // record the sale writes, which Drive builds from the resolved action.

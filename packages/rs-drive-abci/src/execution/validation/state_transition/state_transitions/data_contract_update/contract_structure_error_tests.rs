@@ -45,6 +45,7 @@ async fn update_contract_adding_schema(
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("item".to_string(), schema);
         },
         protocol_version,
@@ -120,6 +121,7 @@ async fn update_expiring_summed_amount(amount: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("tally".to_string(), expiring_summed_schema(amount));
         },
         platform_version,
@@ -184,6 +186,7 @@ async fn update_tagged_like(like: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("like".to_string(), like);
         },
         platform_version,
@@ -358,7 +361,7 @@ async fn should_refuse_an_update_dropping_unique_items_from_an_index_only_indexe
 #[tokio::test]
 async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_version_13() {
     let outcome = update_fixture_contract(
-        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable { min_fill: 1 }),
         13,
     )
     .await;

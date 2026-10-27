@@ -1,8 +1,10 @@
+use crate::balances::credits::TokenAmount;
 use crate::consensus::basic::data_contract::{
     NonTransferableTokenShieldedPoolError, NonTransferableTokenTradeableError,
     TokenShieldedPoolIncompatibleRulesError,
 };
 use crate::consensus::basic::state_transition::StateTransitionNotActiveError;
+use crate::consensus::basic::token::InvalidTokenOrderFillRangeError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
@@ -82,6 +84,12 @@ impl TokenConfiguration {
             .is_tradeable()
     }
 
+    /// The smallest fill of the token's orders (`marketplaceRules.tradeMode` `Tradeable`'s
+    /// `minFill`), `None` when the token is not tradeable.
+    pub fn min_fill(&self) -> Option<TokenAmount> {
+        self.as_cow_v0().marketplace_rules.trade_mode().min_fill()
+    }
+
     /// Checks the configuration's format version against the bounds the platform version
     /// admits (`dpp.contract_versions.token_versions.token_configuration_format`).
     ///
@@ -159,7 +167,8 @@ impl TokenConfiguration {
     /// version 15 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`): below it the mode is refused as
     /// not active, the refusal software that predates the marketplace gives by failing to decode
     /// it. A tradeable token must also be transferable, since filling a listing or an offer moves
-    /// the token from one identity to another. Checked on contract create and update.
+    /// the token from one identity to another, and its minimum fill is from 1 to `i64::MAX`
+    /// (`InvalidTokenOrderFillRangeError`). Checked on contract create and update.
     pub fn validate_marketplace_rules(
         &self,
         token_contract_position: TokenContractPosition,
@@ -199,6 +208,16 @@ impl TokenConfiguration {
             return SimpleConsensusValidationResult::new_with_error(
                 NonTransferableTokenTradeableError::new(token_contract_position).into(),
             );
+        }
+        // An order stores its amounts as signed 8-byte values, so no order is larger than
+        // `i64::MAX`, and a minimum fill of 0 would let a fill take nothing
+        let largest_order = i64::MAX as TokenAmount;
+        if let Some(min_fill) = trade_mode.min_fill() {
+            if min_fill == 0 || min_fill > largest_order {
+                return SimpleConsensusValidationResult::new_with_error(
+                    InvalidTokenOrderFillRangeError::new(min_fill, largest_order).into(),
+                );
+            }
         }
         SimpleConsensusValidationResult::new()
     }
@@ -1221,7 +1240,7 @@ mod marketplace_rules_tests {
         let mut configuration = TokenConfigurationV0::default_most_restrictive();
         configuration
             .marketplace_rules
-            .set_trade_mode(TokenTradeMode::Tradeable);
+            .set_trade_mode(TokenTradeMode::Tradeable { min_fill: 1 });
         TokenConfiguration::V0(configuration)
     }
 
@@ -1290,7 +1309,7 @@ mod marketplace_rules_tests {
         configuration.set_transferable(false);
 
         let proposed = configuration.validate_trade_mode(
-            &TokenTradeMode::Tradeable,
+            &TokenTradeMode::Tradeable { min_fill: 1 },
             0,
             PlatformVersion::latest(),
         );
@@ -1302,10 +1321,42 @@ mod marketplace_rules_tests {
         ));
 
         configuration.apply_token_configuration_item(
-            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable {
+                min_fill: 1,
+            }),
         );
         let applied = configuration.validate_marketplace_rules(0, PlatformVersion::latest());
         assert_eq!(applied.errors, proposed.errors);
+    }
+
+    /// A tradeable token's minimum fill is from 1 to the largest order, `i64::MAX`.
+    #[test]
+    fn should_refuse_a_minimum_fill_of_0_or_above_the_largest_order() {
+        let largest_order = i64::MAX as TokenAmount;
+        for (min_fill, valid) in [
+            (0, false),
+            (1, true),
+            (largest_order, true),
+            (largest_order + 1, false),
+        ] {
+            let result = tradeable().validate_trade_mode(
+                &TokenTradeMode::Tradeable { min_fill },
+                0,
+                PlatformVersion::latest(),
+            );
+            if valid {
+                assert!(result.is_valid(), "{min_fill}");
+            } else {
+                assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(BasicError::InvalidTokenOrderFillRangeError(error))]
+                            if error.min() == min_fill && error.max() == largest_order
+                    ),
+                    "{min_fill}: {result:?}"
+                );
+            }
+        }
     }
 
     /// Proposing the mode every token may have is never refused.

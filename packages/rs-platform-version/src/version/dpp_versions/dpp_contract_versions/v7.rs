@@ -17,7 +17,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
-///   and the native validator.
+///   and the native validator;
+/// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
+///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
+///   property names, on an integer property.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -36,6 +39,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
             // changed: documents are checked against the typed validation schema this builds
             validation_schema: Some(0),
+            apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

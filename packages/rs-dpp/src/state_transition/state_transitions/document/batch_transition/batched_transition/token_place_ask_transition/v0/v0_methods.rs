@@ -26,15 +26,6 @@ pub trait TokenPlaceAskTransitionV0Methods: TokenBaseTransitionAccessors {
     fn price(&self) -> Credits;
 
     fn set_price(&mut self, price: Credits);
-
-    /// The token's decimals the price is at
-    fn decimals(&self) -> u8;
-
-    fn set_decimals(&mut self, decimals: u8);
-
-    fn min_fill(&self) -> TokenAmount;
-
-    fn set_min_fill(&mut self, min_fill: TokenAmount);
 }
 
 impl TokenPlaceAskTransitionV0Methods for TokenPlaceAskTransitionV0 {
@@ -52,21 +43,5 @@ impl TokenPlaceAskTransitionV0Methods for TokenPlaceAskTransitionV0 {
 
     fn set_price(&mut self, price: Credits) {
         self.price = price;
-    }
-
-    fn decimals(&self) -> u8 {
-        self.decimals
-    }
-
-    fn set_decimals(&mut self, decimals: u8) {
-        self.decimals = decimals;
-    }
-
-    fn min_fill(&self) -> TokenAmount {
-        self.min_fill
-    }
-
-    fn set_min_fill(&mut self, min_fill: TokenAmount) {
-        self.min_fill = min_fill;
     }
 }

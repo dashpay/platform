@@ -216,16 +216,8 @@ pub enum TokenEvent {
     /// - `TokenOrderSide`: Whether the order is a listing or an offer.
     /// - `TokenAmount`: The amount listed or wanted, in base units.
     /// - `Credits`: The price, in credits per whole token.
-    /// - `TokenAmount`: The least a fill takes unless it takes everything left.
     /// - `u8`: The token's decimals when the order was placed, which price every fill of it.
-    OrderPlaced(
-        Identifier,
-        TokenOrderSide,
-        TokenAmount,
-        Credits,
-        TokenAmount,
-        u8,
-    ),
+    OrderPlaced(Identifier, TokenOrderSide, TokenAmount, Credits, u8),
 
     /// Event representing a fill of a token marketplace order (protocol version 15).
     ///
@@ -413,14 +405,13 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
             }
-            TokenEvent::OrderPlaced(order_id, side, amount, price, min_fill, decimals) => {
-                let mut m = serializer.serialize_map(Some(7))?;
+            TokenEvent::OrderPlaced(order_id, side, amount, price, decimals) => {
+                let mut m = serializer.serialize_map(Some(6))?;
                 m.serialize_entry("$type", "orderPlaced")?;
                 m.serialize_entry("orderId", order_id)?;
                 m.serialize_entry("side", side)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("price", &SafeU64(price))?;
-                m.serialize_entry("minFill", &SafeU64(min_fill))?;
                 m.serialize_entry("decimals", decimals)?;
                 m.end()
             }
@@ -497,7 +488,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut side: Option<TokenOrderSide> = None;
                 let mut maker: Option<Identifier> = None;
                 let mut price: Option<u64> = None;
-                let mut min_fill: Option<u64> = None;
                 let mut decimals: Option<u8> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -524,7 +514,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "side" => side = Some(map.next_value()?),
                         "maker" => maker = Some(map.next_value()?),
                         "price" => price = Some(map.next_value::<U64Safe>()?.0),
-                        "minFill" => min_fill = Some(map.next_value::<U64Safe>()?.0),
                         "decimals" => decimals = Some(map.next_value()?),
                         _ => {
                             let _: IgnoredAny = map.next_value()?;
@@ -617,7 +606,6 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         side.ok_or_else(|| A::Error::missing_field("side"))?,
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         price.ok_or_else(|| A::Error::missing_field("price"))?,
-                        min_fill.ok_or_else(|| A::Error::missing_field("minFill"))?,
                         decimals.ok_or_else(|| A::Error::missing_field("decimals"))?,
                     )),
                     "orderFilled" => Ok(TokenEvent::OrderFilled(
@@ -757,7 +745,6 @@ pub(crate) mod json_convertible_tests {
                 TokenOrderSide::Ask,
                 ABOVE_SAFE_INTEGER,
                 ABOVE_SAFE_INTEGER + 2,
-                7,
                 8,
             ),
             TokenEvent::OrderPlaced(
@@ -765,7 +752,6 @@ pub(crate) mod json_convertible_tests {
                 TokenOrderSide::Bid,
                 1_000,
                 5,
-                1,
                 0,
             ),
             TokenEvent::OrderFilled(
@@ -952,17 +938,10 @@ impl fmt::Display for TokenEvent {
                 "Direct purchase of {} into the token pool for {} credits",
                 amount, credits
             ),
-            TokenEvent::OrderPlaced(
-                order_id,
-                side,
-                amount,
-                price,
-                min_fill,
-                decimals,
-            ) => write!(
+            TokenEvent::OrderPlaced(order_id, side, amount, price, decimals) => write!(
                 f,
-                "Order {} placed: {} of {} at {} credits per whole token of {} decimals, fills of at least {}",
-                order_id, side, amount, price, decimals, min_fill
+                "Order {} placed: {} of {} at {} credits per whole token of {} decimals",
+                order_id, side, amount, price, decimals
             ),
             TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => write!(
                 f,
@@ -1267,17 +1246,14 @@ impl TokenEvent {
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
             ]),
-            TokenEvent::OrderPlaced(order_id, side, amount, price, min_fill, decimals) => {
-                BTreeMap::from([
-                    ("tokenId".to_string(), token_id.into()),
-                    ("orderId".to_string(), order_id.into()),
-                    ("side".to_string(), (side as u8).into()),
-                    ("amount".to_string(), amount.into()),
-                    ("price".to_string(), price.into()),
-                    ("minFill".to_string(), min_fill.into()),
-                    ("decimals".to_string(), decimals.into()),
-                ])
-            }
+            TokenEvent::OrderPlaced(order_id, side, amount, price, decimals) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("orderId".to_string(), order_id.into()),
+                ("side".to_string(), (side as u8).into()),
+                ("amount".to_string(), amount.into()),
+                ("price".to_string(), price.into()),
+                ("decimals".to_string(), decimals.into()),
+            ]),
             TokenEvent::OrderFilled(order_id, side, maker, amount, credits, decimals) => {
                 BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),

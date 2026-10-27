@@ -290,7 +290,8 @@ impl From<ContestedIndexFieldMatchRepr> for ContestedIndexFieldMatch {
     serde(from = "String", into = "String")
 )]
 pub struct LazyRegex {
-    regex: OnceLock<Regex>,
+    /// The compiled pattern, or `None` for a pattern that does not compile.
+    regex: OnceLock<Option<Regex>>,
     regex_str: String,
 }
 
@@ -316,12 +317,27 @@ impl LazyRegex {
         }
     }
 
-    pub fn is_match(&self, string: &str) -> bool {
-        let regexp = self
-            .regex
-            .get_or_init(|| Regex::new(&self.regex_str).expect("valid regexp"));
+    /// The regex of `regex_str`, compiled now and kept, or the error compiling it returns:
+    /// for a pattern that did not pass through the schema parser's check, such as one read
+    /// back from a stored document type.
+    pub fn try_compiled(regex_str: String) -> Result<Self, regex::Error> {
+        let regex = Regex::new(&regex_str)?;
+        Ok(LazyRegex {
+            regex: OnceLock::from(Some(regex)),
+            regex_str,
+        })
+    }
 
-        regexp.is_match(string)
+    /// Whether `string` matches the pattern, compiled on first use. A pattern that does not
+    /// compile matches nothing: consensus never holds one, since registration refuses it and a
+    /// stored document type that holds one does not read back ([`Self::try_compiled`]), so only
+    /// a contract that skipped both, parsed without validation by a client, reaches it, and the
+    /// network refuses what that contract's contested documents would need.
+    pub fn is_match(&self, string: &str) -> bool {
+        self.regex
+            .get_or_init(|| Regex::new(&self.regex_str).ok())
+            .as_ref()
+            .is_some_and(|regex| regex.is_match(string))
     }
 
     pub fn as_str(&self) -> &str {
@@ -4290,6 +4306,17 @@ mod tests {
         assert!(lr.is_match("hello"));
         assert!(!lr.is_match("Hello"));
         assert!(!lr.is_match("123"));
+    }
+
+    /// A pattern that does not compile matches nothing, rather than panicking, as it would in
+    /// a client that parsed a contract holding one without validation.
+    #[test]
+    fn should_match_nothing_with_a_pattern_that_does_not_compile() {
+        let lr = LazyRegex::new("(".to_string());
+        assert!(!lr.is_match("("));
+        assert!(!lr.is_match(""));
+        let field_match = ContestedIndexFieldMatch::Regex(LazyRegex::new("(".to_string()));
+        assert!(!field_match.matches(&Value::Text("(".to_string())));
     }
 
     #[test]

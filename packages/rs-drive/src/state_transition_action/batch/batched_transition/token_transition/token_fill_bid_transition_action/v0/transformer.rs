@@ -135,14 +135,17 @@ impl TokenFillBidTransitionActionV0 {
                 fee_result,
             );
         }
-        let Some(fill_amount) = order.fill_amount(*min_amount, *max_amount) else {
+        // The token's minimum fill as the token has it now. A token that is no longer tradeable
+        // has none, and the batch's advanced structure refuses the sale
+        let min_fill = base_action.token_configuration()?.min_fill().unwrap_or(1);
+        let Some(fill_amount) = order.fill_amount(*min_amount, *max_amount, min_fill) else {
             return bump(
                 vec![TokenOrderFillAmountError::new(
                     *order_id,
                     *min_amount,
                     *max_amount,
                     order.remaining,
-                    order.min_fill,
+                    min_fill,
                 )
                 .into()],
                 fee_result,
