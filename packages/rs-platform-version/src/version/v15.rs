@@ -209,28 +209,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 ///
 /// 10. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
-///    of a tradeable token at a price in credits per whole token and moves it into escrow),
-///    `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
-///    listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
-///    to its owner). The batch's `is_allowed` gate refuses each, unpaid, before this version,
-///    as software that cannot decode them refuses them. The checks that read nothing beyond the
-///    contract (a tradeable token, an amount of at least its minimum fill, what the listing is
-///    worth at its decimals: at most `i64::MAX` credits, `InvalidTokenOrderValueError` 10465) run
-///    with the batch `advanced_structure` 2, so check_tx refuses them too; the others with state
-///    validation. A listing's amount and price (1 to `i64::MAX`) are checked with the
-///    transition's structure, unpaid. A listing names no decimals and no minimum fill: it records
-///    the token's decimals as the token has them when it is placed (the token market contract's
-///    `generatedFrom` `sys.tokens.decimals`, note 8), and its fills are priced at them; the
-///    token's minimum fill (`TokenTradeMode::Tradeable`'s `min_fill`, from 1 to `i64::MAX`) is
-///    read by every fill as the token has it then, and a listing of less is refused
-///    (`InvalidTokenOrderFillRangeError` 10463). A listing of a token its contract does not
-///    define bumps the nonce with the token base
-///    rules' error. An order of a token with 39 decimals or more (decimals are a `u8`, and a
-///    `Conventions` update is not held to the 16 a contract is) has a whole token of more base
-///    units than any amount times any price: it is worth one credit rounded up, so a listing's
-///    first fill pays 1 and the rest 0, and nothing rounded down. Their structure and state
-///    validations and their high-level operation converters are 0 in every table, which only this
-///    version reaches.
+///     of a tradeable token at a price in credits per whole token and moves it into escrow),
+///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
+///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
+///     to its owner). The batch's `is_allowed` gate refuses each, unpaid, before this version,
+///     as software that cannot decode them refuses them. The checks that read nothing beyond the
+///     contract (a tradeable token, an amount of at least its minimum fill, what the listing is
+///     worth at its decimals: at most `i64::MAX` credits, `InvalidTokenOrderValueError` 10465) run
+///     with the batch `advanced_structure` 2, so check_tx refuses them too; the others with state
+///     validation. A listing's amount and price (1 to `i64::MAX`) are checked with the
+///     transition's structure, unpaid. A listing names no decimals and no minimum fill: it records
+///     the token's decimals as the token has them when it is placed (the token market contract's
+///     `generatedFrom` `sys.tokens.decimals`, note 8), and its fills are priced at them; the
+///     token's minimum fill (`TokenTradeMode::Tradeable`'s `min_fill`, from 1 to `i64::MAX`) is
+///     read by every fill as the token has it then, and a listing of less is refused
+///     (`InvalidTokenOrderFillRangeError` 10463). A listing of a token its contract does not
+///     define bumps the nonce with the token base
+///     rules' error. An order of a token with 39 decimals or more (decimals are a `u8`, and a
+///     `Conventions` update is not held to the 16 a contract is) has a whole token of more base
+///     units than any amount times any price: it is worth one credit rounded up, so a listing's
+///     first fill pays 1 and the rest 0, and nothing rounded down. Their structure and state
+///     validations and their high-level operation converters are 0 in every table, which only this
+///     version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 9)
