@@ -61,7 +61,7 @@ pub(super) fn check_token_signing_key(
     check_signing_key(
         key,
         signer,
-        Purpose::AUTHENTICATION,
+        &[Purpose::AUTHENTICATION],
         &TOKEN_SIGNING_LEVELS,
         &TOKEN_SIGNING_KEY_TYPES,
         SigningScope::Contract {

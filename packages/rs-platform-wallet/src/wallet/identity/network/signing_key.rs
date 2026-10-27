@@ -5,7 +5,6 @@ use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::state_transition::errors::WrongPublicKeyPurposeError;
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -96,16 +95,10 @@ pub(super) fn credit_signing_key<'a>(
         .chain(allow_owner.then_some(Purpose::OWNER))
         .collect();
     if let Some(key) = explicit {
-        if !purposes.contains(&key.purpose()) {
-            return Err(ProtocolError::WrongPublicKeyPurposeError(
-                WrongPublicKeyPurposeError::new(key.purpose(), purposes),
-            )
-            .into());
-        }
         check_signing_key(
             key,
             signer,
-            key.purpose(),
+            &purposes,
             &SecurityLevel::full_range(),
             &KeyType::all_key_types(),
             SigningScope::NonBatch,
@@ -434,7 +427,11 @@ pub(super) mod tests {
         let mut owner = identity.public_keys().get(&2).unwrap().clone();
         owner.set_id(3);
         owner.set_purpose(Purpose::OWNER);
+        let mut authentication = owner.clone();
         identity.add_public_key(owner);
+        authentication.set_id(4);
+        authentication.set_purpose(Purpose::AUTHENTICATION);
+        identity.add_public_key(authentication);
         identity
             .public_keys_mut()
             .get_mut(&1)
@@ -465,6 +462,14 @@ pub(super) mod tests {
                     if error.allowed_key_purposes() == &vec![Purpose::TRANSFER]
             ),
             "a credit transfer takes only a TRANSFER key"
+        );
+        assert!(
+            matches!(
+                explicit(4, true),
+                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
+                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER, Purpose::OWNER]
+            ),
+            "a withdrawal names both purposes it takes"
         );
         assert_eq!(explicit(3, true).unwrap(), 3, "a withdrawal may take OWNER");
         assert_eq!(explicit(2, false).unwrap(), 2);

@@ -129,7 +129,7 @@ pub(super) fn check_document_signing_key(
     check_signing_key(
         key,
         signer,
-        Purpose::AUTHENTICATION,
+        &[Purpose::AUTHENTICATION],
         &SecurityLevel::accepted_for_requirement(requirement),
         &[KeyType::ECDSA_SECP256K1],
         scope,

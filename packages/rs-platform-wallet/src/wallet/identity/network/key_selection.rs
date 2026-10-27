@@ -113,24 +113,24 @@ pub fn usable_signing_key<'a>(
 /// Check a key the caller chose to sign in `scope` against the rules [`usable_signing_key`]
 /// applies, so an explicit choice is refused before anything is built or signed.
 ///
-/// Each refusal is the typed error Platform itself returns for it: a wrong purpose, a security
-/// level outside `security_levels`, a key type outside `key_types`, a disabled key, an expired
+/// Each refusal is the typed error Platform itself returns for it: a purpose outside
+/// `purposes`, a security level outside `security_levels`, a key type outside `key_types`, a disabled key, an expired
 /// key, or contract bounds that do not cover `scope`. A key bound to a contract group is
 /// accepted: only Platform can read the group's memberships. A key `signer` cannot sign with
 /// is refused with the signer-unavailable error.
 pub fn check_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
-    purpose: Purpose,
+    purposes: &[Purpose],
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
     scope: SigningScope<'_>,
 ) -> Result<(), dash_sdk::Error> {
-    if key.purpose() != purpose {
+    if !purposes.contains(&key.purpose()) {
         return Err(
             ProtocolError::WrongPublicKeyPurposeError(WrongPublicKeyPurposeError::new(
                 key.purpose(),
-                vec![purpose],
+                purposes.to_vec(),
             ))
             .into(),
         );
@@ -559,7 +559,7 @@ pub(super) mod tests {
         check_signing_key(
             key,
             &KeyFilter(|_| true),
-            Purpose::AUTHENTICATION,
+            &[Purpose::AUTHENTICATION],
             &LEVELS,
             &TYPES,
             scope,
@@ -658,7 +658,7 @@ pub(super) mod tests {
         let err = check_signing_key(
             &key(1, SecurityLevel::HIGH),
             &available(&[]),
-            Purpose::AUTHENTICATION,
+            &[Purpose::AUTHENTICATION],
             &LEVELS,
             &TYPES,
             document_scope(),
