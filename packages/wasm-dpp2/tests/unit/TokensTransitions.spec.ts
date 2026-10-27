@@ -788,8 +788,6 @@ describe('TokenTransitions', () => {
       base: baseTransition,
       amount: BigInt(1000),
       price: BigInt(100),
-      decimals: 8,
-      minFill: BigInt(1),
     });
 
     it('should set the integer terms', () => {
@@ -797,37 +795,12 @@ describe('TokenTransitions', () => {
 
       transition.amount = BigInt(2000);
       transition.price = BigInt(200);
-      transition.minFill = BigInt(10);
 
       expect(transition.amount).to.equal(BigInt(2000));
       expect(transition.price).to.equal(BigInt(200));
-      expect(transition.minFill).to.equal(BigInt(10));
-      expect(transition.decimals).to.equal(8);
-
-      transition.decimals = 2;
-
-      expect(transition.decimals).to.equal(2);
     });
 
-    it('should refuse decimals outside a byte and keep the previous ones', () => {
-      const transition = listing();
-
-      [256, -1, 1.5].forEach((value) => {
-        expect(() => { transition.decimals = value; }).to.throw();
-        expect(transition.decimals).to.equal(8);
-      });
-    });
-
-    it('should refuse a listing without decimals', () => {
-      expect(() => new wasm.TokenPlaceAskTransition({
-        base: baseTransition,
-        amount: BigInt(1000),
-        price: BigInt(100),
-        minFill: BigInt(1),
-      })).to.throw();
-    });
-
-    ['amount', 'price', 'minFill'].forEach((term) => {
+    ['amount', 'price'].forEach((term) => {
       it(`should refuse an out-of-range ${term} and keep the previous one`, () => {
         const transition = listing();
         const previous = transition[term];

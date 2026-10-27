@@ -897,8 +897,7 @@ public struct DataContractParser {
 
         // Parse marketplace rules
         if let marketplaceRules = tokenDict["marketplaceRules"] as? [String: Any] {
-            if let tradeModeStr = marketplaceRules["tradeMode"] as? String,
-               let tradeMode = TokenTradeMode(rawValue: tradeModeStr) {
+            if let tradeMode = parseTokenTradeMode(marketplaceRules["tradeMode"]) {
                 token.tradeMode = tradeMode
             }
             token.tradeModeChangeRules = parseChangeControlRule(marketplaceRules["tradeModeChangeRules"])
@@ -912,6 +911,20 @@ public struct DataContractParser {
         if let canModify = tokenDict["mainControlGroupCanBeModified"] as? String {
             token.mainControlGroupCanBeModified = canModify
         }
+    }
+
+    /// rs-dpp writes `TokenTradeMode` externally tagged: `NotTradeable` as a
+    /// bare string, and `Tradeable` (protocol version 15) as an object holding
+    /// its fields, `{"Tradeable": {"minFill": 1000}}`. The variant name, the
+    /// string or the object's single key, is the mode; `minFill` is not kept.
+    private static func parseTokenTradeMode(_ value: Any?) -> TokenTradeMode? {
+        if let name = value as? String {
+            return TokenTradeMode(rawValue: name)
+        }
+        if let tagged = value as? [String: Any], tagged.count == 1, let name = tagged.keys.first {
+            return TokenTradeMode(rawValue: name)
+        }
+        return nil
     }
 
     private static func parseChangeControlRule(_ ruleData: Any?) -> ChangeControlRules? {

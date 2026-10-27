@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_ask_transition::v0::TokenPlaceAskTransitionV0;
@@ -21,11 +23,13 @@ use crate::state_transition_action::batch::BatchedTransitionAction;
 
 impl TokenPlaceAskTransitionActionV0 {
     /// Converts a borrowed `TokenPlaceAskTransitionV0` into an action. The listing's order id
-    /// follows from the token, the seller and the nonce, and it records the token's decimals,
-    /// which price its fills; a transition naming a token its contract does not define bumps the
-    /// nonce with `ContractHasNoTokensError` or `InvalidTokenPositionError`. Everything else the
-    /// listing needs from state (the token's rules, the seller's balance) is checked by the
-    /// state validation.
+    /// follows from the token, the seller and the nonce, and it records the token's decimals as
+    /// the token has them now, which price its fills (the token market contract declares them
+    /// `generatedFrom` `sys.tokens.decimals` of the order's token); a transition naming a token
+    /// its contract does not define bumps the nonce with `ContractHasNoTokensError` or
+    /// `InvalidTokenPositionError`. The token's rules (tradeable, the minimum fill, what the
+    /// listing is worth at the decimals) are checked with the batch's advanced structure, and
+    /// the seller's balance by the state validation.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_ask_transition_with_contract_lookup(
         drive: &Drive,
@@ -48,8 +52,6 @@ impl TokenPlaceAskTransitionActionV0 {
             base,
             amount,
             price,
-            decimals,
-            min_fill,
         } = value;
 
         let mut drive_operations = vec![];
@@ -93,9 +95,8 @@ impl TokenPlaceAskTransitionActionV0 {
         if let Err(error) = base_action.token_configuration_or_position_error() {
             return bump(vec![error], fee_result);
         }
-        // The listing is priced at the decimals it was signed at: the structure validation refuses
-        // it unless they are the token's.
-        let decimals = *decimals;
+        // The listing is priced at the token's decimals as the token has them now, for its life
+        let decimals = base_action.token_configuration()?.conventions().decimals();
 
         let (order_id, order_id_fee) = derive_order_id(
             drive,
@@ -115,7 +116,6 @@ impl TokenPlaceAskTransitionActionV0 {
             price: *price,
             amount: *amount,
             remaining: *amount,
-            min_fill: *min_fill,
             escrow: 0,
             decimals,
         }
@@ -128,7 +128,6 @@ impl TokenPlaceAskTransitionActionV0 {
                     order_id,
                     amount: *amount,
                     price: *price,
-                    min_fill: *min_fill,
                     decimals,
                     order_document,
                     token_market_contract: drive

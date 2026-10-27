@@ -11,12 +11,7 @@ pub(super) trait TokenPlaceAskTransitionStructureValidationV0 {
 impl TokenPlaceAskTransitionStructureValidationV0 for TokenPlaceAskTransition {
     /// The listing's terms, checked as an offer's are: see `validate_token_order_terms`.
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        Ok(validate_token_order_terms(
-            self.amount(),
-            self.price(),
-            self.decimals(),
-            self.min_fill(),
-        ))
+        Ok(validate_token_order_terms(self.amount(), self.price()))
     }
 }
 

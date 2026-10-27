@@ -52,12 +52,6 @@ impl TokenPlaceAskTransitionActionAccessorsV0 for TokenPlaceAskTransitionAction 
         }
     }
 
-    fn min_fill(&self) -> TokenAmount {
-        match self {
-            TokenPlaceAskTransitionAction::V0(v0) => v0.min_fill,
-        }
-    }
-
     fn decimals(&self) -> u8 {
         match self {
             TokenPlaceAskTransitionAction::V0(v0) => v0.decimals,

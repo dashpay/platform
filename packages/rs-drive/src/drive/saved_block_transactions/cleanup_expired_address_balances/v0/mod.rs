@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
@@ -44,9 +45,7 @@ impl Drive {
             return Ok(0);
         }
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let mut batch = GroveDbOpBatch::new();
         let mut total_cleaned = 0usize;

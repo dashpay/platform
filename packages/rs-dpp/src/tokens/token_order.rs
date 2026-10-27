@@ -14,7 +14,6 @@ pub mod property_names {
     pub const PRICE: &str = "price";
     pub const AMOUNT: &str = "amount";
     pub const REMAINING: &str = "remaining";
-    pub const MIN_FILL: &str = "minFill";
     pub const ESCROW: &str = "escrow";
     pub const DECIMALS: &str = "decimals";
 }
@@ -46,13 +45,12 @@ pub struct TokenOrder {
     pub amount: TokenAmount,
     /// The amount still open.
     pub remaining: TokenAmount,
-    /// The smallest amount a fill takes unless it takes everything open; a fill never leaves
-    /// less than this open either.
-    pub min_fill: TokenAmount,
     /// For an offer, the credits still held in escrow; 0 for a listing, whose escrow holds
     /// tokens (`remaining`).
     pub escrow: Credits,
-    /// The token's decimals when the order was placed, the scale of its price.
+    /// The token's decimals when the order was placed, the scale of its price: what the token
+    /// market contract's `generatedFrom` (`sys.tokens.decimals` of `tokenId`) generates, and
+    /// keeps for the life of the order.
     pub decimals: u8,
 }
 
@@ -84,24 +82,27 @@ impl TokenOrder {
     }
 
     /// The amount a fill asking for between `min_amount` and `max_amount` takes, or `None` when
-    /// no amount in that range keeps the order's rules.
+    /// no amount in that range keeps the token's rules. `min_fill` is the token's minimum fill
+    /// (`TokenTradeMode::Tradeable`) when the fill executes.
     ///
     /// The fill takes as much as it may: everything open, up to `max_amount`. When that would
     /// leave less than `min_fill` open, it takes less, leaving exactly `min_fill`, if that still
     /// takes at least `min_fill` and `min_amount`. A fill that does not take everything open takes
-    /// at least `min_fill`.
+    /// at least `min_fill`; one that takes everything open may take less, so an order left under
+    /// a minimum the token raised since is still filled whole.
     pub fn fill_amount(
         &self,
         min_amount: TokenAmount,
         max_amount: TokenAmount,
+        min_fill: TokenAmount,
     ) -> Option<TokenAmount> {
         let mut take = max_amount.min(self.remaining);
         if take < self.remaining {
             let left = self.remaining - take;
-            if left < self.min_fill {
-                take = self.remaining.checked_sub(self.min_fill)?;
+            if left < min_fill {
+                take = self.remaining.checked_sub(min_fill)?;
             }
-            if take < self.min_fill {
+            if take < min_fill {
                 return None;
             }
         }
@@ -195,7 +196,6 @@ impl TokenOrder {
             price: integer(property_names::PRICE)?,
             amount: integer(property_names::AMOUNT)?,
             remaining: integer(property_names::REMAINING)?,
-            min_fill: integer(property_names::MIN_FILL)?,
             escrow,
             decimals,
         })
@@ -220,7 +220,6 @@ impl TokenOrder {
                 property_names::REMAINING.to_string(),
                 signed(self.remaining)?,
             ),
-            (property_names::MIN_FILL.to_string(), signed(self.min_fill)?),
             (
                 property_names::DECIMALS.to_string(),
                 Value::I64(self.decimals as i64),
@@ -277,12 +276,7 @@ impl TokenOrder {
 mod tests {
     use super::*;
 
-    fn order(
-        side: TokenOrderSide,
-        amount: TokenAmount,
-        remaining: TokenAmount,
-        min_fill: TokenAmount,
-    ) -> TokenOrder {
+    fn order(side: TokenOrderSide, amount: TokenAmount, remaining: TokenAmount) -> TokenOrder {
         TokenOrder {
             id: Identifier::from([1; 32]),
             side,
@@ -291,7 +285,6 @@ mod tests {
             price: 333,
             amount,
             remaining,
-            min_fill,
             escrow: 0,
             decimals: 2,
         }
@@ -299,37 +292,37 @@ mod tests {
 
     #[test]
     fn should_take_everything_open_up_to_the_fill_maximum() {
-        let listing = order(TokenOrderSide::Ask, 1000, 1000, 1);
-        assert_eq!(listing.fill_amount(1, 400), Some(400));
-        assert_eq!(listing.fill_amount(1, 5000), Some(1000));
-        assert_eq!(listing.fill_amount(1001, 5000), None);
+        let listing = order(TokenOrderSide::Ask, 1000, 1000);
+        assert_eq!(listing.fill_amount(1, 400, 1), Some(400));
+        assert_eq!(listing.fill_amount(1, 5000, 1), Some(1000));
+        assert_eq!(listing.fill_amount(1001, 5000, 1), None);
     }
 
     #[test]
     fn should_leave_at_least_the_minimum_fill_open() {
-        let listing = order(TokenOrderSide::Ask, 1000, 1000, 100);
+        let listing = order(TokenOrderSide::Ask, 1000, 1000);
         // 950 would leave 50: the fill takes 900 and leaves 100.
-        assert_eq!(listing.fill_amount(1, 950), Some(900));
+        assert_eq!(listing.fill_amount(1, 950, 100), Some(900));
         // Unless the fill asked for more than that.
-        assert_eq!(listing.fill_amount(901, 950), None);
+        assert_eq!(listing.fill_amount(901, 950, 100), None);
         // A fill under the minimum fill that does not take everything is refused.
-        assert_eq!(listing.fill_amount(1, 50), None);
-        // Everything open is always takeable.
-        let tail = order(TokenOrderSide::Ask, 1000, 60, 100);
-        assert_eq!(tail.fill_amount(1, 1000), Some(60));
+        assert_eq!(listing.fill_amount(1, 50, 100), None);
+        // Everything open is always takeable, even under a minimum the token raised since.
+        let tail = order(TokenOrderSide::Ask, 1000, 60);
+        assert_eq!(tail.fill_amount(1, 1000, 100), Some(60));
     }
 
     #[test]
-    fn should_sell_an_all_or_none_listing_only_whole() {
-        let listing = order(TokenOrderSide::Ask, 1000, 1000, 1000);
-        assert_eq!(listing.fill_amount(1, 999), None);
-        assert_eq!(listing.fill_amount(1, 1000), Some(1000));
+    fn should_sell_a_listing_under_the_minimum_fill_only_whole() {
+        let listing = order(TokenOrderSide::Ask, 1000, 1000);
+        assert_eq!(listing.fill_amount(1, 999, 1000), None);
+        assert_eq!(listing.fill_amount(1, 1000, 1000), Some(1000));
     }
 
     /// 2 decimals at 333 credits per token is 3.33 credits per base unit.
     #[test]
     fn should_charge_the_running_total_so_splitting_never_changes_the_cost() {
-        let mut listing = order(TokenOrderSide::Ask, 3, 3, 1);
+        let mut listing = order(TokenOrderSide::Ask, 3, 3);
         let mut paid = vec![];
         for _ in 0..3 {
             let credits = listing.fill_credits(1).expect("expected the cost");
@@ -337,7 +330,7 @@ mod tests {
             listing.remaining -= 1;
         }
         assert_eq!(paid, vec![4, 3, 3]);
-        let whole = order(TokenOrderSide::Ask, 3, 3, 1);
+        let whole = order(TokenOrderSide::Ask, 3, 3);
         assert_eq!(whole.fill_credits(3).expect("expected the cost"), 10);
     }
 
@@ -345,7 +338,7 @@ mod tests {
     fn should_round_an_offers_payouts_down_and_keep_them_within_its_escrow() {
         let escrow = TokenOrder::order_value(1001, 333, 2).expect("expected a value");
         assert_eq!(escrow, 3334);
-        let mut offer = order(TokenOrderSide::Bid, 1001, 1001, 1);
+        let mut offer = order(TokenOrderSide::Bid, 1001, 1001);
         let mut paid = 0;
         while offer.remaining > 0 {
             let take = offer.remaining.min(7);
@@ -360,7 +353,7 @@ mod tests {
     /// same price and amount cost 100 times more at 0 decimals than at 2.
     #[test]
     fn should_price_fills_at_the_orders_own_decimals() {
-        let mut listing = order(TokenOrderSide::Ask, 100, 100, 1);
+        let mut listing = order(TokenOrderSide::Ask, 100, 100);
         listing.price = 100;
         assert_eq!(listing.fill_credits(10).expect("expected the cost"), 10);
         listing.decimals = 0;
@@ -407,14 +400,14 @@ mod tests {
             assert_eq!(TokenOrder::order_value(1, 1, decimals), Some(1));
             assert_eq!(TokenOrder::order_value(max, max, decimals), Some(1));
 
-            let mut listing = order(TokenOrderSide::Ask, 1_000, 1_000, 1);
+            let mut listing = order(TokenOrderSide::Ask, 1_000, 1_000);
             listing.decimals = decimals;
             listing.price = max;
             assert_eq!(listing.fill_credits(400).ok(), Some(1));
             listing.remaining = 600;
             assert_eq!(listing.fill_credits(600).ok(), Some(0));
 
-            let mut offer = order(TokenOrderSide::Bid, 1_000, 1_000, 1);
+            let mut offer = order(TokenOrderSide::Bid, 1_000, 1_000);
             offer.decimals = decimals;
             offer.price = max;
             assert_eq!(offer.fill_credits(1_000).ok(), Some(0));
@@ -434,7 +427,7 @@ mod tests {
 
     #[test]
     fn should_round_trip_through_its_document() {
-        let mut offer = order(TokenOrderSide::Bid, 1000, 400, 10);
+        let mut offer = order(TokenOrderSide::Bid, 1000, 400);
         offer.escrow = 1998;
         let block_info = BlockInfo::default();
         let document = offer

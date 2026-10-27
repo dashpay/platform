@@ -42,6 +42,7 @@ mod tests {
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use strategy_tests::{StartIdentities, StartAddresses, Strategy};
     use crate::addresses_with_balance::AddressesWithBalance;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
@@ -513,9 +514,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -841,9 +840,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1170,9 +1167,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1550,9 +1545,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1961,9 +1954,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2390,9 +2381,7 @@ mod tests {
 
         // Now let's run a query for the vote totals
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), bincode_config)
             .expect("expected to encode the word dash");
