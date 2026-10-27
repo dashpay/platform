@@ -84,9 +84,11 @@ pub(super) fn master_signing_key<'a>(
     )
 }
 
-/// The key that signs a credit transfer, or a withdrawal when `allow_owner`. An explicit key
-/// is never substituted; it is checked by the rules automatic selection applies, and refused
-/// with Platform's typed error. Automatic withdrawals exhaust TRANSFER keys before OWNER.
+/// The key that signs a credit transfer or withdrawal: a TRANSFER key, or an OWNER key when
+/// `allow_owner`, which only a withdrawal to the identity's payout address sets. An explicit
+/// key is never substituted; it is checked by the rules automatic selection applies, and
+/// refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER keys before
+/// OWNER.
 pub(super) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
@@ -520,6 +522,58 @@ pub(super) mod tests {
             );
             assert_unavailable(withdraw.await.unwrap_err());
         }
+    }
+
+    #[tokio::test]
+    async fn should_not_sign_a_withdrawal_to_an_address_with_an_owner_key() {
+        use dashcore::{Address as DashAddress, Network};
+
+        let wallet = wallet_with_signing_keys().await;
+        let identity = identity(
+            Purpose::OWNER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let to_address = Some(DashAddress::dummy(Network::Testnet, 1));
+        let automatic = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                to_address.clone(),
+                1,
+                None,
+                available(&[1, 2]),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                automatic,
+                Err(dash_sdk::Error::Protocol(
+                    ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(_)
+                ))
+            ),
+            "only an OWNER key is held, and it cannot sign this withdrawal: {automatic:?}"
+        );
+        let explicit = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                to_address,
+                1,
+                identity.public_keys().get(&1),
+                available(&[1, 2]),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                explicit,
+                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
+                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER]
+            ),
+            "Platform refuses an OWNER key for a withdrawal to a chosen address: {explicit:?}"
+        );
     }
 
     pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
