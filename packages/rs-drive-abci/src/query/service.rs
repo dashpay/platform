@@ -1202,10 +1202,7 @@ fn bounded_message(mut message: String) -> String {
     if message.len() <= MAX_STATUS_MESSAGE_BYTES {
         return message;
     }
-    let mut end = MAX_STATUS_MESSAGE_BYTES;
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = message.floor_char_boundary(MAX_STATUS_MESSAGE_BYTES);
     let truncated = message.len() - end;
     message.truncate(end);
     message.push_str(&format!("... ({} bytes truncated)", truncated));

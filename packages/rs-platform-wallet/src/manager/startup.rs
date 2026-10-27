@@ -131,22 +131,8 @@ impl std::fmt::Display for ScanKeyError {
     }
 }
 
-/// Owns a resolved master xpriv and erases it when it drops.
-///
-/// `ExtendedPrivKey` has no erasing `Drop`, so an explicit
-/// `non_secure_erase` at the end of the scan only covers the paths that reach
-/// it. A caller that drops the whole `start_wallet_subsystems` future while
-/// discovery is awaiting Platform reaches none of them, and the scalar stays
-/// in the freed future. Tying the erase to the value's lifetime instead of to
-/// a code path makes cancellation — which this call now invites, since it is
-/// budget-bounded and abandonable by design — a non-event.
+/// Owns a resolved master xpriv whose secret key zeroizes on drop.
 struct ScanKeyGuard(ExtendedPrivKey);
-
-impl Drop for ScanKeyGuard {
-    fn drop(&mut self) {
-        self.0.private_key.non_secure_erase();
-    }
-}
 
 impl std::ops::Deref for ScanKeyGuard {
     type Target = ExtendedPrivKey;

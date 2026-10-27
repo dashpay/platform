@@ -1,3 +1,93 @@
+## [Unreleased]
+
+### Tests
+
+* **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
+
+### Fixed
+
+- **dpp:** require a WASM-compatible `blst` version for BLS signatures and Core
+  message/quorum verification, including external consumers with older dependency lockfiles.
+- **platform-wallet-ffi:** adapt platform node ID derivation to the updated
+  rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
+- **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
+  of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+- **platform-wallet (breaking):** `SpvRuntime::get_quorum_public_key`, the
+  quorum-key source for Platform proof verification, returns only keys dash-spv
+  verified. A quorum dash-spv holds unverified (`Unknown` or `Skipped`) fails with
+  the new `PlatformWalletError::QuorumNotVerified`, and
+  `PlatformWalletError::quorum_lookup_context_error` maps it to the SDK's non-ban
+  `ContextProviderError::QuorumSourceUnavailable`.
+  `get_quorum_public_key_with_status` still returns the key with its status.
+
+### Changed
+
+- **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
+  [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
+  every transaction payload keeps its stored serde variant index, so wallet rows
+  written before the new payload types decode again;
+  [rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149):
+  legacy BLS public-key and canonical PlatformNodeId serialization are restored
+  and the pre-v4 coinbase payload Serde layout is preserved;
+  [rust-dashcore#1155](https://github.com/dashpay/rust-dashcore/pull/1155):
+  a special transaction payload is decoded only from transaction version 3,
+  as Core does; and
+  [rust-dashcore#1167](https://github.com/dashpay/rust-dashcore/pull/1167):
+  the legacy asset lock decoder that instant asset lock proofs are read with. Adapt WASM
+  private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
+  ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
+  signatures and the encoded bytes are unchanged), and masternode payload
+  handling to the version-3 ProRegTx / ProUpServTx types. It also includes
+  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179):
+  masternode list diffs carry operator payout changes and keep the PoSe revived
+  height, which the masternode list updates of protocol versions 1 to 15 drop
+  and clear as before ([#5455](https://github.com/dashpay/platform/pull/5455));
+  [rust-dashcore#1187](https://github.com/dashpay/rust-dashcore/pull/1187):
+  the LLMQ parameters of the test and devnet quorum types match Dash Core's,
+  which changes how dash-spv tracks Platform quorums on local networks and
+  devnets; and dash-spv API changes:
+  [rust-dashcore#1176](https://github.com/dashpay/rust-dashcore/pull/1176)
+  makes its storage private (`DashSpvClient` opens its own storage and answers
+  header queries, which breaks code using `dash_spv::storage` through the
+  `dpp`/`dash-sdk` re-export),
+  [rust-dashcore#1177](https://github.com/dashpay/rust-dashcore/pull/1177)
+  makes `DashSpvClient::is_running` synchronous, and
+  [rust-dashcore#1183](https://github.com/dashpay/rust-dashcore/pull/1183)
+  runs the storage writer only between start and stop.
+- **platform-wallet:** a chain reorganization reported by key-wallet
+  (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
+  mirrored to persisted wallet state
+  ([#5380](https://github.com/dashpay/platform/issues/5380)).
+- **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
+  wakes when the client starts or dash-spv reports a peer update, instead of
+  re-checking every 250 ms, so a broadcast held for readiness goes out as soon
+  as the first peer connects.
+- **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
+  `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
+- **Breaking (C API):** the unified FFI no longer exports
+  `bip38_encrypt_private_key` and `bip38_decrypt_private_key`. Both were
+  unsupported-operation stubs that upstream removed; direct C and Swift callers
+  must drop their calls.
+
+- **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
+  SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
+  is removed. Use `PublicKey::to_bytes()`, `SecretKey::from_be_bytes()` returning
+  `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
+  `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
+  Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+- **dpp (Rust API migration):** `DataContractInSerializationFormat` gains `V2`, the
+  stored contract format: format version 1 (its `base`) plus the compiled document
+  types (`DocumentTypeInSerializationFormat`), which only state holds and no state
+  transition carries. Exhaustive matches need a `V2` arm; `into_schema_form()` reads
+  it as its format version 1. `DataContractInSerializationFormat::document_schemas_mut`
+  returns a `Result` and refuses format version 2. `DPPContractVersions` gains
+  `contract_storage_serialization_version`, the format Drive writes to state, and
+  `contract_storage_document_type_version`, the generation of each compiled document
+  type; every protocol version still selects format 0 or 1, so nothing stored
+  changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
+  (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
+  [#5578](https://github.com/dashpay/platform/pull/5578).
+
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 
 

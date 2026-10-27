@@ -25,7 +25,6 @@ use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
 use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::blsful::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchemes};
 use dashcore::hash_types::{InputsHash, SpecialTransactionPayloadHash};
 use dashcore::hashes::Hash;
 use dashcore::sml::masternode_list_entry::net_info::{
@@ -35,6 +34,7 @@ use dashcore::sml::masternode_list_entry::{
     EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
 };
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -145,7 +145,10 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
                 script_payout.clone(),
             )
         },
-        spv.latest_coinbase(),
+        // The pinned dash-spv does not expose the coinbase of the masternode
+        // list diffs it applies, so the list alone tells whether V24 is
+        // active.
+        None::<std::future::Ready<_>>,
     )
     .await?;
 
@@ -199,39 +202,49 @@ fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
 ///
 /// `build` makes the placeholder for a given V24 state. It runs first with
 /// the list's view (`list_shows_v24`), which refuses a request missing its
-/// P2P port or with nothing to re-assert before the coinbase is read. Only
-/// when the result is a payload Core refuses after V24 is `latest_coinbase`
-/// awaited: the coinbase payload of the highest block whose masternode list
-/// diff the SPV client applied with one.
-/// Core requires coinbase payload version 4 or later exactly while V24 is
-/// active, so such a version rebuilds the placeholder for V24 and a lower one
-/// keeps it. A regular masternode's or a version-3 entry's payload is the
-/// same on both sides, so for those the coinbase is never read.
+/// P2P port or with nothing to re-assert. A regular masternode's or a
+/// version-3 entry's payload is the same on both sides of V24, so for those
+/// the list's view is final.
 ///
-/// No coinbase leaves V24 unknown and fails the build with a retryable
-/// [`PlatformWalletError::TransactionBuild`]. The SPV client keeps the
-/// coinbase in memory only, so after a restart an evonode update can be
-/// built only once the session's first masternode list diff has arrived.
-/// Right after V24 activates, until a diff for a block past activation
-/// arrives, the coinbase still reads as pre-V24 and the version-2 payload
-/// built then is refused; a retry builds version 3.
+/// Without a coinbase source (`latest_coinbase` is `None`) the list's view
+/// is final for every entry. The list shows V24 only once some entry is
+/// version 3, so right after activation, until a version-3 provider
+/// transaction is mined, a legacy evonode still gets the version-2 payload:
+/// Core refuses it and discourages the peers that relay it, and the inputs
+/// stay reserved until the reservation expires. Refusing every such build
+/// instead would block every evonode update before V24 as well.
 ///
-/// The pinned dash-spv does not authenticate the coinbase: it checks neither
-/// the diff's merkle proof of the coinbase transaction nor the payload's
-/// merkle roots, so the peer that served the diff chooses the version. A
+/// With a coinbase source, `latest_coinbase` is awaited only when the list's
+/// view gives a payload Core refuses after V24. It yields the coinbase
+/// payload of the highest block whose masternode list diff the SPV client
+/// applied with one. Core requires coinbase payload version 4 or later
+/// exactly while V24 is active, so such a version rebuilds the placeholder
+/// for V24 and a lower one keeps it.
+///
+/// A source that has no coinbase yet leaves V24 unknown and fails the build
+/// with a retryable [`PlatformWalletError::TransactionBuild`]. An SPV client
+/// that keeps the coinbase in memory only has none after a restart until the
+/// session's first masternode list diff arrives. Right after V24 activates,
+/// until a diff for a block past activation arrives, the coinbase still
+/// reads as pre-V24 and the version-2 payload built then is refused; a retry
+/// builds version 3.
+///
+/// A coinbase taken from a diff without checking its merkle proof and the
+/// payload's merkle roots is chosen by the peer that served the diff. A
 /// lying peer can only get this transaction refused and the wallet
-/// disconnected by the peers that relay it; no funds are at risk. A dash-spv
-/// that keeps only coinbases verified against their block removes this
-/// caveat.
+/// disconnected by the peers that relay it; no funds are at risk.
 async fn update_service_placeholder(
     list_shows_v24: bool,
     build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,
-    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+    latest_coinbase: Option<impl Future<Output = Option<CoinbasePayload>>>,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
     let placeholder = build(list_shows_v24)?;
     if !refused_after_v24(&placeholder) {
         return Ok(placeholder);
     }
+    let Some(latest_coinbase) = latest_coinbase else {
+        return Ok(placeholder);
+    };
     let coinbase = latest_coinbase.await.ok_or_else(|| {
         PlatformWalletError::TransactionBuild(
             "cannot tell whether Dash Core's V24 fork is active (the SPV client has no \
@@ -647,22 +660,13 @@ pub(crate) fn finalize_update_service_payload(
         })?;
     let sign_hash = SpecialTransactionPayloadHash::from_engine(engine);
 
-    let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-        BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(operator_secret),
-    )
-    .ok_or_else(|| {
+    let secret = BlsSecretKey::from_be_bytes(operator_secret).ok_or_else(|| {
         BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
     })?;
     let signature = secret
-        .sign(SignatureSchemes::Basic, sign_hash.as_byte_array())
+        .sign(sign_hash.as_byte_array())
         .map_err(|e| BuilderError::SigningFailed(format!("BLS payload signing failed: {e}")))?;
-    let signature_bytes: [u8; 96] = signature
-        .to_bytes_with_mode(dashcore::blsful::SerializationFormat::Modern)
-        .as_slice()
-        .try_into()
-        .map_err(|_| {
-            BuilderError::SigningFailed("BLS signature did not serialize to 96 bytes".into())
-        })?;
+    let signature_bytes = signature.to_bytes();
     finalized.payload_sig = BLSSignature::from(signature_bytes);
     Ok(TransactionPayload::ProviderUpdateServicePayloadType(
         finalized,
@@ -707,7 +711,6 @@ mod tests {
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
     use dashcore::hash_types::{
         MerkleRootAssetUnlocks, MerkleRootMasternodeList, MerkleRootQuorums,
     };
@@ -716,6 +719,7 @@ mod tests {
     };
     use dashcore::sml::masternode_list_entry::{EntryMasternodeType, MasternodeNetInfo};
     use dashcore::ProTxHash;
+    use dpp::bls::{PublicKey as BlsPublicKey, Signature as BlsSignature};
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
     use std::sync::{Arc, Mutex};
@@ -920,14 +924,9 @@ mod tests {
     /// operator public key, over base_payload_hash — the exact convention
     /// `verify_message_digest` checks real mainnet signatures with.
     fn assert_operator_signature(payload: &ProviderUpdateServicePayload) {
-        let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-            BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(&OPERATOR_SECRET),
-        )
-        .expect("valid test scalar");
+        let secret = BlsSecretKey::from_be_bytes(&OPERATOR_SECRET).expect("valid test scalar");
         let public_key = BlsPublicKey::from(&secret);
-        let signature: BlsSignature<Bls12381G2Impl> = payload
-            .payload_sig
-            .try_into()
+        let signature = BlsSignature::from_compressed(payload.payload_sig.as_bytes())
             .expect("compressed signature decodes");
         signature
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
@@ -1226,7 +1225,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            latest_coinbase,
+            Some(latest_coinbase),
         )
         .await
     }
@@ -1275,7 +1274,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) },
+            Some(async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) }),
         )
         .await
         .expect_err("another port is refused on mainnet");
@@ -1338,6 +1337,39 @@ mod tests {
                     && message.contains("try again")),
             "got {err:?}"
         );
+    }
+
+    /// Without a coinbase source the list alone decides: a legacy evonode
+    /// next to only legacy entries keeps version 2, and a version-3
+    /// neighbour converts it. Refusing the build instead would block every
+    /// evonode update until V24 activates.
+    #[tokio::test]
+    async fn should_keep_the_lists_view_of_v24_without_a_coinbase_source() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let build = |list_shows_v24| {
+            update_service_placeholder(
+                list_shows_v24,
+                |v24_active| {
+                    prepare_update_service_placeholder(
+                        &entry,
+                        Network::Devnet,
+                        v24_active,
+                        Some(26656),
+                        ScriptBuf::new(),
+                    )
+                },
+                None::<std::future::Ready<_>>,
+            )
+        };
+
+        let before_v24 = build(false)
+            .await
+            .expect("an evonode update is built before V24");
+        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
+        assert_eq!(before_v24.platform_p2p_port, Some(26656));
+
+        let shown_by_list = build(true).await.expect("a version-3 neighbour shows V24");
+        assert_matches_core_v3_vector(shown_by_list);
     }
 
     /// Only an evonode payload below version 3 changes with V24, so only

@@ -252,7 +252,23 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and a number outside `"0"` to `"6"` throws, also when there are no identity
+    /// ids. An empty array asks for no purposes, which throws (invalid parameter) when there are
+    /// identity ids. An empty
+    /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
+    /// answer an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -266,7 +282,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(
@@ -1517,7 +1533,9 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get contested resource identity votes
+    /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
+    /// `resource_vote_choice` and `vote_count`, the number of times the identity has
+    /// voted on that vote poll.
     public func getContestedResourceIdentityVotes(
         identityId: String,
         limit: UInt32?,
@@ -1706,17 +1724,29 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Read the cached authenticated network version; this does not make a request.
+    public func protocolVersionInfo() throws -> ProtocolVersionInfo {
+        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
+        let json = try Self.consumeStringResult(dash_sdk_get_protocol_version_info(handle))
+        return try JSONDecoder().decode(ProtocolVersionInfo.self, from: Data(json.utf8))
+    }
+
     // MARK: - Epoch & Block Queries
 
     /// Get epochs info
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startEpochString = startEpoch.map { String($0) }
-        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected epochs array")
+        }
+        return result
     }
 
     /// Get the current (newest started) epoch — same keys as one
@@ -1986,6 +2016,30 @@ extension SDK {
 
         let result = dash_sdk_group_get_info(handle, contractId, UInt16(groupContractPosition))
         return try processJSONResult(result)
+    }
+
+    /// The stored information of a contract group, read with a proof.
+    ///
+    /// The result holds `ownerId` (base58), `adminIds` (base58, empty for a
+    /// single owner) and, when the group has them, `name` and `description`.
+    /// Throws `SDKError.notFound("Contract group not found")` when the proof
+    /// shows no such group; a failed fetch throws the FFI's error instead.
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func getContractGroupInfo(
+        contractGroupId: String
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_contract_group_get_info(handle, contractGroupId)
+            // No data and no error is the FFI's proved absence.
+            if result.error == nil && result.data == nil {
+                throw SDKError.notFound("Contract group not found")
+            }
+            return try Self.consumeStringResult(result)
+        }
+        return try Self.parseJSONObject(json)
     }
 
     /// Get group infos

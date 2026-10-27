@@ -33,13 +33,16 @@ use crate::wallet::identity::crypto::contact_info::{
 // contactInfo documents require HIGH or CRITICAL authentication; MASTER is
 // reserved for identity operations and cannot authorize an ordinary document
 // write. Key selection follows the profile writer: full or HASH160 ECDSA keys,
-// skipping keys bound elsewhere, disabled or expired.
-fn contact_info_signing_key(
-    identity: &Identity,
+// skipping keys bound elsewhere, disabled or expired; `Err` when eligible keys
+// exist but `signer` can reach none of them.
+fn contact_info_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
     dashpay_contract_id: Identifier,
-) -> Option<&IdentityPublicKey> {
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     super::usable_authentication_key(
         identity,
+        signer,
         dashpay_contract_id,
         "contactInfo",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
@@ -532,8 +535,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
-        use dashcore::secp256k1::rand::{thread_rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::secp256k1::rand::{rng, RngCore};
 
         // Build the decrypted-payload struct once: it is both the local
         // metadata applied to the contact AND (on publish) the plaintext the
@@ -559,7 +562,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let dashpay_contract = super::dashpay_contract()?;
 
         // 1. Local state first — works offline and feeds SwiftData.
-        let (established_count, identity_index, signing_key, root_key_id) = {
+        let (established_count, identity_index, identity, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
             let info = wm
                 .get_wallet_info_mut(&self.wallet_id)
@@ -582,8 +585,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            let signing_key =
-                contact_info_signing_key(&managed.identity, dashpay_contract.id()).cloned();
+            // The signing key is chosen below, after the lock: signer callbacks must not hold it.
+            let identity = managed.identity.clone();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
             // key defers the publish rather than erroring here.
@@ -593,7 +596,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )
                 .ok()
                 .map(|k| k.id());
-            (established_count, identity_index, signing_key, root_key_id)
+            (established_count, identity_index, identity, root_key_id)
         };
 
         // 2. DIP-15 privacy gate.
@@ -614,13 +617,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             );
             return Ok(ContactInfoPublishOutcome::SkippedWatchOnly);
         };
-        let signing_key = signing_key.ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "No HIGH or CRITICAL authentication key found on identity \
+        let signing_key = contact_info_signing_key(&identity, signer, dashpay_contract.id())?
+            .cloned()
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "No HIGH or CRITICAL authentication key found on identity \
                  (required for document state transitions)"
-                    .to_string(),
-            )
-        })?;
+                        .to_string(),
+                )
+            })?;
         let root_key_id = root_key_id.ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "Identity has no ECDSA_SECP256K1 encryption key (required for contactInfo)"
@@ -708,7 +713,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             write_root_id,
         )?;
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
         let sealed = crypto
             .contact_info_seal(
                 &root_path,
@@ -806,6 +811,7 @@ mod pending_enqueue_tests {
 
 #[cfg(test)]
 mod signing_key_tests {
+    use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -833,7 +839,7 @@ mod signing_key_tests {
     }
 
     fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
-        contact_info_signing_key(identity, Identifier::from(DASHPAY))
+        contact_info_signing_key(identity, &KeyFilter(|_| true), Identifier::from(DASHPAY)).unwrap()
     }
 
     #[test]

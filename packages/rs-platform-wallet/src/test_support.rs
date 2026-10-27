@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -134,26 +134,26 @@ impl Signer for WalletSigner {
         &self,
         path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
+    ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        let message = Message::from_digest(sighash);
+        // Match message-signing vectors without low-R nonce grinding.
         Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
+            key.sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?,
+            key.public_key(),
         ))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(key.public_key())
     }
 }
 

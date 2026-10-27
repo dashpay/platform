@@ -10,7 +10,7 @@ use dapi_grpc::{
     },
     Message,
 };
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+use dpp::bls::SecretKey;
 use dpp::prelude::Identifier;
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::{
@@ -46,8 +46,17 @@ struct Manifest {
     cases: Vec<Case>,
 }
 
-fn signing_key() -> SecretKey<Bls12381G2Impl> {
-    SecretKey::from_hash(b"voting-default-limit-test")
+/// The secret key that signed the committed corpus.
+fn signing_key() -> SecretKey {
+    secret_key("1bac588e470f506ee07b3bbae2d2c8cc45857cde3b6b6b0ed94bd9d793f6314f")
+}
+
+fn secret_key(scalar: &str) -> SecretKey {
+    let scalar = hex::decode(scalar)
+        .expect("hex scalar")
+        .try_into()
+        .expect("32-byte scalar");
+    SecretKey::from_be_bytes(&scalar).expect("valid scalar")
 }
 
 fn authenticated(proof_bytes: Vec<u8>, root: [u8; 32]) -> (Proof, ResponseMetadata) {
@@ -98,10 +107,9 @@ fn authenticated(proof_bytes: Vec<u8>, root: [u8; 32]) -> (Proof, ResponseMetada
         )
         .expect("vote digest");
     proof.signature = signing_key()
-        .sign(SignatureSchemes::Basic, &digest)
+        .sign(&digest)
         .expect("test signature")
-        .as_raw_value()
-        .to_compressed()
+        .to_bytes()
         .to_vec();
     (proof, metadata)
 }
@@ -201,10 +209,9 @@ fn should_match_committed_voting_default_limit_responses() {
                         );
                         if kind == "wrong-signature" {
                             proof.signature = signing_key()
-                                .sign(SignatureSchemes::Basic, &[0; 32])
+                                .sign(&[0; 32])
                                 .expect("wrong-digest signature")
-                                .as_raw_value()
-                                .to_compressed()
+                                .to_bytes()
                                 .to_vec();
                         }
                         let filename = format!("polls-{count}-{direction}-{limit}-{kind}.bin");
@@ -255,12 +262,13 @@ fn should_match_committed_voting_default_limit_responses() {
     }
     let manifest = Manifest {
         protocol_version: fixture::PROTOCOL_VERSION,
-        quorum_public_key: (&signing_key().public_key()).into(),
-        wrong_quorum_public_key: (&SecretKey::<Bls12381G2Impl>::from_hash(
-            b"unrelated-voting-fixture-key",
+        quorum_public_key: signing_key().public_key().to_bytes().to_vec(),
+        wrong_quorum_public_key: secret_key(
+            "1a49ad16e54ff9382d38bf4c66ac8ad3a291de389bc5eca20c59d161516d125c",
         )
-        .public_key())
-            .into(),
+        .public_key()
+        .to_bytes()
+        .to_vec(),
         cases,
     };
     assert_eq!(manifest.cases.len(), 26);

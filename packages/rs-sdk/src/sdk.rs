@@ -21,6 +21,7 @@ use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
@@ -28,6 +29,8 @@ use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+#[cfg(not(target_arch = "wasm32"))]
+use rs_dapi_client::transport::Socks5Proxy;
 pub use rs_dapi_client::Address;
 pub use rs_dapi_client::AddressBanInfo;
 pub use rs_dapi_client::AddressList;
@@ -53,6 +56,20 @@ mod identity_discovery_tests;
 mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
+
+/// A local view of the authenticated network observation and this SDK's version tables.
+/// This is informational: a newer network version does not disable operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolVersionInfo {
+    /// Highest fresh, proof-and-signature-verified version, or no observation yet.
+    pub verified_version: Option<u32>,
+    /// Version table currently used to build operations (possibly pinned).
+    pub effective_version: u32,
+    /// Highest protocol version whose tables are included in this SDK.
+    pub maximum_supported_version: u32,
+    /// Whether the authenticated network observation exceeds the known tables.
+    pub newer_protocol_available: bool,
+}
 
 /// Metadata needed to select the rules for interpreting a proved response.
 /// Reading it does not authenticate it or update the SDK's stored version.
@@ -772,6 +789,19 @@ impl Sdk {
         self.protocol_version.load(Ordering::Relaxed)
     }
 
+    /// Read the cached verified observation without making a request.
+    /// Ordinary proved queries update it even when the operation version is pinned.
+    pub fn protocol_version_info(&self) -> ProtocolVersionInfo {
+        let observed = self.verified_protocol_version.load(Ordering::Relaxed);
+        let maximum_supported_version = PlatformVersion::latest().protocol_version;
+        ProtocolVersionInfo {
+            verified_version: (observed != 0).then_some(observed),
+            effective_version: self.protocol_version_number(),
+            maximum_supported_version,
+            newer_protocol_available: observed > maximum_supported_version,
+        }
+    }
+
     // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
@@ -1004,6 +1034,10 @@ pub struct SdkBuilder {
     /// CA certificate to use for TLS connections.
     #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
+
+    /// SOCKS5 proxy every DAPI connection is tunnelled through.
+    #[cfg(not(target_arch = "wasm32"))]
+    proxy: Option<Socks5Proxy>,
 }
 
 impl Default for SdkBuilder {
@@ -1047,6 +1081,8 @@ impl Default for SdkBuilder {
             protocol_version_observer: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -1150,6 +1186,17 @@ impl SdkBuilder {
         let cert = Certificate::from_pem(pem);
 
         Ok(self.with_ca_certificate(cert))
+    }
+
+    /// Tunnel every DAPI connection through a SOCKS5 proxy.
+    ///
+    /// There is no fallback to a direct connection. See
+    /// [DapiClient::with_proxy] for how proxy failures are handled. Core RPC
+    /// connections made for [SdkBuilder::with_core] are not proxied.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_proxy(mut self, proxy: Socks5Proxy) -> Self {
+        self.proxy = Some(proxy);
+        self
     }
 
     /// Configure request settings.
@@ -1368,6 +1415,10 @@ impl SdkBuilder {
                 if let Some(pem) = self.ca_certificate {
                     dapi = dapi.with_ca_certificate(pem);
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(proxy) = self.proxy {
+                    dapi = dapi.with_proxy(proxy);
+                }
 
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
@@ -1483,9 +1534,7 @@ impl SdkBuilder {
 }
 
 pub fn prettify_proof(proof: &Proof) -> String {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit();
+    let config = PLATFORM_BINCODE_CONFIG;
     let grovedb_proof: Result<GroveDBProof, DecodeError> =
         bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map(|(a, _)| a);
 
@@ -1512,7 +1561,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::sync::Arc;
 
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
@@ -1527,6 +1576,27 @@ mod test {
     const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
     /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
     const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
+
+    #[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
+    #[test]
+    fn with_proxy_reaches_the_dapi_client() {
+        use rs_dapi_client::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
+
+        let proxy = Socks5Proxy {
+            endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+            auth: Socks5Auth::RandomPerConnection,
+        };
+        let sdk = SdkBuilder::new("https://127.0.0.1:1443".parse().expect("address list"))
+            .with_context_provider(dash_context_provider::MockContextProvider::new())
+            .with_proxy(proxy.clone())
+            .build()
+            .expect("sdk");
+
+        match &sdk.inner {
+            super::SdkInstance::Dapi { dapi } => assert_eq!(dapi.proxy, Some(proxy)),
+            super::SdkInstance::Mock { .. } => panic!("expected a network SDK"),
+        }
+    }
 
     #[test]
     fn new_testnet_sources_bootstrap_from_seeds() {
@@ -1966,6 +2036,29 @@ mod test {
         sdk.protocol_version
             .store(starting_version, Ordering::Relaxed);
         sdk
+    }
+
+    #[test]
+    fn test_protocol_version_info_tracks_observation_without_changing_pinned_version() {
+        let version = super::PlatformVersion::latest();
+        let sdk = SdkBuilder::new_mock()
+            .with_version(version)
+            .build()
+            .unwrap();
+        let clone = sdk.clone();
+        let initial = sdk.protocol_version_info();
+        assert_eq!(initial.verified_version, None);
+        assert!(!initial.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert!(!clone.protocol_version_info().newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version + 1);
+        let info = clone.protocol_version_info();
+        assert_eq!(info.verified_version, Some(version.protocol_version + 1));
+        assert_eq!(info.effective_version, version.protocol_version);
+        assert_eq!(info.maximum_supported_version, version.protocol_version);
+        assert!(info.newer_protocol_available);
+        sdk.record_verified_protocol_version(version.protocol_version);
+        assert_eq!(sdk.protocol_version_info(), info);
     }
 
     #[test]
@@ -2533,7 +2626,7 @@ mod test {
     /// metadata, so consuming this expectation drives `refresh_protocol_version`
     /// through the same verified `maybe_update_protocol_version` ratchet a real
     /// quorum-signed response would — the exact path production relies on.
-    async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
+    pub(crate) async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};

@@ -1854,6 +1854,32 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
+        WalletEvent::ChainTruncated {
+            height,
+            txids,
+            unconfirmed_txids,
+            restored_outpoints,
+            ..
+        } => {
+            // TODO(#5380): mirror the truncation to the persister. The wallet
+            // has already dropped these records in memory, but `CoreChangeSet`
+            // cannot express it: the heights are monotonic-max on merge, a
+            // `SweepBatch` needs a winning transaction, and nothing demotes a
+            // confirmed record to unconfirmed. Until it can, the stored rows
+            // keep the replaced branch, and this arm does not lower the stored
+            // sync height: `PlatformWalletInfo::truncate_above` notes the
+            // truncation as an in-memory rewind instead, which the next
+            // DashPay backfill record round carries to the host unless a
+            // new-branch advance reaches it first.
+            tracing::warn!(
+                height,
+                removed = txids.len(),
+                unconfirmed = unconfirmed_txids.len(),
+                restored = restored_outpoints.len(),
+                "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
+            );
+            CoreChangeSet::default()
+        }
         WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
             // A watermark queued before a rewind must not land after it.
             // `reconcile_dashpay_rescan` lowers the in-memory cursor and
@@ -2009,9 +2035,11 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => finality(inserted.iter().chain(updated.iter())),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => {
-            Vec::new()
-        }
+        // TODO(#5380): a payment whose confirmation a truncation undid keeps
+        // the verdict it already has.
+        WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }
 
@@ -2785,6 +2813,26 @@ mod swept_transaction_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         }
+    }
+
+    /// Pins the gap tracked in #5380: a truncation reaches the bridge but
+    /// produces no persistable change, least of all a sweep (it has no
+    /// winning transaction) or a height (heights only move up on merge).
+    #[tokio::test]
+    async fn should_persist_nothing_for_a_chain_truncation() {
+        let event = WalletEvent::ChainTruncated {
+            wallet_id: WALLET_ID,
+            height: WINNER_HEIGHT,
+            txids: vec![txid(1)],
+            unconfirmed_txids: vec![txid(2)],
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert!(cs.is_empty(), "a truncation is not mirrored yet");
     }
 
     #[tokio::test]
@@ -5943,6 +5991,64 @@ mod tests {
         assert_eq!(next[&wallet_id].core.synced_height, Some(1_200));
     }
 
+    /// The engine following a fork at `fork` after processing blocks up to
+    /// `processed`: the wallet is truncated under the manager's write lock.
+    async fn follow_fork(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        processed: u32,
+        fork: u32,
+    ) {
+        use key_wallet_manager::WalletInterface;
+        let mut wm = manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .metadata
+            .last_processed_height = processed;
+        WalletInterface::truncate_above(&mut *wm, fork).expect("the fork is followed");
+    }
+
+    /// A chain truncation lowers the cursor in memory like a rescan rewind.
+    /// Its `ChainTruncated` event reaches the adapter only after the advances
+    /// emitted before it, and projects to nothing (the persister does not
+    /// mirror it), so it cannot hold them back. Those advances, projected or
+    /// still queued, look current by height once the new branch has climbed
+    /// past them — yet storing one would put the durable cursor ahead of the
+    /// new branch's rows still in the channel, and a relaunch would skip them.
+    #[tokio::test]
+    async fn advances_from_before_a_chain_truncation_are_dropped_after_the_new_branch_climbs_past_them(
+    ) {
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        let durable = super::DurableCursors::default();
+        engine_advance(&manager, wallet_id, 1_000).await;
+        let mut projected = project(&manager, &durable, &mut receiver, 1).await; // in a batch
+        engine_advance(&manager, wallet_id, 1_001).await; // still queued
+        follow_fork(&manager, wallet_id, 1_001, 999).await;
+        engine_advance(&manager, wallet_id, 1_002).await; // the new branch climbs past both
+
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut projected).await;
+        assert_eq!(
+            projected[&wallet_id].core.synced_height, None,
+            "projected before the truncation: stripped at commit"
+        );
+        let mut queued = project(&manager, &durable, &mut receiver, 1).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut queued).await;
+        assert_eq!(
+            queued[&wallet_id].core.synced_height, None,
+            "queued before the truncation: dropped"
+        );
+
+        // The truncation itself, then the new branch's advance, which is stored.
+        let mut fresh = project(&manager, &durable, &mut receiver, 2).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut fresh).await;
+        assert_eq!(
+            fresh[&wallet_id].core.synced_height,
+            Some(1_002),
+            "the new branch's advance flows"
+        );
+    }
+
     /// A wallet removed and registered again under the same id shares the
     /// adapter with its predecessor, which can still hold that predecessor's
     /// advances — queued, or already projected. While nothing holds the id
@@ -7845,6 +7951,7 @@ mod tests {
         asset_locks.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,

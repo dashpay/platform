@@ -122,7 +122,7 @@ public struct PlatformSpvPeerInfo: Sendable, Equatable, Identifiable {
 /// to receive InstantSend and ChainLock signatures from peers, so
 /// exposing a toggle here would silently break asset-lock-funded
 /// identity registration in trusted-SDK setups.
-public struct PlatformSpvStartConfig {
+public struct PlatformSpvStartConfig: Sendable {
     public var dataDir: String
     public var network: Network
     public var userAgent: String?
@@ -230,7 +230,8 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Whether the SPV client is currently running.
+    /// Whether SPV sync is running or starting. `false` once background
+    /// sync has failed, until SPV is stopped and started again.
     public func isSpvRunning() throws -> Bool {
         try ensureConfigured()
         return try Self.readIsSpvRunning(handle)
@@ -268,32 +269,91 @@ extension PlatformWalletManager {
         return Date(timeIntervalSince1970: TimeInterval(unixSeconds))
     }
 
-    /// Start the SPV client in the background.
+    /// Start the SPV client, off the calling thread.
     ///
-    /// Spawns the sync loop on the shared tokio runtime and returns
-    /// immediately. Use [`stopSpv`] to cancel.
+    /// The native start (`platform_wallet_manager_spv_start`) blocks until
+    /// the Rust client is constructed: it opens the SPV disk store, which can
+    /// run a one-time storage migration taking many seconds, and only then
+    /// spawns the sync loop. So the call runs on [`spvLifecycleQueue`] and
+    /// the caller suspends; the main actor stays free. The elapsed time is
+    /// logged as `spv_start_completed` with `duration_ms`, so a slow store
+    /// open is visible in the SDK log.
     ///
-    /// Throws `walletOperation` while an async [`stopSpv()`] is still
-    /// tearing the previous client down: the main actor is free during that
-    /// stop, so a start issued meanwhile would otherwise race it.
-    public func startSpv(config: PlatformSpvStartConfig) throws {
+    /// Admitted like the other async native entry points: [`shutdown()`]
+    /// waits for an in-flight start before destroying the handle, and a start
+    /// requested once a shutdown has begun throws `invalidHandle` before any
+    /// native work.
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is still tearing
+    /// the previous client down, or while another `startSpv(config:)` is in
+    /// flight: the main actor is free during both, so a start issued meanwhile
+    /// would otherwise race the teardown or park behind the other start.
+    /// Use [`stopSpv()`] to stop the client; an async stop issued during this
+    /// start runs after it on the same queue.
+    public func startSpv(config: PlatformSpvStartConfig) async throws {
+        try ensureConfigured()
         try ensureNoSpvStopInFlight(before: "starting SPV")
+        try ensureNoSpvStartInFlight(before: "a second startSpv()")
+        // Admission and the in-flight count change on the main actor with no
+        // suspension in between, so neither `shutdown()`'s drain nor the
+        // in-flight guards of the other SPV calls can miss this start.
+        try admitNativeOp("startSpv")
+        defer { finishNativeOp() }
+        spvStartsInFlight += 1
+        defer { spvStartsInFlight -= 1 }
+
+        let h = handle
+        let start = nativeTeardownCalls.spvStart
+        // Map the result on the queue: the raw result's Rust-owned message
+        // never crosses the continuation.
+        let (failure, milliseconds): (PlatformWalletError?, Int) = await withCheckedContinuation { continuation in
+            spvLifecycleQueue.async {
+                let started = CFAbsoluteTimeGetCurrent()
+                let result = PlatformWalletResult(start(h, config))
+                let milliseconds = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+                continuation.resume(returning: (
+                    result.isSuccess ? nil : PlatformWalletError(result: result),
+                    milliseconds
+                ))
+            }
+        }
+        SDKLogger.event(
+            "spv_start_completed",
+            category: .lifecycle,
+            severity: failure == nil ? .info : .warning,
+            fields: ["duration_ms": .integer(Int64(milliseconds))],
+            error: failure
+        )
+        if let failure {
+            throw failure
+        }
+    }
+
+    /// The blocking native start behind [`startSpv(config:)`]: marshals the
+    /// config to C strings for the duration of the call and returns the raw
+    /// result for the caller to map. Runs on whatever thread calls it, so it
+    /// is only ever dispatched from [`spvLifecycleQueue`] (or injected by a
+    /// test).
+    nonisolated static func startSpvNative(
+        _ handle: Handle,
+        config: PlatformSpvStartConfig
+    ) -> PlatformWalletFFIResult {
         // Peer array: allocate contiguous C strings.
         let peerCStrings: [UnsafeMutablePointer<CChar>?] = config.peers.map { strdup($0) }
         defer { peerCStrings.forEach { if let p = $0 { free(p) } } }
 
-        try config.dataDir.withCString { dataDirPtr in
+        return config.dataDir.withCString { dataDirPtr in
             let userAgentPtr = config.userAgent.flatMap { strdup($0) }
             defer { if let p = userAgentPtr { free(p) } }
 
             let devnetNamePtr = config.devnetName.flatMap { strdup($0) }
             defer { if let p = devnetNamePtr { free(p) } }
 
-            try peerCStrings.withUnsafeBufferPointer { peersBuf in
+            return peerCStrings.withUnsafeBufferPointer { peersBuf in
                 let peersPtr: UnsafePointer<UnsafePointer<CChar>?>? = peersBuf.baseAddress.map {
                     UnsafeRawPointer($0).assumingMemoryBound(to: UnsafePointer<CChar>?.self)
                 }
-                try platform_wallet_manager_spv_start(
+                return platform_wallet_manager_spv_start(
                     handle,
                     dataDirPtr,
                     config.network.ffiValue,
@@ -305,7 +365,7 @@ extension PlatformWalletManager {
                     devnetNamePtr,
                     config.llmqDevnetSize,
                     config.llmqDevnetThreshold
-                ).check()
+                )
             }
         }
     }
@@ -314,16 +374,26 @@ extension PlatformWalletManager {
     ///
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// that stop is already tearing the client down, and this blocking one
-    /// would wait on the same teardown on the calling thread.
+    /// would wait on the same teardown on the calling thread. Throws the same
+    /// while an async [`startSpv(config:)`] is in flight: a stop that ran
+    /// before the client exists would leave the started client running.
+    /// A `try?` at the call site turns that refusal into a silent no-op, and
+    /// the start then publishes the client this stop meant to prevent: a
+    /// stop that must land during a start goes through the async
+    /// [`stopSpv()`], which queues behind it.
+    ///
+    /// Throws `shutdownIncomplete` when teardown is still running (stop
+    /// again) and `spvProcessRestartRequired` when the app must restart.
     public func stopSpv() throws {
         try ensureNoSpvStopInFlight(before: "a blocking stopSpv()")
+        try ensureNoSpvStartInFlight(before: "a blocking stopSpv()")
         try platform_wallet_manager_spv_stop(handle).check()
     }
 
     /// Off-main variant of [`stopSpv()`]: the same native stop, run on
-    /// [`spvStopQueue`] instead of the calling thread. In an `async` context
-    /// overload resolution prefers this variant; sync contexts keep the sync
-    /// one.
+    /// [`spvLifecycleQueue`] instead of the calling thread. In an `async`
+    /// context overload resolution prefers this variant; sync contexts keep
+    /// the sync one.
     ///
     /// The native stop waits for the SPV run loop to finish its current sync
     /// tick and drain its tasks — up to 15 s for the client stop and 15 s for
@@ -336,6 +406,10 @@ extension PlatformWalletManager {
     /// waits for an in-flight stop before destroying the handle, and a stop
     /// requested once a shutdown has begun throws `invalidHandle` before any
     /// native work. [`startSpv(config:)`] throws while a stop is in flight.
+    ///
+    /// Not refused while an async [`startSpv(config:)`] is in flight: it
+    /// queues behind that start on the shared serial queue, so the client
+    /// the start brings up is the one this stop tears down.
     public func stopSpv() async throws {
         try ensureConfigured()
         // Admission and the in-flight count change on the main actor with no
@@ -351,7 +425,7 @@ extension PlatformWalletManager {
         // Map the result on the queue: the raw result's Rust-owned message
         // never crosses the continuation.
         let failure: PlatformWalletError? = await withCheckedContinuation { continuation in
-            spvStopQueue.async {
+            spvLifecycleQueue.async {
                 let result = PlatformWalletResult(stop(h))
                 continuation.resume(
                     returning: result.isSuccess ? nil : PlatformWalletError(result: result))
@@ -366,8 +440,13 @@ extension PlatformWalletManager {
     ///
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// the stopping client can still hold and write the same data directory.
+    /// Throws the same while an async [`startSpv(config:)`] is in flight: the
+    /// starting client is opening that directory. A `try?` at the call site
+    /// turns either refusal into a silent no-op with the storage intact;
+    /// await the start or the async [`stopSpv()`] first.
     public func clearSpvStorage() throws {
         try ensureNoSpvStopInFlight(before: "clearing SPV storage")
+        try ensureNoSpvStartInFlight(before: "clearing SPV storage")
         try platform_wallet_manager_spv_clear_storage(handle).check()
     }
 
@@ -378,6 +457,19 @@ extension PlatformWalletManager {
         guard spvStopsInFlight == 0 else {
             throw PlatformWalletError.walletOperation(
                 "SPV stop in progress; await stopSpv() before \(operation)")
+        }
+    }
+
+    /// Throws `walletOperation` while an async [`startSpv(config:)`] is in
+    /// flight. The main actor is free during that start, so a second start
+    /// or a blocking SPV call issued meanwhile would otherwise overlap the
+    /// native lifecycle operation still constructing the client: a blocking
+    /// stop would find no client yet and leave the one the start brings up
+    /// running, and a second start would only fail as "already running".
+    func ensureNoSpvStartInFlight(before operation: String) throws {
+        guard spvStartsInFlight == 0 else {
+            throw PlatformWalletError.walletOperation(
+                "SPV start in progress; await startSpv() before \(operation)")
         }
     }
 

@@ -1,8 +1,8 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dpp::bls_signatures;
+use dpp::bls;
 
 use crate::Error;
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
+use dpp::bls::Signature;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
@@ -166,8 +166,8 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
-    let pubkey = bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice())
-        .map_err(|e| Error::InvalidPublicKey {
+    let pubkey =
+        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
         })?;
 
@@ -196,20 +196,17 @@ pub(crate) fn verify_tenderdash_signature(
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],
-    public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
+    public_key: &bls::PublicKey,
 ) -> Result<bool, Error> {
     if signature == &[0; 96] {
         return Err(Error::SignatureVerificationError {
             error: "empty signature".to_string(),
         });
     }
-    let signature = Signature::Basic(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
-            .into_option()
-            .ok_or(Error::SignatureVerificationError {
-                error: "Could not verify signature digest".to_string(),
-            })?,
-    );
+    let signature =
+        Signature::from_compressed(signature).ok_or(Error::SignatureVerificationError {
+            error: "Could not verify signature digest".to_string(),
+        })?;
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
 }
@@ -226,6 +223,7 @@ mod tests {
         GroveDBProof, GroveDBProofV0, GroveDBProofV1, LayerProof, MerkOnlyLayerProof, ProofBytes,
         ProveOptions,
     };
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -247,7 +245,7 @@ mod tests {
             _ => panic!("test helper only encodes known GroveDB envelopes"),
         };
 
-        bincode::encode_to_vec(proof, bincode::config::standard().with_big_endian())
+        bincode::encode_to_vec(proof, PLATFORM_BINCODE_CONFIG)
             .expect("test GroveDB proof should encode")
     }
 
@@ -359,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_envelopes_at_or_above_the_minimum_pass_the_gate() {
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         for version in [1u32, 2u32] {
             let grovedb_proof =
@@ -371,11 +369,13 @@ mod tests {
     }
 
     /// Helper: create a deterministic BLS key pair for testing.
-    fn test_keypair() -> (
-        bls_signatures::SecretKey<Bls12381G2Impl>,
-        bls_signatures::PublicKey<Bls12381G2Impl>,
-    ) {
-        let sk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_hash(b"test-key-seed");
+    fn test_keypair() -> (bls::SecretKey, bls::PublicKey) {
+        let scalar =
+            hex::decode("659dc45452f29c17f96dda38ae1546e0e9e818423cdb8cc857f3728c518b4cb8")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let sk = bls::SecretKey::from_be_bytes(&scalar).unwrap();
         let pk = sk.public_key();
         (sk, pk)
     }
@@ -390,7 +390,7 @@ mod tests {
     impl ValidKeyContextProvider {
         fn new() -> Self {
             let (_, pk) = test_keypair();
-            let pk_vec: Vec<u8> = (&pk).into();
+            let pk_vec = pk.to_bytes().to_vec();
             let mut pubkey_bytes = [0u8; 48];
             pubkey_bytes.copy_from_slice(&pk_vec);
             Self { pubkey_bytes }
@@ -739,12 +739,7 @@ mod tests {
                 proof.round as i32,
             )
             .expect("hash vote");
-        proof.signature = key
-            .sign(bls_signatures::SignatureSchemes::Basic, &digest)
-            .expect("sign vote")
-            .as_raw_value()
-            .to_compressed()
-            .to_vec();
+        proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
         verify_tenderdash_proof(&proof, &metadata, &root, &provider)
             .expect("matching app hash control");
         let mut different_root = root;

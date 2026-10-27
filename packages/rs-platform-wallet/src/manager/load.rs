@@ -1848,7 +1848,6 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::managed_account::ManagedCoreFundsAccount;
 
-        let secp = dashcore::secp256k1::Secp256k1::new();
         let account = |seed: u8| key_wallet::Account {
             parent_wallet_id: None,
             account_type: AccountType::DashpayExternalAccount {
@@ -1858,7 +1857,6 @@ mod tests {
             },
             network: dashcore::Network::Testnet,
             account_xpub: ExtendedPubKey::from_priv(
-                &secp,
                 &ExtendedPrivKey::new_master(dashcore::Network::Testnet, &[seed; 32])
                     .expect("master"),
             ),

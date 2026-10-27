@@ -8,8 +8,6 @@ use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
@@ -18,6 +16,8 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -212,9 +212,9 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                         (document, entropy)
                     }
                     None => {
-                        let mut rng = StdRng::from_entropy();
+                        let mut rng = StdRng::from_os_rng();
                         let mut document = document;
-                        let entropy = rng.gen::<[u8; 32]>();
+                        let entropy = rng.random::<[u8; 32]>();
                         document.set_id(Document::generate_document_id(
                             &document_type.data_contract_id(),
                             &document.owner_id(),

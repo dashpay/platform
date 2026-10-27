@@ -85,6 +85,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V9: DriveAbciMethodVersions = DriveAbciMeth
         verify_chain_lock_through_core: 0,
         make_sure_core_is_synced_to_chain_lock: 0,
         recent_block_count_amount: 2,
+        dkg_mining_schedules: None,
     },
     core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions {
         verify_recent_signature_locally: 0,

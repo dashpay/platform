@@ -6,7 +6,7 @@
 
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+use dpp::bls::SecretKey;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -43,14 +43,14 @@ impl ContextProvider for Provider {
         _: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         assert_eq!((kind, hash), (106, [2; 32]));
-        Ok(key().public_key().0.to_compressed())
+        Ok(key().public_key().to_bytes())
     }
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(1)
     }
 }
-fn key() -> SecretKey<Bls12381G2Impl> {
-    SecretKey::from_be_bytes(&[1; 32]).into_option().unwrap()
+fn key() -> SecretKey {
+    SecretKey::from_be_bytes(&[1; 32]).unwrap()
 }
 /// Wraps `bytes` in a proof that the test quorum signed for `root` and `metadata`.
 pub fn signed(bytes: Vec<u8>, metadata: &ResponseMetadata, root: [u8; 32]) -> Proof {
@@ -92,11 +92,6 @@ pub fn signed(bytes: Vec<u8>, metadata: &ResponseMetadata, root: [u8; 32]) -> Pr
             proof.round as i32,
         )
         .unwrap();
-    proof.signature = key()
-        .sign(SignatureSchemes::Basic, &digest)
-        .unwrap()
-        .as_raw_value()
-        .to_compressed()
-        .to_vec();
+    proof.signature = key().sign(&digest).unwrap().to_bytes().to_vec();
     proof
 }

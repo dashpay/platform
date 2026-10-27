@@ -26,9 +26,6 @@
 //! which a wrong key passes about once in 256 attempts and then returns garbage; a caller that
 //! must tell the two apart has to recognise its plaintext.
 
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef, EncryptedFor,
@@ -43,6 +40,9 @@ use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
 };
 use dpp::platform_value::{Identifier, Value};
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{RngCore, SeedableRng};
+use dpp::secp256k1::{PublicKey, SecretKey};
 use platform_encryption::{decrypt_aes_256_cbc, derive_shared_key_ecdh, encrypt_aes_256_cbc};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -235,7 +235,7 @@ pub fn encrypt_property(
 
 fn random_iv() -> [u8; AES_CBC_IV_LENGTH] {
     let mut iv = [0u8; AES_CBC_IV_LENGTH];
-    StdRng::from_entropy().fill_bytes(&mut iv);
+    StdRng::from_os_rng().fill_bytes(&mut iv);
     iv
 }
 
@@ -425,8 +425,7 @@ fn select_declared_keys<'a>(
     let contract_id = document_type.data_contract_id();
 
     let sender_requirements = key_requirements_naming(document_type, &declaration.sender_key);
-    let sender_public_key =
-        PublicKey::from_secret_key(&Secp256k1::signing_only(), sender_private_key);
+    let sender_public_key = PublicKey::from_secret_key(sender_private_key);
     let sender_public_key_bytes = sender_public_key.serialize();
     let no_sender_key = |reason: String| EncryptedForError::NoSuitableKey {
         identity_id: sender.id(),

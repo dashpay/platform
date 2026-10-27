@@ -296,8 +296,8 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::dashcore::{signer, Network, PrivateKey};
+    use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -356,6 +356,8 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
+    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::secp256k1::rand::SeedableRng as _;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
@@ -1965,8 +1967,11 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
-            // contract bytes
-            27003119120
+            // contract bytes; the DPNS v3 preorder type the update copies in has its own
+            // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
+            // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule)
+            29003303730
         );
 
         let check_result = platform
@@ -3902,15 +3907,13 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let mut rng = StdRng::seed_from_u64(433);
+        let mut rng = SecpStdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let secp = Secp256k1::new();
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3928,7 +3931,7 @@ mod tests {
             .expect("expected to get signable bytes");
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -4006,15 +4009,13 @@ mod tests {
         let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1);
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
-        let new_key = IdentityPublicKeyInCreationV0 {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -4028,10 +4029,6 @@ mod tests {
             }),
         };
 
-        let _signable_bytes = new_key
-            .signable_bytes()
-            .expect("expected to get signable bytes");
-
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
             revision: 1,
@@ -4044,11 +4041,33 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
+        // The added key proves possession by signing the transition's signable bytes, which
+        // leave the key signatures out
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
+        let secret = new_key_pair.secret_key();
+        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())

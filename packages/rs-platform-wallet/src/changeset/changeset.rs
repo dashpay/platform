@@ -1464,6 +1464,9 @@ pub struct AssetLockChangeSet {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetLockEntry {
+    /// Stable host operation identifier; legacy rows have no identifier.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_id: Option<[u8; 16]>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1490,6 +1493,30 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+impl AssetLockEntry {
+    /// Preserve the immutable operation association when folding or replaying
+    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
+    /// caller must discard the whole snapshot so its lifecycle cannot be
+    /// attached to a different operation.
+    #[must_use = "a conflicting operation snapshot must not be applied"]
+    pub(crate) fn preserve_recovery_metadata(
+        &mut self,
+        previous_operation_id: Option<[u8; 16]>,
+    ) -> bool {
+        if let Some(previous_id) = previous_operation_id {
+            if self
+                .operation_id
+                .is_some_and(|incoming| incoming != previous_id)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting operation ID");
+                return false;
+            }
+            self.operation_id = Some(previous_id);
+        }
+        true
+    }
+}
+
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
         // Last write wins, with ONE lifecycle exception: `Consumed` is
@@ -1505,12 +1532,18 @@ impl Merge for AssetLockChangeSet {
         // durable stores apply the same rule (sqlite upsert guard,
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
-        for (out_point, entry) in other.asset_locks {
-            if entry.status != AssetLockStatus::Consumed {
-                if let Some(existing) = self.asset_locks.get(&out_point) {
-                    if existing.status == AssetLockStatus::Consumed {
-                        continue;
-                    }
+        for (out_point, mut entry) in other.asset_locks {
+            if let Some(existing) = self.asset_locks.get_mut(&out_point) {
+                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                    continue;
+                }
+                if existing.status == AssetLockStatus::DrainCompleted
+                    || (existing.status.is_consumed() && !entry.status.is_consumed())
+                {
+                    // Terminality guards lifecycle state, never the operation
+                    // association carried by a delayed snapshot.
+                    existing.operation_id = entry.operation_id;
+                    continue;
                 }
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
@@ -1544,7 +1577,7 @@ impl Merge for AssetLockChangeSet {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
-                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+                .is_some_and(|entry| entry.status.is_consumed());
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2576,6 +2609,7 @@ mod tests {
             vout: 0,
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
+            operation_id: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2597,6 +2631,19 @@ mod tests {
             cs
         };
 
+        let mut certified = cs_with(AssetLockStatus::Consumed);
+        certified.merge(cs_with(AssetLockStatus::DrainCompleted));
+        certified.merge(cs_with(AssetLockStatus::Consumed));
+        certified.merge(cs_with(AssetLockStatus::Broadcast));
+        let mut removal = AssetLockChangeSet::default();
+        removal.removed.insert(outpoint);
+        certified.merge(removal);
+        assert_eq!(
+            certified.asset_locks[&outpoint].status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert!(!certified.removed.contains(&outpoint));
+
         // Stale recovery snapshot folded AFTER the consumption write.
         let mut folded = cs_with(AssetLockStatus::Consumed);
         folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
@@ -2605,6 +2652,23 @@ mod tests {
             AssetLockStatus::Consumed,
             "a non-Consumed snapshot must not replace the Consumed terminal"
         );
+
+        // A conflicting operation cannot replace the lifecycle.
+        let mut original = cs_with(AssetLockStatus::Broadcast);
+        original
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([42; 16]);
+        let mut conflicting = cs_with(AssetLockStatus::Consumed);
+        conflicting
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([43; 16]);
+        let expected = original.clone();
+        original.merge(conflicting);
+        assert_eq!(original.asset_locks, expected.asset_locks);
 
         // The legitimate direction still lands.
         let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
@@ -3260,6 +3324,7 @@ mod tests {
                     m.insert(
                         OutPoint::default(),
                         AssetLockEntry {
+                            operation_id: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

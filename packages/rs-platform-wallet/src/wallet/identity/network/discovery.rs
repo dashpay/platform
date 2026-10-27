@@ -302,10 +302,7 @@ impl IdentityWallet {
                     if let Ok((_, xpriv, _)) =
                         derive_identity_auth_keypair(wallet, network, identity_index, *key_id)
                     {
-                        candidate_scalars.insert(
-                            *key_id,
-                            zeroize::Zeroizing::new(xpriv.private_key.secret_bytes()),
-                        );
+                        candidate_scalars.insert(*key_id, xpriv.private_key.to_bytes());
                     }
                 }
             }

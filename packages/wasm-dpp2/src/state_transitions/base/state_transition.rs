@@ -7,8 +7,6 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::mock_bls::MockBLS;
-use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
-use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::{KeyID, KeyType};
 use dpp::platform_value::BinaryData;
@@ -330,7 +328,7 @@ impl StateTransitionWasm {
             dpp::serialization::PlatformSerializable::serialize_to_bytes(&self.0)?
         };
 
-        Ok(Sha256::digest(payload).to_hex_string(Lower))
+        Ok(hex::encode(Sha256::digest(payload)))
     }
 
     #[wasm_bindgen(getter = "actionType")]
@@ -550,6 +548,11 @@ impl StateTransitionWasm {
 
                         DataContractInSerializationFormat::V1(v1)
                     }
+                    DataContractInSerializationFormat::V2(mut v2) => {
+                        v2.base.owner_id = owner_id;
+
+                        DataContractInSerializationFormat::V2(v2)
+                    }
                 };
 
                 contract_create.set_data_contract(new_contract);
@@ -567,6 +570,11 @@ impl StateTransitionWasm {
                         v1.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V1(v1)
+                    }
+                    DataContractInSerializationFormat::V2(mut v2) => {
+                        v2.base.owner_id = owner_id;
+
+                        DataContractInSerializationFormat::V2(v2)
                     }
                 };
 
