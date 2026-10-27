@@ -84,7 +84,13 @@
         "type": "integer",
         "minimum": 0,
         "maximum": 255,
-        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "description": "The token's decimals when the order was placed, generated from tokenId: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "generatedFrom": {
+          "function": "sys.tokens.decimals",
+          "params": [
+            "tokenId"
+          ]
+        },
         "position": 4
       }
     },
@@ -190,7 +196,13 @@
         "type": "integer",
         "minimum": 0,
         "maximum": 255,
-        "description": "The token's decimals when the order was placed: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "description": "The token's decimals when the order was placed, generated from tokenId: the price is per 10 to the power of this many base units for the life of the order, even if the token's decimals change later",
+        "generatedFrom": {
+          "function": "sys.tokens.decimals",
+          "params": [
+            "tokenId"
+          ]
+        },
         "position": 5
       }
     },

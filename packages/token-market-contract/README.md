@@ -24,7 +24,7 @@ Tokens a holder offers for sale at a price.
 | `price` | integer, required | The credits the seller asks per whole token (10 to the power of `decimals` base units) |
 | `amount` | integer, required | The base units listed when the order was placed |
 | `remaining` | integer, required | The base units still for sale; the order is deleted when it is filled entirely |
-| `decimals` | integer, required | The token's decimals when the order was placed. Every fill prices the order at this scale, so a later change to the token's decimals does not change what an open order costs or pays |
+| `decimals` | integer, required | The token's decimals when the order was placed, generated from `tokenId` (`generatedFrom` `sys.tokens.decimals`) and kept after. Every fill prices the order at this scale, so a later change to the token's decimals does not change what an open order costs or pays |
 
 ## `bid`
 
