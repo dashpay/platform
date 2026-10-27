@@ -290,8 +290,8 @@ mod tests {
             TokenEvent::BurnFromPool(1, id, None),
             TokenEvent::ClaimToPool(1),
             TokenEvent::DirectPurchaseToPool(1, 1),
-            TokenEvent::OrderPlaced(id, TokenOrderSide::Ask, 1, 1, 1, 8),
-            TokenEvent::OrderPlaced(id, TokenOrderSide::Bid, 1, 1, 1, 0),
+            TokenEvent::OrderPlaced(id, TokenOrderSide::Ask, 1, 1, 8),
+            TokenEvent::OrderPlaced(id, TokenOrderSide::Bid, 1, 1, 0),
             TokenEvent::OrderFilled(id, TokenOrderSide::Ask, id, 1, 1, 8),
             TokenEvent::OrderCancelled(id, TokenOrderSide::Bid),
         ]
