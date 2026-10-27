@@ -120,7 +120,7 @@ pub(super) fn document_signing_key<'a>(
 
 /// Check a key the caller chose to sign a document batch in `scope` whose document type
 /// requires `requirement`, by the rules [`document_signing_key`] applies.
-fn check_document_signing_key(
+pub(super) fn check_document_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
     requirement: SecurityLevel,

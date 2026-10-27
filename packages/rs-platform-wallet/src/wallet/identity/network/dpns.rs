@@ -1,6 +1,6 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use super::document::document_signing_key;
+use super::document::{check_document_signing_key, document_signing_key};
 use super::key_selection::SigningScope;
 use dpp::data_contracts::SystemDataContract;
 
@@ -56,10 +56,29 @@ fn dpns_registration_signing_key<'a>(
         identity,
         signer,
         DPNS_REGISTRATION_REQUIREMENT,
-        SigningScope::Contract {
-            contract_id: SystemDataContract::DPNS.id(),
-        },
+        dpns_registration_scope(),
     )
+}
+
+/// Check a key the caller chose to register a DPNS name by the rules
+/// [`dpns_registration_signing_key`] applies.
+fn check_dpns_registration_signing_key(
+    key: &IdentityPublicKey,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Result<(), dash_sdk::Error> {
+    check_document_signing_key(
+        key,
+        signer,
+        DPNS_REGISTRATION_REQUIREMENT,
+        dpns_registration_scope(),
+    )
+}
+
+/// Registration writes `preorder` and then `domain`, so its key must cover the whole contract.
+fn dpns_registration_scope() -> SigningScope<'static> {
+    SigningScope::Contract {
+        contract_id: SystemDataContract::DPNS.id(),
+    }
 }
 
 impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
@@ -153,7 +172,9 @@ impl IdentityWallet {
     /// [`register_name_with_external_signer`](Self::register_name_with_external_signer),
     /// this method does **not** look up the identity in the internal
     /// `IdentityManager`. The caller supplies the `Identity`, the
-    /// signing key, and a `Signer` directly.
+    /// signing key, and a `Signer` directly. The key is checked by the rules the
+    /// wallet's own choice follows before anything reaches the network; a key Platform
+    /// would refuse returns its typed refusal.
     ///
     /// `contest_fund` is the most the registration pays into the contest a contested name
     /// joins (the fund to join doubles once a contest holds 250 contenders and again for every
@@ -170,6 +191,7 @@ impl IdentityWallet {
     ) -> Result<String, dash_sdk::Error> {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
+        check_dpns_registration_signing_key(&identity_public_key, &signer)?;
         let input = RegisterDpnsNameInput {
             label: name.to_string(),
             identity,
@@ -588,6 +610,57 @@ mod signing_key_tests {
             chosen.map(|key| key.id()),
             Some(2),
             "a key bound to `domain` cannot sign the `preorder` document"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_explicit_registration_key_before_any_network_call() {
+        use super::super::signing_key::tests::wallet_with_signing_keys;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::consensus::ConsensusError;
+
+        let wallet = wallet_with_signing_keys().await;
+        let bound_to_domain = bound_key(
+            1,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: SystemDataContract::DPNS.id(),
+                document_type_name: "domain".to_string(),
+            }),
+        );
+        let identity = identity(vec![key(0, SecurityLevel::MASTER), bound_to_domain.clone()]);
+        let register = |key: IdentityPublicKey| {
+            wallet.identity().register_name_with_signer(
+                identity.clone(),
+                "alice",
+                key,
+                None,
+                KeyFilter(|_| true),
+            )
+        };
+        let error = register(bound_to_domain).await.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                dash_sdk::Error::Protocol(ProtocolError::ConsensusError(consensus))
+                    if matches!(
+                        consensus.as_ref(),
+                        ConsensusError::SignatureError(
+                            SignatureError::ContractBoundedKeyOutOfBoundsError(_)
+                        )
+                    )
+            ),
+            "a key bound to `domain` cannot sign the `preorder` document: {error:?}"
+        );
+        let error = register(key(0, SecurityLevel::MASTER)).await.unwrap_err();
+        assert!(
+            matches!(
+                error,
+                dash_sdk::Error::Protocol(
+                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+                )
+            ),
+            "MASTER is refused on document writes: {error:?}"
         );
     }
 }
