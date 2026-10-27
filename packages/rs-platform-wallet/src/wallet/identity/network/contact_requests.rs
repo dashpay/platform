@@ -1251,7 +1251,7 @@ fn contact_request_signing_key<'a>(
 /// after a disable-and-replace key rotation, selecting the disabled
 /// lowest-id key would hard-fail pre-send validation on every new outgoing
 /// request even though an enabled replacement exists.
-pub fn select_own_encryption_key(
+pub(crate) fn select_own_encryption_key(
     identity: &Identity,
 ) -> Result<&IdentityPublicKey, PlatformWalletError> {
     identity
