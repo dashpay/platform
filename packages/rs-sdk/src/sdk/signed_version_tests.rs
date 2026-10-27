@@ -759,6 +759,7 @@ async fn should_not_learn_document_outcome_versions_from_stale_or_tampered_respo
             );
         }
         assert_eq!(sdk.protocol_version_number(), 11);
+        assert_eq!(sdk.protocol_version_info().verified_version, None);
     }
 }
 
@@ -830,4 +831,7 @@ async fn should_verify_document_outcomes_signed_by_an_unknown_newer_version() {
     assert!(outcome.is_execution_proved());
     assert!(outcome.owner_balance().is_some());
     assert_eq!(sdk.protocol_version_number(), latest.protocol_version);
+    let info = sdk.protocol_version_info();
+    assert_eq!(info.verified_version, Some(metadata.protocol_version));
+    assert!(info.newer_protocol_available);
 }

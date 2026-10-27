@@ -17,6 +17,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::TryIntoPlatformVersioned;
 
 /// The created data contract is a intermediate structure that can be consumed by a
@@ -69,9 +70,7 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
                 received: version,
             }),
         }?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(created_data_contract_in_serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize CreatedDataContract: {}", e))
         })
@@ -126,9 +125,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -158,9 +155,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntruste
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
             bincode::borrow_decode_from_slice_untrusted(data, config)
                 .map_err(|e| {
@@ -267,6 +262,7 @@ mod tests {
     use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::PlatformVersion;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn sample_created() -> CreatedDataContract {
         get_data_contract_fixture(None, 42, 1)
@@ -457,9 +453,7 @@ mod tests {
             .clone()
             .serialize_consume_to_bytes_with_platform_version(platform_version)
             .expect("serialize");
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let (decoded, _consumed) = bincode::borrow_decode_from_slice_untrusted::<
             CreatedDataContractInSerializationFormat,
             _,

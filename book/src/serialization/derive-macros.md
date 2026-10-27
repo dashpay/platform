@@ -75,9 +75,7 @@ impl PlatformSerializable for DocumentAlreadyPresentError {
     type Error = ProtocolError;
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(self, config)
             .map_err(|e| {
                 ProtocolError::PlatformSerializationError(
@@ -103,8 +101,7 @@ impl PlatformSerializableWithPlatformVersion for ConsensusError {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard()
-            .with_big_endian()
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG
             .with_limit::<{ 2000 }>();
         platform_serialization::platform_encode_to_vec(self, config, platform_version)
             .map_err(|e| match e {
@@ -277,7 +274,7 @@ impl<'a> From<&'a DataContractCreateTransitionV0>
 
 impl crate::serialization::Signable for DataContractCreateTransitionV0 {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard().with_big_endian();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         let intermediate: DataContractCreateTransitionV0Signable = self.into();
         bincode::encode_to_vec(intermediate, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(
@@ -318,7 +315,7 @@ The `signable_bytes` implementation on the enum encodes a variant index (as `u16
 ```rust
 impl Signable for StateTransition {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = bincode::config::standard().with_big_endian();
+        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
         let signable_bytes = match self {
             StateTransition::DataContractCreate(ref inner) => {
                 let mut buf = bincode::encode_to_vec(&(0u16), config).unwrap();
