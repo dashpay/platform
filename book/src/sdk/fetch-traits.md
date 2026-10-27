@@ -294,6 +294,9 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    `Error::ProtocolVersionNotActive` until a verified answer shows the network runs that
    version, asking the network for it first when it may have moved. Nothing is sent and
    no node is banned. See [Features from Protocol Version 14](protocol-version-gate.md).
+   Asking may raise the SDK's version, so the request is then encoded again with it.
+   `FromProof::check_request` then checks the request at the version it is encoded
+   with, and refuses one the output type cannot be verified from.
 
 3. **Request execution with retry**: The SDK sends the request to a DAPI node,
    with automatic retry logic:

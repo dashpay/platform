@@ -233,23 +233,30 @@ where
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let settings = sdk.query_settings();
-        let owned_rich: <Self as FetchMany<K, O>>::Query =
+        let mut settings = sdk.query_settings();
+        let mut owned_rich: <Self as FetchMany<K, O>>::Query =
             Self::prepare_query(query.query(&settings)?);
-        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let mut owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let required_protocol_version = owned_wire.needs_protocol_version();
+        if required_protocol_version.is_some() {
+            sdk.ensure_network_serves(
+                required_protocol_version,
+                owned_wire.method_name(),
+                request_settings,
+            )
+            .await?;
+            // Asking the network for its version may have raised the version requests are
+            // encoded with: encode the request again at it.
+            settings = sdk.query_settings();
+            owned_rich = Self::prepare_query(query.query(&settings)?);
+            owned_wire = owned_rich.query(&settings)?;
+        }
         check_before_sending::<<Self as FetchMany<K, O>>::Query, O>(
             &owned_rich,
             settings.protocol_version,
         )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
-        let required_protocol_version = wire.needs_protocol_version();
-        sdk.ensure_network_serves(
-            required_protocol_version,
-            wire.method_name(),
-            request_settings,
-        )
-        .await?;
 
         let fut = |settings: RequestSettings| async move {
             let ExecutionResponse {
