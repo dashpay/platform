@@ -278,4 +278,111 @@ mod tests {
             contract
         );
     }
+
+    /// A document type of `objects` properties, each an integer or, with `fields`, an object of
+    /// that many integers, with an index on each of the first `indices`: as many properties and
+    /// indexes per byte as a document type holds, the compiled containers the decode budget
+    /// charges most for.
+    fn dense_document_schema(
+        objects: u32,
+        fields: u32,
+        indices: u32,
+    ) -> dpp::platform_value::Value {
+        use dpp::platform_value::{platform_value, Value};
+
+        let properties = Value::Map(
+            (0..objects)
+                .map(|object| {
+                    let property = if fields == 0 {
+                        platform_value!({ "type": "integer", "position": object })
+                    } else {
+                        let nested = Value::Map(
+                            (0..fields)
+                                .map(|field| {
+                                    (
+                                        Value::Text(format!("f{field}")),
+                                        platform_value!({ "type": "integer", "position": field }),
+                                    )
+                                })
+                                .collect(),
+                        );
+                        platform_value!({
+                            "type": "object",
+                            "properties": nested,
+                            "additionalProperties": false,
+                            "position": object,
+                        })
+                    };
+                    (Value::Text(format!("o{object}")), property)
+                })
+                .collect(),
+        );
+        let indices = Value::Array(
+            (0..indices)
+                .map(|index| {
+                    let path = if fields == 0 {
+                        format!("o{index}")
+                    } else {
+                        format!("o{index}.f0")
+                    };
+                    platform_value!({ "name": format!("i{index}"), "properties": [{ path: "asc" }] })
+                })
+                .collect(),
+        );
+        platform_value!({
+            "type": "object",
+            "properties": properties,
+            "indices": indices,
+            "additionalProperties": false,
+        })
+    }
+
+    #[test]
+    fn should_decode_a_proof_contract_compiled_up_to_the_cap_in_one_dense_document_type() {
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+
+        let platform_version = PlatformVersion::latest();
+        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size as usize;
+        let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let with_dense_type = |objects: u32, fields: u32, indices: u32| {
+            let mut contract = fixture.clone();
+            contract
+                .set_document_schema(
+                    "dense",
+                    dense_document_schema(objects, fields, indices),
+                    false,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to add the dense document type");
+            let bytes = contract
+                .serialize_to_storage_bytes(platform_version)
+                .expect("expected the contract to compile");
+            (contract, bytes)
+        };
+        // Flat integers with indexes, and objects of nested integers
+        for (fields, indices) in [(0, 10), (100, 0)] {
+            // Nearly as many properties as fit the cap: scaled by the size they compile to, as
+            // longer names and positions make later properties larger
+            let first = indices.max(1);
+            let base = with_dense_type(first, fields, indices).1.len();
+            let mut objects = first + 1_000;
+            let (contract, bytes) = loop {
+                let (contract, bytes) = with_dense_type(objects, fields, indices);
+                if bytes.len() <= max_compiled_size && bytes.len() * 20 >= max_compiled_size * 19 {
+                    break (contract, bytes);
+                }
+                objects = first
+                    + ((objects - first) as usize * (max_compiled_size - base) * 49
+                        / ((bytes.len() - base) * 50)) as u32;
+            };
+            assert_eq!(
+                decode_proof_data_contract(&bytes, platform_version).unwrap_or_else(|error| {
+                    panic!("{objects} objects of {fields} fields do not decode: {error}")
+                }),
+                contract
+            );
+        }
+    }
 }
