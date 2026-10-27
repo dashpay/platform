@@ -96,6 +96,12 @@
   `DeleteDocuments` and `TokenOperationType` gains `TokenDestroyFrozenHolding`; neither
   enum is `#[non_exhaustive]`, so exhaustive matches need new arms. See
   [#5532](https://github.com/dashpay/platform/pull/5532).
+- **platform-version (Rust API migration):** `DriveTokenOrderEscrowMethodVersions` gains
+  `fetch_frozen_listings` (`None` before protocol version 15, `Some(0)` from 15) and
+  `SystemLimits` gains `max_frozen_listings_destroyed_per_transition` (16 in every table;
+  nothing before protocol version 15 reads it). Struct literals of either, such as a
+  custom or test `PlatformVersion`, need the new field. See
+  [#5532](https://github.com/dashpay/platform/pull/5532).
 
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 
