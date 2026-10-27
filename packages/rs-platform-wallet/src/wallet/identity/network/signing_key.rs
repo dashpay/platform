@@ -7,7 +7,7 @@ use super::key_selection::{
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -117,7 +117,7 @@ pub(super) fn credit_signing_key<'a>(
             signer,
             purpose,
             &SecurityLevel::full_range(),
-            &KeyType::all_key_types(),
+            &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         ) {
             Ok(Some(key)) => return Ok(key),
@@ -144,6 +144,7 @@ pub(super) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::KeyType;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
@@ -294,6 +295,36 @@ pub(super) mod tests {
         ] {
             assert_eq!(select(purpose, level, key_type), None);
         }
+    }
+
+    #[test]
+    fn should_pick_only_a_credit_key_of_a_type_platform_verifies() {
+        let mut identity = identity(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        for (id, key_type) in [
+            (1, KeyType::BIP13_SCRIPT_HASH),
+            (2, KeyType::EDDSA_25519_HASH160),
+        ] {
+            identity
+                .public_keys_mut()
+                .get_mut(&id)
+                .unwrap()
+                .set_key_type(key_type);
+        }
+        let mut verifiable = identity.public_keys().get(&2).unwrap().clone();
+        verifiable.set_id(3);
+        verifiable.set_key_type(KeyType::ECDSA_HASH160);
+        identity.add_public_key(verifiable);
+        assert_eq!(
+            credit_signing_key(&identity, None, &available(&[1, 2, 3]), false)
+                .unwrap()
+                .id(),
+            3,
+            "Drive cannot verify a signature by keys 1 and 2"
+        );
     }
 
     #[test]
