@@ -78,6 +78,33 @@ mod timeout_probe {
     pub(super) fn take() -> Vec<Option<Duration>> {
         RECORDED.with(|recorded| recorded.borrow_mut().drain(..).collect())
     }
+
+    /// Append records taken on another thread, keeping their order.
+    pub(super) fn extend(records: Vec<Option<Duration>>) {
+        RECORDED.with(|recorded| recorded.borrow_mut().extend(records));
+    }
+}
+
+/// [`run_on_big_stack_thread`] for the `resume_asset_lock` polls below.
+///
+/// Under `cfg(test)` it also carries the timeout probe's records back to
+/// the calling thread: they are thread-local, `forwarded` runs on the big
+/// stack, and the tests read them on the thread that called the exported
+/// entry point.
+fn resume_on_big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> std::io::Result<T> {
+    #[cfg(test)]
+    {
+        let (value, recorded) = run_on_big_stack_thread(|| {
+            let value = f();
+            (value, timeout_probe::take())
+        })?;
+        timeout_probe::extend(recorded);
+        Ok(value)
+    }
+    #[cfg(not(test))]
+    {
+        run_on_big_stack_thread(f)
+    }
 }
 
 /// Pass-through that records the bound under `cfg(test)`.
@@ -202,7 +229,7 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
         // Big-stack polling, NOT bare `runtime().block_on`, for the same
         // reason as `asset_lock_manager_catch_up_blocking` below.
-        run_on_big_stack_thread(|| {
+        resume_on_big_stack(|| {
             runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
         })
     });
@@ -296,7 +323,7 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
         // Sync Now entry points. `run_on_big_stack_thread` rather than
         // `block_on_worker` because the future borrows `manager` and
         // `out_point`, so it is not `'static`.
-        run_on_big_stack_thread(|| {
+        resume_on_big_stack(|| {
             runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
         })
     });
