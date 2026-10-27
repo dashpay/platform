@@ -383,7 +383,10 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
     use dpp::dashcore::hashes::{sha256, Hash};
     use grovedb_version::version::v4::GROVE_V4;
 
-    for selected in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+    for selected in [
+        PlatformVersion::get(14).unwrap(),
+        PlatformVersion::get(15).unwrap(),
+    ] {
         // Historical bytes pin replay compatibility independently of agreement
         // between the current GroveDB engines.
         let (expected_root, expected_proof) = if selected.protocol_version == 14 {
@@ -496,7 +499,53 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                 (document_fee.storage_fee, document_fee.processing_fee),
                 (35_235_000, 901_140)
             );
-            println!("non-history PV{}: root={}, proof_sha256={}, contract_fee={contract_fee:?}, document_fee={document_fee:?}", version.protocol_version, hex::encode(root), sha256::Hash::hash(&proof));
+            let mut second_document = document.clone();
+            second_document.set_id([9; 32].into());
+            second_document.set_owner_id([9; 32].into());
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&second_document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .unwrap();
+            let request_type = contract.document_type_for_name("contactRequest").unwrap();
+            let request_document = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/contact-request0.json",
+                Some([10; 32].into()),
+                request_type,
+                version,
+            )
+            .unwrap();
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&request_document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type: request_type,
+                    },
+                    true,
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .unwrap();
             let mut reads = vec![];
             for grove_version in [&GROVE_V4, &version.drive.grove_version] {
                 // A range of document types descends into each primary tree.
@@ -520,7 +569,57 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
                     None,
                     grove_version,
                 );
-                reads.push((read.value.unwrap(), read.cost));
+                let rows = read.value.unwrap();
+                let row_bytes = bincode::encode_to_vec(
+                    rows.0.clone().to_path_key_elements(),
+                    bincode::config::standard().with_big_endian(),
+                )
+                .unwrap();
+                let nested_proof = drive
+                    .grove
+                    .prove_query(&nested, None, grove_version)
+                    .value
+                    .unwrap();
+                let (_, proved_rows) =
+                    grovedb::GroveDb::verify_query_raw(&nested_proof, &nested, grove_version)
+                        .unwrap();
+                assert_eq!(proved_rows.len(), 2);
+                let mut returned_types: Vec<_> = rows
+                    .0
+                    .clone()
+                    .to_path_key_elements()
+                    .into_iter()
+                    .map(|(path, _, _)| path[path.len() - 2].clone())
+                    .collect();
+                returned_types.sort();
+                assert_eq!(
+                    returned_types,
+                    [b"contactRequest".to_vec(), b"profile".to_vec()]
+                );
+                assert_eq!(
+                    sha256::Hash::hash(&row_bytes).to_string(),
+                    "c487a48e31a5b99d8149824d99b061b7e6be3fb841a9e07dcf1856855fcab322",
+                    "limited nested rows must retain their historical bytes",
+                );
+                assert_eq!(
+                    read.cost,
+                    grovedb_costs::OperationCost {
+                        seek_count: 23,
+                        storage_loaded_bytes: 3408,
+                        hash_node_calls: 10,
+                        ..Default::default()
+                    }
+                );
+                let expected_nested_proof = if selected.protocol_version == 14 {
+                    "9a1b6f2933735c9a54d7eadac8872d08ce5936e4bc798aa6d00abebd73248578"
+                } else {
+                    "3ad7a6bdde75984eaa8b353cde0329abb1c27de1671320fe9e99b7aca2378bc1"
+                };
+                assert_eq!(
+                    sha256::Hash::hash(&nested_proof).to_string(),
+                    expected_nested_proof
+                );
+                reads.push((rows, read.cost));
             }
             assert_eq!(
                 reads[0], reads[1],

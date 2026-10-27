@@ -53,7 +53,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(14)
         .build_with_mock_rpc()
-        .set_initial_state_structure();
+        .set_genesis_state();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
     let mut contract = json_document_to_contract(
         "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
@@ -504,7 +504,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(initial_version.protocol_version)
         .build_with_mock_rpc()
-        .set_initial_state_structure();
+        .set_genesis_state();
     let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
     let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
     let contract = DataContractFactory::new(initial_version.protocol_version).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
