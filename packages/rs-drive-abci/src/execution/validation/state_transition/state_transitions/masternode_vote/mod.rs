@@ -194,6 +194,7 @@ mod tests {
             use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
             use dpp::dashcore::Network;
             use dpp::data_contract::TokenConfiguration;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
             use dpp::prelude::CoreBlockHeight;
             use drive::config::DEFAULT_QUERY_LIMIT;
             use drive_proof_verifier::types::{ContestedResources, VotePollsGroupedByTimestamp};
@@ -253,9 +254,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -337,9 +336,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -511,9 +508,7 @@ mod tests {
                 let index_name = "parentNameAndLabel".to_string();
                 let dash_encoded = bincode::encode_to_vec(
                     Value::Text("dash".to_string()),
-                    bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit(),
+                    PLATFORM_BINCODE_CONFIG,
                 )
                 .expect("expected to encode value");
 
@@ -654,9 +649,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let empty_encoded = bincode::encode_to_vec(Value::Text("".to_string()), config)
                     .expect("expected to encode value");
@@ -790,9 +783,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 {
                     let query_validation_result = platform
@@ -931,9 +922,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_existing_value =
                     bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
@@ -1078,9 +1067,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_non_existing_value =
                     bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
@@ -1215,9 +1202,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_non_existing_value_1 =
                     bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
@@ -1338,9 +1323,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -1494,9 +1477,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -1633,6 +1614,7 @@ mod tests {
             use dapi_grpc::platform::v0::{
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
             #[tokio::test]
             async fn test_not_proved_vote_state_query_request_after_vote() {
@@ -2674,9 +2656,7 @@ mod tests {
                 )
                 .await;
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -3129,6 +3109,7 @@ mod tests {
 
         mod contestant_received_votes_query {
             use super::*;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
             fn get_contestant_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
@@ -3148,9 +3129,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -3238,9 +3217,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -3867,6 +3844,8 @@ mod tests {
                     .expect("expected all voters to be identifiers")
             }
 
+            /// Reads the votes an identity has given from a proof of them, each with the
+            /// number of times the identity has voted on its vote poll, by vote poll id.
             fn get_proved_identity_given_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
                 platform_state: &PlatformState,
@@ -3878,7 +3857,7 @@ mod tests {
                     get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo,
                 >,
                 platform_version: &PlatformVersion,
-            ) -> Vec<ResourceVote> {
+            ) -> BTreeMap<Identifier, (ResourceVote, u16)> {
                 let query_validation_result = platform
                     .query_contested_resource_identity_votes(
                         GetContestedResourceIdentityVotesRequest {
@@ -3941,8 +3920,6 @@ mod tests {
                     )
                     .expect("expected to verify proof")
                     .1
-                    .into_values()
-                    .collect()
             }
 
             #[tokio::test]
@@ -4210,7 +4187,7 @@ mod tests {
                 )
                 .await;
 
-                let mut votes = get_proved_identity_given_votes(
+                let mut votes: Vec<ResourceVote> = get_proved_identity_given_votes(
                     &platform,
                     &platform_state,
                     &dpns_contract,
@@ -4219,7 +4196,10 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                );
+                )
+                .into_values()
+                .map(|(vote, _vote_count)| vote)
+                .collect();
 
                 assert_eq!(votes.len(), 3);
 
@@ -4279,6 +4259,178 @@ mod tests {
                         ),
                         resource_vote_choice: TowardsIdentity(contender_1_quantum.id())
                     })
+                );
+            }
+
+            /// A first vote is proved with a count of 1 and a changed vote with one more,
+            /// each poll counted on its own; a poll without a vote has no entry.
+            #[tokio::test]
+            async fn should_prove_identity_given_votes_with_counts() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
+
+                let (contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "cooldog",
+                        platform_version,
+                    )
+                    .await;
+
+                // A contest the masternode never votes on
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "superman",
+                        platform_version,
+                    )
+                    .await;
+
+                let (pro_tx_hash, _masternode, signer, voting_key) =
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
+
+                let counted_vote = |name: &str, choice: ResourceVoteChoice, vote_count: u16| {
+                    let vote_poll = VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: dpns_contract.id(),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text(convert_to_homograph_safe_chars(name)),
+                            ],
+                        },
+                    );
+                    (
+                        vote_poll.unique_id().expect("expected a vote poll id"),
+                        (
+                            ResourceVote::V0(ResourceVoteV0 {
+                                vote_poll,
+                                resource_vote_choice: choice,
+                            }),
+                            vote_count,
+                        ),
+                    )
+                };
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::new()
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_quantum.id()),
+                    "quantum",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_2_cooldog.id()), 1),
+                    ])
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    3,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        Some(10),
+                        true,
+                        None,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_1_cooldog.id()), 2),
+                    ])
                 );
             }
         }
@@ -6215,6 +6367,7 @@ mod tests {
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
             use dpp::dashcore::Network;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
             use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
             #[tokio::test]
@@ -9249,9 +9402,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -10226,9 +10377,7 @@ mod tests {
                 // At this point the alpha document should not have been awarded
 
                 {
-                    let config = bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit();
+                    let config = PLATFORM_BINCODE_CONFIG;
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)
@@ -11010,9 +11159,7 @@ mod tests {
                 // of the same document type on the first (quantum) contest completion
 
                 {
-                    let config = bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit();
+                    let config = PLATFORM_BINCODE_CONFIG;
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)

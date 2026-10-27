@@ -2228,7 +2228,15 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
-            .map(|(id, vote)| (id, Some(vote)))
+            .map(|(id, (resource_vote, vote_count))| {
+                (
+                    id,
+                    Some(ResourceVoteWithCount {
+                        resource_vote,
+                        vote_count,
+                    }),
+                )
+            })
             .collect();
 
         Ok((response.into_option(), mtd.clone(), proof.clone()))
@@ -2375,7 +2383,11 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             });
         }
 
-        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+        Ok((
+            vote.map(|vote| Vote::ResourceVote(vote.resource_vote)),
+            mtd,
+            proof,
+        ))
     }
 }
 
@@ -3075,6 +3087,7 @@ impl<L: Length> IntoOption for L {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
@@ -3851,7 +3864,7 @@ mod tests {
     #[test]
     fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
         for version in [0, 1] {
-            let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
+            let proof = bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
                 .expect("V0 envelope discriminant");
             let err = non_unique_lookup_error(
                 non_unique_request(version, vec![0u8; 20], None),
@@ -6369,6 +6382,36 @@ mod tests {
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
     }
 
+    #[test]
+    fn should_refuse_a_resource_votes_response_without_a_proof() {
+        // Votes and their counts are read from the proof only, so a response carrying none
+        // is refused before the context provider is asked for anything.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![7u8; 32],
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
     // ---------------------------------------------------------------------
     // IntoOption for more types
     // ---------------------------------------------------------------------
@@ -6468,14 +6511,12 @@ mod tests {
         use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dpp::data_contract::group::Group;
         use dpp::tokens::contract_info::TokenContractInfo;
+        use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
         fn legacy_proof() -> Proof {
             Proof {
-                grovedb_proof: bincode::encode_to_vec(
-                    0u32,
-                    bincode::config::standard().with_big_endian(),
-                )
-                .expect("V0 envelope discriminant should encode"),
+                grovedb_proof: bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                    .expect("V0 envelope discriminant should encode"),
                 ..Proof::default()
             }
         }

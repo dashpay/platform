@@ -12,27 +12,33 @@ use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::ResourceVote;
 
 impl ContestedResourceVotesGivenByIdentityQuery {
-    /// Verifies a proof for the vote poll vote state proof.
+    /// Verifies a proof of the votes an identity has given, and reads, next to each vote, how
+    /// many times the identity has voted on that vote poll.
     ///
-    /// This function verifies a given serialized proof and returns the root hash along with a collection of deserialized identifiers and their corresponding resource votes.
+    /// The count is stored with the vote and proved with it, so no other request is needed to
+    /// read it.
     ///
-    /// # Arguments
+    /// # Parameters
     ///
-    /// * `proof` - A byte slice representing the serialized proof to be verified.
-    /// * `contract_lookup_fn` - Function that retrieves data contract based on its identifier.
-    /// * `platform_version` - A reference to the platform version to be used for verification.
+    /// - `proof`: The serialized proof to verify.
+    /// - `contract_lookup_fn`: Retrieves a data contract by its identifier.
+    /// - `platform_version`: The platform version to verify against.
     ///
     /// # Returns
     ///
-    /// A `Result` containing:
-    /// * A tuple with the root hash and a collection of `(Identifier, ResourceVote)` pairs if the proof is valid. The collection type is flexible and determined by the generic parameter `I`.
-    /// * An `Error` variant if the proof verification fails or a deserialization error occurs.
+    /// The root hash and, for each vote poll the identity has a vote on in the queried range,
+    /// the vote poll's unique id with the identity's current vote and the number of times the
+    /// identity has voted on that poll. The count includes the current vote, so it is 1 after
+    /// a first vote and grows by 1 with each changed vote. A vote poll the identity has not
+    /// voted on has no entry. The collection type is chosen through `I`.
     ///
     /// # Errors
     ///
-    /// This function will return an `Error` if:
-    /// * The proof verification fails.
-    /// * A deserialization error occurs when parsing the serialized document(s).
+    /// Returns an `Error` if:
+    ///
+    /// - The proof does not verify.
+    /// - A stored vote can not be decoded, or its data contract is not found.
+    /// - The platform version is unknown.
     pub fn verify_identity_votes_given_proof<I>(
         &self,
         proof: &[u8],
@@ -40,7 +46,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, I), Error>
     where
-        I: FromIterator<(Identifier, ResourceVote)>,
+        I: FromIterator<(Identifier, (ResourceVote, u16))>,
     {
         match platform_version
             .drive
@@ -91,8 +97,12 @@ mod tests {
 
         let contract_lookup_fn: &ContractLookupFn = &|_id| Ok(None);
 
-        let result: Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> =
-            query.verify_identity_votes_given_proof(&[], contract_lookup_fn, &platform_version);
+        let result = query
+            .verify_identity_votes_given_proof::<BTreeMap<Identifier, (ResourceVote, u16)>>(
+                &[],
+                contract_lookup_fn,
+                &platform_version,
+            );
 
         assert!(
             matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
