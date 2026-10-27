@@ -21,6 +21,8 @@ use dpp::bincode;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
@@ -166,9 +168,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                         .into_iter()
                         .map(|(path, key, element)| {
                             let serialized_reference = element.into_item_bytes()?;
-                            let bincode_config = bincode::config::standard()
-                                .with_big_endian()
-                                .with_no_limit();
+                            let bincode_config = PLATFORM_BINCODE_CONFIG;
                             let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                                 bincode::decode_from_slice(&serialized_reference, bincode_config)
                                     .map_err(|e| {
