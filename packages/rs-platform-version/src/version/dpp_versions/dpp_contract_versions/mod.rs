@@ -15,6 +15,19 @@ pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
+    /// The format a node stores a contract in: the `DataContractInSerializationFormat` variant
+    /// Drive writes to state. It is a separate selector because a stored format need not be one
+    /// that state transitions carry or clients are sent. Each protocol version so far selects the
+    /// format of `contract_serialization_version`'s default; format 2, the stored format with
+    /// compiled document types, is written only from the protocol version whose table selects it.
+    pub contract_storage_serialization_version: FeatureVersion,
+    /// The generation of a document type's stored form (`DocumentTypeInSerializationFormat`)
+    /// that a contract stored in format 2 holds each of its document types in. The stored form
+    /// carries its generation, so changing this changes only what is written from then on; a
+    /// generation is paired with the builders whose output it stores, so one that rebuilds an
+    /// index structure on load (generation 0 rebuilds it with `index_levels_from_indices` 0)
+    /// is selected only with them.
+    pub contract_storage_document_type_version: FeatureVersion,
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
@@ -121,6 +134,13 @@ pub struct DocumentTypeMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
     pub document_type_schema: FeatureVersion,
+    /// How full validation checks a document type's schema at registration. 0: against the
+    /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
+    /// which also compiles the schema. 1 (protocol version 15): with the rules of document
+    /// meta-schema v3 in Platform's own code, an index property name held to 255 bytes, and
+    /// the type required to have a typed validation schema, which its documents are checked
+    /// against natively (`validate_document` 2).
+    pub check_document_type_schema: FeatureVersion,
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
@@ -164,6 +184,12 @@ pub struct DocumentTypeSchemaVersions {
     /// documents a `countOf` or `sumOf` totals by integer, string or
     /// identifier keys; 1 (protocol version 15) by byte array keys too.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Builds a document type's typed validation schema and its native validator
+    /// (`document_type::schema::validation_schema`), which `validate_document` 2 checks
+    /// documents against. `None` on versions whose document validation does not read one;
+    /// 0 (protocol version 15) builds what the document validator of protocol version 14
+    /// compiles.
+    pub validation_schema: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at

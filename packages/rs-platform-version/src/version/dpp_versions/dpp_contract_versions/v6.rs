@@ -42,6 +42,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         max_version: 1,
         default_current_version: 1,
     },
+    contract_storage_serialization_version: 1,
+    contract_storage_document_type_version: 0,
     contract_structure_version: 1,
     created_data_contract_structure: 0,
     // Config V2 (protocol version 14) carries the optional contract moderation declaration.
@@ -77,6 +79,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
             document_type_schema: 3, // changed: v3 document meta-schema — v2 plus the ranked index keywords, and the gate the index parser reads
+            check_document_type_schema: 0,
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
             find_identifier_and_binary_paths: 1, // changed: a typed array's identifier and byte array elements are registered as `path[]` conversion paths
@@ -87,6 +90,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             apply_max_bytes: Some(0), // changed: the meta-schema v3 `maxBytes` keyword (the most UTF-8 bytes a string property, or each string element of a typed array, may hold) is folded into the string's `StringPropertySizes`; None before this version means the keyword is ignored, as it was before it existed
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             parse_property_constraints: Some(0), // changed: the meta-schema v3 `propertyConstraints` doctype keyword (named comparisons between integer expressions over the document's properties) is parsed onto the document type and the properties it reads are checked; None before this version means the keyword is ignored, as it was before it existed
+            validation_schema: None,
             apply_generated_from: Some(0), // changed: the meta-schema v3 `generatedFrom` keyword (a string property whose value a built-in function generates from other properties of the same document) is parsed onto the property and the properties it reads are checked at registration; None before this version means the keyword is ignored, as it was before it existed
             expand_property_type_shorthands: Some(0), // new: a property schema of `"type": "identifier"`, or `"type": "bytes"` with a `size`, is read as the byte array it stands for, before the meta-schema, the parser and the document validator see it; the contract is stored as sent. None before this version leaves the schema as sent, which every earlier meta-schema refuses
             validate_max_depth: 1, // changed: a scalar `$ref` target is not walked and the visited set is never cleared, so the depth check is bounded; v0 was exponential on a crafted `$defs` chain
