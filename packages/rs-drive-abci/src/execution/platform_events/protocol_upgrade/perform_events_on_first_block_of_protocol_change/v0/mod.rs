@@ -931,7 +931,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Token marketplace escrow trees (v15 note 6): the BigSumTree under the Tokens tree of
+        // Token marketplace escrow trees (v15 note 9): the BigSumTree under the Tokens tree of
         // the tokens open listings hold, and the SumTree under the prefunded specialized
         // balances of the credits open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same
@@ -966,6 +966,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
     use drive::drive::credit_pools::pools_path;
@@ -3119,7 +3120,10 @@ mod tests {
         // (`documentsCountable` / `rangeCountable`) — the latter must also be
         // stripped from pre-v12 contracts so the v2 parser cannot revive them
         // and reinterpret a NormalTree contract as a count tree post-upgrade.
-        for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (_doc_type_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
@@ -3138,9 +3142,7 @@ mod tests {
         }
 
         // Serialize the modified contract and insert directly into Drive
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes = bincode::encode_to_vec(&serialization_format, bincode_config)
             .expect("expected to serialize");
 
@@ -3194,14 +3196,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_before: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_before,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_before: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_before, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let has_unknown_before = format_before.document_schemas().values().any(|schema| {
             schema
@@ -3257,14 +3255,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_after: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_after,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_after: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_after, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let schema_has_key = |format: &DataContractInSerializationFormat, key: &str| -> bool {
             format.document_schemas().values().any(|schema| {
@@ -3414,7 +3408,11 @@ mod tests {
             )
             .expect("convert to serialization format");
 
-        for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+        for (_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
+        {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("historicalSmuggled".to_string()),
@@ -3423,9 +3421,7 @@ mod tests {
             }
         }
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes =
             bincode::encode_to_vec(&serialization_format, bincode_config).expect("serialize");
 
@@ -3631,9 +3627,7 @@ mod tests {
         data_contract.set_owner_id(identity.id());
 
         let contract_id = data_contract.id();
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         // Build 3 revisions, each with a different unknown property
         let timestamps: Vec<u64> = vec![1_000_000, 2_000_000, 3_000_000];
@@ -3648,7 +3642,11 @@ mod tests {
                 )
                 .expect("convert to serialization format");
 
-            for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+            for (_name, schema_value) in serialization_format
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .iter_mut()
+            {
                 if let Some(map) = schema_value.as_map_mut() {
                     map.push((
                         PlatformValue::Text(smuggled_key.to_string()),

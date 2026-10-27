@@ -229,6 +229,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
     use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -2137,9 +2138,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2629,9 +2628,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2736,9 +2733,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
