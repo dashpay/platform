@@ -64,7 +64,9 @@ async fn register_contract_with_schema_and_balance(
 ) -> Registration {
     register_contract_with(
         |contract| {
-            let schemas = contract.document_schemas_mut();
+            let schemas = contract
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas");
             schemas.clear();
             schemas.insert("item".to_string(), schema);
         },
@@ -137,7 +139,10 @@ async fn register_contract_with(
 async fn should_refuse_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
     let outcome = register_contract_with(
         |contract| {
-            contract.document_schemas_mut().clear();
+            contract
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .clear();
             add_ref_dag_document_type(contract, 12);
         },
         PlatformVersion::latest().protocol_version,
@@ -226,16 +231,11 @@ async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
                     outcome.block
                 );
             } else {
-                assert_matches!(
-                    &outcome.block,
-                    StateTransitionExecutionResult::PaidConsensusError {
-                        error: ConsensusError::BasicError(BasicError::ContractError(
-                            DataContractError::InvalidContractStructure(message)
-                        )),
-                        ..
-                    } if message.contains("a schema must be an object"),
-                    "block of {schema:?} at protocol version {protocol_version}: {:?}",
-                    outcome.block
+                // Refused, paid: the nonce bumped and the owner charged
+                assert_paid_contract_structure_error_in_block(
+                    &outcome,
+                    "a schema must be an object",
+                    1,
                 );
             }
         }

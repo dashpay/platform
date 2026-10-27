@@ -64,7 +64,9 @@ use crate::data_contract::document_type::property_names::{
 };
 use crate::data_contract::document_type::schema::last_value;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::validator::LoadedValidationSchema;
+use crate::data_contract::document_type::validator::{
+    LoadedValidationSchema, StatelessJsonSchemaLazyValidator,
+};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -372,54 +374,106 @@ impl ValidationSchema {
 }
 
 impl DataContract {
-    /// The validation schema of one of the contract's document types: the one stored with it
-    /// when it was read back from its stored form (refused when it was stored without one),
-    /// otherwise the one the builder `platform_version` selects builds from the schema the
-    /// document validator compiles for it. Refuses a protocol version that selects none
-    /// (`validation_schema`) for a type parsed from its schema.
+    /// The validation schema of one of the contract's document types, the one its documents
+    /// are checked against ([`native_validator_of`]): the one stored with it when it was read
+    /// back from its stored form (refused when it was stored without one), otherwise the one
+    /// the builder `platform_version` selects builds from the schema the document validator
+    /// compiles for it. Refuses a protocol version that selects none (`validation_schema`) for a
+    /// type parsed from its schema.
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
-        #[cfg(feature = "validation")]
-        match self
-            .document_type_for_name(document_type_name)?
-            .json_schema_validator_ref()
-            .loaded_validation_schema()
-        {
-            Some(LoadedValidationSchema::Built { schema, .. }) => return Ok(schema.clone()),
-            Some(LoadedValidationSchema::Refused(refusal)) => {
-                return Err(ProtocolError::DataContractError(refusal.clone()))
-            }
-            None => {}
-        }
-        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
-        let (schema, _) = ValidationSchema::build(&root, platform_version)?;
-        Ok(schema)
-    }
-
-    /// The native validator of one of the contract's document types: its validation schema
-    /// ([`Self::document_type_validation_schema`]) with the patterns the builder compiled.
-    pub(crate) fn document_type_native_validator(
-        &self,
-        document_type_name: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<DocumentSchemaValidator, ProtocolError> {
-        let root = self.document_type_validated_schema(document_type_name, platform_version)?;
-        DocumentSchemaValidator::try_from_root(&root, platform_version)
-    }
-
-    /// The schema the document validator compiles for one of the contract's document types:
-    /// its own schema with the contract's `$defs` and the base schema added and its property
-    /// type shorthands expanded.
-    fn document_type_validated_schema(
-        &self,
-        document_type_name: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<Value, ProtocolError> {
         let document_type = self.document_type_for_name(document_type_name)?;
-        validated_schema(document_type.schema(), self.schema_defs(), platform_version)
+        #[cfg(feature = "validation")]
+        {
+            match native_validator_of(
+                document_type.json_schema_validator_ref(),
+                document_type.schema(),
+                self.schema_defs(),
+                platform_version,
+            )? {
+                Ok(validator) => Ok(validator.schema().clone()),
+                Err(refusal) => Err(ProtocolError::DataContractError(refusal.clone())),
+            }
+        }
+        #[cfg(not(feature = "validation"))]
+        {
+            let root =
+                validated_schema(document_type.schema(), self.schema_defs(), platform_version)?;
+            let (schema, _) = ValidationSchema::build(&root, platform_version)?;
+            Ok(schema)
+        }
+    }
+}
+
+/// The native validator a document type's documents are checked with, or the refusal of its
+/// schema, built on first use and kept in `validators`, the type's own: built from the typed
+/// validation schema it was read back with from a stored form, by the generation that built
+/// it, or refused as it was stored; otherwise built by the builder `platform_version` selects
+/// from `schema`, the type's schema, in a contract whose `$defs` are `schema_defs`. Both are
+/// lent from `validators`. Any error other than the schema's refusal (a [`DataContractError`])
+/// is returned as it is, and not kept. Refuses a protocol version that selects no builder for
+/// a type parsed from its schema.
+///
+/// The one place that decides what a type's documents are checked against: document
+/// validation, [`DataContract::document_type_validation_schema`] and the type's stored form all
+/// read it.
+#[cfg(feature = "validation")]
+pub(crate) fn native_validator_of<'v>(
+    validators: &'v StatelessJsonSchemaLazyValidator,
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
+    // The generation that built the stored schema, or that this version selects
+    let (generation, stored) = match validators.loaded_validation_schema() {
+        Some(LoadedValidationSchema::Built { generation, schema }) => (*generation, Some(schema)),
+        Some(LoadedValidationSchema::Refused { refusal, .. }) => return Ok(Err(refusal)),
+        None => (builder_generation(platform_version)?, None),
+    };
+    let slot =
+        validators
+            .native(generation)
+            .ok_or_else(|| ProtocolError::UnknownVersionMismatch {
+                method: "native_validator_of".to_string(),
+                known_versions: vec![0],
+                received: generation,
+            })?;
+    if let Some(built) = slot.get() {
+        return Ok(built.as_ref());
+    }
+    let built = match stored {
+        Some(encoded) => DocumentSchemaValidator::with_patterns(
+            Arc::new(encoded.decode()?),
+            BTreeMap::new(),
+            generation,
+        ),
+        None => DocumentSchemaValidator::try_from_root(
+            &validated_schema(schema, schema_defs, platform_version)?,
+            platform_version,
+        ),
+    };
+    let built = match built {
+        Ok(validator) => Ok(validator),
+        Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
+        Err(error) => return Err(error),
+    };
+    // Building is deterministic: a build that finished first holds the same result
+    Ok(slot.get_or_init(|| built).as_ref())
+}
+
+/// Keeps `validator`, built of a document type's schema by the generation it names, in
+/// `validators`, the type's own, for document validation and the type's stored form to use
+/// rather than build it again. A slot already filled holds the same build.
+#[cfg(feature = "validation")]
+pub(crate) fn keep_native_validator(
+    validators: &StatelessJsonSchemaLazyValidator,
+    validator: DocumentSchemaValidator,
+) {
+    if let Some(slot) = validators.native(validator.generation()) {
+        let _ = slot.set(Ok(validator));
     }
 }
 
@@ -451,7 +505,11 @@ impl DocumentSchemaValidator {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let (schema, patterns) = ValidationSchema::build(root, platform_version)?;
-        Self::with_patterns(schema, patterns, builder_generation(platform_version)?)
+        Self::with_patterns(
+            Arc::new(schema),
+            patterns,
+            builder_generation(platform_version)?,
+        )
     }
 }
 

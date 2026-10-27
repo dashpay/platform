@@ -549,7 +549,7 @@ impl StateTransitionWasm {
                         DataContractInSerializationFormat::V1(v1)
                     }
                     DataContractInSerializationFormat::V2(mut v2) => {
-                        v2.owner_id = owner_id;
+                        v2.base.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V2(v2)
                     }
@@ -572,7 +572,7 @@ impl StateTransitionWasm {
                         DataContractInSerializationFormat::V1(v1)
                     }
                     DataContractInSerializationFormat::V2(mut v2) => {
-                        v2.owner_id = owner_id;
+                        v2.base.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V2(v2)
                     }

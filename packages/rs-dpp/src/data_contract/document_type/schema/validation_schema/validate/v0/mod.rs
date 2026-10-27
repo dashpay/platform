@@ -44,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use time::format_description::well_known::Rfc3339;
 use url::Url;
 
@@ -75,7 +76,7 @@ impl DocumentSchemaValidator {
     /// twice, which the builder refuses already, and a chain of `$ref`s that returns to where
     /// it started without entering the value.
     pub(super) fn with_patterns_v0(
-        schema: ValidationSchema,
+        schema: Arc<ValidationSchema>,
         mut patterns: BTreeMap<String, Regex>,
     ) -> Result<Self, DataContractError> {
         {

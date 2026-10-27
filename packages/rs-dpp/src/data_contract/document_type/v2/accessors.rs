@@ -31,7 +31,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentTypeV2 {
+    /// Drops the validators built of the schema it replaces, and the validation schema a
+    /// stored form gave the type: neither holds for the schema changed.
     fn schema_mut(&mut self) -> &mut Value {
+        #[cfg(feature = "validation")]
+        {
+            self.json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+        }
         &mut self.schema
     }
 }

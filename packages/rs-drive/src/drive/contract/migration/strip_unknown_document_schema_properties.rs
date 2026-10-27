@@ -171,7 +171,8 @@ impl Drive {
             };
 
         let mut contract_modified = false;
-        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        // The contracts this migration rewrites were stored before the stored format existed
+        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut()?.iter_mut()
         {
             if strip_unknown_properties_from_document_schema(schema_value) {
                 tracing::info!(

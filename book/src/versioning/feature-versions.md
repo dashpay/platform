@@ -240,6 +240,7 @@ pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     pub contract_serialization_version: FeatureVersionBounds,
     pub contract_storage_serialization_version: FeatureVersion,
+    pub contract_storage_document_type_version: FeatureVersion,
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
     pub config: FeatureVersionBounds,
@@ -260,7 +261,9 @@ clients are sent; `contract_storage_serialization_version` is the format Drive
 writes to state. They are separate because a stored format need not be one a
 transition may carry: format version 2 holds the contract's compiled document
 types, which only state holds, and is written only from the protocol version
-whose table selects it.
+whose table selects it. `contract_storage_document_type_version` picks the
+generation each compiled document type is stored in; the stored form carries
+its generation, so a reader never needs the table to decode it.
 
 ## The Drive ABCI Branch
 

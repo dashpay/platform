@@ -3230,7 +3230,7 @@ mod tests {
             .contract_versions
             .contract_storage_serialization_version = 2;
         let stored = DataContractInSerializationFormat::try_from_data_contract_for_storage(
-            sample_data_contract(),
+            &sample_data_contract(),
             &storing,
         )
         .expect("expected the contract to compile");

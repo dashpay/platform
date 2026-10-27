@@ -49,7 +49,8 @@ pub(super) struct StoredContestedIndex {
     resolution: StoredContestedResolution,
 }
 
-/// [`ContestedIndexFieldMatch`]: a regex as its pattern, compiled again when first matched.
+/// [`ContestedIndexFieldMatch`]: a regex as its pattern, compiled when the index is read back,
+/// which refuses a pattern that does not compile.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredContestedFieldMatch {
     Regex(String),
@@ -286,14 +287,14 @@ impl TryFrom<StoredIndex> for Index {
                 let field_matches = contested
                     .field_matches
                     .into_iter()
-                    .map(|(name, field_match)| {
+                    .map(|(field, field_match)| {
                         let field_match = match field_match {
                             StoredContestedFieldMatch::Regex(pattern) => {
                                 ContestedIndexFieldMatch::Regex(
                                     LazyRegex::try_compiled(pattern).map_err(|error| {
                                         stored_error(format!(
-                                            "index {name} has a contested field regex that does \
-                                             not compile: {error}"
+                                            "index {name} has a contested regex on {field} that \
+                                             does not compile: {error}"
                                         ))
                                     })?,
                                 )
@@ -302,7 +303,7 @@ impl TryFrom<StoredIndex> for Index {
                                 ContestedIndexFieldMatch::PositiveIntegerMatch(value)
                             }
                         };
-                        Ok((name, field_match))
+                        Ok((field, field_match))
                     })
                     .collect::<Result<_, ProtocolError>>()?;
                 Ok::<_, ProtocolError>(ContestedIndexInformation {

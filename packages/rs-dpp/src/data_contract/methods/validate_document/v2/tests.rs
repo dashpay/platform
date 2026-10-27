@@ -36,6 +36,21 @@ fn item_contract(properties: Value) -> DataContract {
     contract
 }
 
+/// `contract` read anew from its bytes without validation, as a node reads a contract it
+/// stores in format version 1: no validator built yet, as registration keeps the one it builds.
+fn read_anew(contract: &DataContract) -> DataContract {
+    use crate::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+        PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let bytes = contract
+        .serialize_to_bytes_with_platform_version(latest)
+        .expect("expected the contract to serialize");
+    DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back")
+}
+
 /// What document validation has built of `item`'s native validator with builder generation 0,
 /// the one protocol version 15 selects: nothing yet (`None`),
 /// the validator (`Some(true)`), or the refusal of a schema without a validation schema
@@ -48,6 +63,19 @@ fn native_validator_state(contract: &DataContract) -> Option<bool> {
         .native(0)
         .and_then(|slot| slot.get())
         .map(Result::is_ok)
+}
+
+/// Registration keeps the native validator it builds of a type's schema, so document
+/// validation and the type's stored form use it rather than build it again, and a clone of the
+/// contract keeps it too.
+#[test]
+fn should_keep_the_native_validator_registration_builds() {
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "position": 0 },
+    }));
+    assert_eq!(native_validator_state(&contract), Some(true));
+    assert_eq!(native_validator_state(&contract.clone()), Some(true));
+    assert_eq!(native_validator_state(&read_anew(&contract)), None);
 }
 
 /// Document validation's verdict on `properties` as an `item`, at `platform_version`.
@@ -105,8 +133,8 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
         platform_value!({ "when": "2026-13-01" }),
         platform_value!({ "other": 1 }),
     ] {
-        // A clone holds neither validator built, as a contract read anew
-        let contract = contract.clone();
+        // Read anew, the contract holds neither validator built
+        let contract = read_anew(&contract);
         let existing = document_errors(&contract, properties.clone(), protocol_version_14);
         // Protocol version 14 never builds the native validator
         assert_eq!(native_validator_state(&contract), None, "{properties:?}");
@@ -149,9 +177,6 @@ fn should_refuse_the_documents_of_a_type_without_a_validation_schema() {
             platform_version,
         )
         .expect("expected the document type to set");
-    assert!(contract
-        .document_type_validation_schema("item", platform_version)
-        .is_err());
 
     // Protocol version 14 checks the documents through the `jsonschema` crate
     let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -188,6 +213,9 @@ fn should_refuse_the_documents_of_a_type_without_a_validation_schema() {
     }
     // The refusal is kept with the document type, as a validator would be
     assert_eq!(native_validator_state(&contract), Some(false));
+    assert!(contract
+        .document_type_validation_schema("item", platform_version)
+        .is_err());
 }
 
 #[test]
@@ -326,12 +354,15 @@ fn should_check_the_documents_of_a_type_read_back_from_its_stored_form_against_i
     };
     assert_eq!(*generation, 0);
     assert_eq!(
-        Some(schema),
+        schema
+            .decode()
+            .expect("expected the stored schema to decode"),
         contract
             .document_type_validation_schema("item", latest)
-            .ok()
-            .as_ref()
+            .expect("expected the validation schema")
     );
+    // Read back, the schema stays encoded until a document is checked
+    assert_eq!(native_validator_state(&read_back), None);
 
     for properties in [
         platform_value!({ "name": "abc", "count": 3 }),
@@ -389,7 +420,7 @@ fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_sche
                 errors.as_slice(),
                 [ConsensusError::BasicError(BasicError::ContractError(
                     DataContractError::InvalidContractStructure(message)
-                ))] if message.contains("its stored form holds none")
+                ))] if message.contains("selected no validation schema builder")
             ),
             "{errors:?}"
         );

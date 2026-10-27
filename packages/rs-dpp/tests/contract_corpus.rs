@@ -112,8 +112,6 @@ fn should_reload_every_corpus_contract_reserialized_at_the_latest_protocol_versi
     }
 }
 
-/// The validation keywords of a schema the way the validation schema holds them: only the
-/// keywords that constrain a value, at every node.
 /// The latest protocol version, but storing contracts in format version 2, their document types
 /// compiled.
 fn latest_storing_compiled_contracts() -> &'static PlatformVersion {
@@ -243,6 +241,47 @@ fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
     assert_eq!(document_types, 106 + 1397);
 }
 
+/// A contract registered at the latest version keeps the native validator registration built of
+/// each of its types, which its documents are checked with and its stored form holds the schema
+/// of: it is the one the type's schema builds when nothing was kept, for every corpus contract
+/// the latest version registers.
+#[test]
+fn should_keep_the_validation_schema_registration_builds_as_the_one_built_anew() {
+    let platform_version = PlatformVersion::latest();
+    let mut compared = 0;
+    for contract in contracts() {
+        // Registration fully validates; older contracts may fail the latest version's checks
+        let Ok(registered) =
+            DataContract::versioned_deserialize_trusted(&contract.bytes, true, platform_version)
+        else {
+            continue;
+        };
+        let read = load(&contract, platform_version);
+        for name in registered.document_types().keys() {
+            let kept = registered.document_type_validation_schema(name, platform_version);
+            let built = read.document_type_validation_schema(name, platform_version);
+            match (kept, built) {
+                (Ok(kept), Ok(built)) => assert_eq!(
+                    kept, built,
+                    "{:?} contract {} document type {name}",
+                    contract.network, contract.id
+                ),
+                (kept, built) => panic!(
+                    "{:?} contract {} document type {name}: kept {kept:?}, built {built:?}",
+                    contract.network, contract.id
+                ),
+            }
+            compared += 1;
+        }
+    }
+    assert!(
+        compared > 0,
+        "expected the latest version to register some corpus contract"
+    );
+}
+
+/// The validation keywords of a schema the way the validation schema holds them: only the
+/// keywords that constrain a value, at every node.
 fn validation_keywords_of(schema: &Value) -> Value {
     let Value::Map(map) = schema else {
         return schema.clone();

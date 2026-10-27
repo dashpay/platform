@@ -1,16 +1,21 @@
-//! The stored form of a document type's typed validation schema (`ValidationSchema`), with the
-//! generation of the builder that built it. The schemas `$ref`s reach are kept once each, in
+//! The stored form of what a document type's documents are checked against: the typed
+//! validation schema (`ValidationSchema`) and the generation of the builder that built it, or
+//! the refusal of the schema ([`StoredValidation`]).
+//!
+//! The schema is stored as the bytes of its encoding ([`StoredValidationSchema`]), decoded on
+//! first use ([`EncodedValidationSchema`]): reading a contract back never builds the node tree
+//! of a type whose documents it does not check, and a build without `validation`, which checks
+//! none, reads past the bytes. The schemas `$ref`s reach are kept once each, in
 //! [`StoredValidationSchema::nodes`], and every reference names its node by index, as the
 //! built schema shares one node among the references that reach it.
-//!
-//! The stored form decodes without the `validation-schema` feature; converting it to and from
-//! the built schema needs the feature.
 
 use super::nested::Nested;
 use super::property::StoredEncryptedFor;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Value;
 use std::collections::BTreeMap;
+#[cfg(feature = "validation")]
+use std::sync::Arc;
 
 #[cfg(feature = "validation")]
 use super::stored_error;
@@ -24,19 +29,76 @@ use crate::data_contract::document_type::EncryptedFor;
 #[cfg(feature = "validation")]
 use crate::ProtocolError;
 #[cfg(feature = "validation")]
-use platform_version::version::FeatureVersion;
-#[cfg(feature = "validation")]
-use std::sync::Arc;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
-/// `ValidationSchema`, and the builder generation that built it.
+/// What the version that stored a document type checks its documents against. Builder
+/// generations are spelled as the integers they are today (`u16`), not as the
+/// `FeatureVersion` alias: the stored form is frozen, so its layout must not follow a change to
+/// that alias.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+pub(super) enum StoredValidation {
+    /// That version selects no validation schema builder: the type's documents are refused.
+    NoBuilder,
+    /// Builder `generation` refused the schema: the type's documents are refused.
+    Refused { generation: u16 },
+    /// Builder `generation` built the validation schema; `schema` is its encoding
+    /// ([`StoredValidationSchema`]).
+    Built { generation: u16, schema: Vec<u8> },
+}
+
+/// `ValidationSchema`, as its encoding in [`StoredValidation::Built`] holds it.
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub(super) struct StoredValidationSchema {
-    /// The builder generation, a `FeatureVersion`, spelled as the integer it is today: the
-    /// stored form is frozen, so its layout must not follow a change to that alias.
-    generation: u16,
     root: StoredSchemaNode,
     nodes: Vec<StoredSchemaNode>,
     references: BTreeMap<String, u32>,
+}
+
+/// The encoding of a typed validation schema read back from generation 0 of the stored form,
+/// kept as it was stored and decoded on first use. Shared, so a clone of the document type
+/// holding it copies no bytes.
+#[cfg(feature = "validation")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EncodedValidationSchema(Arc<[u8]>);
+
+#[cfg(feature = "validation")]
+impl EncodedValidationSchema {
+    /// The encoding as stored.
+    pub(super) fn new(bytes: Vec<u8>) -> Self {
+        EncodedValidationSchema(bytes.into())
+    }
+
+    /// The bytes, to store again.
+    pub(super) fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[cfg(feature = "validation")]
+impl EncodedValidationSchema {
+    /// `schema`, encoded.
+    pub(crate) fn encode(schema: &ValidationSchema) -> Result<Self, ProtocolError> {
+        bincode::encode_to_vec(StoredValidationSchema::new(schema), PLATFORM_BINCODE_CONFIG)
+            .map(Self::new)
+            .map_err(|e| ProtocolError::PlatformSerializationError(e.to_string()))
+    }
+
+    /// The validation schema, decoded with the untrusted decoder and its nesting bound. Refuses
+    /// bytes left over after it and a reference to a node it does not hold.
+    pub(crate) fn decode(&self) -> Result<ValidationSchema, ProtocolError> {
+        let (stored, read) =
+            bincode::borrow_decode_from_slice_untrusted::<StoredValidationSchema, _>(
+                &self.0,
+                PLATFORM_BINCODE_CONFIG,
+            )
+            .map_err(|e| stored_error(format!("validation schema does not decode: {e}")))?;
+        if read != self.0.len() {
+            return Err(stored_error(
+                "bytes left over after its validation schema".to_string(),
+            ));
+        }
+        stored.into_validation_schema()
+    }
 }
 
 /// `SchemaNode`.
@@ -137,8 +199,8 @@ pub(super) enum StoredValidatorFormat {
 
 #[cfg(feature = "validation")]
 impl StoredValidationSchema {
-    /// `schema`, which builder generation `generation` built.
-    pub(super) fn new(schema: &ValidationSchema, generation: FeatureVersion) -> Self {
+    /// `schema`, in its stored form.
+    fn new(schema: &ValidationSchema) -> Self {
         let mut nodes = Vec::new();
         let mut indexes: BTreeMap<*const SchemaNode, u32> = BTreeMap::new();
         let references = schema
@@ -154,20 +216,15 @@ impl StoredValidationSchema {
             })
             .collect();
         StoredValidationSchema {
-            generation,
             root: StoredSchemaNode::from(&schema.root),
             nodes,
             references,
         }
     }
 
-    /// The built schema and the generation that built it. Refuses a reference to a node the
-    /// stored form does not hold.
-    pub(super) fn into_validation_schema(
-        self,
-    ) -> Result<(ValidationSchema, FeatureVersion), ProtocolError> {
+    /// The built schema. Refuses a reference to a node the stored form does not hold.
+    fn into_validation_schema(self) -> Result<ValidationSchema, ProtocolError> {
         let StoredValidationSchema {
-            generation,
             root,
             nodes,
             references,
@@ -187,13 +244,10 @@ impl StoredValidationSchema {
                 Ok((reference, Arc::clone(node)))
             })
             .collect::<Result<_, ProtocolError>>()?;
-        Ok((
-            ValidationSchema {
-                root: root.into(),
-                references,
-            },
-            generation,
-        ))
+        Ok(ValidationSchema {
+            root: root.into(),
+            references,
+        })
     }
 }
 

@@ -1,9 +1,9 @@
 //! The stored form of a document type's rules ([`PropertyConstraint`] and the integer
 //! expressions under it): `propertyConstraints`, `deleteConstraints`, `immutable` conditions
 //! and `retractedWhen`. Every edge from a rule or an expression to one of its own kind counts
-//! against the decoding bound ([`Nested`]).
+//! against the rule grammar's decoding bound ([`RuleNested`]).
 
-use super::nested::Nested;
+use super::nested::RuleNested;
 use crate::data_contract::document_type::property_constraints::{
     AffixPosition, AggregateBinding, AggregateKind, AggregateRead, BytesOperand,
     ConstraintComparison, ConstraintExpression, ContainsNeedle, EqualityKind, PropertyConstraint,
@@ -69,15 +69,15 @@ pub(super) enum StoredRule {
     },
     Present(String),
     Absent(String),
-    AnyOf(Nested<Vec<StoredRule>>),
-    AllOf(Nested<Vec<StoredRule>>),
-    Not(Box<Nested<StoredRule>>),
+    AnyOf(RuleNested<Vec<StoredRule>>),
+    AllOf(RuleNested<Vec<StoredRule>>),
+    Not(Box<RuleNested<StoredRule>>),
     IfThen {
-        condition: Box<Nested<StoredRule>>,
-        then: Box<Nested<StoredRule>>,
-        otherwise: Option<Box<Nested<StoredRule>>>,
+        condition: Box<RuleNested<StoredRule>>,
+        then: Box<RuleNested<StoredRule>>,
+        otherwise: Option<Box<RuleNested<StoredRule>>>,
     },
-    NotIn(Box<Nested<StoredRule>>),
+    NotIn(Box<RuleNested<StoredRule>>),
 }
 
 /// [`ConstraintExpression`].
@@ -98,15 +98,15 @@ pub(super) enum StoredExpression {
         index: u16,
     },
     System(StoredSystemRead),
-    Add(Nested<Vec<StoredExpression>>),
-    Multiply(Nested<Vec<StoredExpression>>),
-    Subtract(Box<Nested<(StoredExpression, StoredExpression)>>),
-    Divide(Box<Nested<(StoredExpression, StoredExpression)>>),
-    Modulo(Box<Nested<(StoredExpression, StoredExpression)>>),
-    Power(Box<Nested<(StoredExpression, StoredExpression)>>),
-    Min(Nested<Vec<StoredExpression>>),
-    Max(Nested<Vec<StoredExpression>>),
-    Abs(Box<Nested<StoredExpression>>),
+    Add(RuleNested<Vec<StoredExpression>>),
+    Multiply(RuleNested<Vec<StoredExpression>>),
+    Subtract(Box<RuleNested<(StoredExpression, StoredExpression)>>),
+    Divide(Box<RuleNested<(StoredExpression, StoredExpression)>>),
+    Modulo(Box<RuleNested<(StoredExpression, StoredExpression)>>),
+    Power(Box<RuleNested<(StoredExpression, StoredExpression)>>),
+    Min(RuleNested<Vec<StoredExpression>>),
+    Max(RuleNested<Vec<StoredExpression>>),
+    Abs(Box<RuleNested<StoredExpression>>),
     Aggregate(StoredAggregateRead),
 }
 
@@ -220,9 +220,9 @@ pub(super) enum StoredContainsNeedle {
 
 impl From<&PropertyConstraint> for StoredRule {
     fn from(rule: &PropertyConstraint) -> Self {
-        let nested = |rule: &PropertyConstraint| Box::new(Nested(StoredRule::from(rule)));
+        let nested = |rule: &PropertyConstraint| Box::new(RuleNested(StoredRule::from(rule)));
         let list =
-            |rules: &[PropertyConstraint]| Nested(rules.iter().map(StoredRule::from).collect());
+            |rules: &[PropertyConstraint]| RuleNested(rules.iter().map(StoredRule::from).collect());
         match rule {
             PropertyConstraint::Compare {
                 comparison,
@@ -324,8 +324,8 @@ impl From<&PropertyConstraint> for StoredRule {
 
 impl From<StoredRule> for PropertyConstraint {
     fn from(stored: StoredRule) -> Self {
-        let nested = |rule: Box<Nested<StoredRule>>| Box::new(PropertyConstraint::from(rule.0));
-        let list = |rules: Nested<Vec<StoredRule>>| {
+        let nested = |rule: Box<RuleNested<StoredRule>>| Box::new(PropertyConstraint::from(rule.0));
+        let list = |rules: RuleNested<Vec<StoredRule>>| {
             rules.0.into_iter().map(PropertyConstraint::from).collect()
         };
         match stored {
@@ -429,10 +429,10 @@ impl From<StoredRule> for PropertyConstraint {
 impl From<&ConstraintExpression> for StoredExpression {
     fn from(expression: &ConstraintExpression) -> Self {
         let list = |operands: &[ConstraintExpression]| {
-            Nested(operands.iter().map(StoredExpression::from).collect())
+            RuleNested(operands.iter().map(StoredExpression::from).collect())
         };
         let pair = |left: &ConstraintExpression, right: &ConstraintExpression| {
-            Box::new(Nested((left.into(), right.into())))
+            Box::new(RuleNested((left.into(), right.into())))
         };
         match expression {
             ConstraintExpression::Value(value) => StoredExpression::Value(*value),
@@ -477,7 +477,7 @@ impl From<&ConstraintExpression> for StoredExpression {
             ConstraintExpression::Min(operands) => StoredExpression::Min(list(operands)),
             ConstraintExpression::Max(operands) => StoredExpression::Max(list(operands)),
             ConstraintExpression::Abs(operand) => {
-                StoredExpression::Abs(Box::new(Nested(operand.as_ref().into())))
+                StoredExpression::Abs(Box::new(RuleNested(operand.as_ref().into())))
             }
             ConstraintExpression::Aggregate(read) => StoredExpression::Aggregate(read.into()),
         }
@@ -486,14 +486,14 @@ impl From<&ConstraintExpression> for StoredExpression {
 
 impl From<StoredExpression> for ConstraintExpression {
     fn from(stored: StoredExpression) -> Self {
-        let list = |operands: Nested<Vec<StoredExpression>>| {
+        let list = |operands: RuleNested<Vec<StoredExpression>>| {
             operands
                 .0
                 .into_iter()
                 .map(ConstraintExpression::from)
                 .collect()
         };
-        let pair = |operands: Box<Nested<(StoredExpression, StoredExpression)>>| {
+        let pair = |operands: Box<RuleNested<(StoredExpression, StoredExpression)>>| {
             let (left, right) = operands.0;
             (Box::new(left.into()), Box::new(right.into()))
         };
