@@ -1,10 +1,13 @@
 use super::*;
 use crate::query::tests::setup_platform;
 use dapi_grpc::platform::v0::get_document_history_request::get_document_history_request_v1::Cursor;
+use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
+use dapi_grpc::platform::v0::get_document_history_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
     GetDocumentHistoryRequest, GetDocumentHistoryResponse, Proof, ResponseMetadata,
 };
 use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Setters};
 use dpp::bls::SecretKey;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
@@ -114,6 +117,152 @@ fn should_reject_legacy_proof_envelopes_in_history_v1_through_sdk() {
     history_api_proof_round_trip(true);
 }
 
+#[test]
+fn should_verify_signed_legacy_history_from_protocol_14_with_protocol_15_client() {
+    let (platform, state, version) = setup_platform(None, Network::Testnet, Some(14));
+    let mut state = state.as_ref().clone();
+    let contract = json_document_to_contract(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+        ),
+        false,
+        version,
+    )
+    .unwrap();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let mut document = json_document_to_document(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
+        ),
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    for revision in 1..=3 {
+        document.set_revision(Some(revision));
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(revision * 1000),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+    }
+    let key = SecretKey::from_be_bytes(&[1; 32]).unwrap();
+    let provider = Provider {
+        contract: Arc::new(contract.clone()),
+        key: key.public_key().to_bytes(),
+    };
+    state.last_committed_block_info = Some(
+        ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                height: 42,
+                core_height: 12,
+                time_ms: 4000,
+                epoch: Default::default(),
+            },
+            app_hash: [0; 32],
+            quorum_hash: [9; 32],
+            block_id_hash: [7; 32],
+            proposer_pro_tx_hash: [0; 32],
+            signature: [0; 96],
+            round: 0,
+        }
+        .into(),
+    );
+    let metadata = platform.response_metadata_v0(&state, CheckpointUsed::Current);
+    assert_eq!(metadata.protocol_version, 14);
+    let root = platform
+        .drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .value
+        .unwrap();
+    let signed = signed_proof(
+        vec![],
+        root,
+        &metadata,
+        &key,
+        platform.config.validator_set.quorum_type as u32,
+    );
+    let committed = state.last_committed_block_info.as_mut().unwrap();
+    committed.set_app_hash(root);
+    committed.set_signature(signed.signature.try_into().unwrap());
+    let request: GetDocumentHistoryRequest = GetDocumentHistoryRequestV0 {
+        data_contract_id: contract.id().to_vec(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_vec(),
+        limit: Some(2),
+        offset: None,
+        start_at_ms: 1000,
+        prove: true,
+    }
+    .into();
+    let response = platform
+        .query_document_history(request.clone(), &state, version)
+        .unwrap()
+        .into_data()
+        .unwrap();
+    assert!(matches!(
+        response.version.as_ref(),
+        Some(ResponseVersion::V0(_))
+    ));
+    for client_version in [version, PlatformVersion::latest()] {
+        let history = DocumentHistory::maybe_from_proof(
+            request.clone(),
+            response.clone(),
+            Network::Testnet,
+            client_version,
+            &provider,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            history
+                .entries
+                .iter()
+                .map(|entry| (entry.time_ms, entry.revision))
+                .collect::<Vec<_>>(),
+            vec![(2000, 2), (3000, 3)],
+        );
+        assert_eq!(history.lifecycle, None);
+    }
+    if std::env::var_os("UPDATE_DOCUMENT_HISTORY_VECTORS").is_some() {
+        let vector = serde_json::json!({
+            "contract": hex::encode(contract.serialize_to_bytes_with_platform_version(version).unwrap()),
+            "quorum_public_key": hex::encode(provider.key),
+            "request": request,
+            "response": response,
+        });
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs-sdk/tests/vectors/document_history/pv14_time.json");
+        std::fs::write(
+            path,
+            format!("{}\n", serde_json::to_string(&vector).unwrap()),
+        )
+        .unwrap();
+    }
+}
+
 fn history_api_proof_round_trip(gapped: bool) {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);
     let mut state = state.as_ref().clone();
@@ -187,7 +336,6 @@ fn history_api_proof_round_trip(gapped: bool) {
         .root_hash(None, &version.drive.grove_version)
         .value
         .unwrap();
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
     let signed = signed_proof(
         vec![],
         root,

@@ -1457,6 +1457,7 @@ fn verify_document_history_response_v0(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
+    let query_version = proof_query_platform_version(metadata)?;
     let (root, history) = Drive::verify_document_history_legacy(
         supported_grovedb_proof_bytes(proof)?,
         contract_id.to_buffer(),
@@ -1466,7 +1467,7 @@ fn verify_document_history_response_v0(
         request.start_at_ms,
         limit,
         offset,
-        platform_version,
+        query_version,
     )
     .map_drive_error(proof, metadata)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
@@ -1540,11 +1541,12 @@ fn verify_document_history_response_v1(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
+    let query_version = proof_query_platform_version(metadata)?;
     let (root, history) = Drive::verify_document_history(
         &query,
         supported_grovedb_proof_bytes(proof)?,
         document_type,
-        platform_version,
+        query_version,
     )
     .map_drive_error(proof, metadata)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;

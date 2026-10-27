@@ -265,23 +265,168 @@ async fn should_fetch_history_proof_info_as_the_first_proved_read_from_an_unpinn
     );
 }
 
+#[test]
+fn should_verify_signed_history_directly_from_older_client_versions() {
+    for cursor in [false, true] {
+        let fixture = Fixture::load(cursor);
+        for client in [1, 14] {
+            let version = PlatformVersion::get(client).unwrap();
+            let history = DocumentHistory::maybe_from_proof(
+                fixture.request.clone(),
+                fixture.response.clone(),
+                Network::Testnet,
+                version,
+                &fixture.provider(),
+            )
+            .expect("signed producer layout must verify for an older client")
+            .unwrap();
+            fixture.assert_history(&history);
+            let info = DocumentHistoryProofInfo::maybe_from_proof(
+                fixture.request.clone(),
+                fixture.response.clone(),
+                Network::Testnet,
+                version,
+                &fixture.provider(),
+            )
+            .expect("proof information must use the signed producer layout")
+            .unwrap();
+            fixture.assert_history(&info.history);
+        }
+    }
+}
+
+#[test]
+fn should_verify_signed_v0_history_from_an_older_producer() {
+    let fixture: Fixture = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/vectors/document_history/pv14_time.json"
+    )))
+    .expect("signed timestamp-keyed history fixture");
+    assert!(matches!(
+        fixture.request.version,
+        Some(RequestVersion::V0(_))
+    ));
+    assert!(matches!(
+        fixture.response.version,
+        Some(ResponseVersion::V0(_))
+    ));
+    assert_eq!(fixture.response.metadata().unwrap().protocol_version, 14);
+    let provider = fixture.provider();
+    let history = DocumentHistory::maybe_from_proof(
+        fixture.request.clone(),
+        fixture.response.clone(),
+        Network::Testnet,
+        PlatformVersion::get(14).unwrap(),
+        &provider,
+    )
+    .expect("the producer's own timestamp-keyed history rules verify")
+    .unwrap();
+    assert_eq!(history.lifecycle, None);
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.time_ms, entry.revision))
+            .collect::<Vec<_>>(),
+        vec![(2000, 2), (3000, 3)]
+    );
+    let verified = DocumentHistory::maybe_from_proof(
+        fixture.request,
+        fixture.response,
+        Network::Testnet,
+        PlatformVersion::latest(),
+        &provider,
+    )
+    .expect("a newer client selects the signed producer's v0 history rules")
+    .unwrap();
+    assert_eq!(verified, history);
+}
+
+#[test_case(false; "revision page")]
+#[test_case(true; "cursor page")]
+fn should_reject_history_protocol_version_tampering(cursor: bool) {
+    let fixture = Fixture::load(cursor);
+    let provider = fixture.provider();
+    let version = PlatformVersion::latest();
+    let history = DocumentHistory::maybe_from_proof(
+        fixture.request.clone(),
+        fixture.response.clone(),
+        Network::Testnet,
+        version,
+        &provider,
+    )
+    .expect("the original signed history response verifies")
+    .unwrap();
+    fixture.assert_history(&history);
+
+    for claimed in [version.protocol_version + 1, 14, 0] {
+        let mut forged = fixture.response.clone();
+        let Some(ResponseVersion::V1(response)) = &mut forged.version else {
+            panic!("versioned history response");
+        };
+        response.metadata.as_mut().unwrap().protocol_version = claimed;
+        for (kind, result) in [
+            (
+                "history",
+                DocumentHistory::maybe_from_proof(
+                    fixture.request.clone(),
+                    forged.clone(),
+                    Network::Testnet,
+                    version,
+                    &provider,
+                )
+                .map(|_| ()),
+            ),
+            (
+                "proof information",
+                DocumentHistoryProofInfo::maybe_from_proof(
+                    fixture.request.clone(),
+                    forged.clone(),
+                    Network::Testnet,
+                    version,
+                    &provider,
+                )
+                .map(|_| ()),
+            ),
+        ] {
+            let error = result.expect_err(&format!(
+                "{kind} must reject a history response relabeled as protocol {claimed}"
+            ));
+            if claimed == 0 {
+                assert!(
+                    matches!(
+                        &error,
+                        drive_proof_verifier::Error::ResponseDecodeError { error }
+                            if error.contains("unsupported proof query protocol version 0")
+                    ),
+                    "{kind}: {error}"
+                );
+            } else if claimed == version.protocol_version + 1 {
+                assert!(
+                    matches!(error, drive_proof_verifier::Error::InvalidSignature { .. }),
+                    "{kind}: {error}"
+                );
+            }
+        }
+    }
+}
+
 #[test_case(false; "network parser")]
 #[test_case(true; "mock parser")]
 #[tokio::test]
 async fn should_select_signed_history_rules_before_ratchet_and_reject_forged_metadata(mock: bool) {
     let fixture = Fixture::load(true);
     let sdk = fixture.sdk(Network::Devnet, mock);
-    assert!(
-        DocumentHistory::maybe_from_proof(
-            fixture.request.clone(),
-            fixture.response.clone(),
-            Network::Devnet,
-            sdk.version(),
-            &fixture.provider()
-        )
-        .is_err(),
-        "fixture requires the newer proof layout"
-    );
+    let direct = DocumentHistory::maybe_from_proof(
+        fixture.request.clone(),
+        fixture.response.clone(),
+        Network::Devnet,
+        sdk.version(),
+        &fixture.provider(),
+    )
+    .expect("direct verification selects the signed history layout")
+    .unwrap();
+    fixture.assert_history(&direct);
     let mut forged = fixture.response.clone();
     let Some(ResponseVersion::V1(response)) = &mut forged.version else {
         panic!("versioned response");
