@@ -73,6 +73,16 @@ where
         // Default implementation
         let settings = sdk.query_settings().without_proofs();
         let request: &<Self as FetchUnproved>::Request = &query.query(&settings)?;
+        let required_protocol_version = request.needs_protocol_version();
+        sdk.ensure_network_serves(
+            required_protocol_version,
+            request.method_name(),
+            Some(request_settings),
+        )
+        .await?;
+        // Answers are read with the version the SDK speaks once the check above has run:
+        // asking the network for its version may have raised it.
+        let platform_version = sdk.query_settings().protocol_version;
         let closure = move |local_settings: RequestSettings| async move {
             // Execute the request using the Sdk instance
             let ExecutionResponse {
@@ -91,10 +101,15 @@ where
                     request.clone(),
                     response,
                     sdk.network,
-                    sdk.version(),
+                    platform_version,
                 )
+                .map_err(Error::from)
+                .and_then(|parsed| {
+                    sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                    Ok(parsed)
+                })
                 .map_err(|e| ExecutionError {
-                    inner: e.into(),
+                    inner: e,
                     address: Some(address.clone()),
                     retries,
                 })?;

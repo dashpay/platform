@@ -140,17 +140,11 @@ impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
         // when both the stored version and a version the network has proven by a
         // verified, signed answer select it. Seeded, pinned or persisted versions alone
         // never do, and nothing verified yet means V0.
-        let stored = settings.protocol_version;
-        let verified = settings.verified_protocol_version;
-        let version = if verified == 0 {
+        let basis = settings.network_protocol_basis();
+        let version = if basis == 0 {
             0
         } else {
-            let basis = if verified >= stored.protocol_version {
-                stored
-            } else {
-                PlatformVersion::get(verified)?
-            };
-            basis
+            PlatformVersion::get(basis)?
                 .drive_abci
                 .query
                 .identity_based_queries
@@ -160,8 +154,8 @@ impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
         tracing::debug!(
             target: "dash_sdk::query_encoder",
             version,
-            stored = stored.protocol_version,
-            verified,
+            stored = settings.protocol_version.protocol_version,
+            verified = settings.verified_protocol_version,
             "encoding GetIdentityByNonUniquePublicKeyHashRequest"
         );
 

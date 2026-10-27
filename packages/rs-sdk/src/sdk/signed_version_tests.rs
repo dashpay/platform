@@ -325,12 +325,13 @@ impl TrunkBranchSyncOps for ScanTable {
         _: RequestSettings,
         _: &mut Self::Context<'_>,
     ) -> Result<TrunkQueryResponse, Error> {
-        sdk.verify_response_metadata(
+        sdk.accept_verified_metadata(
             "get_addresses_trunk_state",
             &ResponseMetadata {
                 protocol_version: 14,
                 ..Default::default()
             },
+            None,
         )?;
         Ok(TrunkQueryResponse {
             trunk: GroveTrunkQueryResult {

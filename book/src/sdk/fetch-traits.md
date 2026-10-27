@@ -289,7 +289,16 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
 1. **Query conversion**: `id.query(true)` produces a `GetIdentityRequest` with proofs
    enabled.
 
-2. **Request execution with retry**: The SDK sends the request to a DAPI node,
+2. **Protocol version check**: a request that only newer nodes serve
+   (`TransportRequest::needs_protocol_version`) is refused with
+   `Error::ProtocolVersionNotActive` until a verified answer shows the network runs that
+   version, asking the network for it first when it may have moved. Nothing is sent and
+   no node is banned. See [Features from Protocol Version 14](protocol-version-gate.md).
+   Asking may raise the SDK's version, so the request is then encoded again with it.
+   `FromProof::check_request` then checks the request at the version it is encoded
+   with, and refuses one the output type cannot be verified from.
+
+3. **Request execution with retry**: The SDK sends the request to a DAPI node,
    with automatic retry logic:
 
    ```rust
@@ -304,7 +313,7 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    retry(sdk.address_list(), settings, fut).await
    ```
 
-3. **Proof verification**: `parse_proof_with_metadata_and_proof` calls
+4. **Proof verification**: `parse_proof_with_metadata_and_proof` calls
    `FromProof::maybe_from_proof_with_metadata`, which verifies the GroveDB proof
    against quorum signatures.
 
@@ -320,10 +329,13 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    every attempt ends this way fails with `Error::Config`. An answer outside the
    height or time tolerance still fails as stale, and its node is banned.
 
-4. **Metadata validation**: The SDK checks that the response metadata (height, time)
-   is fresh enough based on the configured tolerances.
+5. **Metadata validation**: The SDK checks that the response metadata (height, time)
+   is fresh enough based on the configured tolerances. An answer to a request that needs a
+   protocol version, signed below it, comes from a node behind the network's upgrade
+   (`StaleNodeError::BehindProtocolUpgrade`): the node is banned and the request is
+   retried elsewhere.
 
-5. **Result return**: The verified object (or `None`) is returned to the caller.
+6. **Result return**: The verified object (or `None`) is returned to the caller.
 
 ## Rules
 
