@@ -185,8 +185,8 @@ fn should_export_document_answer_sdk_fixture() {
         .expect("the answer verifies at the version that signed it")
         .expect("the proved page");
     assert_eq!(documents.get(&document.id()), Some(&Some(document)));
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/document-outcome");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs-drive-proof-verifier/tests/vectors/document-outcome");
     assert_eq!(
         contract
             .serialize_to_bytes_with_platform_version(producer)
