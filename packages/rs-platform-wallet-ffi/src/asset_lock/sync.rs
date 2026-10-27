@@ -189,9 +189,10 @@ fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
 /// from then on no proof for this transaction can arrive. The wait
 /// cannot see that happen — it wakes on lock events and re-reads the
 /// tracked funding transaction only — so an unbounded wait is a
-/// `Notify` loop with no terminating event, which under the
-/// `runtime().block_on(...)` below pins the calling host thread
-/// permanently rather than merely delaying an answer.
+/// `Notify` loop with no terminating event, which pins the calling
+/// host thread permanently rather than merely delaying an answer: the
+/// caller blocks until the big-stack thread polling the resume below
+/// returns.
 ///
 /// Expiry is non-destructive: the tracked row keeps its status, so a
 /// proof arriving afterwards is returned by the very next resume
@@ -270,8 +271,9 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 ///
 /// Returns `ok` on a successful proof resolution, an error on
 /// timeout / wait failure. The Swift caller is expected to schedule
-/// this on a background queue — `runtime().block_on(...)` parks the
-/// calling thread for the duration of the wait.
+/// this on a background queue: the calling thread blocks for the
+/// duration of the wait while the resume is polled on a big-stack
+/// thread.
 ///
 /// # Timeouts
 ///
@@ -501,9 +503,9 @@ mod tests {
     /// Drive [`asset_lock_manager_resume`] against a live manager and report
     /// the bound it forwarded alongside its result code.
     ///
-    /// Called from the plain test thread: the entry point does its own
-    /// `runtime().block_on(...)`, exactly as the host thread does, and nesting
-    /// that inside an outer `block_on` would abort.
+    /// Called from the plain test thread: the exported entry point blocks
+    /// synchronously while `resume_asset_lock` is polled on the scoped
+    /// big-stack thread. Do not invoke it from an outer `block_on`.
     fn resume_extern_with(
         handle: Handle,
         timeout_secs: u64,
