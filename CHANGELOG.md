@@ -83,10 +83,27 @@
   returns a `Result` and refuses format version 2. `DPPContractVersions` gains
   `contract_storage_serialization_version`, the format Drive writes to state, and
   `contract_storage_document_type_version`, the generation of each compiled document
-  type; every protocol version still selects format 0 or 1, so nothing stored
-  changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
-  (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
+  type; protocol version 15 selects format 2 (next entry), and struct literals need
+  the fields. `DocumentTypeV0MutGetters` (`schema_mut`) is available only to tests
+  and the `fixtures-and-mocks` feature. See
   [#5578](https://github.com/dashpay/platform/pull/5578).
+- **drive (breaking, protocol version 15):** from protocol version 15 Drive stores a
+  contract it creates or updates in format version 2, with its document types
+  compiled, so loading it reads them back instead of parsing its schemas. A contract
+  stored earlier is stored compiled at its next update or token configuration update.
+  A contract stored compiled takes at most 1 MiB
+  (`SystemLimits::max_compiled_contract_size`): creating or updating one over it is
+  refused with the new paid consensus error `DataContractCompiledMaxSizeExceededError`
+  (10282), and the compiled size is charged per byte. The 65,000-byte limit still
+  applies to the contract's format version 1 bytes. Clients verifying contract proofs
+  from a protocol version 15 network need
+  [#5578](https://github.com/dashpay/platform/pull/5578). Rust API:
+  `Drive::apply_contract_with_serialization` is crate-private and
+  `DataContractOperationType::ApplyContractWithSerialization` is removed (submit
+  `ApplyContract`); `SystemLimits` gains `max_compiled_contract_size`, `BasicError`
+  gains `DataContractCompiledMaxSizeExceededError` and `ProtocolValidationOperation`
+  gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
+  need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
 
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 

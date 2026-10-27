@@ -28,12 +28,14 @@ use dpp::data_contract::change_control_rules::authorized_action_takers::Authoriz
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
+use dpp::data_contract::DataContract;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
@@ -59,11 +61,13 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -79,9 +83,11 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut action = self.transform_into_action_v0(
+            platform,
             block_info,
             validation_mode,
             execution_context,
+            tx,
             platform_version,
         )?;
 
@@ -170,18 +176,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        new_data_contract.set_created_at(old_data_contract.created_at());
-        new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
-        new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());
-
-        // A contract stored compiled must fit its cap as it is stored, with the creation fields
-        // just restored from the stored contract, which the transition does not carry. The
-        // compile is charged. Edited in place: through protocol version 14, which stores no
-        // contract compiled, this refuses, compiles and charges nothing
-        let mut validation_operations = vec![];
-        let compiled_size_result = new_data_contract
-            .validate_compiled_size(&mut validation_operations, platform_version)?;
-        execution_context.add_dpp_operations(validation_operations);
+        // Restores the creation fields as before, then holds the contract to the compiled size
+        // cap as it is stored. Edited in place: through protocol version 14, which stores no
+        // contract compiled, the size check refuses, compiles and charges nothing
+        let compiled_size_result = restore_creation_fields_and_validate_compiled_size(
+            new_data_contract,
+            Some(old_data_contract),
+            execution_context,
+            platform_version,
+        )?;
         if !compiled_size_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
@@ -496,11 +499,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         Ok(action)
     }
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_operations = vec![];
@@ -520,43 +525,91 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 &mut validation_operations,
                 platform_version,
             )
-        })
-        .and_then(|action| {
-            // check_tx, which skips state validation, holds the action's contract to the
-            // compiled size cap here; a block checks it in state validation, once the stored
-            // contract's creation fields, a few bytes the transition does not carry, are
-            // restored. The compile is charged. Edited in place: through protocol version 14,
-            // which stores no contract compiled, this refuses, compiles and charges nothing
-            if !full_validation {
-                action
-                    .data_contract_ref()
-                    .ensure_compiled_size(&mut validation_operations, platform_version)?;
-            }
-            Ok(action)
         });
 
         execution_context.add_dpp_operations(validation_operations);
 
         // Return validation result if any consensus errors happened
         // during data contract validation
-        match result {
+        let mut update_action = match result {
             Err(ProtocolError::ConsensusError(consensus_error)) => {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
                 );
 
-                Ok(ConsensusValidationResult::new_with_data_and_errors(
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
                     vec![*consensus_error],
-                ))
+                ));
             }
-            Err(protocol_error) => Err(protocol_error.into()),
-            Ok(create_action) => {
-                let action: StateTransitionAction = create_action.into();
-                Ok(action.into())
+            Err(protocol_error) => return Err(protocol_error.into()),
+            Ok(update_action) => update_action,
+        };
+
+        // check_tx and recheck run no state validation, so they hold the contract to the
+        // compiled size cap here, measured as a block measures it in state validation: with the
+        // stored contract's creation fields, which the transition does not carry, restored. The
+        // read is charged as a block charges it. A block validates in full and skips this.
+        // Edited in place: through protocol version 14, which stores no contract compiled, the
+        // size check refuses, compiles and charges nothing, and only mempool admission reads
+        // the stored contract
+        if !full_validation {
+            let (fee, stored_contract) = platform.drive.get_contract_with_fetch_info_and_fee(
+                update_action.data_contract_ref().id().to_buffer(),
+                Some(&block_info.epoch),
+                validation_mode.can_alter_cache(),
+                tx,
+                platform_version,
+            )?;
+            let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "fee must exist when fetching the stored contract of a data contract update",
+            )))?;
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            let compiled_size_result = restore_creation_fields_and_validate_compiled_size(
+                update_action.data_contract_mut(),
+                stored_contract
+                    .as_ref()
+                    .map(|fetch_info| &fetch_info.contract),
+                execution_context,
+                platform_version,
+            )?;
+            if !compiled_size_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
+                );
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    compiled_size_result.errors,
+                ));
             }
         }
+
+        let action: StateTransitionAction = update_action.into();
+        Ok(action.into())
     }
+}
+
+/// Restores onto an updated contract the creation fields of the stored contract, which an update
+/// transition does not carry, then holds it to the compiled size cap as a block stores it and
+/// charges the compile. Without a stored contract nothing is restored: the update is refused as
+/// absent anyway.
+fn restore_creation_fields_and_validate_compiled_size(
+    new_data_contract: &mut DataContract,
+    stored_data_contract: Option<&DataContract>,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    if let Some(stored_data_contract) = stored_data_contract {
+        new_data_contract.set_created_at(stored_data_contract.created_at());
+        new_data_contract
+            .set_created_at_block_height(stored_data_contract.created_at_block_height());
+        new_data_contract.set_created_at_epoch(stored_data_contract.created_at_epoch());
+    }
+    let mut validation_operations = vec![];
+    let compiled_size_result =
+        new_data_contract.validate_compiled_size(&mut validation_operations, platform_version)?;
+    execution_context.add_dpp_operations(validation_operations);
+    Ok(compiled_size_result)
 }
 
 #[cfg(test)]
@@ -570,7 +623,6 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-    use dpp::data_contract::DataContract;
     use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
@@ -1007,8 +1059,9 @@ mod tests {
         }
 
         /// The stored contract's creation fields, which the transition does not carry, are
-        /// restored before the compiled size is checked: a cap the transition's contract fits
-        /// but the contract as stored does not refuses the update.
+        /// restored before the compiled size is checked, in a block and in check_tx and recheck
+        /// alike: a cap the transition's contract fits but the contract as stored does not
+        /// refuses the update.
         #[test]
         fn should_check_the_compiled_size_of_the_contract_as_stored_with_its_creation_fields() {
             let latest = PlatformVersion::latest();
@@ -1039,15 +1092,25 @@ mod tests {
             }
             .into();
 
+            let state = platform.state.load_full();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             // The updated contract's compiled size without and with the creation fields
             let mut execution_context =
                 StateTransitionExecutionContext::default_for_platform_version(latest)
                     .expect("failed to create execution context");
             let transformed = transition
-                .transform_into_action_v0(
+                .transform_into_action_v0::<MockCoreRPCLike>(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    None,
                     latest,
                 )
                 .expect("failed to transform the transition");
@@ -1069,46 +1132,57 @@ mod tests {
             let as_stored = compiled_size(&updated);
             assert!(as_stored > without_creation_fields);
 
-            let state = platform.state.load_full();
-            let platform_ref = PlatformRef {
-                drive: &platform.drive,
-                state: &state,
-                config: &platform.config,
-                core_rpc: &platform.core_rpc,
-            };
-            for (cap, refused) in [(without_creation_fields, true), (as_stored, false)] {
-                let mut platform_version = latest.clone();
-                platform_version.system_limits.max_compiled_contract_size = Some(cap);
-                let mut execution_context =
-                    StateTransitionExecutionContext::default_for_platform_version(
-                        &platform_version,
-                    )
-                    .expect("failed to create execution context");
-                let result = transition
-                    .validate_state_v0::<MockCoreRPCLike>(
-                        &platform_ref,
-                        &BlockInfo::default(),
-                        ValidationMode::Validator,
-                        &mut execution_context,
-                        None,
-                        &platform_version,
-                    )
-                    .expect("failed to validate state");
-                if refused {
-                    assert_matches!(
-                        result.errors.as_slice(),
-                        [ConsensusError::BasicError(
-                            BasicError::DataContractCompiledMaxSizeExceededError(error)
-                        )] if error.compiled_size() == u64::from(as_stored)
-                    );
-                    assert_matches!(
-                        result.data,
-                        Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
-                            _
-                        ))
-                    );
-                } else {
-                    assert_matches!(result.errors.as_slice(), []);
+            // A block checks in state validation; check_tx and recheck, which run none, check
+            // in the transform. Each measures the contract as stored
+            for validation_mode in [
+                ValidationMode::Validator,
+                ValidationMode::CheckTx,
+                ValidationMode::RecheckTx,
+            ] {
+                for (cap, refused) in [(without_creation_fields, true), (as_stored, false)] {
+                    let mut platform_version = latest.clone();
+                    platform_version.system_limits.max_compiled_contract_size = Some(cap);
+                    let mut execution_context =
+                        StateTransitionExecutionContext::default_for_platform_version(
+                            &platform_version,
+                        )
+                        .expect("failed to create execution context");
+                    let result = if validation_mode == ValidationMode::Validator {
+                        transition.validate_state_v0::<MockCoreRPCLike>(
+                            &platform_ref,
+                            &BlockInfo::default(),
+                            validation_mode,
+                            &mut execution_context,
+                            None,
+                            &platform_version,
+                        )
+                    } else {
+                        transition.transform_into_action_v0::<MockCoreRPCLike>(
+                            &platform_ref,
+                            &BlockInfo::default(),
+                            validation_mode,
+                            &mut execution_context,
+                            None,
+                            &platform_version,
+                        )
+                    }
+                    .expect("failed to validate");
+                    if refused {
+                        assert_matches!(
+                            result.errors.as_slice(),
+                            [ConsensusError::BasicError(
+                                BasicError::DataContractCompiledMaxSizeExceededError(error)
+                            )] if error.compiled_size() == u64::from(as_stored)
+                        );
+                        assert_matches!(
+                            result.data,
+                            Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                _
+                            ))
+                        );
+                    } else {
+                        assert_matches!(result.errors.as_slice(), []);
+                    }
                 }
             }
         }
@@ -1913,11 +1987,24 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let state = platform.state.load_full();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
-                .transform_into_action_v0(
+                .transform_into_action_v0::<MockCoreRPCLike>(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    None,
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -1972,11 +2059,24 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let state = platform.state.load_full();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
-                .transform_into_action_v0(
+                .transform_into_action_v0::<MockCoreRPCLike>(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    None,
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");

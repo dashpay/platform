@@ -73,7 +73,7 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
         >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -85,9 +85,11 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0(
+                platform,
                 block_info,
                 validation_mode,
                 execution_context,
+                tx,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
