@@ -4,6 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::bincode;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::DataContract;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -36,9 +37,7 @@ pub(super) fn decode_proof_data_contract(
         .into());
     }
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<MAX_CONTRACT_DECODE_MEMORY_BYTES>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<MAX_CONTRACT_DECODE_MEMORY_BYTES>();
     let (serialized_format, consumed) = bincode::borrow_decode_from_slice_untrusted::<
         DataContractInSerializationFormat,
         _,
@@ -90,9 +89,7 @@ fn decode_bounded_vote_reference<T: bincode::de::DecodeUntrusted<()>>(
         )));
     }
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<MAX_VOTE_REFERENCE_DECODE_BYTES>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<MAX_VOTE_REFERENCE_DECODE_BYTES>();
     let (reference, consumed) = bincode::decode_from_slice_untrusted(serialized_reference, config)
         .map_err(|e| {
             Error::Drive(DriveError::CorruptedSerialization(format!(
@@ -112,6 +109,7 @@ fn decode_bounded_vote_reference<T: bincode::de::DecodeUntrusted<()>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::fixtures::get_data_contract_fixture;
 
@@ -134,7 +132,7 @@ mod tests {
                 grovedb::element::reference_path::ReferencePathType::SiblingReference(vec![1]),
             identity_vote_times: 1,
         };
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
         let mut bytes = bincode::encode_to_vec(reference, config).expect("encode reference");
         bytes.push(0);
 

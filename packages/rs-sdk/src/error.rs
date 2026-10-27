@@ -151,6 +151,20 @@ impl Error {
             _ => false,
         }
     }
+
+    /// The consensus verdict this error carries, from the shapes that can
+    /// carry one: `StateTransitionBroadcastError` (wait-stream),
+    /// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
+    /// exhausted-retry envelope, which it recurses into. Re-audit when this
+    /// enum gains another consensus-carrying variant.
+    pub fn consensus_error(&self) -> Option<&ConsensusError> {
+        match self {
+            Self::StateTransitionBroadcastError(broadcast_err) => broadcast_err.cause.as_ref(),
+            Self::Protocol(ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+            Self::NoAvailableAddressesToRetry(inner) => inner.consensus_error(),
+            _ => None,
+        }
+    }
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that

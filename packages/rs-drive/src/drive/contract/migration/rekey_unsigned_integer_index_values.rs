@@ -529,7 +529,6 @@ mod tests {
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-    use dpp::voting::votes::resource_vote::ResourceVote;
     use grovedb::{AggregateData, Element};
     use grovedb_merk::element::reconstruct::ElementReconstructExtensions;
     use std::borrow::Cow;
@@ -1627,16 +1626,17 @@ mod tests {
             .execute_with_proof(&drive, None, None, platform_version)
             .expect("expected the votes given proof");
         let known_contract = Arc::new(contract.clone());
-        let (_, votes): (_, Vec<(Identifier, ResourceVote)>) = votes_given
-            .verify_identity_votes_given_proof(
+        let (_, votes) = votes_given
+            .verify_identity_votes_given_proof::<Vec<_>>(
                 &proof,
                 &|_| Ok(Some(known_contract.clone())),
                 platform_version,
             )
             .expect("expected the proof to verify");
-        let [(_, vote)] = votes.as_slice() else {
+        let [(_, (vote, vote_count))] = votes.as_slice() else {
             panic!("expected the one vote, got {votes:?}");
         };
+        assert_eq!(*vote_count, 1);
         let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll() else {
             panic!("expected a contested document resource vote poll");
         };

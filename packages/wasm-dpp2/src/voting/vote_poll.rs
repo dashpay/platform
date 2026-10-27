@@ -5,6 +5,7 @@ use crate::{
     impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions_inner, impl_wasm_type_info,
 };
 use dpp::bincode;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use js_sys::Array;
@@ -199,9 +200,7 @@ impl VotePollWasm {
 
     #[wasm_bindgen(getter = "indexValues")]
     pub fn index_values(&self) -> WasmDppResult<Array> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         match &self.0 {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {

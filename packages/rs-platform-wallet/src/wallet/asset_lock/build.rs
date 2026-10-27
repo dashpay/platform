@@ -4294,8 +4294,8 @@ mod tests {
             sighash: [u8; 32],
         ) -> Result<
             (
-                dashcore::secp256k1::ecdsa::Signature,
-                dashcore::secp256k1::PublicKey,
+                dashcore::crypto::ecdsa::EcdsaSignature,
+                dashcore::crypto::ecdsa::EcdsaPublicKey,
             ),
             String,
         > {
@@ -4307,7 +4307,7 @@ mod tests {
         async fn public_key(
             &self,
             path: &key_wallet::bip32::DerivationPath,
-        ) -> Result<dashcore::secp256k1::PublicKey, String> {
+        ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, String> {
             self.inner.public_key(path).await
         }
     }

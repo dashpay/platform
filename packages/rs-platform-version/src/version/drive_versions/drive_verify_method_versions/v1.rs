@@ -68,6 +68,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_identities_contract_keys: 0,
         verify_identity_revision_for_identity_id: 0,
         verify_full_identity_by_non_unique_public_key_hash: 0,
+        verify_full_identity_by_non_unique_public_key_hash_two_proofs: 0,
         verify_identity_id_by_non_unique_public_key_hash: 0,
         verify_identity_keys_remaining_budgets: 0,
     },

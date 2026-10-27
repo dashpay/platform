@@ -22,6 +22,11 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum bytes of an index property name: 255, the longest key GroveDB stores. Read by
+    /// the native schema check of registration (`check_document_type_schema` 1, protocol
+    /// version 15), which refuses a longer name; the document meta-schema checked before it
+    /// admitted 256 characters. Never reached before protocol version 15.
+    pub max_index_property_name_bytes: u16,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

@@ -126,6 +126,7 @@ pub(crate) mod test_helpers;
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -230,6 +231,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
     use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -1265,8 +1267,12 @@ pub(in crate::execution) mod tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
+        // from DPNS v3 (protocol version 15)
+        assert_eq!(
+            domain.documents_can_be_deleted(),
+            platform_version.system_data_contracts.dpns < 3
+        );
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -1370,20 +1376,24 @@ pub(in crate::execution) mod tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
+        let preorder_owner = document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
+            &salt_2,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -1518,6 +1528,8 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        // One block after the preorders: from protocol version 15 a domain reveals a
+        // preorder made in an earlier block
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1526,12 +1538,15 @@ pub(in crate::execution) mod tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 platform_state,
-                &BlockInfo::default_with_time(
-                    platform_state
-                        .last_committed_block_time_ms()
-                        .unwrap_or_default()
-                        + 3000,
-                ),
+                &BlockInfo {
+                    height: 1,
+                    ..BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    )
+                },
                 &transaction,
                 platform_version,
                 false,
@@ -1830,6 +1845,8 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        // One block after the preorders: from protocol version 15 a domain reveals a
+        // preorder made in an earlier block
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1838,12 +1855,15 @@ pub(in crate::execution) mod tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 platform_state,
-                &BlockInfo::default_with_time(
-                    platform_state
-                        .last_committed_block_time_ms()
-                        .unwrap_or_default()
-                        + 3000,
-                ),
+                &BlockInfo {
+                    height: 1,
+                    ..BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    )
+                },
                 &transaction,
                 platform_version,
                 false,
@@ -1991,13 +2011,15 @@ pub(in crate::execution) mod tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -2087,17 +2109,22 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        // One block after the preorder: from protocol version 15 a domain reveals a
+        // preorder made in an earlier block
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
                 &[documents_batch_create_serialized_transition_1.clone()],
                 platform_state,
-                &BlockInfo::default_with_time(
-                    platform_state
-                        .last_committed_block_time_ms()
-                        .unwrap_or_default()
-                        + 3000,
-                ),
+                &BlockInfo {
+                    height: 1,
+                    ..BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    )
+                },
                 &transaction,
                 platform_version,
                 false,
@@ -2134,9 +2161,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2626,9 +2651,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2733,9 +2756,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");

@@ -30,6 +30,7 @@
 - [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
 - [ ] I have made corresponding changes to the documentation if needed
 - [ ] If I added or changed GroveDB structure, I described it in the area's `structure.rs`, regenerated `grovedb-structure.json`, and checked the structure viewer link posted on this pull request
+- [ ] If I added or changed a system contract's document schemas, I checked the contract viewer link posted on this pull request
 
 **For repository code-owners and collaborators only**
 - [ ] I have assigned this pull request to a milestone
