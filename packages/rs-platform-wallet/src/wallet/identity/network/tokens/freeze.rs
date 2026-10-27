@@ -8,7 +8,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 
-use super::helpers::check_token_signing_key;
+use super::helpers::{check_token_signing_key, TOKEN_SIGNING_PURPOSES};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -30,7 +30,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, dash_sdk::Error> {
-        check_token_signing_key(signing_key, signer, &data_contract)?;
+        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
         use dash_sdk::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
 
         let mut builder = TokenFreezeTransitionBuilder::new(

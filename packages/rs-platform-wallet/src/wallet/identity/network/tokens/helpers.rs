@@ -51,17 +51,27 @@ fn token_signing_key<'a>(
     )
 }
 
-/// Check a key the caller chose to sign a token operation of `data_contract` by the rules
-/// [`token_signing_key`] applies, so a key Platform would refuse fails before any request.
+/// The purposes a key may have to sign a token operation.
+pub(super) const TOKEN_SIGNING_PURPOSES: [Purpose; 1] = [Purpose::AUTHENTICATION];
+
+/// The purposes a key may have to sign a batch of exactly one token transfer or token claim:
+/// consensus also takes a TRANSFER key there (`BatchTransitionV1::purpose_requirement`).
+pub(super) const LONE_TOKEN_TRANSFER_SIGNING_PURPOSES: [Purpose; 2] =
+    [Purpose::AUTHENTICATION, Purpose::TRANSFER];
+
+/// Check a key the caller chose to sign a token operation of `data_contract`, with one of
+/// `purposes`, by the rules [`token_signing_key`] applies, so a key Platform would refuse fails
+/// before any request. Contract bounds limit only an AUTHENTICATION key.
 pub(super) fn check_token_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
     data_contract: &DataContract,
+    purposes: &[Purpose],
 ) -> Result<(), dash_sdk::Error> {
     check_signing_key(
         key,
         signer,
-        &[Purpose::AUTHENTICATION],
+        purposes,
         &TOKEN_SIGNING_LEVELS,
         &TOKEN_SIGNING_KEY_TYPES,
         SigningScope::Contract {
@@ -148,29 +158,135 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 #[cfg(test)]
 mod signing_tests {
     use super::*;
+    use crate::wallet::identity::network::key_selection::tests::{bound_key, key};
     use crate::wallet::identity::network::signing_key::tests::{
         assert_no_usable_key, identity as identity_with_keys, lock_checking_signer,
         wallet_with_identity, wallet_with_signing_keys, KeyFilter,
     };
+    use dpp::consensus::signature::SignatureError;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+
+    /// A contract to point token operations at; the key check runs before its tokens matter.
+    fn some_contract() -> Arc<DataContract> {
+        Arc::new(
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("bundled DPNS contract"),
+        )
+    }
+
+    fn transfer_key(security_level: SecurityLevel) -> IdentityPublicKey {
+        let mut key = key(1, security_level);
+        key.set_purpose(Purpose::TRANSFER);
+        key
+    }
+
+    #[tokio::test]
+    async fn should_accept_an_explicit_transfer_key_for_a_lone_token_transfer_or_claim() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity = wallet.identity();
+        let signer = KeyFilter(|_| true);
+        let owner = Identifier::from([1; 32]);
+        let critical = transfer_key(SecurityLevel::CRITICAL);
+        let transfer = identity
+            .token_transfer_with_signer(
+                some_contract(),
+                0,
+                owner,
+                Identifier::from([2; 32]),
+                1,
+                &critical,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .err()
+            .expect("the mock SDK has no answers");
+        assert!(
+            matches!(transfer, dash_sdk::Error::DapiClientError(_)),
+            "a CRITICAL TRANSFER key may sign a token transfer, so the request goes out: \
+             {transfer:?}"
+        );
+        let claim = identity
+            .token_claim_with_signer(
+                some_contract(),
+                0,
+                owner,
+                TokenDistributionType::Perpetual,
+                &critical,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .err()
+            .expect("the mock SDK has no answers");
+        assert!(
+            matches!(claim, dash_sdk::Error::DapiClientError(_)),
+            "a CRITICAL TRANSFER key may sign a token claim, so the request goes out: {claim:?}"
+        );
+        let high = transfer_key(SecurityLevel::HIGH);
+        let transfer = identity
+            .token_transfer_with_signer(
+                some_contract(),
+                0,
+                owner,
+                Identifier::from([2; 32]),
+                1,
+                &high,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .err()
+            .expect("the key must be refused");
+        assert!(
+            matches!(
+                transfer,
+                dash_sdk::Error::Protocol(
+                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+                )
+            ),
+            "a TRANSFER key signs a batch only at CRITICAL: {transfer:?}"
+        );
+        let burn = identity
+            .token_burn_with_signer(
+                some_contract(),
+                0,
+                owner,
+                1,
+                &critical,
+                &signer,
+                None,
+                None,
+                None,
+            )
+            .await
+            .err()
+            .expect("the key must be refused");
+        assert!(
+            matches!(
+                burn,
+                dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error))
+                    if error.allowed_key_purposes() == &vec![Purpose::AUTHENTICATION]
+            ),
+            "only a lone transfer or claim takes a TRANSFER key: {burn:?}"
+        );
+    }
 
     #[tokio::test]
     async fn should_refuse_an_explicit_token_key_before_any_network_call() {
-        use crate::wallet::identity::network::key_selection::tests::{bound_key, key};
-        use dpp::consensus::signature::SignatureError;
-        use dpp::consensus::ConsensusError;
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contracts::SystemDataContract;
-        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-        use dpp::system_data_contracts::load_system_data_contract;
-        use dpp::version::PlatformVersion;
-        use dpp::ProtocolError;
-
         let wallet = wallet_with_signing_keys().await;
-        let contract = Arc::new(
-            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
-                .expect("bundled DPNS contract"),
-        );
+        let contract = some_contract();
         let burn = |signing_key: IdentityPublicKey| {
             let wallet = &wallet;
             let contract = Arc::clone(&contract);
