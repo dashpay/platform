@@ -29,6 +29,7 @@ use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
+use super::identities_contract_keys_query::asks_about_no_identity;
 use super::types::identity::IdentityRequest;
 use super::DocumentQuery;
 
@@ -370,9 +371,30 @@ impl Fetch for RewardDistributionMoment {
 }
 
 /// Fetch contract-scoped keys for multiple identities.
+///
+/// A query for no identities is answered with an empty map and not sent; see
+/// [`IdentitiesContractKeysQuery`].
+///
+/// [`IdentitiesContractKeysQuery`]: super::identities_contract_keys_query::IdentitiesContractKeysQuery
+#[async_trait::async_trait]
 impl Fetch for IdentitiesContractKeys {
     type Query = platform_proto::GetIdentitiesContractKeysRequest;
     type Request = platform_proto::GetIdentitiesContractKeysRequest;
+
+    // `fetch` lands here. The metadata and proof variants keep the default: with nothing sent,
+    // there would be no metadata or proof to return.
+    async fn fetch_with_settings<Q: Query<<Self as Fetch>::Query>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: RequestSettings,
+    ) -> Result<Option<Self>, Error> {
+        let request: <Self as Fetch>::Query = query.query(&sdk.query_settings())?;
+        if asks_about_no_identity(&request) {
+            return Ok(Some(IdentitiesContractKeys::new()));
+        }
+        let (object, _) = Self::fetch_with_metadata(sdk, request, Some(settings)).await?;
+        Ok(object)
+    }
 }
 
 impl Fetch for dpp::tokens::contract_info::TokenContractInfo {

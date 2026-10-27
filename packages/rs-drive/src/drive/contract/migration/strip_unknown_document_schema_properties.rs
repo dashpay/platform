@@ -6,6 +6,7 @@ use crate::query::QueryResultType;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::document_type::schema::allowed_top_level_properties::strip_unknown_properties_from_document_schema;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, PathQuery, Query, SizedQuery, Transaction};
 use grovedb_path::SubtreePath;
@@ -37,9 +38,7 @@ impl Drive {
             "Checking contracts for unknown document schema properties"
         );
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         // 2. For each contract, read the raw element, check, and possibly update.
         for contract_id_bytes in &contract_ids {

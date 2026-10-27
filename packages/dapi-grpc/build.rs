@@ -191,9 +191,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
     //
+    // The following responses are excluded as they need custom proof handling:
+    // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
+    //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 67] = [
-        "GetIdentityByNonUniquePublicKeyHashResponse",
+    const VERSIONED_RESPONSES: [&str; 66] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
@@ -283,8 +285,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //   - Bumping the matching `FeatureVersionBounds.max_version`
     //     to 1 in `rs-platform-version`.
     //   - Implementing the v1 dispatch arm in `drive-abci`.
-    const VERSIONED_AT_V1_REQUESTS: [&str; 2] =
-        ["GetDocumentsRequest", "GetDocumentHistoryRequest"];
+    const VERSIONED_AT_V1_REQUESTS: [&str; 3] = [
+        "GetDocumentsRequest",
+        "GetDocumentHistoryRequest",
+        "GetIdentityByNonUniquePublicKeyHashRequest",
+    ];
     const VERSIONED_AT_V1_RESPONSES: [&str; 2] =
         ["GetDocumentsResponse", "GetDocumentHistoryResponse"];
 

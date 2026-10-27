@@ -5,17 +5,17 @@ use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
 
 use dpp::bls;
-use dpp::dashcore::secp256k1::rand::SeedableRng;
-use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
+use dpp::secp256k1::rand::SeedableRng;
+use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
-use dpp::{dashcore, ed25519_dalek, ProtocolError};
+use dpp::{ed25519_dalek, ProtocolError};
 use rand::RngCore;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -100,7 +100,7 @@ impl SimpleSigner {
         // Generate a valid secp256k1 secret key from random bytes
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
-        let mut ecdsa_rng = dashcore::secp256k1::rand::rngs::StdRng::from_seed(seed);
+        let mut ecdsa_rng = dpp::secp256k1::rand::rngs::StdRng::from_seed(seed);
         let secret_key = SecretKey::new(&mut ecdsa_rng);
 
         // Derive compressed public key

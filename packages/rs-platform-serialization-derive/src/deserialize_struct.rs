@@ -46,7 +46,7 @@ pub(super) fn derive_platform_deserialize_struct(
     let (config, limit_err) = if let Some(limit) = platform_serialize_limit {
         (
             quote! {
-                let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
+                let config = platform_serialization::PLATFORM_BINCODE_CONFIG.with_limit::<{ #limit }>();
             },
             quote! {
                 .map_err(|e| {
@@ -60,7 +60,7 @@ pub(super) fn derive_platform_deserialize_struct(
     } else {
         (
             quote! {
-                let config = bincode::config::standard().with_big_endian().with_no_limit();
+                let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
             },
             quote! {
                     .map_err(|e| {

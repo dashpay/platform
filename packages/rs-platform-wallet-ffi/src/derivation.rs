@@ -91,13 +91,13 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
 
     let derived = unwrap_result_or_return!(master.derive_priv(&path));
 
-    let secret = Zeroizing::new(derived.private_key.to_secret_bytes());
+    let secret = derived.private_key.to_bytes();
     std::ptr::copy_nonoverlapping(secret.as_ptr(), out_secret_key, 32);
 
     std::ptr::copy_nonoverlapping(derived.chain_code.as_ref().as_ptr(), out_chain_code, 32);
 
     if !out_public_key.is_null() {
-        let pubkey_bytes = derived.private_key.public_key().serialize();
+        let pubkey_bytes = derived.private_key.public_key().to_compressed();
         std::ptr::copy_nonoverlapping(pubkey_bytes.as_ptr(), out_public_key, 33);
     }
 

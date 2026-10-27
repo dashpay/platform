@@ -168,6 +168,7 @@ pub mod option {
 mod tests {
     use super::*;
     use ::serde::{Deserialize, Serialize};
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
     use serde_json::json;
 
     // A known-valid compressed-G1 BLS public key (deterministic — the
@@ -211,7 +212,7 @@ mod tests {
     fn should_decode_bincode_keys_without_consuming_the_following_fields() {
         let key: BlsPublicKey = serde_json::from_value(json!(PK_HEX)).unwrap();
         let record = (key, 0x21u8, Some(key));
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
         let encoded = bincode::serde::encode_to_vec(record, config).unwrap();
         let mut expected = key.to_bytes().to_vec();
         expected.extend([0x21, 1]);

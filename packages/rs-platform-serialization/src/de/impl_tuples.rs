@@ -57,11 +57,11 @@ impl_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 #[cfg(test)]
 mod tests {
-    use bincode::config;
+    use crate::PLATFORM_BINCODE_CONFIG;
     use platform_version::version::PlatformVersion;
 
     fn cfg() -> impl bincode::config::Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     fn pv() -> &'static PlatformVersion {
