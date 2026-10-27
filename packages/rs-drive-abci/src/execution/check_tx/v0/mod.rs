@@ -1986,7 +1986,7 @@ mod tests {
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
             // is charged per compiled byte
-            29005214530
+            29005214560
         );
 
         let check_result = platform

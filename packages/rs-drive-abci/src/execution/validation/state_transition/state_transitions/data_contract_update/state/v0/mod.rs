@@ -174,6 +174,26 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
         new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());
 
+        // A contract stored compiled must fit its cap as it is stored, with the creation fields
+        // just restored from the stored contract, which the transition does not carry. The
+        // compile is charged. Edited in place: through protocol version 14, which stores no
+        // contract compiled, this refuses, compiles and charges nothing
+        let mut validation_operations = vec![];
+        let compiled_size_result = new_data_contract
+            .validate_compiled_size(&mut validation_operations, platform_version)?;
+        execution_context.add_dpp_operations(validation_operations);
+        if !compiled_size_result.is_valid() {
+            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                    self,
+                ),
+            );
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                compiled_size_result.errors,
+            ));
+        }
+
         let mut validated_identities = BTreeSet::new();
 
         for (position, group) in self.data_contract().groups() {
@@ -502,13 +522,16 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             )
         })
         .and_then(|action| {
-            // A contract stored compiled must fit its cap, measured on the action's contract,
-            // with the fields the action adds, so check_tx refuses it as a block does. The
-            // compile is charged. Edited in place: through protocol version 14, which stores
-            // no contract compiled, this refuses, compiles and charges nothing
-            action
-                .data_contract_ref()
-                .ensure_compiled_size(&mut validation_operations, platform_version)?;
+            // check_tx, which skips state validation, holds the action's contract to the
+            // compiled size cap here; a block checks it in state validation, once the stored
+            // contract's creation fields, a few bytes the transition does not carry, are
+            // restored. The compile is charged. Edited in place: through protocol version 14,
+            // which stores no contract compiled, this refuses, compiles and charges nothing
+            if !full_validation {
+                action
+                    .data_contract_ref()
+                    .ensure_compiled_size(&mut validation_operations, platform_version)?;
+            }
             Ok(action)
         });
 
@@ -547,6 +570,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::data_contract::DataContract;
     use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
@@ -980,6 +1004,113 @@ mod tests {
 
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        /// The stored contract's creation fields, which the transition does not carry, are
+        /// restored before the compiled size is checked: a cap the transition's contract fits
+        /// but the contract as stored does not refuses the update.
+        #[test]
+        fn should_check_the_compiled_size_of_the_contract_as_stored_with_its_creation_fields() {
+            let latest = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let mut data_contract =
+                get_data_contract_fixture(None, identity_contract_nonce, latest.protocol_version)
+                    .data_contract_owned();
+            let mut stored = data_contract.clone();
+            stored.set_created_at(Some(1_700_000_000_000));
+            stored.set_created_at_block_height(Some(1_000_000));
+            stored.set_created_at_epoch(Some(1_000));
+            platform
+                .drive
+                .apply_contract(&stored, BlockInfo::default(), true, None, None, latest)
+                .expect("failed to apply contract");
+            data_contract.set_version(2);
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract
+                    .try_into_platform_versioned(latest)
+                    .expect("failed to convert data contract"),
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            // The updated contract's compiled size without and with the creation fields
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(latest)
+                    .expect("failed to create execution context");
+            let transformed = transition
+                .transform_into_action_v0(
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    latest,
+                )
+                .expect("failed to transform the transition");
+            let Some(StateTransitionAction::DataContractUpdateAction(action)) = transformed.data
+            else {
+                panic!("expected a contract update action");
+            };
+            let mut updated = action.data_contract_ref().clone();
+            let compiled_size = |contract: &DataContract| {
+                contract
+                    .serialize_to_storage_bytes(latest)
+                    .expect("expected the contract to compile")
+                    .len() as u32
+            };
+            let without_creation_fields = compiled_size(&updated);
+            updated.set_created_at(stored.created_at());
+            updated.set_created_at_block_height(stored.created_at_block_height());
+            updated.set_created_at_epoch(stored.created_at_epoch());
+            let as_stored = compiled_size(&updated);
+            assert!(as_stored > without_creation_fields);
+
+            let state = platform.state.load_full();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            for (cap, refused) in [(without_creation_fields, true), (as_stored, false)] {
+                let mut platform_version = latest.clone();
+                platform_version.system_limits.max_compiled_contract_size = Some(cap);
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        &platform_version,
+                    )
+                    .expect("failed to create execution context");
+                let result = transition
+                    .validate_state_v0::<MockCoreRPCLike>(
+                        &platform_ref,
+                        &BlockInfo::default(),
+                        ValidationMode::Validator,
+                        &mut execution_context,
+                        None,
+                        &platform_version,
+                    )
+                    .expect("failed to validate state");
+                if refused {
+                    assert_matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::DataContractCompiledMaxSizeExceededError(error)
+                        )] if error.compiled_size() == u64::from(as_stored)
+                    );
+                    assert_matches!(
+                        result.data,
+                        Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            _
+                        ))
+                    );
+                } else {
+                    assert_matches!(result.errors.as_slice(), []);
+                }
+            }
         }
 
         #[test]
