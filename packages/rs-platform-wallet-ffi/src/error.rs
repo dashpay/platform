@@ -971,6 +971,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InputMidBroadcast { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
+            // No key of the identity can sign the transition. Typed on the Rust
+            // side, but kept on the code it had as `InvalidIdentityData`, which
+            // fell to the catch-all: a dedicated code must be mirrored into the
+            // Swift and Kotlin result enums, a separate coordinated change. The
+            // message names the identity, purpose, levels and transition.
+            PlatformWalletError::NoUsableSigningKey { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
@@ -1364,6 +1372,31 @@ mod tests {
     use dpp::prelude::Identifier;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+
+    #[test]
+    fn should_keep_no_usable_signing_key_on_its_former_code_with_the_context_in_the_message() {
+        let identity_id = Identifier::from([7; 32]);
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::NoUsableSigningKey {
+            identity_id,
+            purpose: dpp::identity::Purpose::AUTHENTICATION,
+            security_levels: vec![dpp::identity::SecurityLevel::CRITICAL],
+            transition: "an identity update".to_string(),
+        });
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        let identity = format!("{identity_id}");
+        for part in [
+            identity.as_str(),
+            "AUTHENTICATION",
+            "CRITICAL",
+            "an identity update",
+        ] {
+            assert!(message.contains(part), "{message}");
+        }
+    }
 
     #[test]
     fn ok_has_null_message() {

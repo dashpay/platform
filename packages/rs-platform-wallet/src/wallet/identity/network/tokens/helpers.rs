@@ -24,6 +24,10 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
 
+/// The security levels [`token_signing_key`] accepts: consensus takes only CRITICAL for a
+/// batch with a token transition.
+const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+
 /// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
 /// ECDSA key whose bounds cover the whole contract, since token operations are contract-wide.
 fn token_signing_key<'a>(
@@ -35,7 +39,7 @@ fn token_signing_key<'a>(
         identity,
         signer,
         Purpose::AUTHENTICATION,
-        &[SecurityLevel::CRITICAL],
+        &TOKEN_SIGNING_LEVELS,
         &[KeyType::ECDSA_SECP256K1],
         SigningScope::Contract {
             contract_id: token_contract_id,
@@ -74,13 +78,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         drop(wm);
 
         let signing_key = token_signing_key(&identity, token_contract_id, signer)?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level on identity {} — \
-                     identities registered before this fix may need an IdentityUpdate to add a CRITICAL key, \
-                     or re-registration",
-                    identity_id
-                ))
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
+                transition: format!("a token transition of contract {token_contract_id}"),
             })?
             .clone();
 
@@ -124,8 +126,27 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 mod signing_tests {
     use super::*;
     use crate::wallet::identity::network::signing_key::tests::{
-        lock_checking_signer, wallet_with_signing_keys,
+        assert_no_usable_key, identity as identity_with_keys, lock_checking_signer,
+        wallet_with_identity, wallet_with_signing_keys, KeyFilter,
     };
+    use dpp::identity::accessors::IdentityGettersV0;
+
+    #[tokio::test]
+    async fn should_report_no_usable_token_key_as_a_typed_error() {
+        let identity = identity_with_keys(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity(identity).await;
+        let error = wallet
+            .identity()
+            .token_resolve_signing_key(&identity_id, Identifier::default(), &KeyFilter(|_| true))
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+    }
 
     #[tokio::test]
     async fn should_check_token_key_availability_outside_wallet_lock() {
@@ -142,7 +163,6 @@ mod signing_tests {
     #[test]
     fn should_sign_a_token_operation_with_a_key_that_covers_the_whole_contract() {
         use crate::wallet::identity::network::key_selection::tests::{bound_key, identity, key};
-        use crate::wallet::identity::network::signing_key::tests::KeyFilter;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 

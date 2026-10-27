@@ -620,12 +620,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // 5. Build the signing key reference for document signing.
         let identity_public_key = contact_request_signing_key(&sender_identity, signer)?
             .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no HIGH or CRITICAL authentication key \
-                     (required for document state transitions)"
-                        .to_string(),
-                )
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *sender_identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: SecurityLevel::accepted_for_requirement(
+                    CONTACT_REQUEST_REQUIREMENT,
+                ),
+                transition: "a contactRequest document transition".to_string(),
             })?;
 
         // 6. Client-side ECDH via the signer: the shared secret is derived in
@@ -1222,6 +1223,9 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
     })
 }
 
+/// The security level a `contactRequest` document requires.
+const CONTACT_REQUEST_REQUIREMENT: SecurityLevel = SecurityLevel::HIGH;
+
 /// The key that signs an outgoing `contactRequest` document. Contact-request send writes a
 /// document state transition, which DPP requires to be signed by a HIGH-or-stricter
 /// authentication key whose bounds cover `contactRequest`; MASTER is rejected on document
@@ -1233,7 +1237,7 @@ fn contact_request_signing_key<'a>(
     document_signing_key(
         identity,
         signer,
-        SecurityLevel::HIGH,
+        CONTACT_REQUEST_REQUIREMENT,
         SigningScope::DocumentType {
             contract_id: SystemDataContract::Dashpay.id(),
             document_type_name: "contactRequest",

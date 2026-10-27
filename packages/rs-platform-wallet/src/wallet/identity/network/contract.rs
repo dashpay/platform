@@ -26,7 +26,7 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
-use super::signing_key::contract_signing_key;
+use super::signing_key::{contract_signing_key, CONTRACT_SIGNING_LEVELS};
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
@@ -34,7 +34,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, PartialIdentity};
+use dpp::identity::{IdentityPublicKey, PartialIdentity, Purpose};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
@@ -163,12 +163,11 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
             contract_signing_key(&identity, signer)?
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(
-                        "No usable CRITICAL authentication key found on owner identity \
-                         (required to sign a contract-create state transition)"
-                            .to_string(),
-                    )
+                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                    identity_id: *owner_identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels: CONTRACT_SIGNING_LEVELS.to_vec(),
+                    transition: "a contract-create state transition".to_string(),
                 })?
                 .clone()
         };
@@ -377,12 +376,11 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
             contract_signing_key(&identity, signer)?
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(
-                        "No usable CRITICAL authentication key found on owner identity \
-                         (required to sign a contract-update state transition)"
-                            .to_string(),
-                    )
+                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                    identity_id: *owner_identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels: CONTRACT_SIGNING_LEVELS.to_vec(),
+                    transition: "a contract-update state transition".to_string(),
                 })?
                 .clone()
         };

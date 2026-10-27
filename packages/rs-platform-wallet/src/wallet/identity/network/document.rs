@@ -299,12 +299,11 @@ impl IdentityWallet {
                     document_type_name,
                 },
             )?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No usable ECDSA authentication key at a security level satisfying \
-                     {required_level} found on owner identity {owner_identity_id} \
-                     (required to sign a {document_type_name} document state transition)"
-                ))
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *owner_identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: SecurityLevel::accepted_for_requirement(required_level),
+                transition: format!("a {document_type_name} document transition"),
             })?
             .clone()
         };

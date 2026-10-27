@@ -6,6 +6,7 @@ use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
+use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -84,6 +85,21 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// No key of the identity can sign `transition`: none has `purpose` and one of
+    /// `security_levels` while also being enabled, unexpired and inside its contract bounds.
+    /// It stays so until an identity update adds such a key. A key that qualifies but that the
+    /// signer cannot use is the signer-unavailable error instead.
+    #[error(
+        "identity {identity_id} has no usable {purpose} key at security level \
+         {security_levels:?} to sign {transition}"
+    )]
+    NoUsableSigningKey {
+        identity_id: Identifier,
+        purpose: Purpose,
+        security_levels: Vec<SecurityLevel>,
+        transition: String,
+    },
 
     /// A DashPay invitation link's voucher key is for the other network (a
     /// testnet link opened in a mainnet wallet, or the reverse). Definitive:

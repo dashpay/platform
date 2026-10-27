@@ -35,7 +35,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
@@ -988,12 +988,11 @@ impl IdentityWallet {
             },
         )?
         .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No usable ECDSA authentication key at a security level satisfying \
-                     {required_level} found on identity {identity_id} \
-                     (required to sign a DPNS domain state transition)"
-            ))
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *identity_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_levels: SecurityLevel::accepted_for_requirement(required_level),
+            transition: format!("a DPNS {DPNS_DOCUMENT_TYPE} document transition"),
         })
     }
 

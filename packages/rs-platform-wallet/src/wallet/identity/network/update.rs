@@ -7,7 +7,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
@@ -18,7 +18,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
-use super::signing_key::master_signing_key;
+use super::signing_key::{master_signing_key, MASTER_SIGNING_LEVELS};
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -135,10 +135,11 @@ impl IdentityWallet {
         // transitions to be authorized by MASTER specifically.
         let master_key_id = master_signing_key(&identity, signer)?
             .map(|key| key.id())
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No signable master key found on identity".to_string(),
-                )
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: MASTER_SIGNING_LEVELS.to_vec(),
+                transition: "an identity update".to_string(),
             })?;
 
         let identity_nonce = self

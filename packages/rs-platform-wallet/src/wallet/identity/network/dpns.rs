@@ -8,7 +8,7 @@ use dpp::fee::Credits;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
-use dpp::identity::SecurityLevel;
+use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 
 use dpp::identity::signer::Signer;
@@ -42,6 +42,9 @@ use super::*;
 /// without forcing a clone or `Arc` round-trip per call.
 struct SignerRef<'a, S: ?Sized>(&'a S);
 
+/// The security level both DPNS registration documents require.
+const DPNS_REGISTRATION_REQUIREMENT: SecurityLevel = SecurityLevel::HIGH;
+
 /// The key that signs both DPNS registration documents, `preorder` then `domain`: a HIGH or
 /// CRITICAL AUTHENTICATION ECDSA key whose bounds cover the whole DPNS contract. MASTER is
 /// reserved for identity operations and refused on document writes.
@@ -52,7 +55,7 @@ fn dpns_registration_signing_key<'a>(
     document_signing_key(
         identity,
         signer,
-        SecurityLevel::HIGH,
+        DPNS_REGISTRATION_REQUIREMENT,
         SigningScope::Contract {
             contract_id: SystemDataContract::DPNS.id(),
         },
@@ -241,12 +244,13 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             drop(wm);
             let key = dpns_registration_signing_key(&identity, signer)?
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(
-                        "No usable HIGH or CRITICAL authentication key found on identity \
-                         (required for document state transitions)"
-                            .to_string(),
-                    )
+                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                    identity_id: *identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels: SecurityLevel::accepted_for_requirement(
+                        DPNS_REGISTRATION_REQUIREMENT,
+                    ),
+                    transition: "a DPNS name registration".to_string(),
                 })?
                 .clone();
             (identity, key)

@@ -44,6 +44,12 @@ pub(super) fn first_available<'a>(
     unavailable.map_or(Ok(None), |key| Err(signing_key_unavailable(key)))
 }
 
+/// The security levels [`contract_signing_key`] accepts.
+pub(super) const CONTRACT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+
+/// The security levels [`master_signing_key`] accepts.
+pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MASTER];
+
 /// The key that signs a contract create or update: a CRITICAL AUTHENTICATION ECDSA key.
 /// These are not batches, so a contract-bound key cannot sign them.
 pub(super) fn contract_signing_key<'a>(
@@ -54,7 +60,7 @@ pub(super) fn contract_signing_key<'a>(
         identity,
         signer,
         Purpose::AUTHENTICATION,
-        &[SecurityLevel::CRITICAL],
+        &CONTRACT_SIGNING_LEVELS,
         &[KeyType::ECDSA_SECP256K1],
         SigningScope::NonBatch,
     )
@@ -69,7 +75,7 @@ pub(super) fn master_signing_key<'a>(
         identity,
         signer,
         Purpose::AUTHENTICATION,
-        &[SecurityLevel::MASTER],
+        &MASTER_SIGNING_LEVELS,
         &[KeyType::ECDSA_SECP256K1],
         SigningScope::NonBatch,
     )
@@ -116,6 +122,7 @@ pub(super) fn credit_signing_key<'a>(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::accessors::IdentityGettersV0;
@@ -124,6 +131,7 @@ pub(super) mod tests {
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
+    use std::sync::Arc;
 
     /// Test signer that can sign with the keys `F` accepts; selection must never sign.
     pub(crate) struct KeyFilter<F: Fn(&IdentityPublicKey) -> bool>(pub F);
@@ -428,12 +436,21 @@ pub(super) mod tests {
         }
     }
 
-    pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
+    pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
+        wallet_with_identity(identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        ))
+        .await
+    }
+
+    /// A mock-SDK wallet that owns `identity`.
+    pub(crate) async fn wallet_with_identity(identity: Identity) -> Arc<PlatformWallet> {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::wallet::persister::NoPlatformPersistence;
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-        use std::sync::Arc;
 
         struct Events;
         impl EventHandler for Events {}
@@ -457,17 +474,81 @@ pub(super) mod tests {
             .unwrap()
             .identity_manager
             .add_identity(
-                identity(
-                    Purpose::AUTHENTICATION,
-                    SecurityLevel::CRITICAL,
-                    KeyType::ECDSA_SECP256K1,
-                ),
+                identity,
                 0,
                 wallet.wallet_id(),
                 &wallet.identity().persister,
             )
             .unwrap();
         wallet
+    }
+
+    /// A wallet identity holding only HIGH AUTHENTICATION keys: none can sign a contract
+    /// create or an identity update.
+    async fn wallet_without_critical_or_master_keys() -> (Arc<PlatformWallet>, Identifier) {
+        let identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        (wallet_with_identity(identity).await, identity_id)
+    }
+
+    pub(crate) fn assert_no_usable_key(
+        error: PlatformWalletError,
+        identity: Identifier,
+        level: SecurityLevel,
+    ) {
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey {
+                    identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels,
+                    ..
+                } if *identity_id == identity && security_levels == &[level]
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_no_usable_contract_key_as_a_typed_error() {
+        let (wallet, identity_id) = wallet_without_critical_or_master_keys().await;
+        let error = wallet
+            .identity()
+            .create_data_contract_with_signer(
+                &identity_id,
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+    }
+
+    #[tokio::test]
+    async fn should_report_no_usable_master_key_as_a_typed_error() {
+        let (wallet, identity_id) = wallet_without_critical_or_master_keys().await;
+        let error = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &identity_id,
+                vec![],
+                vec![],
+                &KeyFilter(|_| true),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::MASTER);
     }
 
     #[tokio::test]
