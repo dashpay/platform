@@ -27,15 +27,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The key types Platform verifies an identity signature by (Drive's
 /// `validate_state_transition_identity_signed`). A key the caller chose is checked against
-/// these, not against the narrower set the wallet picks its own keys from.
+/// these, and so is the wallet's own choice of a credit transfer or withdrawal key, so an
+/// `ECDSA_HASH160` TRANSFER key stays usable. Other automatic selection uses the narrower
+/// [`WALLET_SIGNING_KEY_TYPES`].
 pub(crate) const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
     KeyType::ECDSA_SECP256K1,
     KeyType::BLS12_381,
     KeyType::ECDSA_HASH160,
 ];
 
-/// The key types the wallet picks its own signing keys from. A key the caller chose is checked
-/// against [`PLATFORM_SIGNING_KEY_TYPES`] instead.
+/// The key types the wallet picks its own signing keys from, except for a credit transfer or
+/// withdrawal key, which may be any of [`PLATFORM_SIGNING_KEY_TYPES`]. A key the caller chose
+/// is checked against [`PLATFORM_SIGNING_KEY_TYPES`] instead.
 pub(crate) const WALLET_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
 
 /// What a signature authorizes, as far as a key's contract bounds go.
