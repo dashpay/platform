@@ -42,6 +42,17 @@ pub async fn sleep(duration: Duration) {
     wasm_channel::into_send_sleep(duration).await;
 }
 
+/// Base URL for the gRPC-Web client, without a trailing slash.
+///
+/// `tonic-web-wasm-client` appends the request path (`/org.dash.platform.dapi.v0.Platform/getStatus`)
+/// to the base URL as-is, and [Uri]'s string form of `https://host:1443` is `https://host:1443/`.
+/// Without trimming, requests go to `https://host:1443//org.dash...`, which only gateways that
+/// merge slashes route; others answer `Unimplemented` or 404.
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn grpc_web_base_url(uri: &str) -> &str {
+    uri.trim_end_matches('/')
+}
+
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
 pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
@@ -199,6 +210,40 @@ pub trait TransportClient: Send + Sized {
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Code;
+
+    #[test]
+    fn test_grpc_web_base_url_joins_request_path_with_one_slash() {
+        let path = "/org.dash.platform.dapi.v0.Platform/getStatus";
+        let cases = [
+            // `Uri` renders an authority-only address with a trailing slash.
+            (
+                Uri::from_static("https://127.0.0.1:1443").to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443/".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            // A path prefix (node behind a proxy) is kept.
+            (
+                "https://example.org/dapi/".to_string(),
+                "https://example.org/dapi",
+            ),
+        ];
+
+        for (address, expected) in cases {
+            let base = grpc_web_base_url(&address);
+            assert_eq!(base, expected, "base URL for {address}");
+            assert!(
+                !format!("{base}{path}").contains("//org."),
+                "request URL for {address} has a double slash"
+            );
+        }
+    }
 
     #[test]
     fn test_tonic_status_can_retry_retryable_codes() {
