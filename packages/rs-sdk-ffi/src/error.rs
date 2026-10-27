@@ -468,6 +468,62 @@ mod tests {
         }
     }
 
+    /// What the SDK's retry loop ends a document request with when its node answered at an
+    /// older protocol version than the SDK's and then no node was left to ask.
+    async fn every_node_answered_at_an_older_protocol_version() -> dash_sdk::Error {
+        use dash_sdk::dapi_client::{
+            Address, AddressList, DapiClientError, ExecutionError, ExecutionResponse,
+        };
+        use dash_sdk::error::StaleNodeError;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let node: Address = "http://127.0.0.1:1".parse().expect("address");
+        let mut address_list = AddressList::new();
+        address_list.add(node.clone());
+        let settings = dash_sdk::RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let asked = AtomicBool::new(false);
+        let error = dash_sdk::sync::retry(&address_list, settings, |_settings| {
+            let first = !asked.swap(true, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<ExecutionResponse<()>, _>(if first {
+                    ExecutionError {
+                        inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: dash_sdk::Error::DapiClientError(
+                            DapiClientError::NoAvailableAddresses,
+                        ),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        })
+        .await
+        .expect_err("no node answers at the SDK's protocol version");
+        error.inner
+    }
+
+    /// Retrying such a request on other nodes does not help: the SDK's protocol version has to
+    /// match its network's. The host gets a protocol error, not a network error.
+    #[tokio::test]
+    async fn should_report_a_request_every_node_answered_at_an_older_protocol_version_as_protocol_error(
+    ) {
+        let error = every_node_answered_at_an_older_protocol_version().await;
+
+        assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
+    }
+
     #[test]
     fn drive_internal_error_with_not_found_substring_maps_to_drive_internal_error() {
         // Drive emits messages like "data contract not found"; the Display form is

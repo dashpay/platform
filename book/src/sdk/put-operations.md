@@ -274,7 +274,9 @@ document delete, could still verify at a location the newer protocol no longer
 uses. The signature binds the protocol version to the state root, and an
 unpinned SDK raises its stored version to the producer's only after the
 signature and freshness checks pass, and never to a version this build does not
-know.
+know. Document query answers signed at an older version than the SDK's, unlike
+outcomes, are not verified (see
+[The Internal Fetch Pipeline](fetch-traits.md#the-internal-fetch-pipeline)).
 
 ### Timeout Handling
 

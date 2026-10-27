@@ -505,6 +505,65 @@ mod tests {
         assert_eq!(error.message(), message);
     }
 
+    /// What the SDK's retry loop ends a document request with when its node answered at an
+    /// older protocol version than the SDK's and then no node was left to ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn every_node_answered_at_an_older_protocol_version() -> SdkError {
+        use dash_sdk::error::StaleNodeError;
+        use rs_dapi_client::{Address, AddressList, ExecutionError, ExecutionResponse};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let node: Address = "http://127.0.0.1:1".parse().expect("address");
+        let mut address_list = AddressList::new();
+        address_list.add(node.clone());
+        let settings = dash_sdk::RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let asked = AtomicBool::new(false);
+        let error = dash_sdk::sync::retry(&address_list, settings, |_settings| {
+            let first = !asked.swap(true, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<ExecutionResponse<()>, _>(if first {
+                    ExecutionError {
+                        inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        })
+        .await
+        .expect_err("no node answers at the SDK's protocol version");
+        error.inner
+    }
+
+    /// Retrying such a request on other nodes does not help: the SDK's protocol version has to
+    /// match its network's. JavaScript gets the configuration error, not a DAPI client error.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_report_a_request_every_node_answered_at_an_older_protocol_version_as_config() {
+        let error = WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await);
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::Config,
+            "{}",
+            error.message()
+        );
+        assert!(!error.is_retriable());
+    }
+
     #[test]
     fn should_carry_the_code_of_a_consensus_error_platform_refused_the_transition_with() {
         let error = WasmSdkError::from(refused_by_platform(&property_constraint_violated()));
