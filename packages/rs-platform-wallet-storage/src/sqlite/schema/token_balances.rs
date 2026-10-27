@@ -20,11 +20,11 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::util::safe_cast;
 
-/// Keyed by `(identity_id, token_id)`. `wallet_id` feeds the precondition
-/// check only — no column — since cascade flows
-/// `wallets → identities → token_balances` via the nullable
-/// `identities.wallet_id` FK. No auto-prune: hosts deleting identities
-/// out-of-band must prune `token_balances` themselves.
+/// Keyed by `(identity_id, token_id)`. `wallet_id` feeds the ownership
+/// check only (skipped for the all-zero sentinel scope) — no column —
+/// since cascade flows `wallets → identities → token_balances` via the
+/// nullable `identities.wallet_id` FK. No auto-prune: hosts deleting
+/// identities out-of-band must prune `token_balances` themselves.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

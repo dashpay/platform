@@ -145,6 +145,39 @@ fn sentinel_scoped_token_balance_of_wallet_owned_identity_persists() {
     assert_eq!(remaining, 0);
 }
 
+/// The sentinel scope skips only the ownership check: a balance for an
+/// identity with no `identities` row is still rejected by the FK.
+#[test]
+fn sentinel_scoped_token_balance_of_missing_identity_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let missing_identity = [0x25u8; 32];
+
+    let mut balances = TokenBalanceChangeSet::default();
+    balances.balances.insert(
+        (
+            Identifier::from(missing_identity),
+            Identifier::from([0x26u8; 32]),
+        ),
+        7,
+    );
+    let err = persister
+        .store(WalletId::default(), balances.into())
+        .expect_err("a balance for a missing identity must be rejected");
+    assert!(
+        format!("{err:?}").contains("FOREIGN KEY"),
+        "expected FOREIGN KEY failure, got `{err:?}`"
+    );
+    let rows: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1",
+            params![missing_identity.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count token balance rows");
+    assert_eq!(rows, 0);
+}
+
 /// A real wallet scope still may not write token balances for another
 /// wallet's identity.
 #[test]
