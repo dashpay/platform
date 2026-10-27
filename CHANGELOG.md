@@ -87,6 +87,15 @@
   changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
   (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
   [#5578](https://github.com/dashpay/platform/pull/5578).
+- **drive (Rust API migration):** destroying a frozen identity's funds also destroys
+  its escrowed token listings from protocol version 15.
+  `TokenTransitionAction::associated_token_event` takes `&PlatformVersion` and returns
+  `Result<TokenEvent, Error>`. `TokenDestroyFrozenFundsTransitionActionV0` gains
+  `escrowed_listings` and `token_market_contract`; struct literals set them to an empty
+  `Vec` and `None` before protocol version 15. `DocumentOperationType` gains
+  `DeleteDocuments` and `TokenOperationType` gains `TokenDestroyFrozenHolding`; neither
+  enum is `#[non_exhaustive]`, so exhaustive matches need new arms. See
+  [#5532](https://github.com/dashpay/platform/pull/5532).
 
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 
