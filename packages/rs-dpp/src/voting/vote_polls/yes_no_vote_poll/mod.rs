@@ -219,12 +219,16 @@ impl YesNoVotePoll {
             .voting_versions
             .yes_no_vote_poll_parameters
         {
-            0 => self.validate_parameters_v0(platform_version),
-            version => Err(ProtocolError::UnknownVersionMismatch {
+            Some(0) => self.validate_parameters_v0(platform_version),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "YesNoVotePoll::validate_parameters".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePoll::validate_parameters is not active before protocol version 15"
+                    .to_string(),
+            )),
         }
     }
 
@@ -334,12 +338,16 @@ impl YesNoVotePoll {
             .voting_versions
             .yes_no_vote_poll_decision
         {
-            0 => Ok(self.required_voting_power_v0(total_voting_power)),
-            version => Err(ProtocolError::UnknownVersionMismatch {
+            Some(0) => Ok(self.required_voting_power_v0(total_voting_power)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "YesNoVotePoll::required_voting_power".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePoll::required_voting_power is not active before protocol version 15"
+                    .to_string(),
+            )),
         }
     }
 
@@ -367,12 +375,15 @@ impl YesNoVotePoll {
             .voting_versions
             .yes_no_vote_poll_decision
         {
-            0 => Ok(self.passes_v0(yes_voting_power, no_voting_power, total_voting_power)),
-            version => Err(ProtocolError::UnknownVersionMismatch {
+            Some(0) => Ok(self.passes_v0(yes_voting_power, no_voting_power, total_voting_power)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "YesNoVotePoll::passes".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePoll::passes is not active before protocol version 15".to_string(),
+            )),
         }
     }
 
@@ -689,6 +700,31 @@ mod tests {
         let id = poll().unique_id().expect("id");
         assert_eq!(id, tagged);
         assert_ne!(id, untagged);
+    }
+
+    #[test]
+    fn should_report_the_poll_rules_not_active_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let not_active = |result: Result<(), ProtocolError>, method: &str| {
+            assert!(
+                matches!(result, Err(ProtocolError::UnknownVersionError(_))),
+                "expected {method} to be not active at protocol version 14, got {result:?}"
+            );
+        };
+        not_active(
+            poll().validate_parameters(platform_version),
+            "validate_parameters",
+        );
+        not_active(
+            poll()
+                .required_voting_power(100, platform_version)
+                .map(|_| ()),
+            "required_voting_power",
+        );
+        not_active(
+            poll().passes(10, 0, 100, platform_version).map(|_| ()),
+            "passes",
+        );
     }
 }
 

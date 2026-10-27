@@ -37,16 +37,20 @@ impl Drive {
             .cleanup
             .remove_vote_poll_end_date_query_operations
         {
-            0 => self.remove_vote_poll_end_date_query_operations_v0(
+            Some(0) => self.remove_vote_poll_end_date_query_operations_v0(
                 vote_polls,
                 batch_operations,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_vote_poll_end_date_query_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "remove_vote_poll_end_date_query_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

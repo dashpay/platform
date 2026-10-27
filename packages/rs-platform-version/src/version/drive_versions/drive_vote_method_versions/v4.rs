@@ -11,6 +11,8 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 ///   contested resource votes, which v1 still hands to it).
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
 ///   that left the list.
+/// * `cleanup.remove_vote_poll_end_date_query_operations` is `Some(0)`: the yes/no clean-up
+///   removes finished polls from the end date index with it (`None`, not active, before).
 /// * every `yes_no` method is `Some(0)`: yes/no polls can be opened and voted on from this
 ///   version (`None`, not active, in every earlier table).
 /// * `contested_resource_insert.add_vote_poll_end_date_query_operations` 1 adds only the entry
@@ -28,6 +30,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
     },
     cleanup: DriveVoteCleanupMethodVersions {
         remove_all_votes_given_by_identities: 1,
+        remove_vote_poll_end_date_query_operations: Some(0),
         ..DRIVE_VOTE_METHOD_VERSIONS_V3.cleanup
     },
     yes_no: DriveVoteYesNoMethodVersions {

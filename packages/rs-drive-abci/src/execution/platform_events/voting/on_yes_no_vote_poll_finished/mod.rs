@@ -41,17 +41,21 @@ where
             .voting
             .on_yes_no_vote_poll_finished
         {
-            0 => self.on_yes_no_vote_poll_finished_v0(
+            Some(0) => self.on_yes_no_vote_poll_finished_v0(
                 block_info,
                 vote_poll,
                 result,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "on_yes_no_vote_poll_finished".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "on_yes_no_vote_poll_finished".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

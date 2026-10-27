@@ -54,7 +54,8 @@ impl Drive {
         //
         // In place (client side, every version): these arms take only votes naming a yes/no
         // poll, which no valid transition carries before protocol version 15 (it does not
-        // decode there). Every contested vote reaches the version match below unchanged.
+        // decode there), and the yes/no verifier is not active before 15, so the route refuses
+        // there. Every contested vote reaches the version match below unchanged.
         match vote {
             Vote::YesNoVote(yes_no_vote) => {
                 return Self::verify_masternode_yes_no_vote(

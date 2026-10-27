@@ -49,7 +49,7 @@ where
             .voting
             .keep_record_of_finished_yes_no_vote_poll
         {
-            0 => self.keep_record_of_finished_yes_no_vote_poll_v0(
+            Some(0) => self.keep_record_of_finished_yes_no_vote_poll_v0(
                 block_info,
                 vote_poll,
                 stored_info,
@@ -58,10 +58,14 @@ where
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "keep_record_of_finished_yes_no_vote_poll".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "keep_record_of_finished_yes_no_vote_poll".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

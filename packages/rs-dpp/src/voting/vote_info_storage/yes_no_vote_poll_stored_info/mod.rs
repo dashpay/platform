@@ -105,12 +105,15 @@ impl YesNoVotePollStoredInfo {
             .voting_versions
             .yes_no_vote_poll_stored_info_version
         {
-            0 => Ok(YesNoVotePollStoredInfoV0::new(start_block).into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
+            Some(0) => Ok(YesNoVotePollStoredInfoV0::new(start_block).into()),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "YesNoVotePollStoredInfo::new".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePollStoredInfo::new is not active before protocol version 15".to_string(),
+            )),
         }
     }
 
@@ -157,6 +160,15 @@ impl YesNoVotePollStoredInfo {
 mod tests {
     use super::*;
     use crate::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
+
+    #[test]
+    fn should_report_the_stored_info_not_active_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert!(matches!(
+            YesNoVotePollStoredInfo::new(BlockInfo::default(), platform_version),
+            Err(ProtocolError::UnknownVersionError(_))
+        ));
+    }
 
     #[test]
     fn should_finalize_a_started_poll_once() {

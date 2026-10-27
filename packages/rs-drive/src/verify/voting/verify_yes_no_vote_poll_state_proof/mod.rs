@@ -29,11 +29,15 @@ impl YesNoVotePollStateDriveQuery {
             .voting
             .verify_yes_no_vote_poll_state_proof
         {
-            0 => self.verify_yes_no_vote_poll_state_proof_v0(proof, platform_version),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(0) => self.verify_yes_no_vote_poll_state_proof_v0(proof, platform_version),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_yes_no_vote_poll_state_proof".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "verify_yes_no_vote_poll_state_proof".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

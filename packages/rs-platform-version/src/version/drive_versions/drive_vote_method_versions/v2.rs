@@ -23,7 +23,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMeth
         remove_contested_resource_top_level_index_operations: 0,
         remove_contested_resource_info_operations: 0,
         remove_all_votes_given_by_identities: 0,
-        remove_vote_poll_end_date_query_operations: 0,
+        remove_vote_poll_end_date_query_operations: None,
     },
     setup: DriveVoteSetupMethodVersions {
         add_initial_vote_tree_main_structure_operations: 0,

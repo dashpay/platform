@@ -35,17 +35,21 @@ impl Drive {
             .voting
             .verify_masternode_yes_no_vote
         {
-            0 => Drive::verify_masternode_yes_no_vote_v0(
+            Some(0) => Drive::verify_masternode_yes_no_vote_v0(
                 proof,
                 masternode_pro_tx_hash,
                 vote,
                 verify_subset_of_proof,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_masternode_yes_no_vote".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "verify_masternode_yes_no_vote".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

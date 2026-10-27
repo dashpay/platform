@@ -34,11 +34,17 @@ where
             .voting
             .tally_votes_for_yes_no_vote_poll
         {
-            0 => self.tally_votes_for_yes_no_vote_poll_v0(vote_poll, transaction, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(0) => {
+                self.tally_votes_for_yes_no_vote_poll_v0(vote_poll, transaction, platform_version)
+            }
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "tally_votes_for_yes_no_vote_poll".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "tally_votes_for_yes_no_vote_poll".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

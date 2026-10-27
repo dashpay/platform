@@ -57,17 +57,21 @@ where
             .voting
             .clean_up_after_yes_no_vote_polls_end
         {
-            0 => self.clean_up_after_yes_no_vote_polls_end_v0(
+            Some(0) => self.clean_up_after_yes_no_vote_polls_end_v0(
                 block_info,
                 end_date_entries,
                 finished_vote_polls,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "clean_up_after_yes_no_vote_polls_end".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "clean_up_after_yes_no_vote_polls_end".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

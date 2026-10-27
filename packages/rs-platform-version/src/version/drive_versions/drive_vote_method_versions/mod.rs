@@ -64,8 +64,9 @@ pub struct DriveVoteCleanupMethodVersions {
     /// Removes every vote a removed masternode cast. Version 1 (protocol version 15) also
     /// sweeps its yes/no votes.
     pub remove_all_votes_given_by_identities: FeatureVersion,
-    /// Removes finished polls of every kind from the end date index (protocol version 15).
-    pub remove_vote_poll_end_date_query_operations: FeatureVersion,
+    /// Removes finished polls of every kind from the end date index. `None` (not active) before
+    /// protocol version 15.
+    pub remove_vote_poll_end_date_query_operations: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

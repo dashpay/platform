@@ -138,8 +138,10 @@ mod tests {
         IDENTITY_VOTES_TREE_KEY,
     };
     use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
+    use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
     use crate::util::common::encode::encode_u64;
     use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -153,6 +155,8 @@ mod tests {
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use dpp::voting::vote_polls::VotePoll;
+    use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+    use dpp::voting::votes::yes_no_vote::YesNoVote;
     use grovedb::batch::KeyInfoPath;
     use grovedb::MaybeTree;
 
@@ -328,6 +332,37 @@ mod tests {
                 platform_version,
             ),
             "remove_yes_no_vote_references_given_by_identity",
+        );
+        not_active(
+            drive.remove_vote_poll_end_date_query_operations(
+                &[(poll_id, 1_000)],
+                &mut vec![],
+                None,
+                platform_version,
+            ),
+            "remove_vote_poll_end_date_query_operations",
+        );
+        not_active(
+            Drive::verify_masternode_yes_no_vote(
+                &[],
+                [1; 32],
+                &YesNoVote::V0(YesNoVoteV0 {
+                    vote_poll: vote_poll.clone(),
+                    vote_choice: YesNoAbstainVoteChoice::Yes,
+                }),
+                false,
+                platform_version,
+            )
+            .map(|_| ()),
+            "verify_masternode_yes_no_vote",
+        );
+        not_active(
+            YesNoVotePollStateDriveQuery {
+                vote_poll: vote_poll.clone(),
+            }
+            .verify_yes_no_vote_poll_state_proof(&[], platform_version)
+            .map(|_| ()),
+            "verify_yes_no_vote_poll_state_proof",
         );
     }
 
