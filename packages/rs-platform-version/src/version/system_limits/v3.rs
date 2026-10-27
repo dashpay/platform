@@ -15,6 +15,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024,
+    max_index_property_name_bytes: 255,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,

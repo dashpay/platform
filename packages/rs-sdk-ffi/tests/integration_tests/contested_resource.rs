@@ -33,6 +33,11 @@ fn test_contested_resource_identity_votes() {
         if let Some(first) = json.as_array().and_then(|a| a.first()) {
             assert!(first.get("vote_poll_id").is_some());
             assert!(first.get("resource_vote_choice").is_some());
+            assert!(
+                first.get("vote_count").and_then(|count| count.as_u64()) >= Some(1),
+                "an existing vote was given at least once, got: {:?}",
+                first
+            );
         }
     }
 

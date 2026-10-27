@@ -93,6 +93,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::serialization::{
@@ -428,9 +429,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             signer,
         };
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(strategy_in_serialization_format, config)
             .map_err(|e| PlatformSerializationError(format!("unable to serialize Strategy: {}", e)))
     }
@@ -445,9 +444,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted 
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let strategy: StrategyInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {

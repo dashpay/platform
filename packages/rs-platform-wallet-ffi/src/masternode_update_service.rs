@@ -283,9 +283,13 @@ unsafe fn run_prepare_update_service(
 ///
 /// - `wallet_id` / `pro_tx_hash` — 32 bytes each; `pro_tx_hash` in WIRE
 ///   order, as the masternode list reports it.
-/// - `platform_p2p_port` (honoured when `has_platform_p2p_port`) — required
-///   for an evonode, forbidden otherwise; the masternode list does not
-///   carry it.
+/// - `platform_p2p_port` (honoured when `has_platform_p2p_port`) — pass it
+///   for every evonode; forbidden for a regular masternode. Required when
+///   the evonode's list entry is pre-v3 (the list does not carry it); for a
+///   v3 entry it is optional and must match a Platform P2P port the entry
+///   lists. Once V24 is active, a pre-v3 evonode's update writes it into
+///   the evonode's new v3 address map, after which this call re-asserts it
+///   and cannot change it; on mainnet that update takes only port 26656.
 /// - `operator_payout_address` — nullable. Must be null when the ProRegTx's
 ///   `operatorReward` is 0, and must be given when it is not (the payload
 ///   REPLACES the payout script on-chain; an empty one would clear it).

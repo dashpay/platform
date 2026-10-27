@@ -46,6 +46,8 @@ derive_more = { version = "1.0", features = ["from"] }
 [dev-dependencies]
 dpp = { path = "../rs-dpp", features = [
   "fixtures-and-mocks",
+  "random-identities",
+  "random-documents",
 ], default-features = false }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "platform",
@@ -53,6 +55,7 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
 ] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
+  "fixtures-and-mocks",
 ] }
 hex = { version = "0.4.3" }
 indexmap = { version = "2.6.0" }

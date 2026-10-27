@@ -458,11 +458,8 @@ pub(crate) fn restore_recorded_transactions(
     // TODO(bound-load-history-replay): every stored record is replayed on each
     // load; bounding it to records above the last chain lock needs care so
     // finality and spend guards for older records are not lost.
-    // TODO(expire-unconfirmed-spend-reservations): mempool records are replayed
-    // on every load with no expiry, so a forged or never-mined spend of a wallet
-    // outpoint keeps its reservation across load and rescan; only a conflicting
-    // IS-locked or confirmed spend releases it. Sibling of
-    // TODO(release-repair-spends-after-reorg) in `core_history`.
+    // SQLite checks owned-input authorization before replay. Authorized pending
+    // spends retain their reservations until Core settles or cancels them.
     if !unreplayable.is_empty() {
         // Count only: the txids are peer-supplied.
         tracing::warn!(
@@ -478,12 +475,16 @@ pub(crate) fn restore_recorded_transactions(
             continue;
         }
         record.context = match &record.context {
+            // Height alone cannot establish ancestry: persistence may still contain
+            // an old branch until its truncation is recorded.
             TransactionContext::InBlock(block)
                 if wallet_info
                     .metadata
                     .last_applied_chain_lock
                     .as_ref()
-                    .is_some_and(|lock| block.height() <= lock.block_height) =>
+                    .is_some_and(|lock| {
+                        block.height() == lock.block_height && block.block_hash() == lock.block_hash
+                    }) =>
             {
                 TransactionContext::InChainLockedBlock(*block)
             }
@@ -600,10 +601,8 @@ pub(crate) fn restore_recorded_transactions(
                 && !misplaced.contains(&(*outpoint, owner))
         });
     }
-    // Finalize replayed records before a sync checkpoint can prune their spend guards.
-    if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
-        wallet_info.apply_chain_lock(chain_lock);
-    }
+    // The stored checkpoint proves only its exact block. Ancestor membership
+    // must be re-established by Core sync before its height can finalize history.
     wallet_info.update_balance();
     Ok(sweeps)
 }
@@ -879,7 +878,8 @@ fn plan_replay_sweeps(
 
 /// Restore set-aside records without the checker, so the conflict sweep still
 /// finds what they spend: it reads inputs and contexts, never amounts. Every
-/// account a record touches holds a copy, with the wallet-level amounts.
+/// account a record touches holds a copy, with the wallet-level amounts, and
+/// so does every account the load parked one of its outputs in.
 ///
 /// The only arithmetic upstream runs over a stored record is the signed net of
 /// its owned outputs and attributed inputs, when a late funding is attributed
@@ -895,6 +895,13 @@ fn restore_unreplayed_records(
     safe_inputs: &HashMap<Txid, bool>,
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    // Where the load actually parked each record's outputs. An output no
+    // address pool row routes lands in the first account, which need not be
+    // one the record names or derives an address for.
+    let holding: Vec<HashSet<Txid>> = accounts
+        .iter()
+        .map(|account| account.utxos.keys().map(|outpoint| outpoint.txid).collect())
+        .collect();
     for mut record in records {
         let outputs = record.output_details.iter().map(|d| d.address.clone());
         let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
@@ -908,15 +915,20 @@ fn restore_unreplayed_records(
         }
         // The upstream sweep drops a loser's coins and descendants only in an
         // account that records it, so the record goes wherever the checker
-        // would have put it: each account owning one of its addresses.
-        let touches = |account: &ManagedCoreFundsAccount| {
+        // would have put it, each account owning one of its addresses, and
+        // wherever one of its coins actually sits.
+        let touches = |index: usize, account: &ManagedCoreFundsAccount| {
             funds_account_type(account) == record.account_type
+                || holding[index].contains(&record.txid)
                 || addresses.iter().any(|a| account.contains_address(a))
         };
         // Any funding account will do as a fallback: the sweep searches them all.
-        let fallback = !accounts.iter().any(|account| touches(account));
+        let fallback = !accounts
+            .iter()
+            .enumerate()
+            .any(|(index, account)| touches(index, account));
         for (index, account) in accounts.iter_mut().enumerate() {
-            if touches(account) || (fallback && index == 0) {
+            if touches(index, account) || (fallback && index == 0) {
                 let copy = record.clone();
                 account.transactions_mut().insert(copy.txid, copy);
             }

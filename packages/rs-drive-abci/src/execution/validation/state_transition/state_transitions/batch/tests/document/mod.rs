@@ -10,6 +10,7 @@ mod derived_index_values;
 mod distinct_from;
 mod document_ttl;
 mod dpns;
+mod dpns_v3;
 mod duplicate_keys;
 mod encrypted_for;
 mod gas_sponsorship;
