@@ -74,6 +74,14 @@ pub enum PlatformWalletError {
     #[error("wallet {0} was removed or re-created before the payment was sent; nothing was sent")]
     WalletRemovedBeforeSend(String),
 
+    /// A prepared contact payment refused at send because its address is no
+    /// longer free: another payment to the contact took it, a payment was
+    /// seen at it on-chain, or it left the contact's pool. Nothing was sent
+    /// and the inputs were released; preparing the payment again picks a
+    /// fresh address.
+    #[error("{0}; nothing was sent — prepare the payment again")]
+    PreparedPaymentAddressTaken(String),
+
     #[error("Wallet already exists: {0}")]
     WalletAlreadyExists(String),
 

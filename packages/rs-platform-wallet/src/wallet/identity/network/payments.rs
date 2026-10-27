@@ -5,6 +5,7 @@ use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -14,11 +15,13 @@ use key_wallet_manager::WalletManager;
 use super::contacts::receiving_scan_checkpoint;
 use super::prepared_payment::{
     contact_key, pool_changeset, release_address_reservation, reserve_address, AddressOutcome,
+    CONTACT_ACCOUNT_INDEX,
 };
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::PlatformWalletChangeSet;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::reservations::release_reservation_after_rejected_broadcast;
 
@@ -1347,9 +1350,12 @@ enum ContactAddressClaim {
 }
 
 /// The contact's external account and the xpub its addresses derive from.
-fn contact_external_account<'w>(
+/// With `generation`, a wallet removed or re-created since that generation
+/// was taken is reported as not found.
+pub(super) fn contact_external_account<'w>(
     wm: &'w mut WalletManager<PlatformWalletInfo>,
     wallet_id: WalletId,
+    generation: Option<&Arc<WalletGeneration>>,
     from_identity_id: &Identifier,
     to_contact_id: &Identifier,
 ) -> Result<
@@ -1381,6 +1387,7 @@ fn contact_external_account<'w>(
         })?;
     let external_account = wm
         .get_wallet_info_mut(&wallet_id)
+        .filter(|info| generation.is_none_or(|g| Arc::ptr_eq(&info.generation, g)))
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         .core_wallet
         .accounts
@@ -1403,13 +1410,31 @@ fn mark_contact_addresses_paid_on_chain(
     external_account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     contact_xpub: &key_wallet::bip32::ExtendedPubKey,
 ) -> Result<bool, PlatformWalletError> {
+    // Collected only once a first candidate is found paid, the rare case:
+    // the walk then checks every further candidate against them.
+    let mut paid_scripts: Option<HashSet<dashcore::ScriptBuf>> = None;
     let mut marked = false;
     loop {
         let candidate = external_account
             .next_address(Some(contact_xpub), true)
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-        if !contact_address_paid_on_chain(external_account, &candidate.script_pubkey()) {
+        let script = candidate.script_pubkey();
+        let paid = match &paid_scripts {
+            Some(scripts) => scripts.contains(&script),
+            None => contact_address_paid_on_chain(external_account, &script),
+        };
+        if !paid {
             return Ok(marked);
+        }
+        if paid_scripts.is_none() {
+            paid_scripts = Some(
+                external_account
+                    .transactions()
+                    .values()
+                    .flat_map(|record| record.transaction.output.iter())
+                    .map(|output| output.script_pubkey.clone())
+                    .collect(),
+            );
         }
         if !external_account.mark_address_used(&candidate) {
             return Err(PlatformWalletError::TransactionBuild(format!(
@@ -1423,14 +1448,15 @@ fn mark_contact_addresses_paid_on_chain(
 /// Run [`mark_contact_addresses_paid_on_chain`] for one contact and, when it
 /// marked anything, snapshot the pool to store after the guard drops. Caller
 /// holds the manager write lock.
-fn record_contact_addresses_paid_on_chain(
+pub(super) fn record_contact_addresses_paid_on_chain(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: WalletId,
+    generation: Option<&Arc<WalletGeneration>>,
     from_identity_id: &Identifier,
     to_contact_id: &Identifier,
 ) -> Result<Option<PlatformWalletChangeSet>, PlatformWalletError> {
     let (contact_xpub, external_account) =
-        contact_external_account(wm, wallet_id, from_identity_id, to_contact_id)?;
+        contact_external_account(wm, wallet_id, generation, from_identity_id, to_contact_id)?;
     Ok(
         mark_contact_addresses_paid_on_chain(external_account, &contact_xpub)?
             .then(|| pool_changeset(from_identity_id, to_contact_id, external_account)),
@@ -1450,7 +1476,7 @@ fn reserve_contact_payment_address(
     claim: ContactAddressClaim,
 ) -> Result<(dashcore::Address, PlatformWalletChangeSet), PlatformWalletError> {
     let (contact_xpub, external_account) =
-        contact_external_account(wm, wallet_id, from_identity_id, to_contact_id)?;
+        contact_external_account(wm, wallet_id, None, from_identity_id, to_contact_id)?;
     let payment_address = external_account
         .next_address(Some(&contact_xpub), true)
         .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
@@ -1523,6 +1549,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             record_contact_addresses_paid_on_chain(
                 &mut wm,
                 self.wallet_id,
+                None,
                 from_identity_id,
                 to_contact_id,
             )?;
@@ -1613,7 +1640,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 
-        let account_index: u32 = 0;
+        let account_index = CONTACT_ACCOUNT_INDEX;
 
         // Complete any deferred contact-crypto build before resolving the
         // external account. The signerless sweep enqueues the original
@@ -1637,6 +1664,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // of being allowed to write first and fail second.
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
+
+        // The generation's lifecycle gate, held through the broadcast and the
+        // record, as `send_prepared_payment` holds it: a teardown cannot
+        // complete while this payment is on its way to the network, and a
+        // wallet removed or re-created before it was taken sends nothing.
+        // Taken before the contact-payment gate, in the same order.
+        let lifecycle_generation = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .map(|info| Arc::clone(&info.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let _lifecycle = lifecycle_generation.payment_guard().await;
+        let still_current = self
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &lifecycle_generation));
+        if !still_current {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
         let _payment_guard = self.persister.lock_contact_payments().await;
 
         // Addresses a resident record pays but the pool still shows
@@ -1653,6 +1705,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             record_contact_addresses_paid_on_chain(
                 &mut wm,
                 self.wallet_id,
+                None,
                 from_identity_id,
                 to_contact_id,
             )?
@@ -1858,9 +1911,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // address, its inputs and the fence are all released. The verdict
             // goes on the pin first, synchronously, so a cancellation from
             // here on settles the fence as released. The address goes back
-            // before the inputs, as in `send_prepared_payment`: a build that
-            // takes the freed inputs must not find it still reserved and skip
-            // to the next index. Then the inputs, under the still-live fence,
+            // before the inputs, as in `send_prepared_payment`'s store-failure
+            // arm: the contact-payment gate is still held here, so no other
+            // build is between them. Then the inputs, under the still-live fence,
             // and the fence last. Carrying the fence or the inputs past this
             // point would hold them against every later build with no
             // transaction to protect, and the user's immediate retry would
@@ -1958,13 +2011,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )
                 .await;
                 in_broadcast_pin.settle_released();
-                // Then the address. Leaving it claimed would let every
-                // rejected send widen the off-chain gap in the used range by
-                // one, with no bound. Only the reservation is released: a
-                // payment the wallet observed at this address meanwhile —
-                // another device on the same seed — has already promoted it
-                // to used and keeps it so, even after a ChainLock evicted its
-                // record.
+                // Then the address. The inputs go first, as in
+                // `send_prepared_payment`, whose finalized-broadcast path
+                // releases them itself: the address release waits on the
+                // contact-payment gate, and a send cancelled there must not
+                // keep its inputs reserved until the TTL. A build that takes
+                // the freed inputs before the address returns pays the next
+                // index; this one is available again, inside the gap window.
+                // Leaving it claimed would let every rejected send widen the
+                // off-chain gap in the used range by one, with no bound. Only
+                // the reservation is released: a payment the wallet observed
+                // at this address meanwhile — another device on the same
+                // seed — has already promoted it to used and keeps it so, even
+                // after a ChainLock evicted its record.
                 self.settle_payment_address(
                     &generation,
                     from_identity_id,
@@ -2006,6 +2065,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         // --- 4. Record the outgoing payment on the sender's ManagedIdentity. ---
+        // The payment is on the wire from here on, so nothing below may fail
+        // the call: an error would read as "not sent" and invite the user to
+        // pay again. A record that cannot be written is logged instead, as in
+        // `send_prepared_payment`; the sent-payment reconstruction from the
+        // wallet's transaction history (`reconcile_sent_payments_from_tx_history`)
+        // rebuilds it, without the memo.
         let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
             *to_contact_id,
             amount_duffs,
@@ -2013,27 +2078,28 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
         {
             let mut wm = self.wallet_manager.write().await;
-            // A missing wallet info or unmanaged `from_identity_id` is a real
-            // state error, not a benign no-op: the tx is already broadcast
-            // on-chain but the local Sent entry + memo has no on-chain
-            // recovery, so swallowing the lookup miss here would lose the
-            // user's payment record with no signal. Fail loud (same rationale
-            // as the persist-failure propagation just below) so the UI can
-            // report the partial outcome (sent, but not recorded).
-            let info = wm
+            // Bound to the funding generation: a wallet re-created meanwhile
+            // must not receive this payment.
+            let recorded = match wm
                 .get_wallet_info_mut(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let managed = info
-                .identity_manager
-                .managed_identity_mut(from_identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*from_identity_id))?;
-            managed
-                .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "payment broadcast but not recorded locally: {e}"
-                    ))
-                })?;
+                .filter(|info| Arc::ptr_eq(&info.generation, &generation))
+                .and_then(|info| info.identity_manager.managed_identity_mut(from_identity_id))
+            {
+                Some(managed) => managed
+                    .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
+                    .map_err(|e| e.to_string()),
+                None => Err(
+                    "sender identity not found, or the wallet was removed or re-created"
+                        .to_string(),
+                ),
+            };
+            if let Err(e) = recorded {
+                tracing::error!(
+                    %txid,
+                    error = %e,
+                    "DashPay payment broadcast but not recorded locally"
+                );
+            }
         }
 
         Ok((txid, entry, fee))
@@ -2127,6 +2193,9 @@ mod tests {
         gate_entered: std::sync::atomic::AtomicBool,
         /// How many flushes the wallet asked for.
         flushes: std::sync::atomic::AtomicUsize,
+        /// When set, every round recording a DashPay payment fails
+        /// transiently (and is not recorded).
+        fail_payment_records: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -2158,7 +2227,10 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
-            if *self.fail_stores.lock().unwrap() {
+            if *self.fail_stores.lock().unwrap()
+                || (*self.fail_payment_records.lock().unwrap()
+                    && changeset.dashpay_payments_overlay.is_some())
+            {
                 return Err(PersistenceError::backend_with_kind(
                     crate::changeset::PersistenceErrorKind::Transient,
                     "injected store failure",
@@ -13899,7 +13971,7 @@ mod tests {
     /// address pool alone; the send broadcasts that very transaction, marks
     /// the address used and records the payment.
     #[tokio::test]
-    async fn prepared_payment_sends_the_transaction_whose_fee_it_showed() {
+    async fn should_send_the_transaction_whose_fee_the_prepared_payment_showed() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -13976,7 +14048,7 @@ mod tests {
     /// for an address that was never paid. The next prepare spends the same
     /// coin to the same, never exposed, address.
     #[tokio::test]
-    async fn abandoned_prepared_payment_frees_its_inputs_and_persists_nothing() {
+    async fn should_free_inputs_and_persist_nothing_when_a_prepared_payment_is_abandoned() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14056,7 +14128,7 @@ mod tests {
     /// first one sent takes it, and the second is refused with its inputs
     /// released instead of paying that address twice.
     #[tokio::test]
-    async fn second_payment_prepared_to_the_same_address_is_refused() {
+    async fn should_refuse_a_second_payment_prepared_to_the_same_address() {
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14135,7 +14207,7 @@ mod tests {
             .await
             .expect_err("the address the second payment took must not be paid again");
         assert!(
-            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            matches!(err, PlatformWalletError::PreparedPaymentAddressTaken(_)),
             "got {err:?}"
         );
         assert_eq!(
@@ -14167,7 +14239,7 @@ mod tests {
     /// and it is enough: the send is refused, and an abandon leaves the
     /// address used.
     #[tokio::test]
-    async fn an_address_paid_meanwhile_stays_used_after_the_record_is_evicted() {
+    async fn should_keep_an_address_paid_meanwhile_used_after_its_record_is_evicted() {
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14206,7 +14278,7 @@ mod tests {
             .await
             .expect_err("a second payment to an address already paid must not go out");
         assert!(
-            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            matches!(err, PlatformWalletError::PreparedPaymentAddressTaken(_)),
             "got {err:?}"
         );
         assert_eq!(
@@ -14248,7 +14320,7 @@ mod tests {
     /// still shows it available. The send is refused and marks it used, so
     /// the next prepare moves on instead of being refused the same way.
     #[tokio::test]
-    async fn an_available_address_a_record_pays_is_refused_and_marked() {
+    async fn should_refuse_and_mark_an_available_address_a_record_pays() {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
         let (manager, _persister, wallet_id, owner_id, contact_id) =
@@ -14307,7 +14379,7 @@ mod tests {
             .await
             .expect_err("an address a record pays must not be paid again");
         assert!(
-            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            matches!(err, PlatformWalletError::PreparedPaymentAddressTaken(_)),
             "got {err:?}"
         );
         assert_eq!(
@@ -14339,7 +14411,7 @@ mod tests {
     /// A definitive rejection releases the inputs and returns the address,
     /// persisted; the retry takes the same address.
     #[tokio::test]
-    async fn rejected_prepared_payment_returns_its_inputs_and_address() {
+    async fn should_return_inputs_and_address_when_a_prepared_payment_is_rejected() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14412,7 +14484,7 @@ mod tests {
     /// An ambiguous broadcast keeps both the address and the input fence: the
     /// transaction may be on the network.
     #[tokio::test]
-    async fn maybe_sent_prepared_payment_keeps_the_address_and_the_inputs() {
+    async fn should_keep_address_and_inputs_when_a_prepared_payment_maybe_sent() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14483,7 +14555,7 @@ mod tests {
     /// A send whose reservation cannot be stored sends nothing, releases its
     /// inputs and returns its address, so the retry pays the same address.
     #[tokio::test]
-    async fn prepared_payment_whose_reservation_cannot_be_stored_returns_its_address() {
+    async fn should_return_the_address_when_a_prepared_reservation_cannot_be_stored() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14544,7 +14616,7 @@ mod tests {
     /// bound is refused before its address is marked, and gives back its
     /// inputs so the host can prepare it again.
     #[tokio::test]
-    async fn stale_prepared_payment_is_refused_before_the_mark() {
+    async fn should_refuse_a_stale_prepared_payment_before_the_mark() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14693,7 +14765,7 @@ mod tests {
     /// The reservation is stored, and flushed on a backend that buffers,
     /// before the broadcaster runs.
     #[tokio::test]
-    async fn prepared_payment_is_durably_reserved_before_the_broadcast() {
+    async fn should_durably_reserve_a_prepared_payment_before_the_broadcast() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14748,7 +14820,7 @@ mod tests {
     /// is the flush's, kind kept: a transient flush is retried with another
     /// flush, which the store-side reissue attestation says nothing about.
     #[tokio::test]
-    async fn prepared_payment_whose_reservation_cannot_be_flushed_sends_nothing() {
+    async fn should_send_nothing_when_a_prepared_reservation_cannot_be_flushed() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14856,7 +14928,7 @@ mod tests {
     /// broadcast, so a wallet removal cannot complete while its payment is on
     /// the way to the network — without relying on a host wrapper to take it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn prepared_payment_holds_the_lifecycle_gate_through_the_broadcast() {
+    async fn should_hold_the_lifecycle_gate_through_a_prepared_broadcast() {
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14900,7 +14972,7 @@ mod tests {
     /// by the liveness check as `WalletRemovedBeforeSend` — the error hosts
     /// read as "nothing was sent" — and never reaches the broadcaster.
     #[tokio::test]
-    async fn prepared_payment_of_a_removed_wallet_is_refused_before_the_network() {
+    async fn should_refuse_a_removed_wallets_prepared_payment_before_the_network() {
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -14943,7 +15015,7 @@ mod tests {
     /// the older one. Removing the gate from `send_prepared_payment` lets the
     /// competing reservation complete while the send is parked.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn reserve_payment_address_cannot_persist_ahead_of_a_paused_prepared_send() {
+    async fn should_not_persist_a_reserved_payout_address_ahead_of_a_paused_prepared_send() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         let persister = Arc::new(PausingPoolPersister::new());
         let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
@@ -15032,7 +15104,7 @@ mod tests {
     /// network rejects this send. Releasing the reservation must not erase
     /// the observed payment: the address stays used.
     #[tokio::test]
-    async fn a_payment_observed_during_the_send_keeps_the_address_after_a_rejection() {
+    async fn should_keep_an_address_paid_during_a_prepared_send_after_a_rejection() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15149,7 +15221,7 @@ mod tests {
     /// ChainLock, keeps the address used — in memory and on disk — and the
     /// next payment goes elsewhere.
     #[tokio::test]
-    async fn send_payment_keeps_an_address_paid_during_the_send_after_a_rejection() {
+    async fn should_keep_an_address_paid_during_send_payment_after_a_rejection() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15293,7 +15365,7 @@ mod tests {
     /// and gives back its inputs and its address, so the immediate retry
     /// pays from the same coin to the same address.
     #[tokio::test]
-    async fn send_payment_whose_reservation_cannot_be_stored_releases_inputs_and_address() {
+    async fn should_release_inputs_and_address_when_send_payment_cannot_store_its_reservation() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15338,7 +15410,7 @@ mod tests {
     /// available — another device on the same seed paid the contact there —
     /// is marked used and skipped, not paid a second time.
     #[tokio::test]
-    async fn send_payment_skips_an_available_address_a_record_pays() {
+    async fn should_skip_an_available_address_a_record_pays_in_send_payment() {
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15362,11 +15434,324 @@ mod tests {
         );
     }
 
+    /// A prepare runs the same walk as `send_payment`: an address a resident
+    /// record pays is marked used and stored, and the payment takes the next
+    /// one, so the confirmation never shows an address the send would refuse.
+    #[tokio::test]
+    async fn should_skip_an_available_address_a_record_pays_in_prepare_payment() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE4, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+        persister.stores.lock().unwrap().clear();
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        assert_ne!(
+            payment_script(prepared.transaction(), 50_000),
+            paid.script_pubkey(),
+            "the paid address is not put on the confirmation"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the paid address is marked used"
+        );
+        let stored_used = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+            .any(|entry| {
+                entry
+                    .addresses
+                    .iter()
+                    .any(|info| info.script_pubkey == paid.script_pubkey() && info.is_used())
+            });
+        assert!(stored_used, "the address found paid reaches disk");
+        iw.dashpay().abandon_prepared_payment(prepared).await;
+    }
+
+    /// The contact external address at `index`, from the derived pool.
+    async fn external_address_at(
+        iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        wallet_id: WalletId,
+        owner_id: Identifier,
+        contact_id: Identifier,
+        index: u32,
+    ) -> dashcore::Address {
+        let wm = iw.wallet_manager.read().await;
+        wm.get_wallet_info(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            })
+            .expect("external account")
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .expect("external pool")
+            .address_at_index(index)
+            .expect("derived index")
+    }
+
+    /// Consecutive paid addresses are all marked in one walk, and the
+    /// payment takes the first unpaid one after them.
+    #[tokio::test]
+    async fn should_mark_every_consecutive_paid_address_before_preparing() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE7, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let _ = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        for index in [0, 1] {
+            let paid = external_address_at(iw, wallet_id, owner_id, contact_id, index).await;
+            plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+        }
+        let third = external_address_at(iw, wallet_id, owner_id, contact_id, 2).await;
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        assert_eq!(
+            payment_script(prepared.transaction(), 50_000),
+            third.script_pubkey()
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0, 1]
+        );
+        iw.dashpay().abandon_prepared_payment(prepared).await;
+    }
+
+    /// A paid address past the next available one is not reached by the
+    /// walk: the next available address is still unpaid, so it is the one
+    /// paid and nothing is marked.
+    #[tokio::test]
+    async fn should_not_mark_a_paid_address_beyond_the_next_available_one() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE8, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let first = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        let second = external_address_at(iw, wallet_id, owner_id, contact_id, 1).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &second).await;
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        assert_eq!(
+            payment_script(prepared.transaction(), 50_000),
+            first.script_pubkey()
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        iw.dashpay().abandon_prepared_payment(prepared).await;
+    }
+
+    /// A prepare through the core handle of a removed wallet writes nothing
+    /// back for it: the found-paid store is gated on the generation.
+    #[tokio::test]
+    async fn should_refuse_to_prepare_through_a_removed_wallets_core_handle() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE9, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+        persister.stores.lock().unwrap().clear();
+        let result = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "a removed wallet's payment is not prepared"
+        );
+        let stored_pool = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, changeset)| !changeset.account_address_pools.is_empty());
+        assert!(
+            !stored_pool,
+            "no pool rows are written back for a removed wallet"
+        );
+    }
+
+    /// The single-shot send holds the generation's lifecycle gate through the
+    /// broadcast, as the prepared send does.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_hold_the_lifecycle_gate_through_a_send_payment_broadcast() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xEA, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let teardown_blocked = Arc::new(Mutex::new(None));
+        let iw_send = with_identity_broadcaster(
+            iw,
+            TeardownProbeBroadcaster {
+                generation: Arc::clone(wallet_arc.core().generation()),
+                teardown_blocked: Arc::clone(&teardown_blocked),
+            },
+        );
+
+        iw_send
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect("send");
+        assert_eq!(
+            *teardown_blocked.lock().unwrap(),
+            Some(true),
+            "a teardown could start while the payment was being broadcast"
+        );
+    }
+
+    /// An address found paid at prepare that cannot be stored fails the
+    /// prepare with the store's error, and nothing is signed or reserved.
+    #[tokio::test]
+    async fn should_fail_the_prepare_when_an_address_found_paid_cannot_be_stored() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE5, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let paid = next_send_address(iw, &accepting, owner_id, contact_id).await;
+        plant_resident_contact_payment(iw, wallet_id, owner_id, contact_id, &paid).await;
+
+        *persister.fail_stores.lock().unwrap() = true;
+        let err = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .err()
+            .expect("the evidence store fails the prepare");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterStore(_)),
+            "got {err:?}"
+        );
+        *persister.fail_stores.lock().unwrap() = false;
+        // Nothing was reserved: the whole balance can still be prepared.
+        let full = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the inputs were never reserved");
+        iw.dashpay().abandon_prepared_payment(full).await;
+    }
+
+    /// Once the broadcast succeeded, a payment record that cannot be stored
+    /// is logged, not returned: an error would read as "not sent" and invite
+    /// a second payment.
+    #[tokio::test]
+    async fn should_return_the_txid_when_send_payment_cannot_store_its_record() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xE6, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+
+        *persister.fail_payment_records.lock().unwrap() = true;
+        let (_txid, entry, _fee) = with_accepting_broadcaster(iw)
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect("a broadcast payment is reported sent");
+        assert_eq!(entry.amount_duffs, 50_000);
+    }
+
     /// An address found paid is stored used even when the send then fails
     /// before it stores its own reservation — here on insufficient funds —
     /// so a relaunch after the record is evicted does not hand it out again.
     #[tokio::test]
-    async fn send_payment_stores_an_address_found_paid_even_when_the_build_fails() {
+    async fn should_store_an_address_found_paid_even_when_the_send_build_fails() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15403,7 +15788,7 @@ mod tests {
     /// store's error, before anything is reserved, even when the send would
     /// have failed anyway on the build.
     #[tokio::test]
-    async fn send_payment_reports_a_failed_store_of_an_address_found_paid() {
+    async fn should_report_a_failed_store_of_an_address_found_paid_in_send_payment() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -15436,7 +15821,7 @@ mod tests {
     /// failure to store that evidence, not the plain conflict — and still
     /// gives back its inputs and keeps the mark in memory.
     #[tokio::test]
-    async fn prepared_payment_refused_on_a_paid_address_reports_a_failed_store() {
+    async fn should_report_a_failed_store_when_a_prepared_payment_is_refused_on_a_paid_address() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");

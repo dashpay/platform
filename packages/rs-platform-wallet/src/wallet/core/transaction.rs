@@ -1676,7 +1676,7 @@ mod tests {
     /// reserves the new generation's inputs, which the old handle's
     /// generation-bound release could never free.
     #[tokio::test]
-    async fn finalize_from_a_recreated_generation_reserves_nothing() {
+    async fn should_reserve_nothing_when_finalizing_from_a_recreated_generation() {
         let (manager, wallet_id, generation, signer) =
             funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, &[1_200_000])
                 .await;

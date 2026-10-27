@@ -357,7 +357,7 @@ fn used_address_cannot_regain_reservation_from_stale_snapshot() {
 /// send that never reached the network, which a `used` flag (monotonic, MAX)
 /// could not express.
 #[test]
-fn reservation_can_be_released_or_promoted_to_used() {
+fn should_release_a_reservation_or_promote_it_to_used() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xB3);
     ensure_wallet_meta(&persister, &w);

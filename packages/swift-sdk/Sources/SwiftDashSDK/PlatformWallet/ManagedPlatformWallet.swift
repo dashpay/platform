@@ -3127,7 +3127,7 @@ extension ManagedPlatformWallet {
     /// Pass the result to exactly one of `sendPreparedDashPayPayment(_:)` or
     /// `abandonPreparedDashPayPayment(_:)`. Until then its inputs stay
     /// reserved. A payment held while the wallet processes many blocks is
-    /// refused at send with `.errorStaleReservationToken` (nothing sent,
+    /// refused at send with `.staleReservationToken` (nothing sent,
     /// everything released): prepare it again.
     public func prepareDashPayPayment(
         fromIdentityId: Identifier,
@@ -3186,8 +3186,9 @@ extension ManagedPlatformWallet {
     /// `payment` whatever the outcome. Returns the 32-byte txid and the
     /// fee, which is the one the prepared payment showed.
     ///
-    /// Throws, nothing sent, when another payment to the same contact took
-    /// this payment's address while it waited: prepare it again. Throws
+    /// Throws `.staleReservationToken`, nothing sent, when another
+    /// payment to the same contact took this payment's address while it
+    /// waited: prepare it again. Throws
     /// `.transactionBroadcastUnconfirmed` when the transaction may have
     /// reached the network: `payment.txid` names it, to watch for instead of
     /// paying again.
@@ -3217,11 +3218,12 @@ extension ManagedPlatformWallet {
     }
 
     /// Drop a prepared contact payment without sending it: its inputs are
-    /// released.
+    /// released. A payment the wallet's removal or re-creation already
+    /// dropped has nothing left to release, and abandoning it succeeds.
     public func abandonPreparedDashPayPayment(_ payment: PreparedDashPayPayment) async throws {
         let paymentHandle = try payment.take()
-        try await Task.detached(priority: .userInitiated) {
-            try platform_wallet_abandon_prepared_dashpay_payment(paymentHandle).check()
+        await Task.detached(priority: .userInitiated) {
+            platform_wallet_prepared_dashpay_payment_free(paymentHandle)
         }.value
     }
 }

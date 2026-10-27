@@ -950,8 +950,9 @@ pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
 /// released, and the contact address is left or returned available unless
 /// the wallet has since seen it paid. An unconfirmed outcome may have
 /// reached the network and keeps both. A payment whose contact address
-/// another payment took while it waited is refused, nothing sent, inputs
-/// released: prepare again. `wallet_handle` must name the wallet the payment
+/// another payment took while it waited is refused with the same
+/// `ErrorStaleReservationToken` (34), nothing sent, inputs released: prepare
+/// again. `wallet_handle` must name the wallet the payment
 /// was prepared on, still registered: otherwise nothing is sent and the
 /// payment is abandoned.
 ///
@@ -1739,7 +1740,7 @@ mod tests {
     /// Prepare rejects each null required pointer with `ErrorNullPointer`
     /// before any wallet lookup, and publishes no payment handle.
     #[test]
-    fn prepare_dashpay_payment_null_pointers_are_rejected() {
+    fn should_reject_null_pointers_on_prepare() {
         let id = [0u8; 32];
         let dummy_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
         let mut payment: Handle = 0x5EED;
@@ -1813,7 +1814,7 @@ mod tests {
     /// An unknown wallet fails the prepare and leaves `*out_payment` at the
     /// null handle, so a caller can never mistake a failure for a payment.
     #[test]
-    fn prepare_dashpay_payment_unknown_wallet_publishes_no_handle() {
+    fn should_publish_no_handle_when_preparing_for_an_unknown_wallet() {
         let id = [0u8; 32];
         let dummy_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
         let mut payment: Handle = 0x5EED;
@@ -1847,7 +1848,7 @@ mod tests {
     /// longer) held: send and abandon report `NotFound` without touching the
     /// outputs, and free stays a no-op however often it is called.
     #[test]
-    fn prepared_payment_unknown_handle_is_consumed_nowhere() {
+    fn should_consume_nothing_for_an_unknown_prepared_payment_handle() {
         let mut txid = [0xAAu8; 32];
         let mut fee: u64 = 7;
         let r = unsafe {
@@ -1997,7 +1998,7 @@ mod tests {
     /// success; nothing for the pre-network `WalletRemovedBeforeSend` refusal or a
     /// stale payment.
     #[test]
-    fn prepared_send_outcome_carries_the_txid_for_every_outcome_that_built_it() {
+    fn should_carry_the_txid_for_every_send_outcome_that_built_it() {
         use dashcore::hashes::Hash;
         use platform_wallet::PlatformWalletError;
         let local = dashcore::Txid::from_byte_array([0x42; 32]);
@@ -2052,7 +2053,7 @@ mod tests {
     /// is sent, its inputs are released, and the handle is consumed on the
     /// way: a second send and an abandon both find nothing.
     #[test]
-    fn prepared_payment_with_a_null_out_txid_is_abandoned_and_consumed() {
+    fn should_abandon_and_consume_a_prepared_payment_with_a_null_out_txid() {
         let (_manager, payment, core, signer) = live_prepared_payment_handle(60);
         let mut fee: u64 = 7;
         let r = unsafe {
@@ -2082,7 +2083,7 @@ mod tests {
     /// A held payment sent through a wallet handle that is not registered is
     /// abandoned — its inputs released — and consumed, with nothing written.
     #[test]
-    fn prepared_payment_sent_through_an_unknown_wallet_is_abandoned_and_consumed() {
+    fn should_abandon_and_consume_a_prepared_payment_sent_through_an_unknown_wallet() {
         let (_manager, payment, core, signer) = live_prepared_payment_handle(62);
         let mut txid = [0xAAu8; 32];
         let mut fee: u64 = 7;
@@ -2105,7 +2106,7 @@ mod tests {
     /// test pins the outcome either way, and which wallets
     /// `is_same_generation` tells apart is covered natively.
     #[test]
-    fn prepared_payment_sent_through_another_wallet_is_abandoned_and_consumed() {
+    fn should_abandon_and_consume_a_prepared_payment_sent_through_another_wallet() {
         let (_manager, payment, core, signer) = live_prepared_payment_handle(68);
         // A wallet of its own manager: not the payment's, nor the handle's.
         let (_unrelated_manager, unrelated) = runtime().block_on(async {
@@ -2141,7 +2142,7 @@ mod tests {
     /// Abandoning a held payment releases its inputs and consumes the handle:
     /// a repeated abandon finds nothing, and a free after it is a no-op.
     #[test]
-    fn prepared_payment_abandon_releases_its_inputs_once() {
+    fn should_release_inputs_once_when_a_prepared_payment_is_abandoned() {
         let (_manager, payment, core, signer) = live_prepared_payment_handle(64);
         assert_eq!(
             platform_wallet_abandon_prepared_dashpay_payment(payment).code,
@@ -2158,7 +2159,7 @@ mod tests {
     /// Freeing a held payment abandons it, releasing its inputs; a second
     /// free and an abandon after it find nothing.
     #[test]
-    fn prepared_payment_free_releases_its_inputs_once() {
+    fn should_release_inputs_once_when_a_prepared_payment_is_freed() {
         let (_manager, payment, core, signer) = live_prepared_payment_handle(66);
         platform_wallet_prepared_dashpay_payment_free(payment);
         assert_inputs_released(&core, &signer, 67);
