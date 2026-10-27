@@ -22,7 +22,8 @@ pub struct TokenPlaceBidTransitionActionV0 {
     /// The smallest fill the buyer accepts unless it takes everything still wanted
     pub min_fill: TokenAmount,
     /// The token's decimals the offer was signed at, which its price is at and its order
-    /// records; the transformer refuses them unless they are the token's
+    /// records; the batch's advanced-structure validation refuses them unless they are the
+    /// token's (`TokenOrderDecimalsMismatchError`)
     pub decimals: u8,
     /// What the offer is worth, rounded up: the credits it moves from the buyer's balance into
     /// escrow
