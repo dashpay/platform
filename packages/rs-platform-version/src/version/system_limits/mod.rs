@@ -27,6 +27,16 @@ pub struct SystemLimits {
     /// version 15), which refuses a longer name; the document meta-schema checked before it
     /// admitted 256 characters. Never reached before protocol version 15.
     pub max_index_property_name_bytes: u16,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB. The format transitions carry is capped by
+    /// `max_serialized_size`, but compiling inlines every `$ref` into each property that uses
+    /// it, so the compiled bytes have no bound of their own. Contract registration and update
+    /// refuse a contract over it under full validation, and a token configuration update
+    /// one it would take over it (`DataContractCompiledMaxSizeExceededError`); Drive refuses
+    /// to store one, and proof verification refuses a compiled contract over it. Read only
+    /// where contracts are stored compiled (`contract_storage_serialization_version` 2,
+    /// protocol version 15); never reached before.
+    pub max_compiled_contract_size: u32,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

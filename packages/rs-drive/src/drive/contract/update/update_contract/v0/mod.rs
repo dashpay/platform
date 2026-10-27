@@ -1,3 +1,4 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, Drive};
@@ -68,8 +69,10 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // Edited in place: protocol versions 1 to 8 select this generation, and store contracts
-        // in format version 0 there, the bytes it serialized before
-        let contract_bytes = contract.serialize_to_storage_bytes(platform_version)?;
+        // in format version 0 there, the bytes it serialized before. The size caps checked with
+        // them refuse nothing on a block's path: no transition reaches `Drive::update_contract`,
+        // only tests call it
+        let contract_bytes = serialize_contract_for_storage(contract, platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(

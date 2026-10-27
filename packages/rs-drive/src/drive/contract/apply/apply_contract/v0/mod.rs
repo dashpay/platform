@@ -53,8 +53,10 @@ impl Drive {
             contract,
             // Edited in place: every protocol version selects this generation; through 14 it
             // stores the bytes it serialized before, and from 15 it stores contracts compiled
-            // (format version 2, v15 note 8)
-            contract.serialize_to_storage_bytes(platform_version)?,
+            // (format version 2, v15 note 8). The size caps checked with them refuse nothing it
+            // is called with in a block: only system contracts reach it there, and each fits the
+            // caps at every version that has it (dpp's system contract size test)
+            serialize_contract_for_storage(contract, platform_version)?,
             block_info,
             apply,
             storage_flags,

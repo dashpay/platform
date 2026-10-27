@@ -17,13 +17,12 @@ const MAX_VOTE_REFERENCE_DECODE_BYTES: usize = 64 * 1024;
 
 /// Maximum in-memory decode budget for a proof-derived data contract.
 ///
-/// Contract input bytes in the format state transitions carry are separately capped by the
-/// active protocol version's `max_serialized_size` (currently 65,000 bytes). A contract stored
-/// compiled (format version 2), from a protocol version whose storage selector is 2, holds
-/// those bytes' fields and each document type compiled, which no cap bounds: its input is
-/// bounded by this budget instead. Bincode charges this budget for decoded containers rather
-/// than wire bytes, so the larger value preserves ample compatibility headroom while still
-/// bounding hostile compact length prefixes before a proof root is trusted.
+/// Contract input bytes are separately capped by the active protocol version: in the format
+/// state transitions carry by `max_serialized_size` (currently 65,000 bytes), and stored
+/// compiled (format version 2, from a protocol version whose storage selector is 2) by
+/// `max_compiled_contract_size` (1 MiB). Bincode charges this budget for decoded containers
+/// rather than wire bytes, so the larger value preserves ample compatibility headroom while
+/// still bounding hostile compact length prefixes before a proof root is trusted.
 const MAX_CONTRACT_DECODE_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
 /// The first byte of a contract stored in format version 2, the compiled form: its format
@@ -34,16 +33,15 @@ pub(super) fn decode_proof_data_contract(
     serialized_contract: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, Error> {
-    // The protocol caps a contract's bytes in the format state transitions carry. A contract
-    // stored compiled holds those bytes' fields and each document type compiled, about 1.8
-    // times as many and not capped themselves, so only the decode budget bounds them, and only
-    // where the verifier's protocol version stores contracts compiled
+    // The protocol caps a contract's bytes in the format state transitions carry, and, where
+    // the verifier's protocol version stores contracts compiled, a compiled contract's bytes
+    // under their own, larger cap
     let contract_versions = &platform_version.dpp.contract_versions;
     let max_size = if contract_versions.contract_storage_serialization_version
         >= u16::from(COMPILED_CONTRACT_FORMAT_TAG)
         && serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
     {
-        MAX_CONTRACT_DECODE_MEMORY_BYTES
+        platform_version.system_limits.max_compiled_contract_size as usize
     } else {
         contract_versions.max_serialized_size as usize
     };
@@ -185,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn should_bound_a_proof_contract_stored_compiled_by_the_decode_budget() {
+    fn should_bound_a_proof_contract_stored_compiled_by_the_compiled_size_cap() {
         let platform_version = PlatformVersion::latest();
         let over_the_wire_cap =
             platform_version.dpp.contract_versions.max_serialized_size as usize + 1;
@@ -196,9 +194,11 @@ mod tests {
             platform_version,
         );
         assert!(result.is_err() && !refused_for_size(result));
-        // Over the decode budget, it is refused for its size
+        // Over the compiled size cap, it is refused for its size
         assert!(refused_for_size(decode_proof_data_contract(
-            &compiled_contract_bytes(MAX_CONTRACT_DECODE_MEMORY_BYTES),
+            &compiled_contract_bytes(
+                platform_version.system_limits.max_compiled_contract_size as usize
+            ),
             platform_version,
         )));
     }
@@ -222,5 +222,60 @@ mod tests {
             vec![0; platform_version.dpp.contract_versions.max_serialized_size as usize + 1];
 
         assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
+    }
+
+    #[test]
+    fn should_decode_a_proof_contract_compiled_up_to_the_compiled_size_cap() {
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+
+        let platform_version = PlatformVersion::latest();
+        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size as usize;
+        let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let schema = fixture
+            .document_schemas()
+            .get("indexedDocument")
+            .map(|schema| (*schema).clone())
+            .expect("expected the fixture's indexed document type");
+        let compiled_size = |contract: &DataContract| {
+            contract
+                .serialize_to_storage_bytes(platform_version)
+                .expect("expected the contract to compile")
+                .len()
+        };
+        let with_copies = |copies: usize| {
+            let mut contract = fixture.clone();
+            for copy in 0..copies {
+                contract
+                    .set_document_schema(
+                        &format!("copy{copy}"),
+                        schema.clone(),
+                        false,
+                        &mut vec![],
+                        platform_version,
+                    )
+                    .expect("expected to add a document type");
+            }
+            contract
+        };
+        // As many copies of a document type as fit the cap
+        let base = compiled_size(&fixture);
+        let per_copy = compiled_size(&with_copies(1)) - base;
+        let mut copies = (max_compiled_size - base) / per_copy;
+        let mut contract = with_copies(copies);
+        while compiled_size(&contract) > max_compiled_size {
+            copies -= 1;
+            contract = with_copies(copies);
+        }
+        let bytes = contract
+            .serialize_to_storage_bytes(platform_version)
+            .expect("expected the contract to compile");
+        assert!(bytes.len() > max_compiled_size - 2 * per_copy);
+
+        assert_eq!(
+            decode_proof_data_contract(&bytes, platform_version)
+                .expect("expected the contract to decode within the decode budget"),
+            contract
+        );
     }
 }

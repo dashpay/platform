@@ -23,15 +23,15 @@ impl<C> Platform<C> {
         &self,
         data_contract: &'a DataContract,
         operations: &mut Vec<DriveOperation<'a>>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Edited in place: a chain started at protocol version 14 or earlier stores the bytes
-        // it serialized before; one started at 15 stores its system contracts compiled
-        let serialization = data_contract.serialize_to_storage_bytes(platform_version)?;
+        // Edited in place: Drive serializes the contract as it stores it at the chain's first
+        // protocol version, the bytes serialized here before (compiled for a chain started at
+        // 15), and checks them against the contract size caps, which every system contract
+        // fits at every version that has it (dpp's system contract size test)
         operations.push(DriveOperation::DataContractOperation(
-            DataContractOperationType::ApplyContractWithSerialization {
+            DataContractOperationType::ApplyContract {
                 contract: Cow::Borrowed(data_contract),
-                serialized_contract: serialization,
                 storage_flags: None,
             },
         ));

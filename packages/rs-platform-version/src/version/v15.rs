@@ -179,7 +179,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    compiled at genesis, while a chain upgraded to it keeps them in the format they were
 ///    stored in, so a transition reading one pays more on the first. A proof of a contract
 ///    stored compiled carries the compiled bytes, about 1.8 times as large, and clients need a
-///    decoder that reads format version 2 to verify it.
+///    decoder that reads format version 2 to verify it. A contract compiled takes at most
+///    `max_compiled_contract_size` (1 MiB): registration and update refuse a contract over
+///    it, and a token configuration update one it would take over it
+///    (`DataContractCompiledMaxSizeExceededError`, 10282).
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {

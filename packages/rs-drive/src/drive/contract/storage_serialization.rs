@@ -9,7 +9,9 @@ use dpp::version::PlatformVersion;
 /// (`contract_storage_serialization_version`), refusing a contract whose bytes in the format
 /// state transitions carry (`contract_serialization_version`) are over `max_serialized_size`:
 /// the cap applies to that format whatever format the contract is stored in. Through protocol
-/// version 14 the two formats are the same, and the stored bytes are the ones checked.
+/// version 14 the two formats are the same, and the stored bytes are the ones checked. A
+/// contract stored compiled is also refused over `max_compiled_contract_size`, which
+/// registration, update and token configuration update refuse first as a consensus error.
 pub(crate) fn serialize_contract_for_storage(
     contract: &DataContract,
     platform_version: &PlatformVersion,
@@ -24,6 +26,21 @@ pub(crate) fn serialize_contract_for_storage(
             format!(
                 "Trying to insert a data contract of size {} that is over the max allowed insertion size {}",
                 capped_size, max_serialized_size
+            ),
+        )));
+    }
+    let stored_compiled = platform_version
+        .dpp
+        .contract_versions
+        .contract_storage_serialization_version
+        >= 2;
+    let max_compiled_size = platform_version.system_limits.max_compiled_contract_size;
+    if stored_compiled && stored.len() as u64 > u64::from(max_compiled_size) {
+        return Err(Error::DataContract(DataContractError::ContractTooBig(
+            format!(
+                "Trying to insert a data contract compiled to {} bytes, over the max allowed compiled size {}",
+                stored.len(),
+                max_compiled_size
             ),
         )));
     }
@@ -171,5 +188,26 @@ mod tests {
         )
         .expect("expected the proof to verify");
         assert_eq!(verified, Some(contract));
+    }
+
+    #[test]
+    fn should_refuse_to_store_a_contract_compiled_over_the_cap() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version.system_limits.max_compiled_contract_size = 100;
+        let contract = fixture_contract(PlatformVersion::latest());
+        assert!(matches!(
+            super::serialize_contract_for_storage(&contract, &platform_version),
+            Err(crate::error::Error::DataContract(
+                crate::error::contract::DataContractError::ContractTooBig(_)
+            ))
+        ));
+        // Where contracts are not stored compiled, the cap is not read
+        let mut platform_version = protocol_version_14().clone();
+        platform_version.system_limits.max_compiled_contract_size = 100;
+        assert!(super::serialize_contract_for_storage(
+            &fixture_contract(protocol_version_14()),
+            &platform_version
+        )
+        .is_ok());
     }
 }

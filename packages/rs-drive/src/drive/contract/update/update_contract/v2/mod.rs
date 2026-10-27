@@ -1,3 +1,4 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -74,8 +75,10 @@ impl Drive {
 
         // Edited in place: protocol version 14 selects this generation and stores contracts in
         // format version 1, the bytes it serialized before; protocol version 15 also selects
-        // it, and stores them compiled (format version 2, v15 note 8)
-        let contract_bytes = contract.serialize_to_storage_bytes(platform_version)?;
+        // it, and stores them compiled (format version 2, v15 note 8). The size caps checked
+        // with them refuse nothing on a block's path: no transition reaches
+        // `Drive::update_contract`, only tests call it
+        let contract_bytes = serialize_contract_for_storage(contract, platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(

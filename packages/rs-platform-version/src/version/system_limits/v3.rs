@@ -16,6 +16,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024,
     max_index_property_name_bytes: 255,
+    max_compiled_contract_size: 1_048_576,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,

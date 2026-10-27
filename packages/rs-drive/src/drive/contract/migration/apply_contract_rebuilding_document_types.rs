@@ -1,3 +1,4 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -116,8 +117,10 @@ impl Drive {
         }
 
         // A system contract, stored without storage flags
-        let contract_element =
-            Element::Item(contract.serialize_to_storage_bytes(platform_version)?, None);
+        let contract_element = Element::Item(
+            serialize_contract_for_storage(contract, platform_version)?,
+            None,
+        );
         let mut drive_operations = vec![];
         self.update_contract_add_operations(
             contract_element,

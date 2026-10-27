@@ -600,7 +600,7 @@ impl DataContract {
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match platform_version
+        let contract: DataContract = match platform_version
             .dpp
             .contract_versions
             .contract_structure_version
@@ -610,21 +610,106 @@ impl DataContract {
                 full_validation,
                 validation_operations,
                 platform_version,
-            )
-            .map(|contract| contract.into()),
+            )?
+            .into(),
             1 => DataContractV1::try_from_platform_versioned(
                 value,
                 full_validation,
                 validation_operations,
                 platform_version,
-            )
-            .map(|contract| contract.into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::try_from_platform_versioned".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            }),
+            )?
+            .into(),
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "DataContract::try_from_platform_versioned".to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                })
+            }
+        };
+        // Registration and update parse under full validation: a contract stored compiled
+        // must fit its cap. Inert through protocol version 14, which stores contracts in the
+        // format transitions carry, and where this refuses nothing.
+        #[cfg(feature = "validation")]
+        if full_validation {
+            if let Some(error) = contract
+                .validate_compiled_size(platform_version)?
+                .errors
+                .into_iter()
+                .next()
+            {
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
         }
+        Ok(contract)
+    }
+}
+
+#[cfg(all(test, feature = "validation"))]
+mod compiled_size_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_version::TryIntoPlatformVersioned;
+
+    fn fixture_format(platform_version: &PlatformVersion) -> DataContractInSerializationFormat {
+        get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected the fixture's format")
+    }
+
+    /// `platform_version` with a compiled size cap every contract is over.
+    fn with_a_tiny_compiled_size_cap(platform_version: &PlatformVersion) -> PlatformVersion {
+        let mut platform_version = platform_version.clone();
+        platform_version.system_limits.max_compiled_contract_size = 100;
+        platform_version
+    }
+
+    #[test]
+    fn should_refuse_under_full_validation_a_contract_compiled_over_the_cap() {
+        let platform_version = with_a_tiny_compiled_size_cap(PlatformVersion::latest());
+        let refused = DataContract::try_from_platform_versioned(
+            fixture_format(&platform_version),
+            true,
+            &mut vec![],
+            &platform_version,
+        );
+        assert!(
+            matches!(
+                &refused,
+                Err(ProtocolError::ConsensusError(error)) if matches!(
+                    error.as_ref(),
+                    ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    ) if error.max_compiled_size() == 100 && error.compiled_size() > 100
+                )
+            ),
+            "{refused:?}"
+        );
+        // Read without full validation, as a node reads its own state, it is not refused
+        assert!(DataContract::try_from_platform_versioned(
+            fixture_format(&platform_version),
+            false,
+            &mut vec![],
+            &platform_version,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn should_not_refuse_a_contract_over_the_cap_where_contracts_are_not_stored_compiled() {
+        let platform_version = with_a_tiny_compiled_size_cap(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        assert!(DataContract::try_from_platform_versioned(
+            fixture_format(&platform_version),
+            true,
+            &mut vec![],
+            &platform_version,
+        )
+        .is_ok());
     }
 }
 

@@ -57,6 +57,10 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::DataContractCompiledMaxSizeExceededError;
+#[cfg(feature = "validation")]
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
@@ -189,6 +193,37 @@ impl DataContract {
         bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
+    }
+
+    /// Refuses the contract when a node would store it compiled
+    /// (`contract_storage_serialization_version` 2, from protocol version 15) and its compiled
+    /// bytes are over `max_compiled_contract_size`, with a
+    /// [`DataContractCompiledMaxSizeExceededError`]: compiling inlines every `$ref` into each
+    /// property that uses it, so a contract within the format transitions carry, which
+    /// `max_serialized_size` caps, can compile much larger. Refuses nothing where contracts are
+    /// stored in that format.
+    #[cfg(feature = "validation")]
+    pub fn validate_compiled_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        if platform_version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version
+            < 2
+        {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
+        let compiled_size = self.serialize_to_storage_bytes(platform_version)?.len() as u64;
+        let max_compiled_size = platform_version.system_limits.max_compiled_contract_size;
+        if compiled_size > u64::from(max_compiled_size) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DataContractCompiledMaxSizeExceededError::new(compiled_size, max_compiled_size)
+                    .into(),
+            ));
+        }
+        Ok(SimpleConsensusValidationResult::new())
     }
 
     /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
