@@ -630,7 +630,6 @@ describe('TokenTransitions', () => {
       });
 
       it('should set publicNote', () => {
-        // At this moment available only one trade mode
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
         const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });

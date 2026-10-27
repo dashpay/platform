@@ -25,10 +25,17 @@ impl TokenTradeModeWasm {
         TokenTradeModeWasm(TokenTradeMode::NotTradeable)
     }
 
+    /// Holders may list the token and make offers for it (protocol version 15).
+    #[wasm_bindgen(js_name = "Tradeable")]
+    pub fn tradeable() -> TokenTradeModeWasm {
+        TokenTradeModeWasm(TokenTradeMode::Tradeable)
+    }
+
     #[wasm_bindgen(getter = "value")]
     pub fn value(&self) -> String {
         match self.0 {
             TokenTradeMode::NotTradeable => String::from("NotTradeable"),
+            TokenTradeMode::Tradeable => String::from("Tradeable"),
         }
     }
 }

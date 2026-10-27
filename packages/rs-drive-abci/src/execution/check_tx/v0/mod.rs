@@ -1967,8 +1967,11 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
-            // contract bytes
-            27003119120
+            // contract bytes; the DPNS v3 preorder type the update copies in has its own
+            // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
+            // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule)
+            29003303730
         );
 
         let check_result = platform
