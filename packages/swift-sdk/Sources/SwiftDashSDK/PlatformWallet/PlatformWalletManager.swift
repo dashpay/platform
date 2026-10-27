@@ -2558,26 +2558,6 @@ public class PlatformWalletManager: ObservableObject {
     /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
     /// reserved with no emitter and is matched so it would surface intact
     /// if that ever changes.
-    private final class LargeStackResultBox<T>: @unchecked Sendable {
-        var value: T?
-    }
-
-    /// Runs `body` synchronously on a dedicated thread with a 16 MB stack and
-    /// returns its result. See the note in `runCatchUp`.
-    nonisolated private static func runOnLargeStack<T>(_ body: @escaping @Sendable () -> T) -> T {
-        let box = LargeStackResultBox<T>()
-        let done = DispatchSemaphore(value: 0)
-        let thread = Thread {
-            box.value = body()
-            done.signal()
-        }
-        thread.stackSize = 16 << 20
-        thread.name = "swift-sdk.asset-lock-catch-up"
-        thread.start()
-        done.wait()
-        return box.value!
-    }
-
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
@@ -2593,18 +2573,10 @@ public class PlatformWalletManager: ObservableObject {
         // the production resume path uses. Wrapping the raw struct in
         // `PlatformWalletResult` frees the Rust-owned message when the
         // wrapper deinits — the raw struct must never be dropped bare.
-        // The detached task runs on Swift's cooperative pool, whose threads
-        // have a 512 KB stack. The `resume_asset_lock` future that
-        // `block_on` drives inside this call is large enough (a dev-profile
-        // build overflows it on the first frame) to fault in the stack guard
-        // at launch whenever a Built/Broadcast lock exists. Run the blocking
-        // call on a thread with a generous stack of its own.
-        let txidTupleCopy = txidTuple
         let result = PlatformWalletResult(
-            Self.runOnLargeStack {
-                var tuple = txidTupleCopy
-                return asset_lock_manager_catch_up_blocking(assetLockManager.handle, &tuple, vout, 300)
-            }
+            asset_lock_manager_catch_up_blocking(
+                assetLockManager.handle, &txidTuple, vout, 300
+            )
         )
         // Timeouts and proof-wait failures (catch-up
         // `errorWalletOperation`) are expected during normal

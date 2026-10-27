@@ -2,7 +2,7 @@
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{run_on_big_stack_thread, runtime};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
@@ -200,9 +200,22 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     let timeout = resume_timeout(timeout_secs);
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        // Big-stack polling, NOT bare `runtime().block_on`, for the same
+        // reason as `asset_lock_manager_catch_up_blocking` below.
+        run_on_big_stack_thread(|| {
+            runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        })
     });
-    let result = unwrap_option_or_return!(option);
+    let spawned = unwrap_option_or_return!(option);
+    let result = match spawned {
+        Ok(result) => result,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("failed to spawn big-stack thread for asset-lock resume: {e}"),
+            );
+        }
+    };
     let (proof, path) = unwrap_result_or_return!(result);
     let bytes = unwrap_result_or_return!(dpp::bincode::encode_to_vec(
         &proof,
@@ -275,9 +288,19 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     );
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        // Big-stack polling, NOT bare `runtime().block_on`: hosts call this
+        // from dispatch/concurrency threads with ~512 KB of stack, and an
+        // unoptimized build of the `resume_asset_lock` poll chain needs
+        // ~600 KB (a release build ~120 KB), a SIGBUS in the stack guard on
+        // every launch that finds a Built/Broadcast lock. Same remedy as the
+        // Sync Now entry points. `run_on_big_stack_thread` rather than
+        // `block_on_worker` because the future borrows `manager` and
+        // `out_point`, so it is not `'static`.
+        run_on_big_stack_thread(|| {
+            runtime().block_on(manager.resume_asset_lock(&out_point, forwarded(timeout)))
+        })
     });
-    let result = match option {
+    let spawned = match option {
         Some(r) => r,
         None => {
             tracing::warn!(
@@ -287,6 +310,20 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidHandle,
                 "Manager handle invalid".to_string(),
+            );
+        }
+    };
+    let result = match spawned {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "asset_lock_manager_catch_up_blocking: failed to spawn big-stack thread"
+            );
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("failed to spawn big-stack thread for asset-lock catch-up: {e}"),
             );
         }
     };
