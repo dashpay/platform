@@ -15,6 +15,19 @@ pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
+    /// The format a node stores a contract in: the `DataContractInSerializationFormat` variant
+    /// Drive writes to state. It is a separate selector because a stored format need not be one
+    /// that state transitions carry or clients are sent. Each protocol version so far selects the
+    /// format of `contract_serialization_version`'s default; format 2, the stored format with
+    /// compiled document types, is written only from the protocol version whose table selects it.
+    pub contract_storage_serialization_version: FeatureVersion,
+    /// The generation of a document type's stored form (`DocumentTypeInSerializationFormat`)
+    /// that a contract stored in format 2 holds each of its document types in. The stored form
+    /// carries its generation, so changing this changes only what is written from then on; a
+    /// generation is paired with the builders whose output it stores, so one that rebuilds an
+    /// index structure on load (generation 0 rebuilds it with `index_levels_from_indices` 0)
+    /// is selected only with them.
+    pub contract_storage_document_type_version: FeatureVersion,
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,

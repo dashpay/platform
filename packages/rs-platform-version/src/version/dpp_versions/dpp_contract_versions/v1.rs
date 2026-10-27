@@ -12,6 +12,8 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
         max_version: 0,
         default_current_version: 0,
     },
+    contract_storage_serialization_version: 0,
+    contract_storage_document_type_version: 0,
     contract_structure_version: 0,
     created_data_contract_structure: 0,
     config: FeatureVersionBounds {
