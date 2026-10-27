@@ -5,10 +5,11 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::schema::validation_schema::{
-    builder_generation, DocumentSchemaValidator,
+    native_validator_of, DocumentSchemaValidator,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
@@ -40,7 +41,7 @@ impl DataContract {
                 InvalidDocumentTypeError::new(name.to_owned(), self.id()).into(),
             ));
         };
-        let validator = match self.native_validator(name, &document_type, platform_version)? {
+        let validator = match self.native_validator(&document_type, platform_version)? {
             Ok(validator) => validator,
             Err(refusal) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -85,38 +86,22 @@ impl DataContract {
         )
     }
 
-    /// The native validator of the document type `name`, built on first use and kept on
-    /// the document type, or the refusal of its schema, kept the same way: the
-    /// [`DataContractError`] building the validation schema or its patterns returns. Any
-    /// other error is returned as it is, and not kept. Both are lent from the document type.
+    /// The native validator of the document type `name`, built on first use and kept on the
+    /// document type, or the refusal of its schema, kept the same way
+    /// ([`native_validator_of`]): a type read back from its stored form is checked against the
+    /// typed validation schema stored with it, by the generation that built it, or refused when
+    /// it was stored without one; any other against the one the builder `platform_version`
+    /// selects builds from its schema.
     fn native_validator<'v>(
         &self,
-        name: &str,
         document_type: &'v DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Result<&'v DocumentSchemaValidator, &'v DataContractError>, ProtocolError> {
-        // The slot of the builder generation this version selects
-        let generation = builder_generation(platform_version)?;
-        let slot = document_type
-            .json_schema_validator_ref()
-            .native(generation)
-            .ok_or_else(|| ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::native_validator".to_string(),
-                known_versions: vec![0],
-                received: generation,
-            })?;
-        let built = match slot.get() {
-            Some(built) => built,
-            None => {
-                let validator = match self.document_type_native_validator(name, platform_version) {
-                    Ok(validator) => Ok(validator),
-                    Err(ProtocolError::DataContractError(refusal)) => Err(refusal),
-                    Err(error) => return Err(error),
-                };
-                // Building is deterministic: a build that finished first holds the same result
-                slot.get_or_init(|| validator)
-            }
-        };
-        Ok(built.as_ref())
+        native_validator_of(
+            document_type.json_schema_validator_ref(),
+            document_type.schema(),
+            self.schema_defs(),
+            platform_version,
+        )
     }
 }

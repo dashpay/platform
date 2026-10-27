@@ -115,7 +115,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract alone, note 8.)
+///    (The bindings move to 3 for the token market contract alone, note 9.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -162,7 +162,25 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    at both versions, and loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0.
 ///
-/// 8. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+/// 8. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
+///    `apply_generated_from` 1, which admits the `generatedFrom` function
+///    `sys.tokens.decimals` on an integer property admitting 0 to 255: the
+///    decimals of the token an identifier property names, read from the
+///    token's contract. It is the first function that reads state, so its
+///    value is generated when a document is created and kept after, unless a
+///    replace names another token: the document create and replace
+///    transformers write a left-out value, or check a sent one, from state or
+///    from the stored document (`generate_state_read_properties`), billing the
+///    reads, and refuse a token that does not exist
+///    (`ReferencedEntityNotFoundError`) or a sent value other than the one
+///    generated or kept (`DocumentPropertyNotGeneratedError`). Registration
+///    refuses it on an indexOnly type and in a contested index; clients leave
+///    the property out, and a proof verifier takes it from the proved
+///    document. Those call sites were extended in place and are inert before
+///    this version, where no type declares such a function. Protocol v14 and
+///    earlier keep `apply_generated_from` 0.
+///
+/// 9. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
 ///    genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
 ///    through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
 ///    per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
@@ -189,11 +207,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 8)
+    drive: DRIVE_VERSION_V10, // changed: create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 9)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); data trigger bindings 3 refuse a replace or a delete of a token market order (note 8)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); data trigger bindings 3 refuse a replace or a delete of a token market order (note 9)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -205,7 +223,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); apply_generated_from 1 admits sys.tokens.decimals (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -214,7 +232,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 8)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 9)
     fee_version: FEE_VERSION3,
     system_limits: SYSTEM_LIMITS_V4,
     consensus: ConsensusVersions {

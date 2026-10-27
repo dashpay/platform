@@ -65,6 +65,8 @@ use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::keep_native_validator;
+#[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
@@ -718,10 +720,16 @@ fn parse_generation_3(
     }
 
     // `check_document_type_schema` 1 then requires a typed validation schema; last, so
-    // that a schema the parser refuses is refused with the parser's error
+    // that a schema the parser refuses is refused with the parser's error. The type keeps the
+    // native validator it built, which its documents are checked with and its stored form
+    // holds the schema of
     #[cfg(feature = "validation")]
     if full_validation {
-        common::require_validation_schema(&v2.schema, schema_defs, platform_version)?;
+        if let Some(validator) =
+            common::require_validation_schema(&v2.schema, schema_defs, platform_version)?
+        {
+            keep_native_validator(&v2.json_schema_validator, validator);
+        }
     }
 
     // Every stage above read the expanded schema; the document type holds the
@@ -2012,6 +2020,8 @@ mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_token_tests;
 #[cfg(test)]
 mod keep_history_tests;
 #[cfg(all(test, feature = "validation"))]

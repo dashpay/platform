@@ -19,6 +19,7 @@ use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::state_generated_properties::generate_state_read_properties;
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
@@ -87,6 +88,37 @@ impl DocumentCreateTransitionActionV0 {
         let mut data = data.clone();
         document_type.fill_generated_properties(&mut data, platform_version)?;
 
+        // Added in place at protocol version 15, inert before it, where no type declares a
+        // `generatedFrom` function that reads state: every such property is written from
+        // state here, or checked when sent, before the contest resolution and every later
+        // check read the data. A refusal bumps the nonce, and the write pays for the reads
+        // either way.
+        let (refusal, mut fee_result) = generate_state_read_properties(
+            drive,
+            document_type,
+            base.data_contract_fetch_info_ref(),
+            &mut data,
+            None,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+        if let Some(error) = refusal {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                    &base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    vec![error],
+                ),
+                fee_result,
+            ));
+        }
+
         let document_type_indexes = document_type.indexes();
 
         let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
@@ -124,8 +156,6 @@ impl DocumentCreateTransitionActionV0 {
             })
             .transpose()?;
 
-        let mut fee_result = FeeResult::default();
-
         let (current_store_contest_info, should_store_contest_info) =
             if let Some((contested_document_resource_vote_poll, _)) =
                 &prefunded_voting_balances_by_vote_poll
@@ -138,9 +168,9 @@ impl DocumentCreateTransitionActionV0 {
                         platform_version,
                     )?;
 
-                fee_result = fetch_fee_result.ok_or(Error::Drive(
+                fee_result.checked_add_assign(fetch_fee_result.ok_or(Error::Drive(
                     DriveError::CorruptedCodeExecution("expected fee result"),
-                ))?;
+                ))?)?;
                 let should_store_contest_info = if maybe_current_store_contest_info.is_none() {
                     // We are starting a new contest
                     Some(ContestedDocumentVotePollStoredInfo::new(

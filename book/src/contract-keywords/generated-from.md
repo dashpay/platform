@@ -2,14 +2,16 @@
 
 `generatedFrom` says that the platform generates a string property's value with a system function of other properties of the same document, its params. The functions change the case of a string (`lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase`), or fold a name so that names differing only by case or by look-alike characters read the same (`homographSafeASCII`): reach for that one when a unique index must treat `Bob`, `BOB` and `B0B` as one name. A client may leave the property out, and the platform generates it when the document arrives; a client that sends it has it checked. The check reads only the document being written, so it costs no state reads.
 
+From protocol version 15 an integer property can be generated too, with `sys.tokens.decimals`: the decimals of the token an identifier property names, read from the token's contract. A value read from state is generated when the document is created and kept after (see [Functions that read state](#functions-that-read-state)).
+
 | | |
 |---|---|
-| **Where** | A string property, at the top level or inside an object. Not on a typed array or its `items`, and not beside `$ref` |
+| **Where** | A string property, at the top level or inside an object; from protocol version 15 also an integer property, for `sys.tokens.decimals`. Not on a typed array or its `items`, and not beside `$ref` |
 | **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a system function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters (ASCII, as property names are, so as many bytes) |
 | **Default** | Absent: no rule |
-| **Since** | protocol version 14 |
+| **Since** | protocol version 14; `sys.tokens.decimals` protocol version 15 |
 | **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246); a property an update adds may declare it only when one of its params is new too (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | `DocumentPropertyNotGeneratedError` (10424) on a document; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231); on update `IncompatibleDocumentTypeSchemaError` (10246) or `DocumentTypeUpdateError` (40212) |
+| **Errors** | `DocumentPropertyNotGeneratedError` (10424) on a document, and from protocol version 15 `ReferencedEntityNotFoundError` (40120) for a token that does not exist; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231); on update `IncompatibleDocumentTypeSchemaError` (10246) or `DocumentTypeUpdateError` (40212) |
 
 ## Example
 
@@ -63,11 +65,49 @@ The string transformations change ASCII characters only and keep every other cha
 
 `lowercase`, `uppercase`, `capitalize` and `homographSafeASCII` keep the length of the value, and `camelCase` never lengthens it, but `snakeCase` can: `aBcDeF` becomes `a_bc_de_f`. Give a generated property a `maxLength` that admits what its function can generate from its params' longest value.
 
+The `sys.tokens` functions (protocol version 15) each take one identifier, a token's id, and read the token's configuration:
+
+| Function | Returns | Property |
+|---|---|---|
+| `sys.tokens.decimals` | The token's decimals, from its conventions, 0 to 255 | An integer property whose `minimum` and `maximum`, when declared, admit 0 to 255, with no `enum` |
+
 A function refuses nothing. Which characters a value may hold is the job of each param's `pattern`: `homographSafeASCII` resists look-alike names only where that pattern admits ASCII alone, as DPNS's does. A contract that admits other scripts can hold two names that look alike but generate different values.
+
+### Functions that read state
+
+A token's decimals live in its contract and can change (a `Conventions` update by whoever controls them). So a property a `sys.tokens` function generates is generated when the document is created and kept after:
+
+```json
+"order": {
+  "type": "object",
+  "properties": {
+    "tokenId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "position": 0
+    },
+    "price": { "type": "integer", "minimum": 1, "position": 1 },
+    "decimals": {
+      "type": "integer", "minimum": 0, "maximum": 255,
+      "generatedFrom": { "function": "sys.tokens.decimals", "params": ["tokenId"] },
+      "position": 2
+    }
+  },
+  "required": ["tokenId", "price", "decimals"],
+  "additionalProperties": false
+}
+```
+
+- **Create.** The platform reads the token named by `tokenId` and writes its decimals into a document that leaves `decimals` out; a sent value must equal them. A token that does not exist refuses the document with `ReferencedEntityNotFoundError` (40120), naming the param.
+- **Replace.** While the replace keeps `tokenId`, the document keeps the decimals it holds, whatever the token's decimals are now: a left-out value is the stored one, and a sent one must equal it. A replace that names another token reads that token's decimals, as a create does.
+- **Cost.** Each read is billed to the write: the token's contract info, and its contract unless it is the document's own.
+- **Clients.** A client holds no state, so it leaves the property out: the SDK's transition builders remove it, the document checks do not refuse it left out, and a proof verifier takes the value from the proved document, where the platform judged it.
+
+Here `price` is per whole token at the order's `decimals`, so a later change of the token's decimals does not reprice the order.
 
 ## Params
 
-For now a param is always a property of the same document, written as its dotted path. The form leaves room to add, in a later protocol version, literals (`{ "const": ... }`), system values such as `"$ownerId"` and nested calls, without changing what parses today.
+For now a param is always a property of the same document, written as its dotted path: a string property for the string transformations, an identifier property (one carrying `refersTo` included) for the token functions. The form leaves room to add, in a later protocol version, literals (`{ "const": ... }`), system values such as `"$ownerId"` and nested calls, without changing what parses today.
 
 ## How it works
 
@@ -75,20 +115,22 @@ For now a param is always a property of the same document, written as its dotted
 - **Checked after the JSON schema.** Wherever a document's properties are validated, on every create and replace included and in a client that validates a document before sending it, the property must hold what the function generates from its params, and must be absent when a param is. A document that repeats a key in an object on the way to the property or to a param is refused too, since the value it holds there would be ambiguous. A property that breaks this refuses the transition with `DocumentPropertyNotGeneratedError` (10424), which names the document type, the property, the function and its params. A schema error on any of the values is reported first.
 - **Absent params.** A property one of whose params is absent must be absent too. To make the params required in effect, list the generated property in `required`: a document without them then fails the schema.
 - **Replace.** A replace is judged on the whole new document. Leave the property out to have it generated from the new params; a stale value sent with changed params is refused.
+- **Read from state.** A `sys.tokens` value is written or checked while the platform builds the write, before the rest, and kept from the document's creation: see [Functions that read state](#functions-that-read-state).
 - **Transfers, purchases and deletes by id** do not change the data and are not judged. An index-only delete is: its values are generated and checked like a create's, so a stale value, or one without its params, refuses it.
 
 The SDK's transition builders generate the property from the document's params, replacing any value the document holds and leaving it out when a param is absent, so a transition built from a document carries the value the platform would generate, and contest detection sees it. A document fetched, edited and sent back through them therefore carries the value of its new params, not the stale one. The property-constraint pre-checks of the JavaScript and FFI SDKs judge the document the same way. A client that validates a document it built, before building a transition, should generate it first (in Rust, `DocumentTypeBasicMethods::regenerate_generated_properties`) or set the value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the document with the generated value, as the platform stored it.
 
 ## Rules at registration
 
-- The keyword is allowed only on a string property, and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
+- The keyword is allowed only on a string property (from protocol version 15 also an integer property, for `sys.tokens.decimals`, whose `minimum` and `maximum` admit 0 to 255 and which declares no `enum`), and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
 - `function` must name a system function, and `params` must list 1 to 16 params, as many as the function takes. The meta-schema refuses an unknown function or an empty or overlong list (`JsonSchemaError`, 10101).
-- Every param must name another string property of the same document type (not an object, not a system property, not the declaring property), and that property may not be generated itself.
+- Every param must name another string property of the same document type (an identifier property for a `sys.tokens` function; not an object, not a system property, not the declaring property), and that property may not be generated itself.
+- A `sys.tokens` function is refused on an [indexOnly](index-only.md) type, whose deletes send their values again where a kept value could not be checked, and on a property in a contested index, since a client, which leaves the property out, could not tell whether its document joins a contest.
 - Neither the declaring property nor a param may be [transient](transient.md) or sit inside a transient object: a transient value is never stored.
 - Every param must sit inside every object that holds the declaring property: a top-level property may take any param, but `profile.normalized` must take params inside `profile`. A document that supplies the params then always holds the object the platform writes the value into.
 - On a contract update, a new property may declare `generatedFrom` only when one of its params is new too. Documents stored before the update were never generated, so a new generated property whose params all existed is refused (`DocumentTypeUpdateError`, 40212).
 
-The meta-schema refuses the shape errors of the first two rules with `JsonSchemaError` (10101). The parser refuses a function with the wrong number of params, and a declaration that breaks the param rules (the third to fifth), with `InvalidContractStructure` (10231). The update rule refuses with `DocumentTypeUpdateError` (40212).
+The meta-schema (from protocol version 15, the native schema check) refuses the shape errors of the first two rules with `JsonSchemaError` (10101). The parser refuses a function with the wrong number of params, an integer property that cannot hold every value `sys.tokens.decimals` generates, and a declaration that breaks the param rules (the third to sixth), with `InvalidContractStructure` (10231). The update rule refuses with `DocumentTypeUpdateError` (40212).
 
 ## See also
 
