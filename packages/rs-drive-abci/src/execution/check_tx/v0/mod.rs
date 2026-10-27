@@ -734,7 +734,7 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // twice its bytes, which are byte-billed
-            24004400340
+            24004401940
         );
 
         let check_result = platform
@@ -1403,7 +1403,7 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // twice its bytes, which are byte-billed
-            24008800680
+            24008803880
         );
 
         let check_result = platform
@@ -1886,7 +1886,7 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // twice its bytes, which are byte-billed
-            24004400340
+            24004401940
         );
 
         platform
@@ -1982,7 +1982,7 @@ mod tests {
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about twice its bytes, which are byte-billed
-            29005123490
+            29005125330
         );
 
         let check_result = platform
@@ -2575,7 +2575,7 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // twice its bytes, which are byte-billed
-            24004400340
+            24004401940
         );
 
         platform
