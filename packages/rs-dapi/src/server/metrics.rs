@@ -112,7 +112,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
             true,
             CoreRpcCheck {
                 status: "ok".into(),
-                latest_block_height: Some(height),
+                core_block_height: Some(height),
                 error: None,
             },
         ),
@@ -122,7 +122,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 false,
                 CoreRpcCheck {
                     status: "error".into(),
-                    latest_block_height: None,
+                    core_block_height: None,
                     error: Some(health_error_label(&err).to_string()),
                 },
             )
@@ -131,7 +131,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
             false,
             CoreRpcCheck {
                 status: "error".into(),
-                latest_block_height: None,
+                core_block_height: None,
                 error: Some("timeout".into()),
             },
         ),
@@ -213,8 +213,13 @@ struct PlatformChecks {
 #[derive(Serialize)]
 struct CoreRpcCheck {
     status: String,
-    #[serde(rename = "latestBlockHeight", skip_serializing_if = "Option::is_none")]
-    latest_block_height: Option<u32>,
+    /// Dash Core chain height from `getblockcount`.
+    ///
+    /// Deliberately not called `latestBlockHeight`: that name is the *Platform* chain height
+    /// in `getStatus`'s `chain` section, and reporting a Core height under the same name here
+    /// has been mistaken for a wildly-ahead Platform height on freshly joined nodes.
+    #[serde(rename = "coreBlockHeight", skip_serializing_if = "Option::is_none")]
+    core_block_height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -302,5 +307,26 @@ impl From<bool> for ComponentCheck {
                 error: Some("failed".into()),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Core RPC health check reports a Dash Core height. Naming it `latestBlockHeight`
+    /// collides with the Platform height of the same name in `getStatus`'s `chain` section,
+    /// and operators have read the Core height as a Platform height because of it.
+    #[test]
+    fn core_rpc_health_check_does_not_reuse_the_platform_height_field_name() {
+        let json = serde_json::to_string(&CoreRpcCheck {
+            status: "ok".into(),
+            core_block_height: Some(8036),
+            error: None,
+        })
+        .expect("serialize core rpc check");
+
+        assert!(json.contains(r#""coreBlockHeight":8036"#), "{json}");
+        assert!(!json.contains("latestBlockHeight"), "{json}");
     }
 }

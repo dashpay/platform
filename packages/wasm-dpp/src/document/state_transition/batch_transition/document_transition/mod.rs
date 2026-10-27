@@ -23,6 +23,7 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::{
     buffer::Buffer,
@@ -67,6 +68,12 @@ impl DocumentTransitionWasm {
             DocumentTransition::Transfer(_) => JsValue::null(),
             DocumentTransition::UpdatePrice(_) => JsValue::null(),
             DocumentTransition::Purchase(_) => JsValue::null(),
+            DocumentTransition::IndexOnlyDelete(index_only_delete) => {
+                let json_value = index_only_delete.data().to_json_value().unwrap();
+                json_value
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .unwrap()
+            }
         }
     }
 
@@ -110,6 +117,7 @@ impl DocumentTransitionWasm {
             DocumentTransition::Transfer(_) => None,
             DocumentTransition::UpdatePrice(update_price) => Some(update_price.price()),
             DocumentTransition::Purchase(purchase) => Some(purchase.price()),
+            DocumentTransition::IndexOnlyDelete(_) => None,
         }
     }
 
@@ -122,6 +130,7 @@ impl DocumentTransitionWasm {
             DocumentTransition::Transfer(transfer) => Some(transfer.recipient_owner_id().into()),
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
+            DocumentTransition::IndexOnlyDelete(_) => None,
         }
     }
 

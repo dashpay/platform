@@ -105,7 +105,13 @@ pub struct ContactRequestInput {
 /// Result of creating a contact request document
 #[derive(Debug)]
 pub struct ContactRequestResult {
-    /// The document ID
+    /// The document id derived from `entropy` alone.
+    ///
+    /// From protocol version 14 the id of a new document also commits to the
+    /// identity contract nonce of its create transition, which is only
+    /// assigned when the document is sent, so this is a placeholder there:
+    /// the id of the contact request is the one on the document returned by
+    /// `send_contact_request`.
     pub id: Identifier,
     /// The owner ID (sender identity ID)
     pub owner_id: Identifier,
@@ -113,10 +119,11 @@ pub struct ContactRequestResult {
     pub properties: BTreeMap<String, Value>,
     /// The entropy used to derive `id`.
     ///
-    /// This must be reused when broadcasting the document so that the
-    /// document id computed at creation matches the id platform consensus
-    /// recomputes from the entropy (otherwise the create transition is
-    /// rejected with `InvalidDocumentTransitionIdError`).
+    /// This must be reused when broadcasting the document: up to protocol
+    /// version 13 the id platform consensus recomputes from the entropy must
+    /// match `id` (otherwise the create transition is rejected with
+    /// `InvalidDocumentTransitionIdError`), and from protocol version 14 it is
+    /// one of the inputs of the final id.
     pub entropy: Bytes32,
 }
 
@@ -142,23 +149,77 @@ pub struct SendContactRequestResult {
 }
 
 /// Whether `purpose` is acceptable for the `senderKeyIndex` key of a contact
-/// request. The sender always references its own ENCRYPTION key.
+/// request **we are about to mint**. The sender always references its own
+/// ENCRYPTION key.
+///
+/// Mint-side only — see [`sender_key_purpose_is_acceptable_on_receive`] for
+/// what we accept from documents already on chain.
 fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
 
 /// Whether `purpose` is acceptable for the `recipientKeyIndex` key of a
-/// contact request. The newest cohort references the recipient's
-/// DECRYPTION key (our original convention); the dominant mobile cohort has no
-/// DECRYPTION key and references its ENCRYPTION key. Accept either; reject
-/// AUTHENTICATION/MASTER/TRANSFER.
+/// contact request **we are about to mint**. The newest cohort references the
+/// recipient's DECRYPTION key (our original convention); the dominant mobile
+/// cohort has no DECRYPTION key and references its ENCRYPTION key. Accept
+/// either; reject every other purpose.
 ///
-/// This is the single source of truth for the recipient-key cohort membership
-/// policy. The pre-send validator (`rs-platform-wallet` `validate_contact_request`)
-/// and the recipient-key selector (`select_recipient_key_index`) both defer to
-/// it so the accepted cohort cannot drift between the SDK and wallet layers.
+/// This is the single source of truth for what we are willing to *create*.
+/// The recipient-key selector (`select_recipient_key_index`) defers to it so
+/// the minted cohort cannot drift between the SDK and wallet layers. It
+/// deliberately stays strict: reusing a signing or fund-authorizing key for
+/// ECDH is poor key separation, and no new document needs to.
+///
+/// It is NOT the acceptance policy for inbound documents — a `contactRequest`
+/// is immutable, so history cannot be re-minted to fit this rule. See
+/// [`recipient_key_purpose_is_acceptable_on_receive`].
 pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
     matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
+}
+
+/// Whether `purpose` on the `recipientKeyIndex` key of an **inbound, already
+/// on-chain** contact request is acceptable for the ECDH that unwraps the
+/// sender's `encryptedPublicKey`.
+///
+/// Strictly wider than [`recipient_key_purpose_is_valid`], and deliberately
+/// so. `contactRequest` documents are immutable and consensus enforces no
+/// purpose constraint on these integer fields, so the acceptance policy is the
+/// *only* thing standing between a user and their own payment history.
+/// Mainnet device logs (2026-08, a 29-contact wallet whose contacts were
+/// established through the legacy Android/dashj client) show 27 of 29 inbound
+/// requests referencing the recipient's AUTHENTICATION (key ids 0-2) or
+/// TRANSFER (key id 3) key — under the mint-side rule every one of those
+/// contacts is unpayable forever, with no action the user can take.
+///
+/// Purpose carries no cryptographic weight here: ECDH is defined over the
+/// secp256k1 keypair, and DIP-9's identity-key tree is indexed by key *type*
+/// and id, never by purpose, so the same derivation reaches all of them. The
+/// gates that do carry weight — `ECDSA_SECP256K1` key type and the
+/// disabled-key check — are enforced separately by the caller and are
+/// unaffected by this predicate.
+///
+/// The node-operational purposes (SYSTEM, VOTING, OWNER) stay rejected:
+/// nothing on chain references them for DashPay, and they have no business in
+/// a payment-channel handshake.
+pub fn recipient_key_purpose_is_acceptable_on_receive(purpose: Purpose) -> bool {
+    matches!(
+        purpose,
+        Purpose::DECRYPTION | Purpose::ENCRYPTION | Purpose::AUTHENTICATION | Purpose::TRANSFER
+    )
+}
+
+/// Receive-side counterpart of [`sender_key_purpose_is_valid`]: whether
+/// `purpose` on the `senderKeyIndex` key of an **inbound, already on-chain**
+/// contact request is acceptable for ECDH.
+///
+/// Same reasoning as [`recipient_key_purpose_is_acceptable_on_receive`]. The
+/// legacy cohort is narrower on this side — the observed mainnet documents
+/// pair an AUTHENTICATION sender key with an AUTHENTICATION recipient key — so
+/// only AUTHENTICATION is added. A sender referencing any other purpose has
+/// not been seen and stays a purpose mismatch (skip-and-retry, never a
+/// permanently broken channel), leaving room to widen again on evidence.
+pub fn sender_key_purpose_is_acceptable_on_receive(purpose: Purpose) -> bool {
+    matches!(purpose, Purpose::ENCRYPTION | Purpose::AUTHENTICATION)
 }
 
 impl Sdk {
@@ -470,6 +531,7 @@ impl Sdk {
 
         // Create the document from the result
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: result.id,
             owner_id: result.owner_id,
             properties: result.properties,
@@ -484,6 +546,8 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Submit the document to the platform
@@ -642,9 +706,11 @@ mod tests {
     }
 
     #[test]
-    fn recipient_key_purpose_rejects_authentication() {
-        // No AUTHENTICATION fallback — reusing signing keys for ECDH is poor
-        // key separation and no live population needs it.
+    fn mint_side_still_refuses_authentication_and_transfer() {
+        // What we CREATE stays strict: reusing a signing or fund-authorizing
+        // key for ECDH is poor key separation, and no new document needs to.
+        // Widening the receive-side acceptance below must never leak into the
+        // key we pick for our own outgoing requests.
         assert!(!recipient_key_purpose_is_valid(Purpose::AUTHENTICATION));
         assert!(!recipient_key_purpose_is_valid(Purpose::TRANSFER));
     }
@@ -656,6 +722,51 @@ mod tests {
         assert!(sender_key_purpose_is_valid(Purpose::ENCRYPTION));
         assert!(!sender_key_purpose_is_valid(Purpose::DECRYPTION));
         assert!(!sender_key_purpose_is_valid(Purpose::AUTHENTICATION));
+    }
+
+    #[test]
+    fn receive_side_accepts_the_legacy_dashj_cohort() {
+        // Regression guard for the mainnet legacy cohort: inbound requests
+        // minted by the Android/dashj client reference the recipient's
+        // AUTHENTICATION (key ids 0-2) or TRANSFER (key id 3) key. Rejecting
+        // them made every pre-iOS contact permanently unpayable — the document
+        // is immutable, so no user action could ever fix it.
+        for purpose in [
+            Purpose::DECRYPTION,
+            Purpose::ENCRYPTION,
+            Purpose::AUTHENTICATION,
+            Purpose::TRANSFER,
+        ] {
+            assert!(
+                recipient_key_purpose_is_acceptable_on_receive(purpose),
+                "{purpose:?} recipient key must be accepted from an on-chain document"
+            );
+        }
+        // The sender side of the same legacy documents pairs AUTHENTICATION
+        // with AUTHENTICATION; ENCRYPTION remains the modern convention.
+        assert!(sender_key_purpose_is_acceptable_on_receive(
+            Purpose::ENCRYPTION
+        ));
+        assert!(sender_key_purpose_is_acceptable_on_receive(
+            Purpose::AUTHENTICATION
+        ));
+    }
+
+    #[test]
+    fn receive_side_still_refuses_node_operational_purposes() {
+        // Not observed on chain for DashPay — widening is evidence-driven, so
+        // these stay out until something real needs them. A rejection here is
+        // a skip-and-retry purpose mismatch, never a permanently broken
+        // channel, so a later widening can still recover those contacts.
+        for purpose in [Purpose::SYSTEM, Purpose::VOTING, Purpose::OWNER] {
+            assert!(!recipient_key_purpose_is_acceptable_on_receive(purpose));
+            assert!(!sender_key_purpose_is_acceptable_on_receive(purpose));
+        }
+        // TRANSFER is accepted for the recipient (legacy key id 3) but has
+        // never been seen on the sender side.
+        assert!(!sender_key_purpose_is_acceptable_on_receive(
+            Purpose::TRANSFER
+        ));
     }
 
     #[test]

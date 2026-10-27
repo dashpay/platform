@@ -42,6 +42,18 @@ connection to Platform.
 
 You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) and  [mock_fetch_many.rs](tests/fetch/mock_fetch_many.rs).
 
+## Transport-free consumption
+
+The query-building, wire-encoding, and proof-verification layers of this SDK
+live in the [`dash-platform-queries`](../dash-platform-queries) crate, which
+this crate depends on and re-exports at the historical paths. Embedders that
+bring their own transport and trust context (Dash Core's platform GUI, block
+explorers) can depend on `dash-platform-queries` + `drive-proof-verifier`
+directly and get typed, proof-verified results without `rs-dapi-client` or
+tonic's native channel/TLS stack in their dependency tree. Shared generated
+types and context-provider utilities remain dependencies. See that crate's
+README for details.
+
 ## Examples
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
@@ -143,7 +155,10 @@ Checklist:
 2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
    This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
 3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
-in `packages/rs-dapi-client/src/transport/grpc.rs`.
+in `packages/rs-dapi-client/src/transport/grpc.rs`. If nodes of an earlier release do not know the method or a new
+request field, declare the first protocol version that every node serves it from with `needs_protocol_version:`, and
+add it to `ADDITIONS` in `packages/rs-dapi-client/tests/request_inventory.rs`. The SDK refuses the request until the
+network has proven that version (see `book/src/sdk/protocol-version-gate.md`).
 4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
    used internally.
 

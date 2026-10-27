@@ -1,3 +1,4 @@
+use crate::execution::GENESIS_TIME_MS;
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use dpp::block::block_info::BlockInfo;
@@ -41,7 +42,7 @@ use strategy_tests::KeyMaps;
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
-use dpp::document::DocumentV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -354,6 +355,10 @@ pub struct NetworkStrategy {
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
     pub sign_instant_locks: bool,
+    /// Timestamp of the first block. Defaults to a fixed 2023 instant so runs
+    /// are reproducible; tests exercising behaviour that keys on how old a
+    /// block is relative to the wall clock (checkpoints) set it near now.
+    pub start_time_ms: u64,
 }
 
 impl Default for NetworkStrategy {
@@ -378,6 +383,7 @@ impl Default for NetworkStrategy {
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
             sign_instant_locks: false,
+            start_time_ms: GENESIS_TIME_MS,
         }
     }
 }
@@ -395,6 +401,8 @@ pub struct UpgradingInfo {
 }
 
 impl UpgradingInfo {
+    // Test-only simulation of validator upgrade timing; the sampled heights never reach state.
+    #[allow(clippy::disallowed_methods)]
     pub fn apply_to_proposers(
         &self,
         proposers: Vec<ProTxHash>,
@@ -737,7 +745,16 @@ impl NetworkStrategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -854,7 +871,16 @@ impl NetworkStrategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),

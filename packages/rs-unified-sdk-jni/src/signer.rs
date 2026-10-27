@@ -10,7 +10,8 @@
 //!    auth window expired), signs via the one-shot
 //!    `dash_sdk_signer_create_from_private_key` + `dash_sdk_signer_sign`
 //!    helpers (exactly like Swift — no crypto in the language layer),
-//!    zeroes the buffer, then calls `completeSign(token, signature, error)`.
+//!    zeroes the buffer, then calls
+//!    `completeSign(token, signature, errorCode, error)`.
 //! 4. `completeSign` reclaims the token and fires the Rust completion
 //!    exactly once.
 //!
@@ -46,12 +47,21 @@ struct PendingSign {
 // reclaims the Box in completeSign, exactly once.
 unsafe impl Send for PendingSign {}
 
-/// Fire a parked completion with an error message. Consumes the pending
-/// completion (callers deref the reconstituted box exactly once).
-unsafe fn complete_with_error(pending: PendingSign, message: &str) {
+/// Fire a parked completion with an error code + message. Consumes the
+/// pending completion (callers deref the reconstituted box exactly once).
+/// [`error_code`] is a `DashSDKSignerErrorCode` discriminant — internal JNI
+/// failure paths pass 0 (`Generic`); Kotlin supplies the typed code
+/// (dashpay/platform#4060 finding 7).
+unsafe fn complete_with_error(pending: PendingSign, error_code: i32, message: &str) {
     let c_message = CString::new(message)
         .unwrap_or_else(|_| CString::new("signing failed").expect("static string"));
-    (pending.completion)(pending.completion_ctx, ptr::null(), 0, c_message.as_ptr());
+    (pending.completion)(
+        pending.completion_ctx,
+        ptr::null(),
+        0,
+        error_code,
+        c_message.as_ptr(),
+    );
 }
 
 unsafe extern "C" fn sign_async_trampoline(
@@ -120,7 +130,7 @@ unsafe extern "C" fn sign_async_trampoline(
 
     match outcome {
         Ok(Ok(())) => {}
-        Ok(Err(pending)) => complete_with_error(*pending, "JNI signer dispatch failed"),
+        Ok(Err(pending)) => complete_with_error(*pending, 0, "JNI signer dispatch failed"),
         // The pending box was moved into the closure; on panic before the
         // token leak it was dropped — nothing left to complete. Rust's
         // 5-minute completion timeout bounds the damage of this edge.
@@ -214,15 +224,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_destroyS
 
 /// Complete an in-flight sign request. Exactly one of
 /// `signature`/`errorMessage` should be non-null; a null signature with a
-/// null error is treated as a generic failure. The token is consumed —
-/// calling twice with the same token is undefined and prevented on the
-/// Kotlin side.
+/// null error is treated as a generic failure. `errorCode` is a
+/// `DashSDKSignerErrorCode` discriminant classifying the failure (0 =
+/// generic; ignored on success) — the structured discriminator of
+/// dashpay/platform#4060 finding 7. The token is consumed — calling twice
+/// with the same token is undefined and prevented on the Kotlin side.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_completeSign(
     mut env: JNIEnv,
     _class: JClass,
     token: jlong,
     signature: JByteArray,
+    error_code: jint,
     error_message: JString,
 ) {
     guard(&mut env, (), |env| {
@@ -238,13 +251,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_complete
                         pending.completion_ctx,
                         bytes.as_ptr(),
                         bytes.len(),
+                        0,
                         ptr::null(),
                     );
                 }
                 return;
             }
             let _ = env.exception_clear();
-            unsafe { complete_with_error(*pending, "signature marshalling failed") };
+            unsafe { complete_with_error(*pending, 0, "signature marshalling failed") };
             return;
         }
 
@@ -258,7 +272,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_complete
                     String::from("signing failed")
                 })
         };
-        unsafe { complete_with_error(*pending, &message) };
+        unsafe { complete_with_error(*pending, error_code, &message) };
     });
 }
 

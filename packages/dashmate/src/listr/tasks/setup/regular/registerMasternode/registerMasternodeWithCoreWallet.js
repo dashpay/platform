@@ -16,6 +16,7 @@ import formatPercentage from '../../../../prompts/formatters/formatPercentage.js
 import validatePercentage from '../../../../prompts/validators/validatePercentage.js';
 import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKeyInput.js';
 import getBLSPublicKeyFromPrivateKeyHex from '../../../../../core/getBLSPublicKeyFromPrivateKeyHex.js';
+import { DOCS_LINKS } from '../../../../../docsLinks.js';
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
@@ -72,9 +73,9 @@ export default function registerMasternodeWithCoreWalletFactory(createIpAndPorts
       platformNodeKey: null,
     };
 
-    let instructionsUrl = 'https://docs.dash.org/mn-setup-core-collateral';
+    let instructionsUrl = DOCS_LINKS.MASTERNODE_COLLATERAL;
     if (ctx.isHP) {
-      instructionsUrl = 'https://docs.dash.org/evonode-setup-core-collateral';
+      instructionsUrl = DOCS_LINKS.EVONODE_COLLATERAL;
     }
 
     let confirmation;

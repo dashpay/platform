@@ -2,6 +2,7 @@ use crate::version::drive_versions::drive_group_method_versions::{
     DriveAddressFundsMethodVersions, DriveShieldedMethodVersions,
 };
 use crate::version::FeatureVersion;
+use drive_contract_group_method_versions::DriveContractGroupMethodVersions;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
@@ -16,6 +17,7 @@ use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
 
 pub mod drive_address_funds_method_versions;
+pub mod drive_contract_group_method_versions;
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
 pub mod drive_document_method_versions;
@@ -35,6 +37,7 @@ pub mod v5;
 pub mod v6;
 pub mod v7;
 pub mod v8;
+pub mod v9;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -68,6 +71,7 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub contract_group: DriveContractGroupMethodVersions,
     pub address_funds: DriveAddressFundsMethodVersions,
     pub shielded: DriveShieldedMethodVersions,
     pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
@@ -77,6 +81,11 @@ pub struct DriveMethodVersions {
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+    pub fetch_platform_state_recent_bytes: FeatureVersion,
+    pub store_platform_state_recent_bytes: FeatureVersion,
+    pub fetch_platform_state_entries_bytes: FeatureVersion,
+    pub store_platform_state_entry_bytes: FeatureVersion,
+    pub delete_platform_state_entry: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -112,6 +121,11 @@ pub struct DriveFetchMethodVersions {
 pub struct DriveProveMethodVersions {
     pub prove_elements: FeatureVersion,
     pub prove_multiple_state_transition_results: FeatureVersion,
+    /// Also selects the layout `verify_state_transition_was_executed_with_proof`
+    /// expects from a producer at this version: from 1, the proof of an owned,
+    /// fee-paying transition carries the owner's credit balance. A new generation
+    /// needs a mapping in `Drive::proof_carries_owner_balance`, which refuses an
+    /// unmapped one with `UnknownVersionMismatch`.
     pub prove_state_transition: FeatureVersion,
 }
 

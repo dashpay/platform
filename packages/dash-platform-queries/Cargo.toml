@@ -1,0 +1,53 @@
+[package]
+name = "dash-platform-queries"
+description = "Transport-free query building and proof decoding core shared by Dash Platform SDK embedders"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+
+[features]
+default = []
+mocks = [
+  "dep:serde",
+  "dep:serde_json",
+  "dapi-grpc/mocks",
+  "drive/serde",
+  "dpp/serde-conversion",
+]
+
+[dependencies]
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
+  "platform",
+  "client",
+] }
+dash-context-provider = { path = "../rs-context-provider", default-features = false }
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "platform-value-cbor",
+  "state-transitions",
+  "state-transition-validation",
+] }
+drive = { path = "../rs-drive", default-features = false, features = [
+  "verify",
+] }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
+hex = { version = "0.4.3" }
+serde = { version = "1.0.219", default-features = false, features = [
+  "rc",
+], optional = true }
+serde_json = { version = "1.0", optional = true }
+thiserror = "2.0.17"
+tracing = { version = "0.1.41" }
+
+[dev-dependencies]
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "fixtures-and-mocks",
+] }
+
+[package.metadata.cargo-machete]
+ignored = [
+  # Used inside the `dash_platform_macros::Mockable` derive expansion under
+  # the `mocks` feature; machete cannot see through proc-macro output.
+  "serde_json",
+]

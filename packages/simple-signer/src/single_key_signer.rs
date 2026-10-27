@@ -10,6 +10,7 @@ use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
 use tracing::{debug, warn};
+use zeroize::Zeroizing;
 
 /// A simple signer that uses a single private key
 /// This is designed for WASM and other single-key use cases
@@ -34,7 +35,7 @@ impl SingleKeySigner {
         if private_key_data.len() != 32 {
             return Err("Private key must be 32 bytes".to_string());
         }
-        let mut arr = [0u8; 32];
+        let mut arr = Zeroizing::new([0u8; 32]);
         arr.copy_from_slice(private_key_data);
         let private_key = PrivateKey::from_byte_array(&arr, network)
             .map_err(|e| format!("Invalid private key: {}", e))?;
@@ -83,6 +84,24 @@ impl SingleKeySigner {
     }
 }
 
+impl Drop for SingleKeySigner {
+    /// `secp256k1::SecretKey` is `Copy` and does not erase itself, and this
+    /// signer is built per FFI call for keys that are deliberately never
+    /// persisted, so the scalar is cleared when the handle is destroyed.
+    ///
+    /// This covers the copies this type owns. It does not reach the one the
+    /// pinned `dashcore` makes internally: `signer::sign` parses its own
+    /// `SecretKey` from the bytes handed to it and does not erase it before
+    /// returning. Closing that gap needs erasing storage inside
+    /// `rust-dashcore` itself.
+    ///
+    /// TODO(dashconnect-key-hygiene): upstream zeroizing parse/sign storage to
+    /// `rust-dashcore`, then bump the pinned revision here.
+    fn drop(&mut self) {
+        self.private_key.inner.non_secure_erase();
+    }
+}
+
 #[async_trait]
 impl Signer<IdentityPublicKey> for SingleKeySigner {
     async fn sign(
@@ -95,7 +114,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 // Do not log private key material. Log data fingerprint only.
                 debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
-                let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
+                let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
+                let signature = signer::sign(data, &secret_bytes[..])?;
                 Ok(signature.to_vec().into())
             }
             _ => {
@@ -137,14 +157,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
-                    &self.private_key.inner.secret_bytes(),
-                ) {
-                    Ok(sk) => sk,
-                    Err(_) => return false,
-                };
                 let public_key =
-                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.private_key.inner);
                 let public_key_bytes = public_key.serialize();
 
                 identity_public_key.data().as_slice() == public_key_bytes
@@ -154,14 +168,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
                 use dpp::dashcore::hashes::{hash160, Hash};
 
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
-                    &self.private_key.inner.secret_bytes(),
-                ) {
-                    Ok(sk) => sk,
-                    Err(_) => return false,
-                };
                 let public_key =
-                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.private_key.inner);
                 let public_key_bytes = public_key.serialize();
                 let public_key_hash160 = hash160::Hash::hash(&public_key_bytes)
                     .to_byte_array()
@@ -178,6 +186,22 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
 mod tests {
     use super::*;
     use dashcore::Network;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+
+    fn identity_key(key_type: KeyType, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at: None,
+        })
+    }
 
     #[test]
     fn test_single_key_signer_from_wif() -> Result<(), String> {
@@ -219,6 +243,30 @@ mod tests {
     fn test_single_key_signer_from_slice_rejects_wrong_length() {
         let bytes = [0x01u8; 16];
         assert!(SingleKeySigner::new_from_slice(&bytes, Network::Testnet).is_err());
+    }
+
+    #[test]
+    fn test_can_sign_with_ecdsa_key_types() -> Result<(), String> {
+        use dpp::dashcore::hashes::{hash160, Hash};
+
+        let signer = SingleKeySigner::new_from_slice(&[0x03; 32], Network::Testnet)?;
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let public_key =
+            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &signer.private_key.inner)
+                .serialize();
+
+        let full_key = identity_key(KeyType::ECDSA_SECP256K1, public_key.to_vec());
+        assert!(signer.can_sign_with(&full_key));
+        let wrong_full_key = identity_key(KeyType::ECDSA_SECP256K1, vec![0; public_key.len()]);
+        assert!(!signer.can_sign_with(&wrong_full_key));
+
+        let public_key_hash = hash160::Hash::hash(&public_key).to_byte_array();
+        let hash_key = identity_key(KeyType::ECDSA_HASH160, public_key_hash.to_vec());
+        assert!(signer.can_sign_with(&hash_key));
+        let wrong_hash_key = identity_key(KeyType::ECDSA_HASH160, vec![0; public_key_hash.len()]);
+        assert!(!signer.can_sign_with(&wrong_hash_key));
+
+        Ok(())
     }
 
     #[test]

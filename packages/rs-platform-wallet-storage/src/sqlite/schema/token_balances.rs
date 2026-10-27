@@ -2,15 +2,11 @@
 //!
 //! # Precondition
 //!
-//! Every `identity_id` in the supplied changeset MUST already exist in
-//! the `identities` table and belong to the flush's `wallet_id` (or
-//! have a NULL `identities.wallet_id` when the scope is the all-zero
-//! sentinel). The writer relies on
-//! [`super::identities::apply`] for parenting; the FK to
-//! `identities(identity_id)` enforces existence but not the wallet
-//! match. The precondition check below runs in every build and
-//! propagates [`WalletStorageError::WalletIdMismatch`] on a
-//! mis-attributed caller.
+//! Every `identity_id` MUST already exist in `identities` and belong to the
+//! flush's `wallet_id` (or have NULL `wallet_id` for the all-zero sentinel
+//! scope). The FK enforces existence; the wallet match is checked here and
+//! propagates [`WalletStorageError::WalletIdMismatch`] on a mis-attributed
+//! caller.
 
 use rusqlite::{params, Transaction};
 
@@ -20,16 +16,11 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::util::safe_cast;
 
-/// `token_balances` is keyed by `(identity_id, token_id)`. The caller
-/// supplies a [`WalletId`] for symmetry with sibling writers and to
-/// feed the precondition check; it does not feed any column, because
-/// cascade flows
-/// `wallet_metadata → identities → token_balances` through the
-/// nullable `identities.wallet_id` FK.
-//
-// Orphan-row policy: there is no automatic prune API. Cascade flows
-// through `identities`; hosts that delete identities out-of-band must
-// prune `token_balances` themselves.
+/// Keyed by `(identity_id, token_id)`. `wallet_id` feeds the precondition
+/// check only — no column — since cascade flows
+/// `wallets → identities → token_balances` via the nullable
+/// `identities.wallet_id` FK. No auto-prune: hosts deleting identities
+/// out-of-band must prune `token_balances` themselves.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

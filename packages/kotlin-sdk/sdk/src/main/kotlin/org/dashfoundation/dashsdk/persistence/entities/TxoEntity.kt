@@ -77,7 +77,15 @@ data class TxoEntity(
     val isConfirmed: Boolean = false,
     val isInstantLocked: Boolean = false,
     val isLocked: Boolean = false,
-    /** Denormalized `spendingTxid != null`; kept explicit (hot filter path). */
+    /**
+     * Whether this coin is out of the restore set; kept explicit (hot
+     * filter path). Monotonic on the record and `utxos_spent` channels
+     * (`isSpent = existing || spender in-block || stamped`), so it is
+     * true for a spender that reached a block, for every stamped hold
+     * ([supersededByTxid] set), and for a healed asset-lock spend — and
+     * false for a coin whose only claim is a mempool/IS-locked link. Only
+     * a sweep release or an unlinked re-delivery of the coin lowers it.
+     */
     val isSpent: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
@@ -100,6 +108,34 @@ data class TxoEntity(
      * navigation pointer.
      */
     val coreAddressId: String? = null,
+    /**
+     * Port of Swift `PersistentTxo.supersededByTxid` — the winner a sweep
+     * attributed this coin's consumption to, mirroring the SQLite store's
+     * `spent_in_txid`. Two writers set it: the sweep pass
+     * (`PlatformWalletPersistenceHandler.applySweptTransaction`), for
+     * every held input of a swept loser that has a row, keyed by the
+     * loser's decoded input outpoints rather than by this row's link; and
+     * `onWalletChangesetUtxoAdded` draining a `pending_inputs` tombstone —
+     * the funding output arrived only after the loser that spent it was
+     * swept and deleted. Deliberately NOT an FK: the winner named here
+     * need not have its own `transactions` row (it can be
+     * wallet-irrelevant), so this column has to hold a bare txid that
+     * `transactions(txid)` may never contain.
+     *
+     * The hold is the stamp, not the link. A stamped row keeps
+     * `isSpent = true` whatever later happens to [spendingTxid] — a new
+     * spender may adopt the link (attribution for `walletFundedTransaction`)
+     * without lowering the flag — and a stamped row that is UNLINKED is
+     * what the sweep release pass frees. Cleared by exactly two events:
+     * a sweep release of this outpoint (a later sweep proved the coin came
+     * free after all, and no stored network-final spender vetoes it), and
+     * the wallet re-delivering the coin unspent while the row is unlinked
+     * (`onWalletChangesetUtxoAdded`: the wallet knows the coin, so any
+     * network-final spender of it is re-discovered by its own scan; holding
+     * the row would lock a real coin out forever after a reorg of the
+     * winner).
+     */
+    val supersededByTxid: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is TxoEntity && outpoint.contentEquals(other.outpoint)

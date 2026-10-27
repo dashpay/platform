@@ -1,8 +1,11 @@
 import Foundation
 import SwiftData
 
-/// SwiftData row for one confirmed DPNS label owned by a
-/// `PersistentIdentity`. Mirrors a single
+/// SwiftData row for one confirmed DPNS label observed by this wallet. There
+/// is one row per `(network, parent, normalized label)`: when a name leaves the
+/// wallet, the row stays attached to the departed identity for history; when
+/// it moves between two identities in the same wallet, that one row follows
+/// the current owner. Mirrors a single
 /// `platform_wallet::DpnsNameInfo` after it travels across the FFI on
 /// `IdentityEntryFFI.dpns_names` / `dpns_names_acquired_at`.
 ///
@@ -11,10 +14,10 @@ import SwiftData
 /// list reactively — `@Query` over a row collection beats a `[String]`
 /// column that views can only read in bulk on `onAppear`.
 ///
-/// This is purely a label cache. The DPNS document's `normalizedLabel`
-/// (homograph-safe form used for the uniqueness lookup) is NOT
-/// persisted here — DPNS lookups go through the SDK / platform-wallet,
-/// and the local cache only needs to render the display label.
+/// The identity-snapshot portion starts as a label cache. Marketplace sync
+/// later enriches that same row with the domain document id, listing state,
+/// ownership outcome, and document timestamps so SwiftUI can present the
+/// last confirmed state without issuing a network lookup for every row.
 @Model
 public final class PersistentDPNSName {
     /// Compound uniqueness on `(networkRaw, normalizedParentDomainName,
@@ -70,6 +73,66 @@ public final class PersistentDPNSName {
     /// `DpnsNameInfo.acquired_at`. `0` when unknown.
     public var acquiredAt: UInt64
 
+    /// Whether the latest canonical identity snapshot still includes this
+    /// name. Marketplace callbacks never overwrite this value. A name that
+    /// leaves the wallet keeps its row on the departed identity with `false`;
+    /// a same-wallet transfer rebinds the unique row to the current identity
+    /// with `true`.
+    public var isOwned: Bool = true
+
+    // MARK: - Username marketplace
+    //
+    // Fed by the `on_persist_dpns_name_states_fn` persister callback
+    // (`DpnsNameStateFFI`), NOT by the identity label snapshot that
+    // populates the fields above. All of them are optional or defaulted
+    // so an existing store migrates in place (SwiftData lightweight
+    // migration).
+    //
+    // READ CONTRACT: every field in this section is meaningful only
+    // while `documentIdBase58` is non-nil. A nil document id means the
+    // wallet is not tracking this name's marketplace state — it does NOT
+    // mean the name is owned and unlisted. Gate any marketplace UI on
+    // `documentIdBase58 != nil` before reading `saleStatus` or
+    // `priceCredits`.
+
+    /// Base58 id of the DPNS `domain` document behind this label — the
+    /// handle every trade transition needs, stable across transfers and
+    /// purchases. `nil` while no marketplace state has been mirrored (or
+    /// after the row was dropped from marketplace tracking).
+    public var documentIdBase58: String?
+
+    /// Listed sale price in **credits** (1 duff = 1000 credits), stored
+    /// as `Int64(bitPattern:)` like `PersistentIdentity.balance` because
+    /// SwiftData has no unsigned 64-bit column. `nil` = the name is not
+    /// listed for sale, which is distinct from a 0-credit listing.
+    public var priceCredits: Int64?
+
+    /// Raw ``DpnsNameSaleStatus`` discriminant: 0 = owned, 1 = sold,
+    /// 2 = transferred. Defaults to 0 so existing rows migrate, so read
+    /// it through ``saleStatus`` rather than directly.
+    public var saleStatusRaw: Int16 = 0
+
+    /// Base58 id of the counterparty a departed name went to — the buyer
+    /// when `saleStatusRaw == 1`, the recipient when it is 2. `nil` while
+    /// the name is still owned (or the counterparty is unknown).
+    public var counterpartyIdBase58: String?
+
+    /// Domain document `$createdAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentCreatedAtMs: UInt64?
+
+    /// Domain document `$updatedAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentUpdatedAtMs: UInt64?
+
+    /// Domain document `$transferredAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentTransferredAtMs: UInt64?
+
+    /// Unix-millis timestamp of the sync pass / confirmed transition
+    /// that last wrote the marketplace fields. `0` = never written.
+    public var marketplaceUpdatedAt: UInt64 = 0
+
     // MARK: - Relationships
 
     /// Owning identity. Cascade-deleted from the parent — losing the
@@ -94,7 +157,8 @@ public final class PersistentDPNSName {
         identity: PersistentIdentity,
         label: String,
         parentDomainName: String = "dash",
-        acquiredAt: UInt64 = 0
+        acquiredAt: UInt64 = 0,
+        isOwned: Bool = true
     ) {
         self.identity = identity
         self.networkRaw = identity.networkRaw
@@ -103,8 +167,71 @@ public final class PersistentDPNSName {
         self.parentDomainName = parentDomainName
         self.normalizedParentDomainName = Self.normalize(parentDomainName)
         self.acquiredAt = acquiredAt
+        self.isOwned = isOwned
+        // A freshly inserted row carries no marketplace state until the
+        // marketplace persister callback writes it — hence a nil document
+        // id, which is the "not tracked" signal the read contract above
+        // documents.
+        self.documentIdBase58 = nil
+        self.priceCredits = nil
+        self.saleStatusRaw = 0
+        self.counterpartyIdBase58 = nil
+        self.documentCreatedAtMs = nil
+        self.documentUpdatedAtMs = nil
+        self.documentTransferredAtMs = nil
+        self.marketplaceUpdatedAt = 0
         self.createdAt = Date()
         self.lastUpdated = Date()
+    }
+}
+
+// MARK: - Marketplace accessors
+
+extension PersistentDPNSName {
+    /// Typed view of the marketplace columns as the SDK's
+    /// ``DpnsNameSaleStatus``, or `nil` when this row carries no
+    /// trustworthy marketplace state.
+    ///
+    /// Prefer this over reading `saleStatusRaw` directly: it enforces the
+    /// read contract, so an untracked row (`documentIdBase58 == nil`) can
+    /// never be mistaken for an owned-and-unlisted one. It also returns
+    /// `nil` for a departed row whose counterparty id is missing or
+    /// undecodable — the wallet always attaches one for a sale or a
+    /// transfer, so its absence means the row is unreliable, not that the
+    /// name went nowhere.
+    ///
+    /// An unrecognized discriminant is likewise `nil`, never `.owned`: if
+    /// Rust's `DpnsNameSaleStatus` gains a variant, an older Swift build
+    /// must report the row as unreadable rather than claim a departed
+    /// name is still owned.
+    public var saleStatus: DpnsNameSaleStatus? {
+        guard documentIdBase58 != nil else { return nil }
+        switch saleStatusRaw {
+        case 0:
+            return .owned
+        case 1:
+            guard let to = counterpartyId else { return nil }
+            return .sold(to: to)
+        case 2:
+            guard let to = counterpartyId else { return nil }
+            return .transferred(to: to)
+        default:
+            return nil
+        }
+    }
+
+    /// The departed name's counterparty as a 32-byte identifier, decoded
+    /// from `counterpartyIdBase58`. `nil` while the name is still owned,
+    /// or if the stored string doesn't decode.
+    public var counterpartyId: Data? {
+        counterpartyIdBase58.flatMap { Data.identifier(fromBase58: $0) }
+    }
+
+    /// Listed sale price in credits, or `nil` when the name is not
+    /// listed (or carries no mirrored marketplace state at all).
+    public var listedPriceCredits: UInt64? {
+        guard documentIdBase58 != nil, let priceCredits else { return nil }
+        return UInt64(bitPattern: priceCredits)
     }
 }
 
@@ -136,15 +263,16 @@ extension PersistentDPNSName {
 // MARK: - Queries
 
 extension PersistentDPNSName {
-    /// Predicate filtering all DPNS-label rows that belong to a
-    /// specific identity. Traverses the `identity` relationship to
+    /// Predicate filtering DPNS labels currently owned by a specific
+    /// identity. Retained sold/transferred history rows deliberately do not
+    /// match. Traverses the `identity` relationship to
     /// match its `identityId` — safe because the relationship is
     /// non-optional and SwiftData's predicate engine handles
     /// non-optional one-hop traversal cleanly.
     public static func predicate(identityId: Data) -> Predicate<PersistentDPNSName> {
         let target = identityId
         return #Predicate<PersistentDPNSName> { name in
-            name.identity.identityId == target
+            name.identity.identityId == target && name.isOwned == true
         }
     }
 }

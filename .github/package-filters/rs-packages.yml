@@ -22,6 +22,18 @@ keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
 
+app-connect-contract: &app-connect-contract
+  - .github/workflows/tests*
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
+moderation-charters-contract: &moderation-charters-contract
+  - .github/workflows/tests*
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -61,6 +73,8 @@ data-contracts: &data-contracts
   - *token-history-contract
   - *keyword-search-contract
   - *document-history-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
 
 dpp: &dpp
   - .github/workflows/tests*
@@ -151,10 +165,15 @@ platform-encryption: &platform_encryption
   - .github/workflows/tests*
   - packages/rs-platform-encryption/**
 
+dash-platform-queries: &platform_queries
+  - .github/workflows/tests*
+  - packages/dash-platform-queries/**
+
 dash-sdk: &sdk
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *platform_queries
   - *dash_async
   - *context_provider
   - *sdk_trusted_context_provider

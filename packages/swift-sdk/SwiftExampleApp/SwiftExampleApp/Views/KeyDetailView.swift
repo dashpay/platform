@@ -13,6 +13,11 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
+    /// What Platform says is left of this key's budget. `.some(nil)` means
+    /// the node answered that the key carries no budget.
+    @State private var remainingBudget: UInt64?? = nil
+    @State private var remainingBudgetError: String?
+    @State private var isLoadingRemainingBudget = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
@@ -71,6 +76,10 @@ struct KeyDetailView: View {
                 Text(publicKey.data.toHexString())
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
+            }
+
+            if publicKey.hasLimits || publicKey.contractBounds != nil {
+                limitsSection
             }
 
             // Key Status / danger section
@@ -164,6 +173,105 @@ struct KeyDetailView: View {
             Button("OK", role: .cancel) { disableError = nil }
         } message: {
             Text(disableError ?? "")
+        }
+    }
+
+    // MARK: - Limits section
+
+    /// Protocol 14 limits and contract bounds. The total budget and the
+    /// expiry are part of the key; what remains of the budget lives in
+    /// Drive and is fetched when the section appears.
+    private var limitsSection: some View {
+        Section {
+            if let bounds = publicKey.contractBounds {
+                HStack {
+                    Text("Bound to")
+                    Spacer()
+                    Text(KeyLimitsFormatting.bounds(bounds))
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+
+            if let totalBudget = publicKey.totalBudget {
+                HStack {
+                    Text("Total budget")
+                    Spacer()
+                    Text(KeyLimitsFormatting.dash(totalBudget))
+                        .fontWeight(.medium)
+                }
+                HStack {
+                    Text("Remaining")
+                    Spacer()
+                    if isLoadingRemainingBudget {
+                        ProgressView().controlSize(.small)
+                    } else if let remaining = remainingBudget, let remaining {
+                        Text(KeyLimitsFormatting.dash(remaining))
+                            .fontWeight(.medium)
+                            .foregroundColor(remaining == 0 ? .red : .primary)
+                    } else if remainingBudgetError != nil {
+                        Text("Unavailable")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Unknown")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if let remaining = remainingBudget, let remaining, remaining <= totalBudget {
+                    HStack {
+                        Text("Spent")
+                        Spacer()
+                        Text(KeyLimitsFormatting.dash(totalBudget - remaining))
+                            .fontWeight(.medium)
+                    }
+                }
+                if let error = remainingBudgetError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            if let expiresAt = publicKey.expiresAt {
+                let expired = KeyLimitsFormatting.isExpired(expiresAt: expiresAt, now: Date())
+                HStack {
+                    Text("Expires")
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(KeyLimitsFormatting.expiryDate(expiresAt))
+                            .fontWeight(.medium)
+                        Text(KeyLimitsFormatting.expiryRelative(expiresAt, now: Date()))
+                            .font(.caption)
+                            .foregroundColor(expired ? .red : .secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Limits")
+        } footer: {
+            if publicKey.hasLimits {
+                Text("Platform refuses anything this key signs once its budget is spent or its expiry has passed. The limits cannot be lowered; the budget can be raised and the expiry extended by the identity's master key.")
+            }
+        }
+        .task(id: publicKey.id) {
+            await loadRemainingBudget()
+        }
+    }
+
+    @MainActor
+    private func loadRemainingBudget() async {
+        guard publicKey.totalBudget != nil, let sdk = appState.sdk else { return }
+        isLoadingRemainingBudget = true
+        defer { isLoadingRemainingBudget = false }
+        do {
+            let budgets = try await sdk.fetchKeysRemainingBudgets(
+                identityId: identity.identityIdBase58,
+                keyIds: [publicKey.id]
+            )
+            remainingBudget = budgets[publicKey.id]
+            remainingBudgetError = nil
+        } catch {
+            remainingBudgetError = error.localizedDescription
         }
     }
 

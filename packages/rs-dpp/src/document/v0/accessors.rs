@@ -160,6 +160,18 @@ impl DocumentV0Getters for DocumentV0 {
     fn creator_id(&self) -> Option<Identifier> {
         self.creator_id
     }
+
+    fn contract_version(&self) -> Option<u32> {
+        self.contract_version
+    }
+
+    fn moderated_at(&self) -> Option<TimestampMillis> {
+        self.moderated_at
+    }
+
+    fn moderated_by(&self) -> Option<Identifier> {
+        self.moderated_by
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {
@@ -289,5 +301,20 @@ impl DocumentV0Setters for DocumentV0 {
     ///   `None` indicates the creator ID is not available.
     fn set_creator_id(&mut self, creator_id: Option<Identifier>) {
         self.creator_id = creator_id;
+    }
+
+    /// Sets the contract-version stamp: the data contract version this
+    /// document's bytes conform to. Assigned by Drive when document content
+    /// is (re-)supplied; `None` for pre-stamp documents.
+    fn set_contract_version(&mut self, contract_version: Option<u32>) {
+        self.contract_version = contract_version;
+    }
+
+    fn set_moderated_at(&mut self, moderated_at: Option<TimestampMillis>) {
+        self.moderated_at = moderated_at;
+    }
+
+    fn set_moderated_by(&mut self, moderated_by: Option<Identifier>) {
+        self.moderated_by = moderated_by;
     }
 }

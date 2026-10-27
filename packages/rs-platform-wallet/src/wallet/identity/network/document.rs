@@ -10,7 +10,7 @@
 //! `platform-wallet` crate"; the Swift side only renders the form,
 //! marshals the values, and persists the confirmed document.
 //!
-//! Mirrors the post-#3541 identity-flow shape:
+//! Mirrors the identity-flow shape:
 //!   - The library function takes a `Signer<IdentityPublicKey>`
 //!     reference so the FFI's external `KeychainSigner` trampoline can
 //!     route signing back to Swift / Keychain without crossing seed
@@ -20,11 +20,12 @@
 //!     via `DocumentType::create_document_from_data` — the same path
 //!     `rs-sdk-ffi/src/document/create.rs` uses.
 //!   - Broadcast goes through
-//!     `dash_sdk::platform::transition::put_document::PutDocument::put_to_platform_and_wait_for_response`
+//!     `dash_sdk::platform::transition::put_document::PutDocument::put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
 //!     on the platform-wallet runtime (8 MB worker stack) instead of
 //!     the rs-sdk-ffi runtime (mobile-tuned default stack) — the same
 //!     stack-overflow avoidance `contract.rs` documents for the
-//!     post-broadcast GroveDB proof-verification recursion.
+//!     post-broadcast GroveDB proof-verification recursion. The owner's
+//!     balance the proof carries (from protocol version 14) is kept.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -45,6 +46,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::documents::transitions::{
@@ -54,6 +56,7 @@ use dash_sdk::platform::documents::transitions::{
     DocumentTransferTransitionBuilder,
 };
 use dash_sdk::platform::transition::put_document::PutDocument;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
 
 use crate::error::PlatformWalletError;
@@ -116,7 +119,7 @@ where
 /// flow correct for *any* document type — e.g. DPNS `preorder` requires
 /// `HIGH`, so both `CRITICAL` and `HIGH` keys qualify, but `MEDIUM` does
 /// not.
-fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
+pub(super) fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
     if requirement == SecurityLevel::MASTER {
         return vec![SecurityLevel::MASTER];
     }
@@ -137,7 +140,7 @@ impl IdentityWallet {
     /// returns `None` for the contract and proof verification fails with
     /// "unknown contract ... in document verification", even though the
     /// write landed on-chain.
-    fn register_contract_for_proof_verification(&self, contract: &DataContract) {
+    pub(super) fn register_contract_for_proof_verification(&self, contract: &DataContract) {
         if let Some(provider) = self.sdk.context_provider() {
             provider.register_data_contract(Arc::new(contract.clone()));
         }
@@ -168,9 +171,10 @@ impl IdentityWallet {
     ///      if the owner identity isn't loaded or carries no qualifying
     ///      key.
     ///   4. Broadcasts via
-    ///      `Document::put_to_platform_and_wait_for_response` on the
-    ///      platform-wallet 8 MB-stack worker and returns the confirmed
-    ///      `Document` from Platform.
+    ///      `Document::put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
+    ///      on the platform-wallet 8 MB-stack worker, keeps the owner's
+    ///      balance the proof carries (from protocol version 14) and
+    ///      returns the confirmed `Document` from Platform.
     ///
     /// `properties_json` is a JSON object keyed by property name. Byte-
     /// array fields are supplied as hex (or base64) strings and
@@ -178,12 +182,19 @@ impl IdentityWallet {
     /// sanitize step converts them to the protocol's native `Bytes` /
     /// `Identifier` values. An empty object (`"{}"`) is valid for a
     /// document type with no required properties.
+    ///
+    /// `contest_fund` is the most a contested document pays into the
+    /// contest it joins (the fund to join doubles once a contest holds 250
+    /// contenders and again for every 50 more); `None` states the fund to
+    /// join read just before the document is submitted. A document that
+    /// joins no contest ignores it.
     pub async fn create_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
         contract_id: &Identifier,
         document_type_name: &str,
         properties_json: &str,
+        contest_fund: Option<Credits>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -296,22 +307,36 @@ impl IdentityWallet {
         //    worker stack. `None` entropy -> the SDK generates entropy
         //    and the canonical document id for this revision-1 create;
         //    `None` token-payment-info -> no token gating.
-        let confirmed = document
-            .put_to_platform_and_wait_for_response(
+        let settings = contest_fund.map(|contest_fund| PutSettings {
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                contest_fund: Some(contest_fund),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let (confirmed, owner_balance, metadata) = document
+            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
                 &self.sdk,
                 document_type,
                 None,
                 signing_key,
                 None,
                 &SignerRef(signer),
-                None,
+                settings,
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put document to platform: {e}"
-                ))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put document to platform: {e}"
+                    ))
+                })
             })?;
+        self.persist_proven_owner_balance(owner_identity_id, owner_balance, metadata)
+            .await;
 
         Ok(confirmed)
     }
@@ -324,7 +349,7 @@ impl IdentityWallet {
     /// transfer / set-price / purchase) — each needs the contract as an
     /// `Arc<DataContract>` for both the single-document fetch query and
     /// the transition builder.
-    async fn fetch_contract_arc_for_document_op(
+    pub(super) async fn fetch_contract_arc_for_document_op(
         &self,
         contract_id: &Identifier,
         document_type_name: &str,
@@ -530,7 +555,14 @@ impl IdentityWallet {
             .document_replace(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to replace document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -575,7 +607,14 @@ impl IdentityWallet {
             .document_delete(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Failed to delete document: {e}"))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to delete document: {e}"
+                    ))
+                })
             })?;
         Ok(deleted_id)
     }
@@ -630,9 +669,15 @@ impl IdentityWallet {
             .document_transfer(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to transfer document: {e}"
-                ))
+                // Typed trade rejections (not-for-sale / price-changed /
+                // insufficient credits) and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to transfer document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -687,9 +732,14 @@ impl IdentityWallet {
             .document_set_price(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to set document price: {e}"
-                ))
+                // Typed trade rejections and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to set document price: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -749,9 +799,17 @@ impl IdentityWallet {
             .document_purchase(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to purchase document: {e}"
-                ))
+                // Typed trade rejections — crucially the price-changed race
+                // (40109), where the consensus equality check is the backstop
+                // behind the wallet's pre-flight — and the structured
+                // key-unavailable signer failure survive; only genuine
+                // operation failures get stringified into
+                // `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to purchase document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }

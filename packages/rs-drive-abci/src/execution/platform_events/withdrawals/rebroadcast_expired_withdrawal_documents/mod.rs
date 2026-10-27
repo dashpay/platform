@@ -11,6 +11,7 @@ use drive::grovedb::Transaction;
 
 mod v0;
 mod v1;
+mod v2;
 
 impl<C> Platform<C>
 where
@@ -20,7 +21,9 @@ where
     ///
     /// This function attempts to rebroadcast expired withdrawal documents by checking if there are
     /// any documents with the status `EXPIRED`. It updates the status of such documents to
-    /// `BROADCASTED`, increments their revision, and reschedules them for broadcasting.
+    /// `BROADCASTED`, increments their revision, and reschedules them for broadcasting. From
+    /// version 2 a withdrawal whose amount is below Core's dust threshold is marked `FAILED`
+    /// instead, since Core can never mine it.
     ///
     /// # Parameters
     /// - `block_info`: Information about the current block (e.g., timestamp).
@@ -55,9 +58,14 @@ where
                 transaction,
                 platform_version,
             ),
+            2 => self.rebroadcast_expired_withdrawal_documents_v2(
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "rebroadcast_expired_withdrawal_documents".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

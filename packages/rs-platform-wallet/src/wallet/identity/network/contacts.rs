@@ -48,10 +48,10 @@ fn dashpay_account_registration_changeset(
 ///   retry on a poisoned channel).
 /// - **Transient** leaves the channel intact so the next sync sweep retries.
 ///
-/// (In the seedless model this method no longer derives the ECDH scalar — the
-/// caller passes a signer-derived `shared_key` — so a "key material
-/// unavailable" classification no longer arises here; that DEFER decision now
-/// lives at the drain's provider call.)
+/// (This method does not derive the ECDH scalar — the caller passes a
+/// signer-derived `shared_key` — so a "key material unavailable"
+/// classification cannot arise here; that DEFER decision lives at the drain's
+/// provider call.)
 ///
 /// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
 #[derive(Debug)]
@@ -87,6 +87,10 @@ pub enum ExternalAccountRegistration {
     /// An account row already existed for the `(index, user, friend)` key;
     /// nothing was decrypted or replaced.
     AlreadyExisted,
+    /// The contact's live incoming request no longer carries the supplied
+    /// encrypted xpub — a rotation landed after the caller read it. Nothing
+    /// was persisted or inserted; the sweep rebuilds from the live request.
+    Superseded,
 }
 
 impl RegisterExternalError {
@@ -247,6 +251,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to register contact account: {e}"
                 ))
             })?;
+        // A filter batch in flight right now was scanned without this
+        // account's scripts: bump the account generation so the pipeline does
+        // not certify it, and the range is rescanned with the account watched.
+        info.rewind_barrier.note_account_registered();
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -269,9 +277,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Used by the SPV / backend task layer to classify observed
     /// transaction outputs as DashPay incoming payments from a
-    /// specific contact — replaces the redundant
-    /// `dashpay_address_mappings` reverse-lookup table the UI
-    /// layer used to maintain. The authoritative state is already
+    /// specific contact. No separate reverse-lookup table is needed
+    /// in the UI layer: the authoritative state is already
     /// tracked by `register_contact_account`, which inserts the
     /// account into the wallet's `ManagedAccountCollection` so
     /// key-wallet manages the address pool (derivation + gap limit
@@ -402,6 +409,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// On success returns [`ExternalAccountRegistration`] so the caller can
     /// tell a real (re)build from an already-existed no-op — only the former
     /// may stamp the rotation self-heal marker (see the enum docs).
+    ///
+    /// The absence check, the durable write and the in-memory inserts run
+    /// under ONE wallet-manager write guard, so registrations of the same
+    /// account are serialized: a registration that decrypted a payload and
+    /// then lost the race to another one finds the account present and
+    /// returns [`ExternalAccountRegistration::AlreadyExisted`], instead of
+    /// overwriting the newer account's durable xpub and pool. Under the same
+    /// guard the payload is checked against the contact's LIVE incoming
+    /// request, and a stale one returns
+    /// [`ExternalAccountRegistration::Superseded`] without writing anything.
+    /// When the contact is established and the backend's rounds are inline
+    /// and atomic, the account and the contact's outbound-account marker are
+    /// written in the same store round, so the durable marker always names
+    /// the request the durable account was built from. Any other backend
+    /// gets no marker from this round; the caller stamps it once the account
+    /// is stored (dashpay/platform#4302 review).
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
@@ -438,12 +461,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         // --- 2. Decrypt the contact's xpub with the signer-derived secret. ---
+        //
+        // This failing is the most diagnostic event on the whole path, so the
+        // message names what it points at — as a likelihood, not a verdict.
+        // AES-CBC is unauthenticated here and PKCS7 is the only check on the
+        // plaintext, so a padding rejection is consistent with a mismatched
+        // ECDH secret AND with a corrupted or malformed ciphertext; a wrong key
+        // also clears padding roughly 1 in 256 times and lands at step 3
+        // instead. Neither outcome proves which, and stating otherwise would
+        // misdirect exactly the legacy-interop investigation these messages
+        // exist to serve. The ciphertext length is included because a
+        // non-96-byte blob points at a malformed document, which the contract's
+        // minItems/maxItems: 96 should already have prevented.
         let decrypted_xpub_bytes =
             platform_encryption::decrypt_extended_public_key(&shared_key, contact_encrypted_xpub)
                 .map_err(|e| {
                 Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to decrypt contact xpub: {}",
-                    e
+                    "Failed to decrypt contact xpub ({e}); ciphertext {} bytes. PKCS7 rejected \
+                     the plaintext — most likely the ECDH shared secret did not match the \
+                     sender's, though a corrupted ciphertext produces the same symptom",
+                    contact_encrypted_xpub.len()
                 )))
             })?;
 
@@ -468,9 +505,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map_err(Permanent)?,
             Err(_) => {
                 key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes).map_err(|e| {
+                    // PKCS7 unpadded cleanly but the plaintext is not a shape we
+                    // know. That is consistent with a correct secret over an
+                    // unexpected LAYOUT, and also with a wrong key whose garbage
+                    // happened to carry valid padding (~1 in 256) — the length
+                    // is the best discriminator available, so it leads the
+                    // message, but it is not proof either way. The bytes
+                    // themselves are never logged: they are the contact's
+                    // payment xpub, and this text reaches an exported log.
                     Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                        "Decrypted contact xpub is neither a 69-byte DIP-15 compact form \
-                         nor a 78/107-byte BIP32/DIP-14 serialization: {e}"
+                        "Decrypted contact xpub is {} bytes — neither a 69-byte DIP-15 compact \
+                         form nor a 78/107-byte BIP32/DIP-14 serialization ({e}). PKCS7 accepted \
+                         the plaintext, which suggests the shared secret matched and the layout \
+                         differs, but unauthenticated CBC also lets a wrong key land here",
+                        decrypted_xpub_bytes.len()
                     )))
                 })?
             }
@@ -503,22 +551,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // typed `insert_funds` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
-        // Persist the registration BEFORE the in-memory inserts (same
-        // rationale as `register_contact_account`): without this round
-        // the account vanishes on relaunch and `send_payment` loses its
-        // xpub + derived-address state until the next sweep rebuilds it.
-        self.persister
-            .store(dashpay_account_registration_changeset(
-                account_type,
-                contact_xpub,
-                &managed,
-            ))
-            .map_err(|e| {
-                Transient(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to persist external contact account registration: {e}"
-                )))
-            })?;
-
+        #[cfg(test)]
+        registration_rendezvous::wait(&contact_identity_id).await;
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -527,6 +561,81 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )))
             })?;
+
+        // Re-check under the guard that serializes registrations: the early
+        // check above ran under a read guard that was released for the
+        // decrypt, and another registration may have built the account since.
+        let key = key_wallet::account::account_collection::DashpayAccountKey {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_identity_id.to_buffer(),
+        };
+        if info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .contains_key(&key)
+        {
+            return Ok(ExternalAccountRegistration::AlreadyExisted);
+        }
+
+        // The payload must still be the contact's live request. The durable
+        // marker is bound to it in the same round as the account only where
+        // the backend keeps markers durably at all
+        // (`persists_outbound_account_markers`: an inline, atomic round that
+        // writes accounts and pools). A backend without that guarantee could
+        // reject or drop the account and pool yet keep the contact row,
+        // leaving the live request's marker beside the previous account —
+        // which a restart would trust. There the marker stays in memory only:
+        // the caller stamps it once this round succeeded, and every contact
+        // row written to that backend omits it (dashpay/platform#4302 review).
+        let binds_marker = self.persister.persists_outbound_account_markers();
+        let bound_contact = match info
+            .identity_manager
+            .managed_identity(our_identity_id)
+            .and_then(|managed| managed.established_contact(&contact_identity_id))
+        {
+            Some(contact)
+                if contact.incoming_request.encrypted_public_key != contact_encrypted_xpub =>
+            {
+                tracing::warn!(
+                    our_identity = %our_identity_id,
+                    contact = %contact_identity_id,
+                    "external account payload superseded by a rotation before registration; \
+                     nothing written, the sweep rebuilds from the live request"
+                );
+                return Ok(ExternalAccountRegistration::Superseded);
+            }
+            Some(contact) if binds_marker => {
+                let mut bound = contact.clone();
+                bound.external_account_reference = Some(contact.incoming_request.account_reference);
+                Some(bound)
+            }
+            Some(_) | None => None,
+        };
+
+        // Persist the registration BEFORE the in-memory inserts (same
+        // rationale as `register_contact_account`): without this round
+        // the account vanishes on relaunch and `send_payment` loses its
+        // xpub + derived-address state until the next sweep rebuilds it.
+        let mut changeset =
+            dashpay_account_registration_changeset(account_type, contact_xpub, &managed);
+        if let Some(bound) = &bound_contact {
+            let mut contacts = crate::changeset::ContactChangeSet::default();
+            contacts.established.insert(
+                crate::changeset::SentContactRequestKey {
+                    owner_id: *our_identity_id,
+                    recipient_id: contact_identity_id,
+                },
+                bound.clone(),
+            );
+            changeset.contacts = Some(contacts);
+        }
+        self.persister.store(changeset).map_err(|e| {
+            Transient(PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to persist external contact account registration: {e}"
+            )))
+        })?;
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
@@ -550,6 +659,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
+        if let Some(bound) = bound_contact {
+            if let Some(contact) = info
+                .identity_manager
+                .managed_identity_mut(our_identity_id)
+                .and_then(|managed| managed.established_contact_mut(&contact_identity_id))
+            {
+                contact.external_account_reference = bound.external_account_reference;
+            }
+        }
+
         tracing::info!(
             our_identity = %our_identity_id,
             contact = %contact_identity_id,
@@ -557,5 +676,42 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         Ok(ExternalAccountRegistration::Built)
+    }
+}
+
+/// Test-only rendezvous between [`IdentityWallet::register_external_contact_account`]'s
+/// early absence check and its write-guard acquisition, so a test can hold
+/// several registrations of one contact at exactly that point and release
+/// them together. Keyed by contact id, so registrations of every other
+/// contact — and every other test — pass straight through.
+#[cfg(test)]
+pub(crate) mod registration_rendezvous {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use dpp::prelude::Identifier;
+    use tokio::sync::Barrier;
+
+    static BARRIERS: Mutex<BTreeMap<Identifier, Arc<Barrier>>> = Mutex::new(BTreeMap::new());
+
+    /// Hold `parties` registrations of `contact` at the rendezvous until all
+    /// of them have arrived.
+    pub(crate) fn install(contact: Identifier, parties: usize) {
+        BARRIERS
+            .lock()
+            .unwrap()
+            .insert(contact, Arc::new(Barrier::new(parties)));
+    }
+
+    /// Stop holding registrations of `contact`.
+    pub(crate) fn remove(contact: &Identifier) {
+        BARRIERS.lock().unwrap().remove(contact);
+    }
+
+    pub(crate) async fn wait(contact: &Identifier) {
+        let barrier = BARRIERS.lock().unwrap().get(contact).cloned();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
     }
 }

@@ -84,8 +84,8 @@ impl IdentityCreateFromShieldedPoolStateTransitionStateValidationV0
         } else {
             // A unique-key-hash collision: finalize the spend and credit the fallback address minus a
             // penalty. The penalty is the flat `unique_key_already_present` amount plus the metered
-            // processing fee accumulated so far (like `IdentityCreateFromAddresses`'s
-            // `BumpAddressInputNonces` penalty) PLUS the flat shielded compute fee
+            // processing fee accumulated so far (the fallback `Unshield` event carries no metered
+            // operations, so the fee is folded in here) PLUS the flat shielded compute fee
             // (`compute_shielded_verification_fee`): the proposer ran the same Halo 2 verification on
             // the failure path that the success path charges via `additional_fixed_fee_cost`, so the
             // penalty floor must cover it too (fee parity with the success / other shielded paths). We

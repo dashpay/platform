@@ -114,7 +114,7 @@ impl DataContractOperationType<'_> {
         let tasks = match self {
             Self::ApplyContractWithSerialization { contract, .. }
             | Self::ApplyContract { contract, .. } => {
-                vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
+                vec![DriveOperationFinalizeTask::RefreshDataContractCache {
                     contract_id: contract.id(),
                 }]
             }

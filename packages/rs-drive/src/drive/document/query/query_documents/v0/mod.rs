@@ -82,6 +82,40 @@ impl Drive {
             return Ok(QueryDocumentsOutcomeV0::default());
         }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // indexOnly documents are synthesized from their index positions —
+        // there are no stored bodies to fetch, so the raw serialized path
+        // below does not apply.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if query.document_type.index_only() {
+                let (documents, skipped) = query.execute_index_only_documents_no_proof_internal(
+                    self,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let cost = if let Some(epoch) = epoch {
+                    Drive::calculate_fee(
+                        None,
+                        Some(drive_operations),
+                        epoch,
+                        self.config.epochs_per_era,
+                        platform_version,
+                        None,
+                    )?
+                    .processing_fee
+                } else {
+                    0
+                };
+                return Ok(QueryDocumentsOutcomeV0 {
+                    documents,
+                    skipped,
+                    cost,
+                });
+            }
+        }
+
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
             transaction,
@@ -140,9 +174,13 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, true, None, platform_version)
@@ -161,9 +199,13 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, false, None, platform_version)
@@ -234,9 +276,13 @@ mod tests {
             .expect("insert");
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, false, None, platform_version)

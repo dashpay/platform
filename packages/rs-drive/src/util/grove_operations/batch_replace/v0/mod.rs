@@ -71,7 +71,10 @@ mod tests {
         match &ops[0] {
             LowLevelDriveOperation::GroveOperation(grove_op) => {
                 assert!(
-                    matches!(grove_op.op, GroveOp::Replace { .. }),
+                    matches!(
+                        grove_op.op,
+                        GroveOp::ReplaceDontCheckForBackwardsReferences { .. }
+                    ),
                     "Expected GroveOp::Replace, got {:?}",
                     grove_op.op
                 );

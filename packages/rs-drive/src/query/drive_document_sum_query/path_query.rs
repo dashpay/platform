@@ -21,7 +21,12 @@
 use crate::drive::RootTree;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_sum_query::index_picker::prefix_to_last_sum_reads;
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
+use crate::query::ResolvedTimeRange;
+use crate::query::{
+    pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
+};
 use crate::query::{WhereClause, WhereOperator};
 // `serialize_value_for_key` is a `DocumentTypeV0Methods` method, NOT
 // `DocumentTypeBasicMethods` (which is the trait of versionless basic
@@ -89,20 +94,49 @@ impl<'a> DriveDocumentSumQuery<'a> {
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
 
-        for prop in self.index.properties.iter() {
-            let clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+        for (position, prop) in self.index.properties.iter().enumerate() {
+            let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
+                // Only the LAST property carries no clause on a
+                // `summableOffCountIndex` index that reads its last
+                // property's tree ([`prefix_to_last_sum_reads`], checked
+                // before the sum-chain form): the sum is that tree's own
+                // element, read by its level key from the last pin's value
+                // tree, the shape count's builds over the same tree.
+                if prefix_to_last_sum_reads(self.index, position) {
+                    return Ok(prefix_to_last_path_query(
+                        base_path,
+                        in_outer_keys,
+                        subquery_path_extension,
+                        self.index.level_key_for_property(&prop.name).into_bytes(),
+                    ));
+                }
+                // Sum-chain value-tree read: when the deepest pinned
+                // property's level sits at or below the index's shallowest
+                // sum or average `at` level (a `summableOffCountIndex`
+                // index), its value trees sum their whole subtree, and the
+                // selector below reads the deepest pin's value tree as the
+                // terminator's. The pins must form a contiguous prefix.
+                let deepest_pin_is_sum_bearing = pins_reach_chain(
+                    self.index,
+                    position,
+                    self.index.shallowest_sum_chain_position(),
+                );
+                let gapped = self.index.properties[position..]
+                    .iter()
+                    .any(|deeper| self.where_clauses.iter().any(|wc| wc.field == deeper.name));
+                if deepest_pin_is_sum_bearing && !gapped {
+                    break;
+                }
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
                         "prove sum requires the where clauses to fully cover the \
                          summable index; one or more index properties have no matching \
                          `==` or `in` clause — define a more specific summable index \
                          (with `summable: \"<prop>\"` whose properties exactly equal \
                          the clauses) or use `prove=false`",
-                    ))
-                })?;
+                    ),
+                ));
+            };
 
             match clause.operator {
                 WhereOperator::Equal => {
@@ -112,10 +146,11 @@ impl<'a> DriveDocumentSumQuery<'a> {
                         platform_version,
                     )?;
                     if in_outer_keys.is_some() {
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension
+                            .push(self.index.level_key_for_property(&prop.name).into_bytes());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                         base_path.push(serialized);
                     }
                 }
@@ -128,7 +163,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                             ),
                         ));
                     }
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
@@ -160,8 +195,9 @@ impl<'a> DriveDocumentSumQuery<'a> {
         // to the `[0]` ref bucket. Mirror of count's
         // `count_tree_terminator` gate (uses `is_countable()` on count
         // side; on the sum side, `summable.is_some()` is the right
-        // discriminator).
-        let sum_tree_terminator = self.index.summable.is_some();
+        // discriminator). A `summableOffCountIndex` index keeps a `SumItem`
+        // counter at that key instead, read the same way.
+        let sum_tree_terminator = self.index.summed_value_name().is_some();
 
         match in_outer_keys {
             None => {
@@ -234,6 +270,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_sum_total()?;
         // Bind the range clause to the index's *terminator* property so a
         // request with multiple range-like clauses (e.g. `prefix > x AND
         // terminator > y`) picks the right one. The previous predicate
@@ -285,7 +322,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                     ),
                 ));
             }
-            path.push(prop.name.as_bytes().to_vec());
+            path.push(self.index.level_key_for_property(&prop.name).into_bytes());
             path.push(self.document_type.serialize_value_for_key(
                 prop.name.as_str(),
                 &clause.value,
@@ -302,11 +339,22 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 ),
             ))?
             .name;
-        path.push(range_prop_name.as_bytes().to_vec());
+        path.push(
+            self.index
+                .level_key_for_property(range_prop_name)
+                .into_bytes(),
+        );
 
         // grovedb PR 670 surface: `Query::new_aggregate_sum_on_range`.
         let query = Query::new_aggregate_sum_on_range(query_item);
         Ok(PathQuery::new(path, SizedQuery::new(query, None, None)))
+    }
+
+    /// Refuses an index whose path passes through a ranked level, which no
+    /// range total can be read through (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]).
+    fn refuse_a_range_sum_total(&self) -> Result<(), Error> {
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
     }
 
     /// Instance-method form: builds the combined PCPS
@@ -317,6 +365,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_sum_total()?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "aggregate_count_and_sum_path_query: index must declare BOTH \
@@ -371,7 +420,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                     ),
                 ));
             }
-            path.push(prop.name.as_bytes().to_vec());
+            path.push(self.index.level_key_for_property(&prop.name).into_bytes());
             path.push(self.document_type.serialize_value_for_key(
                 prop.name.as_str(),
                 &clause.value,
@@ -388,7 +437,11 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 ),
             ))?
             .name;
-        path.push(range_prop_name.as_bytes().to_vec());
+        path.push(
+            self.index
+                .level_key_for_property(range_prop_name)
+                .into_bytes(),
+        );
 
         let query = grovedb::Query::new_aggregate_count_and_sum_on_range(query_item);
         Ok(PathQuery::new(
@@ -602,10 +655,11 @@ impl<'a> DriveDocumentSumQuery<'a> {
                         platform_version,
                     )?;
                     if in_outer_keys.is_some() {
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension
+                            .push(self.index.level_key_for_property(&prop.name).into_bytes());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                         base_path.push(serialized);
                     }
                 }
@@ -620,7 +674,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                     }
                     // Path stops at the In-bearing prop's property-
                     // name subtree; outer Query lives at that level.
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
@@ -745,6 +799,8 @@ impl<'a> DriveDocumentSumQuery<'a> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        // No range total through a ranked level (see the helper).
+        self.refuse_a_range_sum_total()?;
         // The terminator property (last in the index) carries the
         // ASOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -813,7 +869,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 ))?;
             match (&carrier, clause.operator) {
                 (Carrier::Pending, WhereOperator::Equal) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     base_path.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -821,15 +877,16 @@ impl<'a> DriveDocumentSumQuery<'a> {
                     )?);
                 }
                 (Carrier::Pending, WhereOperator::In) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::In(clause.clone());
                 }
                 (Carrier::Pending, op) if is_range_operator(op) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::Range(clause.clone());
                 }
                 (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
-                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension
+                        .push(self.index.level_key_for_property(&prop.name).into_bytes());
                     subquery_path_extension.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -854,7 +911,11 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 }
             }
         }
-        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+        subquery_path_extension.push(
+            self.index
+                .level_key_for_property(terminator_prop_name)
+                .into_bytes(),
+        );
 
         let mut outer_query = Query::new_with_direction(left_to_right);
         match carrier {
@@ -939,6 +1000,8 @@ impl<'a> DriveDocumentSumQuery<'a> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        // No range total through a ranked level (see the helper).
+        self.refuse_a_range_sum_total()?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "carrier_aggregate_count_and_sum_path_query: index must declare BOTH \
@@ -1001,7 +1064,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 ))?;
             match (&carrier, clause.operator) {
                 (Carrier::Pending, WhereOperator::Equal) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     base_path.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -1009,15 +1072,16 @@ impl<'a> DriveDocumentSumQuery<'a> {
                     )?);
                 }
                 (Carrier::Pending, WhereOperator::In) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::In(clause.clone());
                 }
                 (Carrier::Pending, op) if is_range_operator(op) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::Range(clause.clone());
                 }
                 (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
-                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension
+                        .push(self.index.level_key_for_property(&prop.name).into_bytes());
                     subquery_path_extension.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -1043,7 +1107,11 @@ impl<'a> DriveDocumentSumQuery<'a> {
                 }
             }
         }
-        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+        subquery_path_extension.push(
+            self.index
+                .level_key_for_property(terminator_prop_name)
+                .into_bytes(),
+        );
 
         let mut outer_query = Query::new_with_direction(left_to_right);
         match carrier {
@@ -1107,6 +1175,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
@@ -1117,6 +1186,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
@@ -1145,6 +1215,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         use crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
@@ -1155,6 +1226,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
@@ -1183,11 +1255,13 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// Used by the SDK verifier-side rebuild via
     /// `GroveDb::verify_aggregate_sum_query_per_key` (grovedb PR #670
     /// head `e98bab5f`).
+    #[allow(clippy::too_many_arguments)]
     pub fn carrier_aggregate_sum_path_query_static(
         contract: &DataContract,
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
@@ -1200,6 +1274,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

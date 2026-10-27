@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -12,12 +11,13 @@ use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
+use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddressesWithMetadata;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
 use super::*;
 
@@ -100,8 +100,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (address_infos, new_balance, proof_height) = identity
-            .transfer_credits_to_addresses(
+        let (address_infos, mut new_balance, metadata) = identity
+            .transfer_credits_to_addresses_with_metadata(
                 &self.sdk,
                 recipient_addresses,
                 None, // signing_transfer_key_to_use
@@ -110,11 +110,19 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to transfer credits to addresses: {}",
-                    e
-                ))
+                // A balance refusal stays typed (FFI code 39) so the host can
+                // word it; a structured key-unavailable signer failure is
+                // preserved so the FFI boundary can still restore code 31;
+                // only other failures get stringified into `InvalidIdentityData`.
+                crate::error::promote_identity_insufficient_balance_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to transfer credits to addresses: {}",
+                        e
+                    ))
+                })
             })?;
+
+        let proof_height = metadata.height;
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -127,15 +135,11 @@ impl IdentityWallet {
                 .identity_manager
                 .managed_identity_mut(identity_id)
             {
-                managed.identity.set_balance(new_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after \
-                         transfer_to_addresses (external signer)"
-                    );
-                }
+                new_balance = managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

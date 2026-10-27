@@ -1,8 +1,9 @@
 use dash_sdk::dpp::ProtocolError;
+use dash_sdk::platform::encrypted_for::EncryptedForError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_dpp2::error::WasmDppError;
+use wasm_dpp2::error::{consensus_error_code, WasmDppError};
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -45,6 +46,18 @@ pub enum WasmSdkErrorKind {
     /// (vs `Generic`) to detect "the API exists but execution waits
     /// on a follow-up" without parsing the message.
     NotImplemented,
+    /// An `encryptedFor` property did not decrypt: the keys are not the ones it was encrypted
+    /// with, or the bytes are corrupt.
+    DecryptionFailed,
+    /// No key of an identity can serve as the recipient or sender key of an `encryptedFor`
+    /// property: none meets the schema's `keyRequirements`, or the private key given is not
+    /// one of the identity's keys.
+    EncryptionKeyNotFound,
+    /// The query uses a feature that not every node of the network serves yet, so the SDK
+    /// did not send it. It works once the network has activated the protocol version that
+    /// added the feature; retrying sooner does not help, unless the error is retriable: the
+    /// SDK could not learn the network's version, which may serve the query already.
+    ProtocolVersionNotActive,
 }
 
 /// Structured error surfaced to JS consumers
@@ -54,7 +67,9 @@ pub enum WasmSdkErrorKind {
 pub struct WasmSdkError {
     kind: WasmSdkErrorKind,
     message: String,
-    /// Optional numeric code for some errors (e.g., broadcast error code).
+    /// The consensus error code (`10422`, `40132`, ...) when the error is a consensus error,
+    /// whether Platform refused the transition or the SDK caught it before broadcast; `-1`
+    /// otherwise.
     code: i32,
     /// Indicates if the operation can be retried safely.
     is_retriable: bool,
@@ -74,6 +89,19 @@ impl WasmSdkError {
             message: message.into(),
             code: code.unwrap_or(-1),
             is_retriable,
+        }
+    }
+
+    /// Converts `err` as `?` would, keeping its kind, consensus code and whether it can be
+    /// retried, under the message `"{context}: {err}"`.
+    pub(crate) fn with_context<E>(context: &str, err: E) -> Self
+    where
+        E: std::fmt::Display + Into<Self>,
+    {
+        let message = format!("{context}: {err}");
+        Self {
+            message,
+            ..err.into()
         }
     }
 
@@ -121,10 +149,21 @@ impl WasmSdkError {
     }
 }
 
+impl From<dash_sdk::dash_platform_queries::Error> for WasmSdkError {
+    fn from(err: dash_sdk::dash_platform_queries::Error) -> Self {
+        // Route through the SDK's own conversion so the transport-free query
+        // core's errors keep the exact mapping they had when they were
+        // `SdkError` variants.
+        SdkError::from(err).into()
+    }
+}
+
 impl From<SdkError> for WasmSdkError {
     fn from(err: SdkError) -> Self {
         use SdkError::*;
-        let retriable = err.can_retry();
+        // A trusted source outage is transient for the app, independently
+        // of the SDK's node-health retryability, even after retry exhaustion.
+        let retriable = err.can_retry() || err.is_quorum_source_unavailable();
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
             Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
@@ -135,7 +174,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
+            Protocol(e) => Self::new(
+                WasmSdkErrorKind::Protocol,
+                e.to_string(),
+                consensus_error_code(&e),
+                retriable,
+            ),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
             // Deterministic for a given transition family: retrying another
             // node cannot upgrade a snapshot into execution evidence.
@@ -239,12 +283,43 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            EncryptedFor(e) => e.into(),
+            error @ ProtocolVersionNotActive { .. } => {
+                // The SDK's message names what is missing; a failed query for the network's
+                // version is its source, and JS sees only the message. The refusal holds
+                // until the network activates the version, unless that query failed for a
+                // reason that can pass: then the network may serve the request already, and
+                // the app may retry.
+                let retriable = error.is_transient_protocol_version_refusal();
+                let message = match std::error::Error::source(&error) {
+                    Some(cause) => format!("{error}: {cause}"),
+                    None => error.to_string(),
+                };
+                Self::new(
+                    WasmSdkErrorKind::ProtocolVersionNotActive,
+                    message,
+                    None,
+                    retriable,
+                )
+            }
         }
+    }
+}
+
+impl From<EncryptedForError> for WasmSdkError {
+    fn from(err: EncryptedForError) -> Self {
+        let kind = match err {
+            EncryptedForError::DecryptionFailed => WasmSdkErrorKind::DecryptionFailed,
+            EncryptedForError::NoSuitableKey { .. } => WasmSdkErrorKind::EncryptionKeyNotFound,
+            _ => WasmSdkErrorKind::InvalidArgument,
+        };
+        Self::new(kind, err.to_string(), None, false)
     }
 }
 impl From<ProtocolError> for WasmSdkError {
     fn from(err: ProtocolError) -> Self {
-        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), None, false)
+        let code = consensus_error_code(&err);
+        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), code, false)
     }
 }
 
@@ -270,7 +345,12 @@ impl From<WasmDppError> for WasmSdkError {
             WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
             WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
         };
-        Self::new(kind, err.to_string(), None, false)
+        Self {
+            kind,
+            message: err.to_string(),
+            code: err.code(),
+            is_retriable: false,
+        }
     }
 }
 
@@ -317,6 +397,9 @@ impl WasmSdkError {
             K::SerializationError => "SerializationError",
             K::NotFound => "NotFound",
             K::NotImplemented => "NotImplemented",
+            K::DecryptionFailed => "DecryptionFailed",
+            K::EncryptionKeyNotFound => "EncryptionKeyNotFound",
+            K::ProtocolVersionNotActive => "ProtocolVersionNotActive",
         }
         .to_string()
     }
@@ -327,7 +410,8 @@ impl WasmSdkError {
         self.message.clone()
     }
 
-    /// Optional numeric code. -1 means absent/not applicable
+    /// The consensus error code when the error is a consensus error (compare it with
+    /// `DocumentPropertyConstraintErrorCode` and the other code enums); -1 otherwise.
     #[wasm_bindgen(getter)]
     pub fn code(&self) -> i32 {
         self.code
@@ -337,5 +421,340 @@ impl WasmSdkError {
     #[wasm_bindgen(getter = "isRetriable")]
     pub fn is_retriable(&self) -> bool {
         self.is_retriable
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
+    use dapi_grpc::tonic::{Code, Status};
+    use dash_sdk::dpp::consensus::basic::document::{
+        DocumentPropertyConstraintViolatedError, PropertyConstraintViolation,
+    };
+    use dash_sdk::dpp::consensus::state::contract_moderation::ContractUserBannedError;
+    use dash_sdk::dpp::consensus::ConsensusError;
+    use dash_sdk::dpp::data_contract::errors::DataContractError;
+    use dash_sdk::dpp::platform_value::Identifier;
+    use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::ContextProvider;
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::DapiClientError;
+
+    fn property_constraint_violated() -> ConsensusError {
+        DocumentPropertyConstraintViolatedError::new(
+            "post".to_string(),
+            "rule 0".to_string(),
+            PropertyConstraintViolation::NotMet,
+        )
+        .into()
+    }
+
+    fn contract_user_banned() -> ConsensusError {
+        ContractUserBannedError::new(Identifier::new([1; 32]), Identifier::new([2; 32])).into()
+    }
+
+    /// What the SDK makes of DAPI refusing a transition at CheckTx: a gRPC status carrying the
+    /// serialized consensus error in its metadata.
+    fn refused_by_platform(consensus_error: &ConsensusError) -> SdkError {
+        let bytes = consensus_error
+            .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+            .expect("serialize consensus error");
+        let mut metadata = MetadataMap::new();
+        metadata.insert_bin(
+            "dash-serialized-consensus-error-bin",
+            MetadataValue::from_bytes(&bytes),
+        );
+        let status =
+            Status::with_metadata(Code::InvalidArgument, consensus_error.to_string(), metadata);
+        SdkError::from(DapiClientError::Transport(TransportError::Grpc(status)))
+    }
+
+    /// The quorum service that vouches for quorum keys gave no answer. No node
+    /// is banned for that, but the app should try again: it is transient.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_an_unavailable_quorum_source_as_retriable() {
+        let source = SdkError::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "current quorums: HTTP 503".to_string(),
+            ),
+        );
+        assert!(!source.can_retry(), "source failures must not ban nodes");
+        let message = format!("Failed to fetch identity: {source}");
+        let error = WasmSdkError::with_context("Failed to fetch identity", source);
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
+        assert!(error.is_retriable());
+        assert_eq!(error.message(), message);
+    }
+
+    /// Retry exhaustion must preserve application retryability without
+    /// attributing the trusted source's failure to a responding node.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_retry_wrapped_unavailable_quorum_source_as_retriable() {
+        for depth in 1..=2 {
+            let mut source = SdkError::ContextProviderError(
+                dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                    "current quorums: HTTP 503".to_string(),
+                ),
+            );
+            for _ in 0..depth {
+                source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+            }
+            assert!(!source.can_retry(), "source failures must not ban nodes");
+            let message = format!("Failed to fetch identity: {source}");
+            let error = WasmSdkError::with_context("Failed to fetch identity", source);
+
+            assert_eq!(error.kind(), WasmSdkErrorKind::DapiClientError);
+            assert!(error.is_retriable(), "retry envelope depth {depth}");
+            assert_eq!(error.message(), message);
+        }
+    }
+
+    /// Only typed quorum-source failures override retry exhaustion.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_keep_unrelated_retry_exhaustion_non_retriable() {
+        let source =
+            SdkError::NoAvailableAddressesToRetry(Box::new(SdkError::NoAvailableAddressesToRetry(
+                Box::new(SdkError::Generic("quorum source unavailable".to_string())),
+            )));
+        let message = format!("Failed to fetch identity: {source}");
+        let error = WasmSdkError::with_context("Failed to fetch identity", source);
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::DapiClientError);
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), message);
+    }
+
+    /// What the SDK's retry loop ends a document request with when its node answered at an
+    /// older protocol version than the SDK's and then no node was left to ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn every_node_answered_at_an_older_protocol_version() -> SdkError {
+        use dash_sdk::error::StaleNodeError;
+        use rs_dapi_client::{Address, AddressList, ExecutionError, ExecutionResponse};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let node: Address = "http://127.0.0.1:1".parse().expect("address");
+        let mut address_list = AddressList::new();
+        address_list.add(node.clone());
+        let settings = dash_sdk::RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let asked = AtomicBool::new(false);
+        let error = dash_sdk::sync::retry(&address_list, settings, |_settings| {
+            let first = !asked.swap(true, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<ExecutionResponse<()>, _>(if first {
+                    ExecutionError {
+                        inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        })
+        .await
+        .expect_err("no node answers at the SDK's protocol version");
+        error.inner
+    }
+
+    /// Retrying such a request on other nodes does not help: the SDK's protocol version has to
+    /// match its network's. JavaScript gets the configuration error, not a DAPI client error.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_report_a_request_every_node_answered_at_an_older_protocol_version_as_config() {
+        let error = WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await);
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::Config,
+            "{}",
+            error.message()
+        );
+        assert!(!error.is_retriable());
+    }
+
+    #[test]
+    fn should_carry_the_code_of_a_consensus_error_platform_refused_the_transition_with() {
+        let error = WasmSdkError::from(refused_by_platform(&property_constraint_violated()));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Protocol);
+        assert_eq!(error.code(), 10422);
+    }
+
+    #[test]
+    fn should_carry_the_consensus_code_under_the_message_of_the_operation_that_failed() {
+        let error = WasmSdkError::with_context(
+            "Failed to mint tokens",
+            refused_by_platform(&contract_user_banned()),
+        );
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Protocol);
+        assert_eq!(error.code(), 41107);
+        assert!(!error.is_retriable());
+        assert_eq!(
+            error.message(),
+            format!(
+                "Failed to mint tokens: Protocol error: {}",
+                contract_user_banned()
+            )
+        );
+    }
+
+    #[test]
+    fn should_carry_the_code_of_a_consensus_error_the_sdk_caught_before_broadcast() {
+        let error = WasmSdkError::from(ProtocolError::from(property_constraint_violated()));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Protocol);
+        assert_eq!(error.code(), 10422);
+    }
+
+    #[test]
+    fn should_carry_the_code_of_a_consensus_error_through_a_wasm_dpp_error() {
+        let dpp_error = WasmDppError::from(ProtocolError::from(contract_user_banned()));
+        let error = WasmSdkError::from(dpp_error);
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Protocol);
+        assert_eq!(error.code(), 41107);
+    }
+
+    #[test]
+    fn should_carry_the_code_platform_refuses_a_contract_error_with() {
+        let contract_error = DataContractError::InvalidContractStructure("malformed".to_string());
+        let error = WasmSdkError::from(WasmDppError::from(ProtocolError::from(contract_error)));
+
+        assert_eq!(error.code(), 10231);
+    }
+
+    #[test]
+    fn should_report_no_code_for_a_protocol_error_that_is_not_a_consensus_error() {
+        let error = WasmSdkError::from(ProtocolError::Generic("not consensus".to_string()));
+
+        assert_eq!(error.code(), -1);
+    }
+
+    /// A query the network cannot serve yet is refused before it is sent: JS can tell it
+    /// from other failures by its kind, and retrying it sooner does not help, unless the
+    /// query for the network's version failed: then the network may serve it already.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_the_network_cannot_serve_yet_by_its_kind() {
+        for pinned in [false, true] {
+            let refused = SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 13,
+                pinned,
+                cause: None,
+            };
+            let message = refused.to_string();
+            let error = WasmSdkError::from(refused);
+            assert_eq!(error.kind(), WasmSdkErrorKind::ProtocolVersionNotActive);
+            assert_eq!(error.name(), "ProtocolVersionNotActive");
+            assert!(!error.is_retriable(), "pinned {pinned}");
+            assert_eq!(error.message(), message);
+        }
+
+        let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            pinned: false,
+            cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
+        });
+        assert_eq!(
+            unconfirmed.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(unconfirmed.is_retriable());
+        assert!(
+            unconfirmed.message().contains("all nodes refused"),
+            "the reason the version is unknown reaches JS: {}",
+            unconfirmed.message()
+        );
+
+        let refused_for_quorum_key = |error| {
+            WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 0,
+                pinned: false,
+                cause: Some(Box::new(SdkError::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error,
+                    },
+                ))),
+            })
+        };
+
+        // A non-trusted wasm SDK can never verify the network's version: its context
+        // provider gives no quorum keys. Retrying does not help.
+        let non_trusted = crate::context_provider::WasmContext {}
+            .get_quorum_public_key(106, [2; 32], 1)
+            .expect_err("a non-trusted context gives no quorum keys");
+        let unverifiable = refused_for_quorum_key(non_trusted);
+        assert_eq!(
+            unverifiable.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(!unverifiable.is_retriable());
+        assert!(unverifiable.message().contains("Non-trusted mode"));
+
+        // A trusted context whose quorum service did not answer may get the key later.
+        let unreachable = refused_for_quorum_key(dash_sdk::error::ContextProviderError::Generic(
+            "Failed to find quorum: HTTP 503".to_string(),
+        ));
+        assert!(unreachable.is_retriable());
+    }
+
+    /// A node behind a protocol upgrade the network has proven answered a query that needs
+    /// it: another node serves the query, so JS may retry it.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_node_behind_a_protocol_upgrade_as_a_retriable_stale_node() {
+        let error = WasmSdkError::from(SdkError::StaleNode(
+            dash_sdk::error::StaleNodeError::BehindProtocolUpgrade {
+                required: 14,
+                signed: 13,
+            },
+        ));
+        assert_eq!(error.kind(), WasmSdkErrorKind::StaleNode);
+        assert!(error.is_retriable());
+    }
+
+    #[test]
+    fn should_keep_the_broadcast_error_code() {
+        let error = WasmSdkError::with_context(
+            "Failed to broadcast",
+            SdkError::from(StateTransitionBroadcastError {
+                code: 40132,
+                message: "fee agreement not set".to_string(),
+                cause: None,
+            }),
+        );
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::StateTransitionBroadcastError
+        );
+        assert_eq!(error.code(), 40132);
     }
 }

@@ -30,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
@@ -127,7 +129,8 @@ private const val MEMO_BYTE_LIMIT = 32
  *
  * The shielded flows settle in credits (1 DASH = 1e11) and block through a
  * ~30s Halo 2 proof; their consensus-pinned fee comes from
- * [ShieldedProver.estimateFee]. A `ShieldedSpendUnconfirmed` outcome is
+ * `PlatformWalletManager.estimateShieldedFee` (computed at the manager's
+ * network-tracked platform version). A `ShieldedSpendUnconfirmed` outcome is
  * surfaced through the SUCCESS path ("may have gone through — do not
  * retry"), mirroring iOS SendViewModel.swift:790.
  */
@@ -288,24 +291,44 @@ fun SendTransactionScreen(
             }
         }
     }
-    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow) {
-        value = when (flow) {
+    // Re-key on the published protocol version too: the SDK learns the
+    // network's version on a background refresh after the manager exists,
+    // so an estimate produced before the ratchet completed was computed at
+    // the seed version (← iOS SendTransactionView re-resolves on
+    // `platformState.platformProtocolVersion` the same way).
+    val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+    // ...and re-read on every resume, because the flow alone can go stale:
+    // that refresh republishes the unchanged seed when its proven fetch
+    // fails, and the SDK independently ratchets its version from ANY
+    // proof-verified query's response metadata without publishing at all.
+    // The estimate is a pure handle lookup, so re-reading is free.
+    var feeReadEpoch by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        feeReadEpoch++
+        onPauseOrDispose {}
+    }
+    val shieldedFeeEstimate by produceState<Long?>(
+        initialValue = null,
+        flow,
+        manager,
+        protocolVersion,
+        feeReadEpoch,
+    ) {
+        val activeManager = manager
+        val kind = when (flow) {
             // Type 15 Shield reserves the same compute_minimum_shielded_fee(2)
             // base as a shielded→shielded transfer (← iOS estimateFee: .transfer
             // for .platformToShielded), so they share the TransferOrShield kind.
             SendFlow.SHIELDED_TO_SHIELDED, SendFlow.PLATFORM_TO_SHIELDED ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
-                }.getOrNull()
-            SendFlow.SHIELDED_TO_PLATFORM ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Unshield, 2)
-                }.getOrNull()
-            SendFlow.SHIELDED_TO_CORE ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Withdrawal, 2)
-                }.getOrNull()
+                ShieldedProver.FeeKind.TransferOrShield
+            SendFlow.SHIELDED_TO_PLATFORM -> ShieldedProver.FeeKind.Unshield
+            SendFlow.SHIELDED_TO_CORE -> ShieldedProver.FeeKind.Withdrawal
             SendFlow.CORE_TO_CORE, null -> null
+        }
+        value = if (activeManager != null && kind != null) {
+            runCatching { activeManager.estimateShieldedFee(kind, 2) }.getOrNull()
+        } else {
+            null
         }
     }
 

@@ -1,5 +1,10 @@
 mod v0;
+mod v1;
 
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateRead, StoredSystemValues,
+};
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use std::collections::{BTreeMap, BTreeSet};
 
 use derive_more::From;
@@ -10,6 +15,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use dpp::ProtocolError;
 pub use v0::*;
+pub use v1::*;
 
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use dpp::version::PlatformVersion;
@@ -113,6 +119,18 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
+    fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => &v0.removed_identifier_fields,
+        }
+    }
+
+    fn stored_changed_values(&self) -> &BTreeMap<String, Value> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => &v0.stored_changed_values,
+        }
+    }
+
     fn data_owned(self) -> BTreeMap<String, Value> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => v0.data,
@@ -122,6 +140,63 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
     fn creator_id(&self) -> Option<Identifier> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => v0.creator_id,
+        }
+    }
+
+    fn moderated_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_at,
+        }
+    }
+
+    fn moderated_by(&self) -> Option<Identifier> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_by,
+        }
+    }
+
+    fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                v0.moderated_at = Some(moderated_at);
+                v0.moderated_by = Some(moderator);
+            }
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::aggregates_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => PropertyConstraintReads::set_aggregates(
+                &mut v0.property_constraint_reads,
+                aggregates,
+            ),
+        }
+    }
+
+    fn stored_system_values(&self) -> Option<&StoredSystemValues> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::stored_system_values_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_stored_system_values(&mut self, values: StoredSystemValues) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::set_stored_system_values(
+                    &mut v0.property_constraint_reads,
+                    values,
+                )
+            }
         }
     }
 }
@@ -172,7 +247,25 @@ impl DocumentFromReplaceTransitionAction for Document {
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition_action {
             DocumentReplaceTransitionAction::V0(v0) => {
-                Self::try_from_replace_transition_action_v0(v0, owner_id, platform_version)
+                match platform_version
+                    .drive
+                    .methods
+                    .state_transitions
+                    .document_from_action
+                    .document_from_replace_transition_action
+                {
+                    0 => {
+                        Self::try_from_replace_transition_action_v0(v0, owner_id, platform_version)
+                    }
+                    1 => {
+                        Self::try_from_replace_transition_action_v1(v0, owner_id, platform_version)
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_replace_transition_action".to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    }),
+                }
             }
         }
     }
@@ -184,7 +277,29 @@ impl DocumentFromReplaceTransitionAction for Document {
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition_action {
             DocumentReplaceTransitionAction::V0(v0) => {
-                Self::try_from_owned_replace_transition_action_v0(v0, owner_id, platform_version)
+                match platform_version
+                    .drive
+                    .methods
+                    .state_transitions
+                    .document_from_action
+                    .document_from_replace_transition_action
+                {
+                    0 => Self::try_from_owned_replace_transition_action_v0(
+                        v0,
+                        owner_id,
+                        platform_version,
+                    ),
+                    1 => Self::try_from_owned_replace_transition_action_v1(
+                        v0,
+                        owner_id,
+                        platform_version,
+                    ),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_owned_replace_transition_action".to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    }),
+                }
             }
         }
     }

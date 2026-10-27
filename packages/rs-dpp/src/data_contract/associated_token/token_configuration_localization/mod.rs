@@ -3,7 +3,7 @@ use crate::data_contract::associated_token::token_configuration_localization::v0
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,19 @@ pub mod v0;
 /// This structure is used to map language codes to localized token names in a flexible,
 /// forward-compatible manner.
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    From,
+    DecodeUntrusted,
+)]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum TokenConfigurationLocalization {

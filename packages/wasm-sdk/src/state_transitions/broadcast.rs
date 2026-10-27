@@ -6,14 +6,134 @@
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::StateTransition;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast::{
+    require_execution_proved, BroadcastStateTransition, WaitForOutcome,
+};
+use dash_sdk::platform::ContextProvider;
+use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::state_transitions::proof_result::{
     convert_proof_result, StateTransitionProofResultTypeJs,
 };
 use wasm_dpp2::StateTransitionWasm;
+
+fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Identifier> {
+    match state_transition {
+        StateTransition::Batch(batch_transition) => batch_transition
+            .transitions_iter()
+            .map(|transition| transition.data_contract_id())
+            .collect(),
+        // A ban's proof covers every list the contract keeps, which the verifier reads from
+        // the contract. A restore's verifier decodes the document under the contract's document
+        // type, and a field change's reads the changed document back under it. A deletion's
+        // reads from the contract whether the type keeps removal records: one that keeps none
+        // is proved by the document's absence, read under the type. The other moderations
+        // prove the one list entry they edit, and a team action's proposal or approval the
+        // signer's approval of the action, read by a query rebuilt from the transition alone:
+        // they need none.
+        StateTransition::ContractUserModeration(moderation) => match moderation.action() {
+            ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                BTreeSet::from([moderation.data_contract_id()])
+            }
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Suspend { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::Warn { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => BTreeSet::new(),
+        },
+        _ => BTreeSet::new(),
+    }
+}
+
+/// The contract whose copy must be fetched again before the proof of `state_transition` is
+/// verified. The proof of a fee claim covers the balance of every identity the pot pays, and
+/// the verifier reads who they are from the contract. The moderation team can change by a
+/// contract update, so a copy the provider holds may name another team than the node proved.
+fn contract_id_to_refresh(state_transition: &StateTransition) -> Option<Identifier> {
+    match state_transition {
+        StateTransition::ContractFeeClaim(claim) => Some(claim.data_contract_id()),
+        _ => None,
+    }
+}
+
+impl WasmSdk {
+    /// Whether the context provider can already supply this contract, either
+    /// from its cache or from a definition compiled into the SDK.
+    fn can_resolve_contract(&self, contract_id: Identifier) -> bool {
+        self.trusted_context()
+            .and_then(|context| {
+                context
+                    // `WasmSdk::version` is the exported protocol number; the
+                    // platform version comes from the inner SDK.
+                    .get_data_contract(&contract_id, self.as_ref().version())
+                    .ok()
+                    .flatten()
+            })
+            .is_some()
+    }
+}
+
+impl WasmSdk {
+    async fn prepare_state_transition_context(
+        &self,
+        state_transition: &StateTransition,
+    ) -> Result<(), WasmSdkError> {
+        if let Some(context) = self.trusted_context() {
+            if let Err(error) = context.refresh_quorums().await {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to refresh trusted quorum cache before proof verification; using cached keys"
+                );
+            }
+        }
+
+        if let Some(contract_id) = contract_id_to_refresh(state_transition) {
+            // Keep a resolvable contract when refresh fails: a separate wait may follow
+            // a broadcast the network already accepted. Combined calls prepare this
+            // context before broadcasting. Verification still checks the result against
+            // the available contract, which may be stale if the team changed.
+            if let Err(error) = self.refresh_contract(contract_id).await {
+                if !self.can_resolve_contract(contract_id) {
+                    return Err(error);
+                }
+                tracing::warn!(
+                    contract_id = %contract_id,
+                    "Failed to fetch the contract of a fee claim again; verifying against the cached copy"
+                );
+            }
+        }
+
+        for contract_id in referenced_contract_ids(state_transition) {
+            // A contract the provider already resolves is left alone: fetching
+            // it would let a node-supplied copy shadow a cached or compiled-in
+            // definition, which decides verification when proofs are disabled.
+            // Which system contracts are compiled in depends on cargo features
+            // — the withdrawals contract is not among the wasm defaults — so
+            // this asks the provider rather than assuming.
+            if self.can_resolve_contract(contract_id) {
+                continue;
+            }
+
+            // Only an unresolvable contract reaches the network. Proof verification
+            // needs a definition, so a contract that cannot be resolved or fetched
+            // stays fatal, including for a separate wait after submission.
+            self.refresh_contract(contract_id).await?;
+        }
+
+        Ok(())
+    }
+}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -36,7 +156,7 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
         Ok(())
     }
@@ -49,10 +169,13 @@ impl WasmSdk {
     ///
     /// Note: This differs from `waitForStateTransitionResult` which takes a hash string.
     /// This method takes the full state transition object and performs proof verification.
+    /// It succeeds only when the proof establishes execution of this specific transition.
+    /// An authenticated affected-state snapshot returns `ExecutionNotProved`; use
+    /// `waitForAffectedState` when a snapshot is the intended result.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "waitForResponse")]
     pub async fn wait_for_response(
         &self,
@@ -61,27 +184,34 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        // Preserve the error kind: callers distinguish `ExecutionNotProved`,
+        // which reports that this transition family has no execution proof
+        // rather than that anything went wrong, from a genuine failure.
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result.
     ///
-    /// This method broadcasts the transition and waits for confirmation from the network.
-    /// Returns once the transition has been processed or fails.
-    /// This is equivalent to calling `broadcastStateTransition` followed by
-    /// `waitForResponse`.
+    /// This method prepares proof context before broadcasting, then waits for
+    /// proof that this specific transition executed. `ExecutionNotProved` means
+    /// the accepted broadcast was followed by an authenticated affected-state
+    /// snapshot; it establishes neither execution nor failure of this transition.
+    /// To wait for an authenticated snapshot, call `waitForAffectedState` on
+    /// the submitted transition without broadcasting it again; the new wait
+    /// may observe a later block.
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "broadcastAndWait")]
     pub async fn broadcast_and_wait(
         &self,
@@ -90,13 +220,21 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Waits for a state transition response, accepting proofs that only
@@ -105,10 +243,13 @@ impl WasmSdk {
     /// `waitForResponse` is strict: it fails for the transition families
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
-    /// address funds movements, shields, no-history token operations). This
-    /// method accepts those outcomes instead. The result is a verified,
-    /// height-pinned snapshot of the affected state — NOT evidence that this
-    /// specific transition executed.
+    /// address funds movements, shields, no-history token operations, key
+    /// limits updates, contract updates, contract moderation and fee claims,
+    /// and creates and deletes of indexOnly documents). This method accepts
+    /// those outcomes, as well as execution-proved outcomes. A snapshot
+    /// authenticates state at the proof's block; it does not prove this specific
+    /// transition executed. The generic JavaScript result does not expose the
+    /// proof height.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
@@ -121,15 +262,18 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .wait_for_affected_state::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
             })?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result, accepting
@@ -147,15 +291,440 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                self.as_ref(),
-                put_settings,
-            )
+        st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
+    }
+}
+
+/// Hands the owner's credit balance the verified outcome carried (from
+/// protocol version 14, for owned fee-paying transitions) to JavaScript as an
+/// `ownerBalance` `BigInt` property on the verified result; absent otherwise.
+fn with_owner_balance(
+    result: StateTransitionProofResultTypeJs,
+    owner_balance: Option<u64>,
+) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+    if let Some(owner_balance) = owner_balance {
+        js_sys::Reflect::set(
+            result.as_ref(),
+            &JsValue::from_str("ownerBalance"),
+            &js_sys::BigInt::from(owner_balance).into(),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set ownerBalance".to_string()))?;
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use crate::sdk::WasmSdkBuilder;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+    use dash_sdk::dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dash_sdk::dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
+    use dash_sdk::dpp::platform_value::BinaryData;
+    use dash_sdk::dpp::prelude::DataContract;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::Sdk;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return stream,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept quorum request: {}", error),
+            }
+        }
+    }
+
+    fn rotated_quorum_key() -> [u8; 48] {
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(b"rotated-quorum-fixture").public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
+
+    fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
+        listener
+            .set_nonblocking(true)
+            .expect("make mock endpoint bounded");
+        let address = listener.local_addr().expect("read mock endpoint address");
+
+        let handle = thread::spawn(move || {
+            let current = serde_json::json!({
+                "success": true,
+                "data": [{
+                    "quorum_hash": hex::encode([0x88; 32]),
+                    "key": hex::encode(rotated_quorum_key()),
+                    "height": 1,
+                    "valid_members_count": 3
+                }]
+            })
+            .to_string();
+            let previous = serde_json::json!({
+                "success": true,
+                "data": {
+                    "height": 1,
+                    "quorums": []
+                }
+            })
+            .to_string();
+
+            for (expected_path, body) in [("/quorums", current), ("/previous", previous)] {
+                let mut stream = accept_before(&listener, Instant::now() + Duration::from_secs(5));
+                let mut reader =
+                    BufReader::new(stream.try_clone().expect("clone quorum request stream"));
+                let mut request_line = String::new();
+                reader
+                    .read_line(&mut request_line)
+                    .expect("read quorum request line");
+                assert_eq!(request_line.split_whitespace().nth(1), Some(expected_path));
+
+                loop {
+                    let mut header = String::new();
+                    reader
+                        .read_line(&mut header)
+                        .expect("read quorum request header");
+                    if header == "\r\n" || header.is_empty() {
+                        break;
+                    }
+                }
+
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write quorum response");
+                stream.flush().expect("flush quorum response");
+            }
+        });
+
+        (format!("http://{}", address), handle)
+    }
+
+    fn delete_transition(contract_id: Identifier, nonce: u64) -> DocumentTransition {
+        DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::new([nonce as u8; 32]),
+                identity_contract_nonce: nonce,
+                document_type_name: "note".to_string(),
+                data_contract_id: contract_id,
+            }),
+        }))
+    }
+
+    #[test]
+    fn should_collect_each_referenced_contract_of_a_document_batch_once_in_order() {
+        let first_contract_id = Identifier::new([0x11; 32]);
+        let second_contract_id = Identifier::new([0x22; 32]);
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![
+                delete_transition(first_contract_id, 1),
+                delete_transition(second_contract_id, 2),
+                delete_transition(first_contract_id, 3),
+            ],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        assert_eq!(
+            referenced_contract_ids(&state_transition)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![first_contract_id, second_contract_id],
+        );
+    }
+
+    #[test]
+    fn should_prepare_the_moderated_contract_of_each_moderation_whose_verifier_reads_it() {
+        use dash_sdk::dpp::platform_value::Value;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+        use std::collections::BTreeMap;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let identity_id = Identifier::new([0x55; 32]);
+        let document_id = Identifier::new([0x66; 32]);
+        let moderation = |action| {
+            StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+                ContractUserModerationTransitionV0 {
+                    data_contract_id: contract_id,
+                    action,
+                    ..Default::default()
+                },
+            ))
+        };
+
+        // A ban's proof covers every barring list the contract keeps; a restore decodes the
+        // document under its type; a field change reads the document back under it; a deletion
+        // of a type that keeps no removal records is proved by the document's absence under it.
+        for action in [
+            ContractUserModerationAction::Ban {
+                identity_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name: "post".to_string(),
+                document: BinaryData::new(vec![0x77; 8]),
+            },
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "post".to_string(),
+                document_id,
+                fields: BTreeMap::from([("hidden".to_string(), Value::Bool(true))]),
+                reason: Default::default(),
+            },
+        ] {
+            assert_eq!(
+                referenced_contract_ids(&moderation(action.clone()))
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                vec![contract_id],
+                "{action}",
+            );
+        }
+
+        // The other moderations prove the one list entry they edit, and a team action's proposal
+        // or approval the signer's approval of the action, contract unread.
+        for action in [
+            ContractUserModerationAction::Unban { identity_id },
+            ContractUserModerationAction::Suspend {
+                identity_id,
+                until: 1_000,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::Unsuspend { identity_id },
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ClearWarnings { identity_id },
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: document_id,
+            },
+        ] {
+            assert!(
+                referenced_contract_ids(&moderation(action.clone())).is_empty(),
+                "{action}",
+            );
+        }
+    }
+
+    #[test]
+    fn should_refresh_the_contract_of_a_fee_claim_only() {
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::v0::ContractFeeClaimTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+
+        let contract_id = Identifier::new([0x44; 32]);
+        let claim = StateTransition::ContractFeeClaim(ContractFeeClaimTransition::V0(
+            ContractFeeClaimTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&claim), Some(contract_id));
+        // The refresh resolves the contract, so it is not fetched a second time.
+        assert!(referenced_contract_ids(&claim).is_empty());
+
+        // The lists a ban's proof covers never change, so a cached copy of its contract will do.
+        let ban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+            ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(contract_id_to_refresh(&ban), None);
+    }
+
+    #[test]
+    fn should_not_prepare_contracts_for_non_batch_transition() {
+        let state_transition = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0::default(),
+        ));
+
+        assert!(referenced_contract_ids(&state_transition).is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refresh_rotated_quorums_through_proof_preparation() {
+        let (base_url, server) = spawn_rotated_quorum_endpoint();
+        let context = WasmTrustedContext::for_testing_with_url(vec![], base_url);
+        let sdk = WasmSdkBuilder::new_local()
+            .with_trusted_context(&context)
+            .build()
+            .expect("build local SDK with trusted context");
+        let state_transition = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0::default(),
+        ));
+
+        assert!(context.get_quorum_public_key(1, [0x88; 32], 1).is_err());
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("proof preparation must refresh quorums");
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x88; 32], 1)
+                .expect("rotated quorum must be available after preparation"),
+            rotated_quorum_key()
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// Build the fixture at the SDK's own platform version. A contract fetched
+    /// through the mock is deserialized at that version, and document types
+    /// differ between versions, so a fixture pinned to `latest` would never
+    /// compare equal to the round-tripped one.
+    fn custom_contract(
+        id_byte: u8,
+        version: u32,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract fixture should load");
+        contract.set_id(Identifier::new([id_byte; 32]));
+        contract.set_version(version);
+        contract
+    }
+
+    #[tokio::test]
+    async fn should_cache_a_referenced_contract_missing_from_the_context() {
+        let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0x66, 1, inner_sdk.version());
+        let contract_id = expected.id();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let context = WasmTrustedContext::for_testing(vec![]);
+        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(context));
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(contract_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        assert!(sdk.get_cached_contract(&contract_id).is_none());
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must fetch the referenced contract");
+        assert_eq!(
+            sdk.get_cached_contract(&contract_id)
+                .expect("referenced contract must be cached after preparation")
+                .as_ref(),
+            &expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_fetch_a_referenced_system_contract_the_sdk_does_not_compile_in() {
+        // Which system contracts are compiled in is a build-time choice, and
+        // the withdrawals contract is not among the wasm defaults. The provider
+        // cannot serve it, so preparation has to fetch it like any other
+        // contract or document verification fails on an unknown contract.
+        let withdrawals_id = SystemDataContract::Withdrawals.id();
+        let mut inner_sdk = Sdk::new_mock();
+        let mut expected = load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version())
+            .expect("DPNS contract fixture should load");
+        expected.set_id(withdrawals_id);
+
+        inner_sdk
+            .mock()
+            .expect_fetch(withdrawals_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(withdrawals_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must fetch a system contract the SDK cannot resolve");
+        assert_eq!(
+            sdk.get_cached_contract(&withdrawals_id)
+                .expect("fetched system contract must be cached after preparation")
+                .as_ref(),
+            &expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_compiled_in_definition_of_a_referenced_system_contract() {
+        let dpns_id = SystemDataContract::DPNS.id();
+        // The mock SDK has no response configured, so any fetch of this id fails
+        // the preparation and proves the system contract was not requested.
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(dpns_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must skip compiled-in system contracts");
+        assert!(sdk.get_cached_contract(&dpns_id).is_none());
     }
 }

@@ -15,6 +15,7 @@ use super::super::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use crate::query::WhereClause;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -39,12 +40,13 @@ impl Drive {
     /// into a struct would just move the same fields one indirection
     /// away.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_range_aggregate_carrier_proof(
+    pub(crate) fn execute_document_sum_range_aggregate_carrier_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         sum_property: String,
         limit: Option<u16>,
         left_to_right: bool,
@@ -55,6 +57,7 @@ impl Drive {
             document_type.indexes(),
             &where_clauses,
             &sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

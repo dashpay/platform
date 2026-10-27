@@ -53,18 +53,23 @@ public enum RawKeySigner {
   /// - Parameters:
   ///   - data: Raw bytes to sign. Hashed (SHA256d) inside the FFI —
   ///     pass the full message, never a pre-computed digest.
-  ///   - privateKey: 32-byte ECDSA scalar. A local copy is zeroed
-  ///     before returning.
+  ///   - privateKeyBuffer: 32-byte ECDSA scalar borrowed from the
+  ///     caller. A local copy is still zeroed before returning so the
+  ///     FFI signer never reads directly from caller-owned storage.
   ///   - network: Affects WIF/address metadata inside the signer only,
   ///     not the signature bytes.
-  public static func sign(data: Data, privateKey: Data, network: Network) throws -> Data {
-    guard privateKey.count == 32 else {
+  public static func sign(
+    data: Data,
+    privateKeyBuffer: UnsafeBufferPointer<UInt8>,
+    network: Network
+  ) throws -> Data {
+    guard privateKeyBuffer.count == 32 else {
       throw KeyManagerError.invalidKeyFormat(
-        "Private key must be 32 bytes, got \(privateKey.count)")
+        "Private key must be 32 bytes, got \(privateKeyBuffer.count)")
     }
 
     // Defensive copy into a mutable buffer we can zero on exit.
-    var keyCopy = [UInt8](privateKey)
+    var keyCopy = Array(privateKeyBuffer)
     defer {
       keyCopy.withUnsafeMutableBufferPointer { buf in
         if let base = buf.baseAddress {
@@ -116,6 +121,24 @@ public enum RawKeySigner {
       throw KeyManagerError.signingFailed("empty signature")
     }
     return Data(bytes: bytes, count: Int(sigStruct.pointee.signature_len))
+  }
+
+  /// - Parameters:
+  ///   - data: Raw bytes to sign. Hashed (SHA256d) inside the FFI —
+  ///     pass the full message, never a pre-computed digest.
+  ///   - privateKey: 32-byte ECDSA scalar. A local copy is zeroed
+  ///     before returning.
+  ///   - network: Affects WIF/address metadata inside the signer only,
+  ///     not the signature bytes.
+  public static func sign(data: Data, privateKey: Data, network: Network) throws -> Data {
+    try privateKey.withUnsafeBytes { rawBuffer in
+      let keyBytes = rawBuffer.bindMemory(to: UInt8.self)
+      return try sign(
+        data: data,
+        privateKeyBuffer: UnsafeBufferPointer(start: keyBytes.baseAddress, count: keyBytes.count),
+        network: network
+      )
+    }
   }
 }
 
@@ -471,4 +494,3 @@ public final class KeyManager: Sendable {
     return privateKeyData.count == 32
   }
 }
-

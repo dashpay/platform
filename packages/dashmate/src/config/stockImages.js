@@ -28,3 +28,39 @@ export function stockImagePattern(repository, major) {
 
   return new RegExp(`^${escapedRepository}:${major}${stockPrereleaseSuffix}$`);
 }
+
+/**
+ * Match a prerelease tag of the given major - `5-rc`, never `5`.
+ *
+ * For a migration that ships before the stable release of that major: no release
+ * has stored the stable tag yet, so a config carrying it holds the operator's
+ * own choice.
+ *
+ * @param {string} repository - image repository, e.g. 'dashpay/drive'
+ * @param {number} major
+ * @return {RegExp}
+ */
+export function stockPrereleaseImagePattern(repository, major) {
+  const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return new RegExp(`^${escapedRepository}:${major}-(${STOCK_PRERELEASE_IDS.join('|')})$`);
+}
+
+/**
+ * Match a tag published by any release up to major 4, for migrations that move
+ * images across majors.
+ *
+ * Frozen to the shapes that actually existed. The 0.x line and v1.0.0/v1.0.1
+ * published major.minor tags (`0.25`, `1.0`, `1.0-rc`); the derivation changed
+ * to the major alone in v1.0.2. The major is bounded because these migrations
+ * are historical: a config carrying a tag from a later major never reaches
+ * them, so accepting one could only ever match an operator's own image.
+ *
+ * @param {string} repository - image repository, e.g. 'dashpay/drive'
+ * @return {RegExp}
+ */
+export function historicalStockImagePattern(repository) {
+  const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return new RegExp(`^${escapedRepository}:(0\\.\\d+|1\\.0|[1-4])${stockPrereleaseSuffix}$`);
+}

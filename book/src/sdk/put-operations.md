@@ -14,8 +14,8 @@ request/response: send a query, get back a proof. A write involves multiple step
 2. Build a state transition from the data to be written.
 3. Sign the transition with the identity's private key.
 4. Broadcast the signed transition to the network.
-5. Wait for the transition to be included in a block.
-6. Verify the proof that the write was applied.
+5. Wait for the transition's result.
+6. Authenticate the proof and require the guarantee the application needs.
 
 Each step can fail independently, and the SDK needs to handle all of them coherently.
 
@@ -55,8 +55,11 @@ There are two methods:
 
 - **`put_to_platform`** broadcasts the transition and returns immediately. You get back
   the `StateTransition` that was broadcast but no confirmation that it was applied.
-- **`put_to_platform_and_wait_for_response`** broadcasts and then waits for the
-  platform to include the transition in a block, returning the confirmed `Document`.
+- **`put_to_platform_and_wait_for_response`** broadcasts and then waits for a
+  proof-backed result. Ordinary document types require `ExecutionProved` and return
+  the executed `Document`. For `indexOnly` types, it accepts `AffectedState` and
+  returns the document entry at the proof's block; this does not prove that the put
+  executed.
 
 ## The Nonce-Build-Broadcast-Wait Pipeline
 
@@ -111,20 +114,23 @@ let transition = if self.revision().is_some()
     )
 } else {
     // This is a new document -- generate entropy and create
-    let (document, entropy) = document_state_transition_entropy
-        .map(|e| (self.clone(), e))
-        .unwrap_or_else(|| {
+    let (document, entropy) = match document_state_transition_entropy {
+        Some(entropy) => (self.clone(), entropy),
+        None => {
             let mut rng = StdRng::from_entropy();
             let mut document = self.clone();
             let entropy = rng.gen::<[u8; 32]>();
-            document.set_id(Document::generate_document_id_v0(
+            document.set_id(Document::generate_document_id(
                 &document_type.data_contract_id(),
                 &document.owner_id(),
                 document_type.name(),
                 entropy.as_slice(),
-            ));
+                new_identity_contract_nonce,
+                sdk.version(),
+            )?);
             (document, entropy)
-        });
+        }
+    };
 
     BatchTransition::new_document_creation_transition_from_document(
         document,
@@ -142,8 +148,21 @@ let transition = if self.revision().is_some()
 ```
 
 For new documents, the SDK generates 32 bytes of entropy (unless you provide your own)
-and uses it to deterministically generate the document ID. This ensures the same
-inputs always produce the same document ID.
+and derives the document ID from it and, from protocol version 14, from the identity
+contract nonce it just fetched. `sdk.version()` tracks the network's protocol version,
+so the SDK switches derivation when the network does. Because the ID depends on the
+nonce, the ID on the document you pass in is a placeholder: use the ID of the confirmed
+document that `put_to_platform_and_wait_for_response` returns.
+
+The JavaScript SDK follows the same pipeline. `sdk.documents.create` goes through
+`put_to_platform_and_wait_for_response` and hands the confirmed document back. An app
+that builds the transition itself (to sign it separately or cache the signed bytes)
+gets the derivation from `wasm-dpp2`: `new DocumentCreateTransition({ document,
+identityContractNonce })` derives the ID from the document's entropy and the nonce for
+the network's protocol version (`platformVersion` option, latest by default), writes it
+onto the transition and back onto `document`, and the transition is then batched, signed
+and broadcast as before. The IDs such a transition carries are final; nothing has to be
+hashed on the app side.
 
 ### Step 3: Validate Structure
 
@@ -166,78 +185,98 @@ This sends the serialized transition to a DAPI node.
 
 ## The BroadcastStateTransition Trait
 
-Broadcasting is implemented as a trait on `StateTransition`:
+`BroadcastStateTransition` is implemented on `StateTransition`. Choose the wait
+method according to the guarantee the application needs:
 
-```rust
-#[async_trait::async_trait]
-pub trait BroadcastStateTransition {
-    async fn broadcast(
-        &self,
-        sdk: &Sdk,
-        settings: Option<PutSettings>,
-    ) -> Result<(), Error>;
+| Method | Behavior |
+|---|---|
+| `broadcast` | Returns `Ok(())` when the node accepts the submission; this does not prove execution. |
+| `wait_for_response` | Verifies a result for an already submitted transition and requires `ExecutionProved`. |
+| `wait_for_affected_state` | Verifies a result for an already submitted transition, accepting `AffectedState` or `ExecutionProved`. |
+| `broadcast_and_wait` | Broadcasts, then performs the strict execution wait. |
+| `broadcast_and_wait_for_affected_state` | Broadcasts, then performs the affected-state wait. |
 
-    async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
-        &self,
-        sdk: &Sdk,
-        settings: Option<PutSettings>,
-    ) -> Result<T, Error>;
+Each wait method also has a `_with_metadata` variant returning
+`(T, ResponseMetadata)`. The signed `metadata.height` identifies the block whose
+state the proof authenticates; use it when persisting proof-attested balances.
 
-    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
-        &self,
-        sdk: &Sdk,
-        settings: Option<PutSettings>,
-    ) -> Result<T, Error>;
-}
-```
+An `AffectedState` proof authenticates the keys derived from the transition and
+their values at the proof's block. It cannot establish that this particular
+transition executed. This applies to contract moderation and fee claims,
+contract updates, creates and deletes of indexOnly documents, and other
+snapshot-only families documented by the trait. Typed moderation, fee-claim and
+indexOnly document helpers already choose the affected-state wait.
 
-Three methods, three use cases:
-
-- **`broadcast`**: Fire-and-forget. Returns `Ok(())` when the node accepts the
-  transition. The response is always empty -- confirmation comes later.
-- **`wait_for_response`**: Poll until the transition is included in a block.
-  Returns the proven result.
-- **`broadcast_and_wait`**: Combines both -- broadcast, then wait.
+Strict waits deliberately return `Error::ExecutionNotProved` for a valid
+affected-state proof. After a combined call reaches that error, the broadcast
+has been accepted; the error establishes neither execution nor failure of the
+transition. If the application can use a snapshot, call `wait_for_affected_state`
+on the same submitted transition without broadcasting it again. A snapshot is
+not an execution receipt or an exactly-once guarantee.
 
 ### The Wait Mechanism
 
-`wait_for_response` uses the `WaitForStateTransitionResult` gRPC endpoint. It sends
-the transition's hash and blocks until the platform includes it in a block:
+Both wait policies use the `WaitForStateTransitionResult` gRPC endpoint with the
+transition's hash and request a proof. The shared
+`WaitForOutcome::wait_for_outcome_with_metadata` path verifies the GroveDB proof
+and trusted quorum signature before returning a `StateTransitionProofOutcome`
+and response metadata. The outcome's `guarantee()` is either `ExecutionProved`
+or `AffectedState`; the public strict wait applies its guarantee check after
+the transport retry loop. Accepting a snapshot does not disable proof verification.
 
-```rust
-async fn wait_for_response<T>(&self, sdk: &Sdk, settings: Option<PutSettings>)
-    -> Result<T, Error>
-{
-    let factory = |request_settings: RequestSettings| async move {
-        let request = self.wait_for_state_transition_result_request()?;
-        let response = request.execute(sdk, request_settings).await?;
+The signature authenticates the state root, protocol version, height, time and
+core-chain-locked height through the state ID, and the vote's chain ID, height,
+round and block ID. The trusted quorum is selected by its type, hash and
+core-chain-locked height. The response's epoch is not signed and is not used to
+construct the proof-verification block information. A Rust metadata-returning
+wait exposes the signed height alongside that unsigned epoch; the generic
+JavaScript waits return the converted result without metadata or a height field.
 
-        // Check for broadcast errors
-        if let Some(e) = state_transition_broadcast_error {
-            return Err(Error::from(e));
-        }
+From protocol version 14 the proof of an owned, fee-paying transition (document
+and token batches, contract creates and updates, identity updates and key limit
+updates, contract moderation) also carries the credit balance of the owner
+after it, read from the same state as the result, so a wallet learns what the
+write left it with without a second query. The verified
+`StateTransitionProofOutcome` hands it out through `owner_balance()` (`None`
+for a proof made at an earlier version or a transition without an owner);
+`wait_for_document_and_owner_balance` and
+`put_to_platform_and_wait_for_response_with_owner_balance` return it next to
+the document. The balance is a snapshot at the proof's block: it may already
+include later transitions of the same identity.
+`put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also
+returns the verified response metadata, whose `height` is that block, so a
+wallet keeping the balance can order it against balances it read elsewhere; it
+checks the proof as strictly as `put_to_platform_and_wait_for_response` does
+(this write must be proved executed unless the document type is indexOnly),
+where `put_to_platform_and_wait_for_response_with_owner_balance` accepts an
+affected-state snapshot for any document type. For a DPNS registration,
+`Sdk::register_dpns_name_with_owner_balance_and_metadata` returns the
+registration result with the balance and metadata of the domain's proof, the
+registration's last write. A wait that asks for no proof
+but sets `request_user_balance` gets the owner's balance back unverified, as
+the response's `success_with_owner_balance` result, read from a Drive state at
+or past the block that executed the write; that works for any transition with
+an owner.
 
-        // Extract and verify the proof
-        let proof = grpc_response.proof()?;
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            self,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &context_provider.as_contract_lookup_fn(sdk.version()),
-            sdk.version(),
-        )?;
-
-        // Convert to the expected output type
-        T::try_from(result)
-    };
-
-    retry(sdk.address_list(), retry_settings, factory).await
-}
-```
-
-The wait includes full proof verification: the SDK verifies a GroveDB proof that
-the state transition was actually applied. This is not just checking a status flag --
-it is cryptographic proof of inclusion.
+The protocol version signed with the proof selects the layout the proof is
+checked against. Validation and decoding follow the SDK's stored version, or
+the signed version when it is newer and known to this build, also for a pinned
+SDK: a producer's version can raise those rules but never lower them. An SDK
+at protocol 14 therefore verifies an outcome produced at protocol 13, whose
+`owner_balance()` is `None`, while an outcome signed as protocol 14 must prove
+the balance: a proof without it is refused, never retried as the older layout.
+An outcome signed by a protocol newer than any this SDK build knows is checked
+with the newest layout and rules the build knows, so results stay verifiable
+after that protocol activates while it keeps that layout. A protocol that
+changes the layout needs an SDK update. Its outcomes that return data are
+expected to fail verification, but an outcome proved by absence, such as a
+document delete, could still verify at a location the newer protocol no longer
+uses. The signature binds the protocol version to the state root, and an
+unpinned SDK raises its stored version to the producer's only after the
+signature and freshness checks pass, and never to a version this build does not
+know. Document query answers signed at an older version than the SDK's, unlike
+outcomes, are not verified (see
+[The Internal Fetch Pipeline](fetch-traits.md#the-internal-fetch-pipeline)).
 
 ### Timeout Handling
 

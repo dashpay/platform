@@ -15,15 +15,38 @@
 #![cfg(any(feature = "server", feature = "verify"))]
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::DriveDocumentCountQuery;
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, DriveDocumentCountQuery,
+};
 use crate::drive::RootTree;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{
+    pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 impl DriveDocumentCountQuery<'_> {
+    /// Refuses a `summableOffCountIndex` index: its range counts are its range
+    /// sums, read through [`Self::counter_sums_query`], while its count trees
+    /// count groups, one per counter. Every count range executor and verifier
+    /// hands such an index to the sum surface before building, so this only
+    /// stops a caller that skipped that. Unversioned: only protocol version 14
+    /// admits such an index, so it refuses nothing before.
+    fn refuse_a_counter_index(&self) -> Result<(), Error> {
+        if self.index.is_summable_off_count_index() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a count range path query over a summableOffCountIndex index: its range counts \
+                 are its range sums (counter_sums_query)",
+            )));
+        }
+        Ok(())
+    }
+
     /// Convert a single range where-clause + value into the grovedb
     /// `QueryItem` used to walk children of the property-name
     /// `ProvableCountTree`. The clause's value is serialized via the
@@ -159,6 +182,15 @@ impl DriveDocumentCountQuery<'_> {
         })
     }
 
+    /// Refuses an index a range count total cannot be read through: a
+    /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
+    /// one whose path passes through a ranked level (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]).
+    fn refuse_a_range_count_total(&self) -> Result<(), Error> {
+        self.refuse_a_counter_index()?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
     /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
     /// query against this count query's `range_countable` index.
     ///
@@ -186,6 +218,7 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_count_total()?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -223,7 +256,7 @@ impl DriveDocumentCountQuery<'_> {
                     ),
                 ));
             }
-            path.push(prop.name.as_bytes().to_vec());
+            path.push(self.index.level_key_for_property(&prop.name).into_bytes());
             path.push(self.document_type.serialize_value_for_key(
                 prop.name.as_str(),
                 &clause.value,
@@ -240,7 +273,11 @@ impl DriveDocumentCountQuery<'_> {
                 ),
             ))?
             .name;
-        path.push(range_prop_name.as_bytes().to_vec());
+        path.push(
+            self.index
+                .level_key_for_property(range_prop_name)
+                .into_bytes(),
+        );
 
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
     }
@@ -297,6 +334,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_count_total()?;
         // The terminator property (last in the index) carries the
         // ACOR target range. The "carrier" property — the one whose
         // clause becomes the outer Query items — is either:
@@ -363,7 +401,7 @@ impl DriveDocumentCountQuery<'_> {
             )?;
             match (&carrier, clause.operator) {
                 (Carrier::Pending, WhereOperator::Equal) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     base_path.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -371,15 +409,16 @@ impl DriveDocumentCountQuery<'_> {
                     )?);
                 }
                 (Carrier::Pending, WhereOperator::In) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::In(clause.clone());
                 }
                 (Carrier::Pending, op) if Self::is_range_operator(op) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::Range(clause.clone());
                 }
                 (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
-                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension
+                        .push(self.index.level_key_for_property(&prop.name).into_bytes());
                     subquery_path_extension.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -404,7 +443,11 @@ impl DriveDocumentCountQuery<'_> {
                 }
             }
         }
-        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+        subquery_path_extension.push(
+            self.index
+                .level_key_for_property(terminator_prop_name)
+                .into_bytes(),
+        );
 
         let mut outer_query = Query::new_with_direction(left_to_right);
         match carrier {
@@ -523,6 +566,7 @@ impl DriveDocumentCountQuery<'_> {
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.refuse_a_counter_index()?;
         let range_clause = self
             .where_clauses
             .iter()
@@ -582,10 +626,11 @@ impl DriveDocumentCountQuery<'_> {
                         platform_version,
                     )?;
                     if in_outer_keys.is_some() {
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension
+                            .push(self.index.level_key_for_property(&prop.name).into_bytes());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                         base_path.push(serialized);
                     }
                 }
@@ -600,7 +645,7 @@ impl DriveDocumentCountQuery<'_> {
                     }
                     // Path stops at the In-bearing prop's property-
                     // name subtree; outer Query lives at that level.
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
@@ -795,10 +840,24 @@ impl DriveDocumentCountQuery<'_> {
     ///       the subquery's single `Key(value)`; `set_subquery_path`
     ///       ends at the terminator's property-name segment.
     ///
+    /// - **Prefix-to-last** (every property except the LAST covered, on
+    ///   a `range_countable` index): the selector is the terminal
+    ///   property-name tree's own element — a count-bearing tree whose
+    ///   aggregate is the whole-prefix total — addressed by its level
+    ///   key one layer below the last pin's value tree:
+    ///   - Equal-only pins: path `[..., pin_field, pin_value]`, single
+    ///     `Key(last_field)`.
+    ///   - With an `In` pin: same compound shape as above, with the
+    ///     post-In Equal `(name, value)` pairs in `set_subquery_path`
+    ///     (all full pairs — nothing is hoisted) and the subquery
+    ///     `Key(last_field)`.
+    ///
     /// ## Errors
     ///
     /// Rejects shapes the builder doesn't support:
-    /// - Partial coverage (uncovered index property)
+    /// - Partial coverage (an uncovered index property, except the
+    ///   trailing free property of the prefix-to-last form on a
+    ///   `range_countable` index)
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
@@ -842,21 +901,74 @@ impl DriveDocumentCountQuery<'_> {
         // the divergence rationale).
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+        // Set when the LAST property carries no clause — the
+        // prefix-to-last form on a `range_countable` index. The count is
+        // then the terminal property-name tree's own element aggregate
+        // (the whole-prefix total), addressed by this level key from the
+        // last pin's value tree.
+        let mut prefix_to_last_key: Option<Vec<u8>> = None;
 
-        for prop in self.index.properties.iter() {
-            let clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "prove count requires the where clauses to fully cover the \
-                         countable index; one or more index properties have no \
-                         matching `==` or `in` clause — use a more specific index \
-                         (define a `countable: true` index whose properties exactly \
-                         match the clauses) or use `prove=false`",
-                    ))
-                })?;
+        for (position, prop) in self.index.properties.iter().enumerate() {
+            // The path segment is the level key — grid-qualified for a
+            // time-range index's first property — while the clause lookup
+            // and value serialization stay on the bare property name.
+            let level_key = self.index.level_key(position, &prop.name);
+            let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
+                // Prefix-to-last: the terminal property-name tree's own
+                // element carries the whole-prefix total — but only when
+                // that tree is a plain (non-indexed) count-bearing tree, or
+                // a `summableOffCountIndex` index's sum-bearing one; a
+                // ranked terminal is an indexed tree grovedb refuses to
+                // return, and those indexes route through the value-tree
+                // arm below instead.
+                if position + 1 == self.index.properties.len()
+                    && prefix_to_last_count_reads_documents(self.index)
+                {
+                    prefix_to_last_key = Some(level_key.into_bytes());
+                    break;
+                }
+                // At-chain value-tree read: when the deepest pinned
+                // property's level sits at or below the index's
+                // shallowest `at` level, its value trees are `CountTree`s
+                // whose count IS the whole-subtree total, and the
+                // fully-covered selector below reads them verbatim — the
+                // loop just stops here instead of at the terminal.
+                let deepest_pin_is_count_bearing = pins_reach_chain(
+                    self.index,
+                    position,
+                    document_count_chain_position(self.index),
+                );
+                if deepest_pin_is_count_bearing {
+                    // Fail closed on a gapped set reaching the builder
+                    // directly: a clause on any deeper property means the
+                    // pins are not a contiguous prefix and address nothing.
+                    if self.index.properties[position..]
+                        .iter()
+                        .any(|deeper| self.where_clauses.iter().any(|wc| wc.field == deeper.name))
+                    {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "prove count: the pinned properties must form a \
+                                 contiguous index prefix — a clause on a property \
+                                 deeper than the first free one addresses nothing",
+                            ),
+                        ));
+                    }
+                    break;
+                }
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "prove count requires the where clauses to cover the countable \
+                     index; one or more index properties have no matching `==` or \
+                     `in` clause — only a trailing free suffix is servable: the LAST \
+                     property of a `rangeCountable: true` index (the prefix-to-last \
+                     form), or everything below a pinned level of a \
+                     `rankedCountable: { at }` chain (the value-tree form). Use a \
+                     more specific index (define a `countable: true` index whose \
+                     properties exactly match the clauses) or use `prove=false`",
+                    ),
+                ));
+            };
 
             match clause.operator {
                 WhereOperator::Equal => {
@@ -871,10 +983,10 @@ impl DriveDocumentCountQuery<'_> {
                         // path. Any number of these may accumulate —
                         // one for each Equal that sits *after* the In
                         // in the index ordering.
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension.push(level_key.as_bytes().to_vec());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(level_key.as_bytes().to_vec());
                         base_path.push(serialized);
                     }
                 }
@@ -891,7 +1003,7 @@ impl DriveDocumentCountQuery<'_> {
                     // property-name subtree; outer Query lives at
                     // that level. Any trailing Equal property then
                     // routes through `subquery_path_extension`.
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
@@ -941,17 +1053,20 @@ impl DriveDocumentCountQuery<'_> {
         //
         // So gate the optimization on `countable.is_countable()`:
         // every countable index uses the compact shape. The picker
-        // upstream already requires the index to be countable to be
-        // selected (`find_countable_index_for_where_clauses` / the
-        // range_countable picker for range shapes), so reaching this
-        // builder with a non-countable index would be a bug — but
-        // we keep the gate explicit for clarity.
+        // upstream selects only an index this gate admits
+        // (`point_count_reads_documents`, shared with
+        // `find_countable_index_for_where_clauses`), so reaching this
+        // builder with any other index would be a bug — but we keep the
+        // gate explicit for clarity.
         //
         // The loop above already enforces full coverage of every
         // index property, so the terminator is always proven; this
         // flag is the only differentiator between the two output
         // shapes.
-        let count_tree_terminator = self.index.countable.is_countable();
+        //
+        // A `summableOffCountIndex` index keeps its counter at that key: the
+        // read takes its sum, the group's document count.
+        let count_tree_terminator = point_count_reads_documents(self.index);
 
         // CountTree storage convention for non-countable indexes
         // (defensive — picker upstream filters these out): the count
@@ -959,6 +1074,22 @@ impl DriveDocumentCountQuery<'_> {
         // tree. See the book's "Count Trees and Provable Counts"
         // chapter for the layout.
         const COUNT_TREE_KEY: u8 = 0;
+
+        // Prefix-to-last selector: the terminal property-name tree —
+        // count-bearing under `rangeCountable`, its aggregate the sum of
+        // every last-property value tree's count, i.e. the whole-prefix
+        // total — read as one element by its level key from the last
+        // pin's value tree (the shape the sum surface builds too). Moved
+        // unchanged into the shared builder, so every protocol version
+        // builds the proof it built before.
+        if let Some(terminal_level_key) = prefix_to_last_key {
+            return Ok(prefix_to_last_path_query(
+                base_path,
+                in_outer_keys,
+                subquery_path_extension,
+                terminal_level_key,
+            ));
+        }
 
         match in_outer_keys {
             None => {

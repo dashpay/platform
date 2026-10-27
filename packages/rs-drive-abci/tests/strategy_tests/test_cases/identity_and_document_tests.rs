@@ -25,6 +25,7 @@ mod tests {
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
+    use platform_version::version::v13::PROTOCOL_VERSION_13;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -186,6 +187,102 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
+        // PROTOCOL_VERSION_14: the identity pays 41_080 credits more in fees than at protocol
+        // version 13. The documents expirations tree joins `Misc` (key `E`) beside the total
+        // system credits item an identity created from an asset lock rewrites, and the extra
+        // key reshapes the `Misc` Merk that write rehashes.
+        assert_eq!(balance, 99863968860)
+    }
+
+    #[tokio::test]
+    async fn run_chain_one_identity_in_solitude_protocol_version_13() {
+        // Pins the fee shape at protocol version 13. The grove v4 cleanup
+        // gates active from v14 derive their inspection from data the merk
+        // apply already loads, so they are cost-neutral, and the ContractGroups
+        // root tree v14 adds sits at key 124 under Versions (120), a node no
+        // fee-bearing transition rewrites. The one v14 change this run's fees
+        // see is the documents expirations tree v14 adds under `Misc`, which
+        // reshapes the Merk of the total system credits item an asset lock
+        // rewrites (see the latest-version test); this pin holds v13 at the
+        // fee it had before. A root tree placed under the asset lock path
+        // moves it too, as happened once before when GroupActions was added:
+        //                                                                                DataContract_Documents 64
+        //                                 /                                                                                                       \
+        //                       Identities 32                                                                                                 Balances 96
+        //             /                            \                                                                        /                                                       \
+        //   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+        //       /      \                           /                     \                                         /                           \                            /                          \
+        //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
+
+        // This will cause the costs of insertion of a spent asset lock transition, since group actions now exist we will see a slight difference in processing costs
+        // This is because WithdrawalTransactions will have a right element in the tree.
+
+        let platform_version =
+            PlatformVersion::get(PROTOCOL_VERSION_13).expect("expected to get platform version 13");
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(PROTOCOL_VERSION_13)
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None)
+                .await;
+
+        let balance = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balances")
+            .expect("expected to have an identity to get balance from");
+
         assert_eq!(balance, 99864009940)
     }
 
@@ -260,7 +357,8 @@ mod tests {
         assert_eq!(outcome.identities.len(), 100);
     }
 
-    #[tokio::test]
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
     async fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

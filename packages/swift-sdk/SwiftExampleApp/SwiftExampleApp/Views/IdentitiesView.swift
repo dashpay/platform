@@ -50,10 +50,10 @@ struct IdentityRow: View {
                         HStack(spacing: 4) {
                             Text(identity.displayName)
                                 .font(.headline)
-                                .foregroundColor(identity.mainDpnsName != nil || identity.dpnsName != nil ? .blue : .primary)
+                                .foregroundColor(identity.ownedMainDpnsName != nil || identity.dpnsName != nil ? .blue : .primary)
 
                             // Show star icon if this is the selected main name
-                            if identity.mainDpnsName != nil {
+                            if identity.ownedMainDpnsName != nil {
                                 Image(systemName: "star.fill")
                                     .font(.caption)
                                     .foregroundColor(.yellow)
@@ -61,7 +61,7 @@ struct IdentityRow: View {
                         }
 
                         // Show alias as subtitle if we're displaying a DPNS name
-                        if (identity.mainDpnsName != nil || identity.dpnsName != nil),
+                        if (identity.ownedMainDpnsName != nil || identity.dpnsName != nil),
                            let alias = identity.alias {
                             Text(alias)
                                 .font(.caption)
@@ -99,38 +99,35 @@ struct IdentityRow: View {
                     }
                 }
 
-                if identity.isLocal {
-                    HStack {
-                        Image(systemName: "location")
+                // `isLocal` = mine-or-tracked (wallet-derived rows
+                // are always local; manual adds too). Flag only the
+                // rare incidental rows; the balance refresh is a
+                // plain Platform fetch, valid for every row.
+                HStack {
+                    if !identity.isLocal {
+                        Image(systemName: "eye")
                             .font(.caption2)
-                        Text("Local Only")
+                        Text("Observed")
                             .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-                    .foregroundColor(.orange)
-                } else {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                        Text("On Network")
-                            .font(.caption2)
 
-                        Spacer()
+                    Spacer()
 
-                        Button(action: {
-                            isRefreshing = true
-                            Task {
-                                await refreshBalance()
-                                isRefreshing = false
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                                .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    Button(action: {
+                        isRefreshing = true
+                        Task {
+                            await refreshBalance()
+                            isRefreshing = false
                         }
-                        .buttonStyle(BorderlessButtonStyle())
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                     }
+                    .buttonStyle(BorderlessButtonStyle())
                 }
             }
             .padding(.vertical, 4)
@@ -170,7 +167,7 @@ struct IdentityRow: View {
             // Fetch a DPNS name if we don't already have one — but
             // only once (silent failure), since not every identity
             // has a DPNS name and the request can 404.
-            if identity.dpnsName == nil && identity.mainDpnsName == nil {
+            if identity.dpnsName == nil && identity.ownedMainDpnsName == nil {
                 if let usernames = try? await sdk.dpnsGetUsername(
                     identityId: identity.identityIdBase58,
                     limit: 1
@@ -187,11 +184,11 @@ struct IdentityRow: View {
 
             try? modelContext.save()
         } catch {
-            if !identity.isLocal {
-                appState.showError(
-                    message: "Failed to refresh balance: \(error.localizedDescription)"
-                )
-            }
+            // Every persisted row exists on Platform, so a failed
+            // refresh is worth surfacing for all of them.
+            appState.showError(
+                message: "Failed to refresh balance: \(error.localizedDescription)"
+            )
         }
     }
 }

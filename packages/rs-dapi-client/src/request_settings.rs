@@ -21,7 +21,15 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for single request (soft limit).
+    /// Timeout for a single request attempt.
+    ///
+    /// It is sent to the server as the `grpc-timeout` header. On native targets
+    /// it also bounds the whole attempt on the client: an attempt still running
+    /// after `timeout + connect_timeout` fails with `DeadlineExceeded` and is
+    /// retried like any other retryable error. For unary RPCs the attempt runs
+    /// from dispatch through the response body and trailers; for streaming
+    /// RPCs it ends when the response headers arrive, so consuming the
+    /// returned stream is not bounded by it. Zero disables both limits.
     ///
     /// Note that the total maximum time of execution can exceed `(timeout + connect_timeout) * retries`
     /// as it accounts for internal processing time between retries.
@@ -80,11 +88,15 @@ impl RequestSettings {
 }
 
 /// DAPI settings ready to use.
+///
+/// When adding a field, decide whether it affects the constructed transport
+/// client and update `connection_key` accordingly (its exhaustive
+/// destructuring will not compile until you do).
 #[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for a request.
+    /// Timeout for a single request attempt; see [RequestSettings::timeout].
     pub timeout: Duration,
     /// Number of retries until returning the last error.
     pub retries: usize,
@@ -104,6 +116,72 @@ impl AppliedRequestSettings {
     pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
         self.ca_certificate = ca_cert;
         self
+    }
+
+    /// Upper bound for one request attempt: `timeout` plus `connect_timeout`,
+    /// the bound documented on [RequestSettings::timeout]. A unary attempt
+    /// covers dispatch through the response body and trailers; a streaming
+    /// attempt ends when the response headers arrive. `None` when `timeout`
+    /// is zero, which means "no limit" (the transport then omits the
+    /// `grpc-timeout` header as well).
+    pub fn attempt_deadline(&self) -> Option<Duration> {
+        if self.timeout.is_zero() {
+            return None;
+        }
+        Some(
+            self.timeout
+                .saturating_add(self.connect_timeout.unwrap_or_default()),
+        )
+    }
+
+    /// Cache key fragment for the [ConnectionPool](crate::ConnectionPool),
+    /// covering only the fields that affect the constructed transport client:
+    /// connect timeout, response decoding limit and CA certificate.
+    /// Per-request knobs (request timeout, retries, address banning) are
+    /// deliberately excluded so requests that differ only in those reuse the
+    /// same pooled connection.
+    pub(crate) fn connection_key(&self) -> String {
+        // Exhaustive destructuring: adding a settings field breaks this
+        // binding, forcing an explicit connection-affecting-or-not decision.
+        let Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            connect_timeout,
+            #[cfg(target_arch = "wasm32")]
+                connect_timeout: _,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+            #[cfg(not(target_arch = "wasm32"))]
+            ca_certificate,
+        } = self;
+
+        // The wasm channel builder ignores `connect_timeout`, so it does not
+        // split the key there. The decoding limit still participates because
+        // `grpc.rs` applies it to the client after channel construction.
+        #[cfg(target_arch = "wasm32")]
+        let connect_timeout = None::<Duration>;
+
+        // The full certificate bytes (hex), not a short hash: two trust
+        // anchors must never share a pool key, or a request pinned to one CA
+        // silently reuses a channel built against the other.
+        #[cfg(not(target_arch = "wasm32"))]
+        let ca_certificate = ca_certificate.as_ref().map(|cert| {
+            use std::fmt::Write;
+            let bytes = cert.as_ref();
+            let mut hex = String::with_capacity(bytes.len() * 2);
+            for byte in bytes {
+                write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+            }
+            hex
+        });
+        #[cfg(target_arch = "wasm32")]
+        let ca_certificate: Option<String> = None;
+
+        format!(
+            "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?}",
+            connect_timeout, max_decoding_message_size, ca_certificate
+        )
     }
 }
 
@@ -198,5 +276,94 @@ mod tests {
         let cert = Certificate::from_pem("fake-pem-data");
         let result = applied.with_ca_certificate(Some(cert));
         assert!(result.ca_certificate.is_some());
+    }
+
+    #[test]
+    fn should_bound_attempt_by_timeout_plus_connect_timeout() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::from_secs(10)),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::from_secs(13)));
+
+        let default = RequestSettings::default().finalize();
+        assert_eq!(default.attempt_deadline(), Some(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn should_not_bound_attempt_when_timeout_is_zero() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::ZERO),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), None);
+    }
+
+    #[test]
+    fn should_saturate_attempt_deadline_instead_of_overflowing() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::MAX),
+            connect_timeout: Some(Duration::from_secs(1)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::MAX));
+    }
+
+    #[test]
+    fn test_connection_key_ignores_per_request_settings() {
+        let custom = RequestSettings {
+            timeout: Some(Duration::from_secs(30)),
+            retries: Some(1),
+            ban_failed_address: Some(false),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        let default = RequestSettings::default().finalize();
+
+        assert_eq!(
+            custom.connection_key(),
+            default.connection_key(),
+            "timeout/retries/banning must not split pooled connections"
+        );
+    }
+
+    #[test]
+    fn test_connection_key_differs_on_connection_settings() {
+        let default = RequestSettings::default().finalize();
+
+        let connect_timeout = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), connect_timeout.connection_key());
+
+        let decode_limit = RequestSettings {
+            max_decoding_message_size: Some(16 * 1024 * 1024),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), decode_limit.connection_key());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_connection_key_differs_on_ca_certificate() {
+        let default = RequestSettings::default().finalize();
+        let with_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
+
+        assert_ne!(default.connection_key(), with_ca.connection_key());
+
+        let with_other_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("other-pem-data")));
+        assert_ne!(with_ca.connection_key(), with_other_ca.connection_key());
     }
 }

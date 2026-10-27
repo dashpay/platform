@@ -40,9 +40,13 @@ internal object IdentityNative {
      * `(J[BII[BJJZ)Lorg/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult;`
      *
      * Thinly marshals
-     * `platform_wallet_resume_identity_with_existing_asset_lock_signer`.
-     * Generic recovery always supplies `consumeInvitationVoucher=false`;
-     * invitation reclaim is a separate P2 surface.
+     * `platform_wallet_resume_identity_with_existing_asset_lock_signer`,
+     * forwarding [consumeInvitationVoucher] verbatim (Rust core refuses
+     * invitation locks on every generic path — the flag only authorizes
+     * the invitation-reclaim flow). Generic recovery call sites always
+     * supply `false`;
+     * `IdentityRegistration.reclaimInvitationAsNewIdentity` is the sole
+     * `true` caller.
      */
     external fun resumeIdentityWithExistingAssetLock(
         walletHandle: Long,
@@ -215,11 +219,16 @@ internal object IdentityNative {
     /**
      * Register a DPNS name for [identityId] (32 bytes), signed via
      * [signerHandle]. Returns the full domain name (e.g. `"alice.dash"`).
+     *
+     * @param maxContestFund the most, in credits, the identity pays into
+     *   the contest a contested name joins; `0` states the current fund to
+     *   join, read just before signing. Must be non-negative.
      */
     external fun registerDpnsName(
         walletHandle: Long,
         identityId: ByteArray,
         label: String,
+        maxContestFund: Long,
         signerHandle: Long,
     ): String
 

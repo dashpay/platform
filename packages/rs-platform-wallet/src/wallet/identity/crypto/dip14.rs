@@ -251,6 +251,12 @@ pub fn derive_contact_payment_addresses(
 ///
 /// "We recommend a gap limit of 10 at this stage, which means to load 10
 /// addresses past the last used address."
+///
+/// The wallet does not use this value for contact pools. key-wallet builds
+/// the `DashpayReceivingFunds` and `DashpayExternalAccount` address pools
+/// with a gap of 20, a deliberate, more conservative choice. Do not shrink
+/// those pools to 10 to match the DIP: that narrows the scan window for
+/// payments past a run of unused addresses.
 pub const DEFAULT_CONTACT_GAP_LIMIT: u32 = 10;
 
 // ---------------------------------------------------------------------------
@@ -434,9 +440,9 @@ mod tests {
         // the 107-byte DIP-14 serialization (ends in a Normal256 child) and
         // encrypts to 128 bytes — failing the contract's maxItems: 96.
         //
-        // The earlier `account_xpub.encode()` producer emitted the 107-byte
-        // form (107 != 69); this assertion pins the byte-exact compact layout
-        // so a revert to `encode()` is caught.
+        // `account_xpub.encode()` would emit the 107-byte form (107 != 69);
+        // this assertion pins the byte-exact compact layout so a switch to
+        // `encode()` is caught.
         let wallet = test_wallet(Network::Testnet);
         let (sender, recipient) = test_identifiers();
 

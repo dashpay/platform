@@ -6,14 +6,29 @@ package org.dashfoundation.dashsdk.ffi
  * mirrors `rs-unified-sdk-jni/src/funding.rs`.
  *
  * Internal: the public API is
- * [org.dashfoundation.dashsdk.funding.ShieldedProver]. These entry points
- * are process-global (no wallet handle) and back the shielded funding
+ * [org.dashfoundation.dashsdk.funding.ShieldedProver] for the
+ * process-global prover probes and
+ * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.estimateShieldedFee]
+ * for the (manager-handle) fee estimator. They back the shielded funding
  * screens' prover-status indicator and fee preview. Available only when
  * the native library was built with shielded support
  * ([org.dashfoundation.dashsdk.Sdk.hasShielded]); calling them on a
  * non-shielded build throws [UnsatisfiedLinkError].
  */
 internal object FundingNative {
+
+    external fun shieldedIdentityDebitRecoveryRecords(
+        managerHandle: Long,
+        walletId: ByteArray,
+    ): Array<ShieldedIdentityDebitRecoveryData>
+
+    external fun abandonShieldedIdentityDebit(
+        managerHandle: Long,
+        walletId: ByteArray,
+        accountIndex: Int,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    )
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()
@@ -23,11 +38,15 @@ internal object FundingNative {
 
     /**
      * The flat shielded fee in credits for a transition of [kind]
-     * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal)
-     * and Orchard action count [numActions]. Pure computation; throws on
-     * an unknown kind or overflow.
+     * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal,
+     * 3 = ShieldFromIdentity: the compute-only floor, no storage term,
+     * 4 = IdentityTopUpFromShieldedPool: base plus the flat
+     * identity-balance write cost)
+     * and Orchard action count [numActions], computed at [managerHandle]'s
+     * network-tracked platform version. No network round-trip; throws on
+     * an unknown kind, an invalid manager handle, or overflow.
      */
-    external fun estimateShieldedFee(kind: Int, numActions: Int): Long
+    external fun estimateShieldedFee(managerHandle: Long, kind: Int, numActions: Int): Long
 
     // ── Shielded funding submits (manager-handle calls) ──────────────
 
@@ -59,6 +78,26 @@ internal object FundingNative {
         amountDuffs: Long,
         recipientRaw43: ByteArray,
         surplusOutput: ByteArray?,
+        coreSignerHandle: Long,
+    )
+
+    /**
+     * Fund the shielded pool by DRAINING the wallet's CoinJoin account into a
+     * single asset lock (bridges
+     * `platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`).
+     * Sibling of [shieldedFundFromAssetLock] with drain funding: there is no
+     * amount (the lock value is `Σ inputs − L1 fee`, computed Rust-side) and no
+     * surplus output (the single-recipient remainder flow pins it to zero).
+     * [coinJoinAccountIndex] selects the CoinJoin account to drain;
+     * [recipientRaw43] is the 43-byte raw Orchard address; [coreSignerHandle]
+     * is the manager's `MnemonicResolverHandle`. Blocks for the ~30s Halo 2
+     * proof; the note arrives on the next shielded sync.
+     */
+    external fun shieldedFundFromCoinJoinDrain(
+        managerHandle: Long,
+        walletId: ByteArray,
+        coinJoinAccountIndex: Int,
+        recipientRaw43: ByteArray,
         coreSignerHandle: Long,
     )
 
@@ -115,6 +154,31 @@ internal object FundingNative {
         amount: Long,
         signerAddressHandle: Long,
     )
+
+    /**
+     * Shield from a Platform IDENTITY's balance, Type 21 (bridges
+     * `platform_wallet_manager_shielded_shield_from_identity`). Sibling of
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
+     * straight out of [identityId]'s balance into this wallet's own bound
+     * shielded pool ([shieldedAccount]), and the identity is debited [amount]
+     * plus the metered fee plus the shielded compute fee. The identity must
+     * be managed by this wallet. Self-shield only (Rust always targets the
+     * account's own default Orchard address), so there is no recipient.
+     * [signerIdentityHandle] is the Keystore identity signer (the manager's
+     * `signerHandle`): the same handle credit transfers use, since the
+     * transition is authorized by the identity's TRANSFER key. Blocks for the
+     * ~30s Halo 2 proof; returns the identity's proven post-debit credit
+     * balance (the wallet only confirms on the identity's own balance proof).
+     */
+    external fun shieldedShieldFromIdentity(
+        managerHandle: Long,
+        walletId: ByteArray,
+        shieldedAccount: Int,
+        identityId: ByteArray,
+        amount: Long,
+        signerIdentityHandle: Long,
+    ): Long
 
     /**
      * Create an identity funded from the shielded pool, Type 20 (bridges
@@ -177,6 +241,25 @@ internal object FundingNative {
         resolverHandle: Long,
         account: Int,
         toPlatformAddress: String,
+        amount: Long,
+    )
+
+    /**
+     * Shielded to existing-identity top-up, Type 22 (bridges
+     * `platform_wallet_manager_shielded_identity_top_up_from_pool`).
+     * [identityId] is the 32-byte id of an EXISTING Platform identity (it
+     * need not be one this wallet manages); [amount] is the credits the
+     * identity receives, and the flat pool-paid fee ([estimateShieldedFee]
+     * kind 4) is spent from the notes on top of it. [resolverHandle]
+     * supplies the transient spend authority exactly as for
+     * [shieldedUnshield].
+     */
+    external fun shieldedIdentityTopUpFromPool(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        identityId: ByteArray,
         amount: Long,
     )
 

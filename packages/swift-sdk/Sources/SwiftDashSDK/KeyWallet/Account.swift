@@ -1,7 +1,24 @@
 import Foundation
 import DashSDKFFI
 
-/// Swift wrapper for a wallet account
+/// Owns a key-wallet account's FFI handle for as long as the caller holds it.
+///
+/// Deliberately exposes no account-specific operations: it exists so
+/// `Wallet.getAccount(type:)` can report whether an account exists (and create
+/// it as a side effect), with the handle freed on deinit.
+///
+/// Key derivation is NOT done here. It carried a
+/// `derivePrivateKeyWIF(wallet:masterPath:index:)` that asked callers for the
+/// account root path while the FFI applies the account's own path itself, so
+/// the path was applied twice and every derived key came from the wrong
+/// branch — silently, since the keys were well-formed. Derive instead through:
+///
+///   * `ManagedPlatformWallet.providerKeyAtIndex(kind:index:includePrivate:)`
+///     for the masternode provider families, which resolves the DIP-3 path
+///     Rust-side and cross-checks the seed-derived key against the account
+///     xpub before returning it, or
+///   * `Wallet.derivePrivateKey(path:)` for an explicit full path, where there
+///     is no implicit path to apply twice.
 public class Account {
     private let handle: OpaquePointer
     private weak var wallet: Wallet?
@@ -15,51 +32,4 @@ public class Account {
         account_free(handle)
     }
 
-    // The account-specific functionality would be implemented here
-    // For now, this is a placeholder that manages the FFI handle lifecycle
-
-    // MARK: - Derivation (account-based)
-
-    /// Derive a private key (WIF) using this account and a master xpriv derived from the given path.
-    /// - Parameters:
-    ///   - wallet: The parent wallet used to derive the master extended private key
-    ///   - masterPath: The account root derivation path (e.g., "m/9'/5'/3'/1'")
-    ///   - index: The child index to derive (e.g., 0 for the first key)
-    /// - Returns: The private key encoded as WIF
-    public func derivePrivateKeyWIF(wallet: Wallet, masterPath: String, index: UInt32) throws -> String {
-        var error = FFIError()
-        // Derive master extended private key for this account root
-        let masterPtr = masterPath.withCString { pathCStr in
-            wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            if let m = masterPtr {
-                extended_private_key_free(m)
-            }
-        }
-
-        guard let master = masterPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        // Derive child private key as WIF at the given index
-        let wifPtr = account_derive_private_key_as_wif_at(self.handle, master, index, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard let ptr = wifPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-        let wif = String(cString: ptr)
-        string_free(ptr)
-        return wif
-    }
 }

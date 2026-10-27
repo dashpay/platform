@@ -18,97 +18,152 @@ on:
       - 'packages/*-contract/**'
       - 'packages/simple-signer/**'
       - 'docs/sdk/sdk-parity-manifest.json'
-      - 'docs/sdk/KOTLIN_SWIFT_SHARED_PARITY_SPEC.md'
       - 'packages/kotlin-sdk/PARITY_SUMMARY.md'
       - 'scripts/check_sdk_parity_manifest.py'
       - 'scripts/tests/**'
       - '.github/workflows/kotlin-sdk-build.yml'
+      - '.github/scripts/kotlin-instrumented-tests.sh'
+      - '.github/actions/rust/**'
+      - '.github/runner-requirements.json'
+      - '.github/scripts/runner-image.py'
+
+permissions:
+  contents: read
 
 concurrency:
   group: kotlin-sdk-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  select-runner:
+    name: Select compatible runner image
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: ubuntu-24.04
+    # Allow the separate 90-minute build and publication/queue window to finish.
+    timeout-minutes: 135
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+      actions: read
+    outputs:
+      labels: ${{ steps.select.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select provisioned pool or wait for the exact PR candidate
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/runner-image.py select --kind kotlin
+
   kotlin-sdk-build:
     name: Kotlin SDK build + tests (x86_64 emulator)
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
+    # Fork PRs must not execute on a persistent runner. Keep this guard in sync
+    # with tests-rs-workspace.yml.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     timeout-minutes: 120
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Preserve target/ and other untracked build outputs between runs.
+          clean: false
+
+      # The persistent runner image is the versioned CI environment. Keep
+      # dependency installation out of the job: it required sudo and made a
+      # CI job capable of mutating its container. Rebuild the runner image when
+      # one of these requirements changes instead.
+      - name: Verify exact runner requirements and load versions
+        run: python3 .github/scripts/runner-image.py verify
+
+      - name: Verify runner image dependencies
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for tool in cmake curl jq python3 rustup unzip zip; do
+            command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+          done
+          for pkg in build-essential libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Self-hosted runner image is missing: ${missing[*]}"
+            echo "::error::Provision these in the pinned runner image; CI jobs must not install host packages."
+            exit 1
+          fi
 
       - name: Validate executable SDK parity manifest
         run: |
           python3 scripts/check_sdk_parity_manifest.py
           python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
-      - name: Free disk space
+      - name: Verify repository-pinned JDK
         run: |
-          # The API-35 x86_64 system image + the shielded .so's cargo target
-          # dir (halo2/Orchard) + gradle outputs overflow the ~21 GB free on
-          # the runner root fs, surfacing as "No space left on device" during
-          # system-image install (the emulator then never boots). Reclaim the
-          # large preinstalled toolchains we don't use before building. None of
-          # these are needed by this job (JDK via setup-java, Android SDK via
-          # setup-android, Rust via rustup, NDK reinstalled below).
-          echo "Before:"; df -h /
-          sudo rm -rf \
-            /usr/share/dotnet \
-            /usr/local/.ghcup \
-            /opt/ghc \
-            /opt/hostedtoolcache/CodeQL \
-            /usr/local/lib/android/sdk/ndk \
-            /usr/local/share/powershell \
-            /usr/share/swift \
-            /opt/microsoft 2>/dev/null || true
-          sudo docker image prune --all --force 2>/dev/null || true
-          echo "After:"; df -h /
+          JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+          JAVA_VERSION_OUTPUT=$("$JAVA_HOME_RESOLVED/bin/java" -version 2>&1)
+          printf '%s\n' "$JAVA_VERSION_OUTPUT"
+          printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -E "version \"${CI_JAVA_MAJOR}([.]|\")"
+          echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-35
-            build-tools;35.0.0
-            ndk;28.1.13356709
-            platform-tools
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-linux-android
-
-      - name: Restore cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: kotlin-sdk-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            kotlin-sdk-cargo-
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
-
-      - name: Install protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
+      - name: Verify prebaked Android SDK
         run: |
-          curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
-          sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          set -euo pipefail
+          test "${ANDROID_HOME:-}" = /opt/android-sdk
+          test -x "$ANDROID_HOME/ndk/$CI_ANDROID_NDK/ndk-build"
+          test -x "$ANDROID_HOME/build-tools/$CI_ANDROID_BUILD_TOOLS/aapt2"
+          test -f "$ANDROID_HOME/platforms/android-$CI_ANDROID_API/android.jar"
+          test -f "$ANDROID_HOME/system-images/android-$CI_ANDROID_API/default/x86_64/system.img"
+          command -v ci-android-emulator
+          command -v adb
+          # Do not run setup-android/sdkmanager: the SDK is pinned and root-owned.
+
+      - name: Set up repository-pinned Rust toolchain
+        uses: ./.github/actions/rust
+        with:
+          target: x86_64-linux-android
+          cache: false
+
+      # Pinned: this runner is persistent, so cargo-ndk is provisioned in the
+      # image and checked here before the NDK build can start.
+      - name: Verify repository-pinned cargo-ndk
+        run: |
+          set -euo pipefail
+          cargo ndk --version
+          cargo ndk --version | grep -Fx "cargo-ndk $CI_CARGO_NDK_VERSION"
+
+      - name: Verify repository-pinned protoc
+        run: |
+          set -euo pipefail
           protoc --version
+          # protoc is part of the runner image. Installing it into /usr/local
+          # from a job required sudo and made the CI container mutable.
+          protoc --version | grep -Fx "libprotoc $CI_PROTOC_VERSION"
+
+      # KVM is the only host device this job needs. The container receives it
+      # through the kvm group; no Docker socket or host package-management
+      # access is required.
+      - name: Verify KVM access
+        run: |
+          test -c /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
 
       - name: Build native library (x86_64, dev profile)
         working-directory: packages/kotlin-sdk
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
         run: ./build_android.sh --abi x86_64 --profile dev --verify
 
       - name: Setup Gradle
@@ -126,56 +181,9 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:compileDebugAndroidTestKotlin --stacktrace
 
-      - name: Enable KVM for emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run instrumented FFI smoke test (API 35 emulator)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
-          working-directory: packages/kotlin-sdk
-          script: |
-            # NOTE: android-emulator-runner executes this script line by line —
-            # each line is its own `sh -c` with no shared state — so every
-            # command must be self-contained on a single line (multi-line loops
-            # or cross-line variables silently fail).
-
-            # Keep the screen on and never time out. THIS is the fix: the flake
-            # was the emulator screen turning off mid-run and RE-LOCKING the
-            # device. The mnemonic MASTER_ALIAS AES key is
-            # setUnlockedDeviceRequired(true), so once the device re-locks even
-            # an ENCRYPT throws `InvalidKeyException: Keystore operation failed`
-            # (see WalletStorage.storeMnemonic). Unlocking alone is not enough —
-            # a slower suite (more instrumented tests) crosses the screen-off
-            # deadline before its wallet tests run, which is why this branch
-            # failed where lighter ones passed. Prevent the re-lock outright.
-            adb shell settings put system screen_off_timeout 2147483647
-            adb shell svc power stayon true
-
-            # Enroll a device-wide secure lock screen (PIN) — Android Keystore
-            # refuses to generate an auth-required key
-            # (setUserAuthenticationRequired(true), used for the identity-key
-            # KEYS_ALIAS RSA pair) without one enrolled, even though nothing
-            # here ever prompts for it (private-key ENCRYPT is never auth-gated;
-            # only DECRYPT is).
-            adb shell locksettings set-pin 1234
-
-            # Unlock the keyguard. With the screen kept on above, the device now
-            # stays unlocked for the whole run instead of re-locking.
-            # Credential acceptance and keyguard dismissal can race during a
-            # cold emulator boot. Retry the complete sequence atomically, then
-            # fail loudly before tests if the device never reaches unlocked.
-            for attempt in 1 2 3; do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; adb shell wm dismiss-keyguard; sleep 1; adb shell dumpsys trust | grep -q 'deviceLocked=0' && exit 0; done; echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1
-
-            ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+      - name: Run instrumented FFI smoke test (prebaked emulator)
+        working-directory: packages/kotlin-sdk
+        run: ci-android-emulator bash ../../.github/scripts/kotlin-instrumented-tests.sh
 
       - name: Upload test reports on failure
         if: failure()

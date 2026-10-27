@@ -54,7 +54,9 @@ export default {
       type: 'object',
       properties: {
         image: {
-          type: 'string',
+          // null means "use the image line this dashmate build ships"; an
+          // explicit string is an operator override. See config/derivedDefaults.js
+          type: ['string', 'null'],
           minLength: 1,
         },
         build: {
@@ -335,6 +337,38 @@ export default {
           required: ['host', 'port'],
           additionalProperties: false,
         },
+        tor: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+              description: 'Run a Tor sidecar so Core reaches onion peers and '
+                + 'publishes an onion service for inbound connections. On by '
+                + 'default. The '
+                + 'node keeps its IPv4 address: the onion service is an '
+                + 'additional address, not a replacement for the one in the '
+                + 'masternode registration.',
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            control: {
+              type: 'object',
+              properties: {
+                password: {
+                  type: 'string',
+                  minLength: 1,
+                  description: 'Tor control port password Core authenticates '
+                    + 'with to create its onion service',
+                },
+              },
+              required: ['password'],
+              additionalProperties: false,
+            },
+          },
+          required: ['enabled', 'docker', 'control'],
+          additionalProperties: false,
+        },
         spork: {
           type: 'object',
           properties: {
@@ -512,7 +546,7 @@ export default {
             + '(~10% chain-size disk overhead on mainnet).',
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
+      required: ['docker', 'p2p', 'rpc', 'zmq', 'tor', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],
       additionalProperties: false,
     },
@@ -545,6 +579,11 @@ export default {
               type: 'integer',
               minimum: 0,
             },
+            cacheTtlSeconds: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Seconds between reloads of the quorum lists from Core',
+            },
             versionCheckHost: {
               type: 'string',
               description: 'Host to use for version checking (used in local networks)',
@@ -554,7 +593,7 @@ export default {
               description: 'Override for address host (used in local networks)',
             },
           },
-          required: ['enabled', 'docker', 'api', 'previousBlocksOffset', 'versionCheckHost', 'addressHostOverride'],
+          required: ['enabled', 'docker', 'api', 'previousBlocksOffset', 'cacheTtlSeconds', 'versionCheckHost', 'addressHostOverride'],
           additionalProperties: false,
         },
         gateway: {
@@ -744,8 +783,17 @@ export default {
                         email: {
                           type: ['string', 'null'],
                         },
+                        acmeDirectoryUrl: {
+                          type: 'string',
+                          format: 'uri',
+                          // The response decides what certificate this node
+                          // will serve, so it has to be authenticated. Every
+                          // real ACME directory is HTTPS; a plaintext one lets
+                          // anyone on the path choose the certificate.
+                          pattern: '^https://',
+                        },
                       },
-                      required: ['email'],
+                      required: ['email', 'acmeDirectoryUrl'],
                       additionalProperties: false,
                     },
                   },
@@ -895,7 +943,7 @@ export default {
                   type: 'object',
                   properties: {
                     image: {
-                      type: 'string',
+                      type: ['string', 'null'],
                       minLength: 1,
                     },
                     deploy: {
@@ -1238,22 +1286,9 @@ export default {
                           additionalProperties: false,
                           required: ['timeout', 'delta'],
                         },
-                        commit: {
-                          type: 'object',
-                          properties: {
-                            timeout: {
-                              $ref: '#/definitions/optionalDuration',
-                            },
-                            bypass: {
-                              type: ['boolean', 'null'],
-                            },
-                          },
-                          additionalProperties: false,
-                          required: ['timeout', 'bypass'],
-                        },
                       },
                       additionalProperties: false,
-                      required: ['propose', 'vote', 'commit'],
+                      required: ['propose', 'vote'],
                     },
                   },
                   additionalProperties: false,

@@ -1,4 +1,7 @@
 import { expect } from 'chai';
+import HomeDir from '../../../src/config/HomeDir.js';
+import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+import { DERIVED_DEFAULTS } from '../../../src/config/derivedDefaults.js';
 import Config from '../../../src/config/Config.js';
 
 describe('Config', () => {
@@ -7,6 +10,43 @@ describe('Config', () => {
       for (const name of ['..', '../mainnet', 'slot/../mainnet', 'a/b', 'a\\b']) {
         expect(() => new Config(name, {}, true), name).to.throw('path-safe segment');
       }
+    });
+  });
+
+  describe('change tracking', () => {
+    let storedOptions;
+
+    beforeEach(() => {
+      storedOptions = getBaseConfigFactory(HomeDir.createTemp())().getStoredOptions();
+    });
+
+    // Loading a config off disk is not an edit to it. When hydration marks a
+    // config dirty, every command - including pure readers like `config get` -
+    // persists the whole config file on exit, and a slow reader can write its
+    // stale snapshot over a concurrent `config set`.
+    it('should not consider a freshly hydrated config changed', () => {
+      const config = new Config('testnet', storedOptions);
+
+      expect(config.isChanged()).to.be.false();
+    });
+
+    it('should consider a config changed after set()', () => {
+      const config = new Config('testnet', storedOptions);
+
+      config.set('description', 'changed');
+
+      expect(config.isChanged()).to.be.true();
+    });
+
+    // setOptions() is a genuine mutation when called on an existing config
+    // (resetNodeTaskFactory restores defaults through it), so only the
+    // constructor's initial hydration is exempt.
+    it('should consider a config changed after setOptions() post-construction', () => {
+      const config = new Config('testnet', storedOptions);
+
+      config.setOptions(storedOptions);
+
+      expect(config.isChanged()).to.be.true();
     });
   });
 
@@ -155,6 +195,87 @@ describe('Config', () => {
       ]) {
         expect(Config.isSchemaPathAllowed(path), `path: ${path}`).to.be.true();
       }
+    });
+  });
+
+  describe('version-derived defaults', () => {
+    // An unset derived option means "use the image line this dashmate build
+    // ships". Ordinary reads have to fill that in, or an operator is shown null
+    // where a real image will run - and the config command, doctor archives and
+    // compose templates all read through different accessors.
+    const DRIVE_IMAGE = 'platform.drive.abci.docker.image';
+
+    let config;
+
+    beforeEach(() => {
+      config = getBaseConfigFactory(HomeDir.createTemp())();
+    });
+
+    it('should store nothing for a derived option', () => {
+      expect(config.getStored(DRIVE_IMAGE)).to.equal(null);
+      expect(config.getStoredOptions().platform.drive.abci.docker.image).to.equal(null);
+    });
+
+    it('should resolve a derived option on every kind of read', () => {
+      const expected = DERIVED_DEFAULTS[DRIVE_IMAGE]();
+
+      // exact path
+      expect(config.get(DRIVE_IMAGE)).to.equal(expected);
+      // parent object - the read that made the first attempt at this incoherent
+      expect(config.get('platform.drive.abci.docker').image).to.equal(expected);
+      // whole config
+      expect(config.getOptions().platform.drive.abci.docker.image).to.equal(expected);
+      // the property templates and reindex render through
+      expect(config.options.platform.drive.abci.docker.image).to.equal(expected);
+      // serialization
+      // serialization - the shape doctor archives rebuild a config from
+      expect(JSON.parse(JSON.stringify(config)).options.platform.drive.abci.docker.image)
+        .to.equal(expected);
+    });
+
+    it('should keep an operator image on every read and store it', () => {
+      config.set(DRIVE_IMAGE, 'registry.example.com/drive:patched');
+
+      expect(config.get(DRIVE_IMAGE)).to.equal('registry.example.com/drive:patched');
+      expect(config.get('platform.drive.abci.docker').image).to.equal('registry.example.com/drive:patched');
+      expect(config.getStored(DRIVE_IMAGE)).to.equal('registry.example.com/drive:patched');
+    });
+
+    it('should return to tracking when the option is unset again', () => {
+      config.set(DRIVE_IMAGE, 'registry.example.com/drive:patched');
+      config.set(DRIVE_IMAGE, null);
+
+      expect(config.getStored(DRIVE_IMAGE)).to.equal(null);
+      expect(config.get(DRIVE_IMAGE)).to.equal(DERIVED_DEFAULTS[DRIVE_IMAGE]());
+    });
+
+    it('should compare configs by what they store, not what they resolve to', () => {
+      const tracking = getBaseConfigFactory(HomeDir.createTemp())();
+      const pinned = getBaseConfigFactory(HomeDir.createTemp())();
+
+      pinned.set(DRIVE_IMAGE, DERIVED_DEFAULTS[DRIVE_IMAGE]());
+
+      // identical effective images, different intent
+      expect(pinned.get(DRIVE_IMAGE)).to.equal(tracking.get(DRIVE_IMAGE));
+      expect(tracking.isEqual(pinned)).to.equal(false);
+    });
+
+    it('should refuse writes through a whole-config read', () => {
+      // Persisting a resolved value would defeat the design, so the snapshot
+      // these accessors hand out is frozen rather than quietly copied.
+      expect(() => {
+        config.getOptions().platform.drive.abci.docker.image = 'dashpay/drive:sneaky';
+      }).to.throw();
+    });
+
+    it('should only allow null where a default exists to fill it', () => {
+      // Widening another image to null would leave it with nothing to resolve to.
+      expect(() => config.set('core.docker.image', null)).to.throw();
+
+      const nullableByDefault = Object.keys(DERIVED_DEFAULTS);
+      nullableByDefault.forEach((optionPath) => {
+        expect(() => config.set(optionPath, null), optionPath).to.not.throw();
+      });
     });
   });
 });

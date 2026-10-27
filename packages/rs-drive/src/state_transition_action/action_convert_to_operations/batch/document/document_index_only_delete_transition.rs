@@ -1,0 +1,74 @@
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
+
+use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
+
+use crate::error::Error;
+use dpp::block::epoch::Epoch;
+use dpp::identifier::Identifier;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionAction;
+use dpp::version::PlatformVersion;
+use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+use crate::error::drive::DriveError;
+
+impl DriveHighLevelBatchOperationConverter for DocumentIndexOnlyDeleteTransitionAction {
+    fn into_high_level_batch_drive_operations<'b>(
+        self,
+        _epoch: &Epoch,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .state_transitions
+            .convert_to_high_level_operations
+            .document_index_only_delete_transition
+        {
+            0 => {
+                let (base, data) = self.base_and_data_owned();
+
+
+                let data_contract_id = base.data_contract_id();
+
+                let identity_contract_nonce = base.identity_contract_nonce();
+
+                let document_deletion_token_cost_operations = base.token_cost_operations(owner_id);
+
+                let mut ops = vec![
+                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                        identity_id: owner_id.into_buffer(),
+                        contract_id: data_contract_id.into_buffer(),
+                        nonce: identity_contract_nonce,
+                    }),
+                    // An indexOnly document is deleted from its carried
+                    // values: there is no primary-storage row to fetch
+                    // them from.
+                    DocumentOperation(DocumentOperationType::DeleteIndexOnlyDocument {
+                        document_id: base.id(),
+                        owner_id,
+                        data,
+                        contract_info: DataContractInfo::DataContractFetchInfo(
+                            base.data_contract_fetch_info(),
+                        ),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName(
+                            base.document_type_name_owned(),
+                        ),
+                    }),
+                ];
+
+                ops.extend(document_deletion_token_cost_operations);
+
+                Ok(ops)
+            }
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method:
+                    "DocumentIndexOnlyDeleteTransitionAction::into_high_level_document_drive_operations"
+                        .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}

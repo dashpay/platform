@@ -35,7 +35,6 @@ import androidx.navigation.NavHostController
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AddressFundProgress
-import org.dashfoundation.example.navigation.FundFromAssetLock
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController.Phase
 import org.dashfoundation.example.util.hexToBytes
@@ -83,9 +82,16 @@ fun PendingAssetLockRow(
  * IdentitiesHome list embeds. Port of
  * `PendingPlatformFundFromAssetLocksList.swift`: merges two row sources —
  * (1) [controllers], the live in-flight fundings from the coordinator, and
- * (2) [resumableLocks], DB-backed orphan `AssetLockEntity` rows
- * (`fundingTypeRaw == 4`, `statusRaw ∈ [1, 3]`) recovered after a crash
- * between asset-lock broadcast and ST submission.
+ * (2) [resumableLocks], DB-backed orphan `AssetLockEntity` rows recovered
+ * after a crash between asset-lock broadcast and ST submission.
+ *
+ * The orphan half covers BOTH top-up funding types — `4`
+ * (AssetLockAddressTopUp) and `5` (AssetLockShieldedAddressTopUp) — because
+ * neither has any other recovery home: the identity screens admit only
+ * funding types `0..2`. Each row's Resume is routed by funding type through
+ * [resumeRouteFor]; a shielded lock has to reach the shielded resume FFI,
+ * not the platform-address one, so surfacing the row without routing it
+ * would only move the dead end one tap later.
  *
  * Anti-double-consume gate: if ANY controller is [Phase.InFlight]
  * ([hasActiveFunding]), Resume is suppressed on every orphan row — the
@@ -110,17 +116,15 @@ fun PendingAssetLocksList(
         )
         controllers.forEach { PendingAssetLockRow(it, navController) }
         resumableLocks.forEach { (walletIdHex, lock) ->
+            // Fail closed: a funding type with no resume flow on this
+            // surface keeps the non-interactive indicator rather than
+            // dispatching to a screen that would submit the wrong
+            // transition for it.
+            val route = resumeRouteFor(walletIdHex, lock)
             ResumablePlatformFundFromAssetLockRow(
                 lock = lock,
-                hasActiveFunding = hasActiveFundingFor(walletIdHex),
-                onResume = {
-                    navController.navigate(
-                        FundFromAssetLock(
-                            walletIdHex = walletIdHex,
-                            resumeOutPointHex = lock.outPointHex,
-                        ),
-                    )
-                },
+                hasActiveFunding = hasActiveFundingFor(walletIdHex) || route == null,
+                onResume = { route?.let { navController.navigate(it) } },
             )
         }
     }

@@ -24,8 +24,12 @@ internal object CreditsNative {
      * Descriptor: `(J[BI[BJZ)J`.
      *
      * Thinly marshals
-     * `platform_wallet_topup_identity_with_existing_asset_lock_signer`.
-     * Generic recovery always supplies `consumeInvitationVoucher=false`.
+     * `platform_wallet_topup_identity_with_existing_asset_lock_signer`,
+     * forwarding [consumeInvitationVoucher] verbatim (Rust core refuses
+     * invitation locks on every generic path — the flag only authorizes
+     * the invitation-reclaim flow). Generic recovery call sites always
+     * supply `false`; `IdentityCredits.reclaimInvitationAsTopUp` is the
+     * sole `true` caller.
      */
     external fun topUpIdentityWithExistingAssetLock(
         walletHandle: Long,

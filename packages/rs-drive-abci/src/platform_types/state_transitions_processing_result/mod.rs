@@ -1,7 +1,8 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::consensus::ConsensusError;
-use std::collections::BTreeMap;
+use dpp::fee::Credits;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Error;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;
@@ -63,11 +64,15 @@ pub enum StateTransitionExecutionResult {
 pub struct StateTransitionsProcessingResult {
     execution_results: Vec<StateTransitionExecutionResult>,
     pub(crate) address_balances_updated: BTreeMap<PlatformAddress, CreditOperation>,
+    /// The token shielded pools the block's applied transitions touched, so the block end can
+    /// record each pool's new anchor (and prune its old ones) without scanning every pool.
+    pub(crate) token_shielded_pools_touched: BTreeSet<[u8; 32]>,
     invalid_paid_count: usize,
     invalid_unpaid_count: usize,
     valid_count: usize,
     failed_count: usize,
     fees: FeeResult,
+    credit_mints: Credits,
 }
 
 impl StateTransitionsProcessingResult {
@@ -109,6 +114,19 @@ impl StateTransitionsProcessingResult {
                 .or_insert(new_op);
         }
     }
+    /// Records the token shielded pools an applied state transition touched.
+    pub fn add_token_shielded_pools_touched(
+        &mut self,
+        token_ids: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        self.token_shielded_pools_touched.extend(token_ids);
+    }
+
+    /// The token shielded pools the block's applied state transitions touched.
+    pub fn token_shielded_pools_touched(&self) -> &BTreeSet<[u8; 32]> {
+        &self.token_shielded_pools_touched
+    }
+
     /// Add a new execution result
     pub fn add(&mut self, execution_result: StateTransitionExecutionResult) -> Result<(), Error> {
         match &execution_result {
@@ -172,6 +190,18 @@ impl StateTransitionsProcessingResult {
     /// Returns the number of failed state transitions
     pub fn failed_count(&self) -> usize {
         self.failed_count
+    }
+
+    /// Sets the credits the block's applied state transitions minted into Platform
+    pub fn set_credit_mints(&mut self, credit_mints: Credits) {
+        self.credit_mints = credit_mints;
+    }
+
+    /// Returns the credits the block's applied state transitions minted into Platform
+    /// (their `AddToSystemCredits` operations): the state-transition share of the block's
+    /// credit inflow, recorded for the net daily withdrawal limit.
+    pub fn credit_mints(&self) -> Credits {
+        self.credit_mints
     }
 
     /// Returns the aggregated fees

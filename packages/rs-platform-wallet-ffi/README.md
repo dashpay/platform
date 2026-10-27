@@ -175,6 +175,12 @@ Error codes:
 - `PLATFORM_WALLET_FFI_ERROR_CONTACT_NOT_FOUND` - Contact not found
 - And more...
 
+The result codes are **public ABI**: their integer values are consumed by the
+generated C header and mirrored by the Swift and Kotlin SDKs. Before adding a
+new code, read [ERROR_CODE_REGISTRY.md](ERROR_CODE_REGISTRY.md) — it holds the
+authoritative integer→name allocation, the rule for claiming the next free
+value, and the currently contested allocations across open PRs.
+
 ## Testing
 
 Run the test suite:

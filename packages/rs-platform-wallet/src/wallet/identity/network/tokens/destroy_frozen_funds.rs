@@ -87,8 +87,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             None,
         )
         .await
-        .map_err(|e| {
-            PlatformWalletError::TokenError(format!("Token destroy frozen funds failed: {}", e))
-        })
+        // Keeps the SDK error, so a consensus rejection reaches the FFI
+        // boundary with its code instead of as rendered text.
+        .map_err(|e| PlatformWalletError::token_operation_failed("destroy frozen funds", e))
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "4.1.0",
+  "version": "5.0.1",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
@@ -47,7 +47,7 @@
   "dependencies": {
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/protobufjs": "6.10.5",
-    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/grpc-js": "^1.14.5",
     "@improbable-eng/grpc-web": "^0.15.0",
     "google-protobuf": "^3.12.2",
     "long": "^5.2.0"
@@ -60,6 +60,7 @@
     "mocha": "^11.1.0",
     "mocha-sinon": "^2.1.2",
     "sinon": "^18.0.1",
-    "sinon-chai": "^3.7.0"
+    "sinon-chai": "^3.7.0",
+    "ts-protoc-gen": "0.15.0"
   }
 }

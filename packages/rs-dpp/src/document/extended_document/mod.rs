@@ -10,6 +10,10 @@ use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
@@ -34,10 +38,10 @@ pub enum ExtendedDocument {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ExtendedDocument {}
+impl JsonConvertible for ExtendedDocument {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ExtendedDocument {}
+impl ValueConvertible for ExtendedDocument {}
 
 #[cfg(all(
     test,
@@ -63,6 +67,7 @@ mod json_convertible_tests {
         let data_contract_id = data_contract.id();
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new([0xa1; 32]),
             owner_id: Identifier::new([0xb2; 32]),
             properties: BTreeMap::new(),
@@ -77,6 +82,8 @@ mod json_convertible_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         ExtendedDocument::V0(ExtendedDocumentV0 {

@@ -23,4 +23,10 @@ impl AddToPreviousBalanceOutcomeV0Methods for AddToPreviousBalanceOutcome {
             AddToPreviousBalanceOutcome::V0(v0) => v0.negative_credit_balance_modified,
         }
     }
+
+    fn repaid_debt(&self) -> Credits {
+        match self {
+            AddToPreviousBalanceOutcome::V0(v0) => v0.repaid_debt,
+        }
+    }
 }

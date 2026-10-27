@@ -6,6 +6,22 @@ package org.dashfoundation.dashsdk.ffi
  */
 internal object SignerNative {
 
+    /**
+     * `DashSDKSignerErrorCode::Generic` — unclassified signing failure
+     * (the historical behavior). Mirrors `rs-sdk-ffi/src/signer.rs`.
+     */
+    const val SIGNER_ERROR_CODE_GENERIC = 0
+
+    /**
+     * `DashSDKSignerErrorCode::SigningKeyUnavailable` — the signer has no
+     * usable private key for the requested public key; the operation itself
+     * did not fail. Travels typed across the completion ABI and comes back
+     * as `PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable` (31) →
+     * `DashSdkError.PlatformWallet.SigningKeyUnavailable`
+     * (dashpay/platform#4060 finding 7). Mirrors `rs-sdk-ffi/src/signer.rs`.
+     */
+    const val SIGNER_ERROR_CODE_KEY_UNAVAILABLE = 1
+
     /** Create a native `SignerHandle` backed by [bridge] (held as GlobalRef). */
     external fun createSigner(bridge: NativeSignerBridge): Long
 
@@ -14,9 +30,16 @@ internal object SignerNative {
 
     /**
      * Complete an in-flight sign request. Exactly once per token; pass
-     * either a signature or an error message.
+     * either a signature or an error message. [errorCode] is a
+     * `DashSDKSignerErrorCode` discriminant classifying a failure
+     * ([SIGNER_ERROR_CODE_GENERIC] when unclassified; ignored on success).
      */
-    external fun completeSign(token: Long, signature: ByteArray?, errorMessage: String?)
+    external fun completeSign(
+        token: Long,
+        signature: ByteArray?,
+        errorCode: Int,
+        errorMessage: String?,
+    )
 
     /**
      * One-shot ECDSA sign: raw 32-byte private key + payload → signature,

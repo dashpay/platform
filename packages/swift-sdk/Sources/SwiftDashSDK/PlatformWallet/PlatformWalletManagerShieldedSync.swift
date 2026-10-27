@@ -82,14 +82,48 @@ public struct ShieldedSyncEvent: Sendable {
 }
 
 extension PlatformWalletManager {
+    /// Shutdown leaves the handle live for admitted operations after its
+    /// early shielded stop. Do not restart or mutate that lifecycle while
+    /// the main actor is reentrant during the drain.
+    private func ensureShieldedLifecycleAllowed(_ name: String) throws {
+        try ensureConfigured()
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; \(name) rejected")
+        }
+    }
+
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight. The main actor is free during that stop, so a shielded call
+    /// issued meanwhile would otherwise restart the loop the stop is
+    /// cancelling, start a pass that outlives it, or block the main thread on
+    /// the same drain.
+    func ensureNoShieldedStopInFlight(before operation: String) throws {
+        guard shieldedStopsInFlight == 0 else {
+            throw PlatformWalletError.walletOperation(
+                "Shielded sync stop in progress; await stopShieldedSync() before \(operation)")
+        }
+    }
+
     func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent, generation: UInt64) {
         // Drop a trailing event that the Rust drain already dispatched but
         // the main actor only delivers after stop/clear returned. The FFI
         // callback snapshots `shieldedSyncGeneration` at enqueue time; a
         // stop/clear bumps the counter, so a stale event's snapshot no
         // longer matches and is dropped — even if a restart happened in the
-        // same actor turn (the restart does not reset the counter).
-        guard generation == shieldedSyncGeneration.current() else { return }
+        // same actor turn (the restart does not reset the counter). Shutdown
+        // suppresses callbacks immediately, while leaving the generation
+        // valid until admitted local reads finish their MainActor delivery.
+        guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
+        // The main actor is free while an async stop drains, so a completion
+        // of the pass being stopped arrives with a current generation. Hold
+        // it for the stop to settle (`shieldedCompletionHeldByStop`): dropped
+        // if the stop drains that pass, published if the stop times out and
+        // the pass keeps running.
+        if shieldedStopsInFlight > 0 {
+            shieldedCompletionHeldByStop = (event, generation)
+            return
+        }
         lastShieldedSyncEvent = event
         // A completed pass means the per-chunk progress counter for
         // this pass is no longer meaningful — clear so the next pass
@@ -122,12 +156,15 @@ extension PlatformWalletManager {
     /// progress hop delivered after a stop/clear bumped the generation
     /// must be dropped so it can't re-publish phantom progress over the
     /// `resetCurrentShieldedProgress()` mirrors the stop/clear just reset.
+    /// Dropped outright while an async stop is in flight, for the same
+    /// reason.
     func handleShieldedSyncProgress(
         cumulativeScanned: UInt64,
         blockHeight: UInt64,
         generation: UInt64
     ) {
-        guard generation == shieldedSyncGeneration.current() else { return }
+        guard !shutdownRequested, shieldedStopsInFlight == 0,
+              generation == shieldedSyncGeneration.current() else { return }
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
     }
@@ -143,13 +180,15 @@ extension PlatformWalletManager {
     /// tree-progress hop delivered after a stop/clear bumped the
     /// generation must be dropped so it can't re-publish phantom progress
     /// over the `resetCurrentShieldedProgress()` mirrors the stop/clear
-    /// just reset.
+    /// just reset. Dropped outright while an async stop is in flight, for
+    /// the same reason.
     func handleShieldedTreeProgress(
         committed: UInt64,
         total: UInt64,
         generation: UInt64
     ) {
-        guard generation == shieldedSyncGeneration.current() else { return }
+        guard !shutdownRequested, shieldedStopsInFlight == 0,
+              generation == shieldedSyncGeneration.current() else { return }
         currentShieldedTreeCommitted = committed
         currentShieldedTreeTotal = total
     }
@@ -182,16 +221,18 @@ extension PlatformWalletManager {
     /// been called on this manager first — the per-network
     /// SQLite handle is opened there. `bindShielded` reuses it
     /// across every wallet.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight: a first registration or a changed account set takes the
+    /// shielded store lock, and would wait on the calling thread for the
+    /// pass that stop is draining.
     public func bindShielded(
         walletId: Data,
         resolver: MnemonicResolver,
         accounts: [UInt32] = [0]
     ) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("bindShielded")
+        try ensureNoShieldedStopInFlight(before: "binding a shielded wallet")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
@@ -213,25 +254,27 @@ extension PlatformWalletManager {
             )
         }
 
-        try walletId.withUnsafeBytes { walletIdRaw in
-            guard let walletIdPtr = walletIdRaw.baseAddress?
-                .assumingMemoryBound(to: UInt8.self)
-            else {
-                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-            }
-            try accounts.withUnsafeBufferPointer { accountsBuf in
-                guard let accountsPtr = accountsBuf.baseAddress else {
-                    throw PlatformWalletError.invalidParameter(
-                        "accounts baseAddress is nil"
-                    )
+        try withShieldedLocalBalanceBind {
+            try walletId.withUnsafeBytes { walletIdRaw in
+                guard let walletIdPtr = walletIdRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                 }
-                try platform_wallet_manager_bind_shielded(
-                    handle,
-                    walletIdPtr,
-                    resolverHandle,
-                    accountsPtr,
-                    UInt(accountsBuf.count)
-                ).check()
+                try accounts.withUnsafeBufferPointer { accountsBuf in
+                    guard let accountsPtr = accountsBuf.baseAddress else {
+                        throw PlatformWalletError.invalidParameter(
+                            "accounts baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_bind_shielded(
+                        handle,
+                        walletIdPtr,
+                        resolverHandle,
+                        accountsPtr,
+                        UInt(accountsBuf.count)
+                    ).check()
+                }
             }
         }
     }
@@ -247,11 +290,7 @@ extension PlatformWalletManager {
     /// throws — the SQLite handle is opened once per manager and
     /// can't be repointed mid-flight.
     public func configureShielded(dbPath: String) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("configureShielded")
         try dbPath.withCString { dbPathPtr in
             try platform_wallet_manager_configure_shielded(handle, dbPathPtr).check()
         }
@@ -263,12 +302,12 @@ extension PlatformWalletManager {
     /// emitted as `skipped` results on every pass — the host can
     /// call `bindShielded` later and the loop will pick the binding
     /// up on its next tick.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, instead of restarting the loop that stop is cancelling.
     public func startShieldedSync(intervalSeconds: UInt64? = nil) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("startShieldedSync")
+        try ensureNoShieldedStopInFlight(before: "starting shielded sync")
 
         if let intervalSeconds {
             try setShieldedSyncInterval(seconds: intervalSeconds)
@@ -280,12 +319,19 @@ extension PlatformWalletManager {
         try platform_wallet_manager_shielded_sync_start(handle).check()
     }
 
+    /// Stop the shielded sync loop, waiting on the calling thread.
+    ///
+    /// The native stop cancels the loop, then waits up to 10 s (the Rust
+    /// coordinator's drain budget) for a pass in flight to finish. On the
+    /// main actor that freezes the UI for as long; the async overload runs
+    /// the same stop off the main thread. If the pass does not drain in time
+    /// this throws `shutdownIncomplete`, before bumping the generation.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight: this stop would wait on the same drain on the calling thread.
     public func stopShieldedSync() throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("stopShieldedSync")
+        try ensureNoShieldedStopInFlight(before: "a blocking stopShieldedSync()")
         try platform_wallet_manager_shielded_sync_stop(handle).check()
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after this point is
@@ -295,6 +341,97 @@ extension PlatformWalletManager {
         // progress mirrors; do it here so a pass stopped mid-flight
         // doesn't leave stale `currentShielded*` values on the UI.
         resetCurrentShieldedProgress()
+    }
+
+    /// Off-main variant of [`stopShieldedSync()`]: the same native stop, run
+    /// on [`shieldedStopQueue`] instead of the calling thread. In an `async`
+    /// context overload resolution prefers this variant; sync contexts keep
+    /// the blocking one.
+    ///
+    /// The native stop cancels the loop at once, so no new pass starts, then
+    /// waits up to 10 s for a pass in flight to finish; a running pass cannot
+    /// be interrupted. If it does not drain in time this throws
+    /// `shutdownIncomplete`, and the pass keeps running: it can still persist
+    /// what it finds and deliver its events after this returns.
+    ///
+    /// Events: while the stop is in flight, progress events that reach the
+    /// main actor are dropped, and a completion is held
+    /// ([`shieldedCompletionHeldByStop`]). A stop that drains the pass bumps
+    /// the generation and clears the progress mirrors, which drops the held
+    /// completion and the events that pass dispatched but the main actor only
+    /// delivers afterwards. A stop that times out leaves the generation and
+    /// the mirrors alone, like the blocking overload, and publishes the held
+    /// completion: the pass keeps running, and its events are real data. A
+    /// stop that finishes while [`shutdown()`] is draining admitted
+    /// operations also leaves the generation alone: the bump would cancel the
+    /// local balance reads that drain waits for, and shutdown bumps the
+    /// generation itself afterwards.
+    ///
+    /// Cancelling the calling task does not abort the stop. The native call
+    /// cannot be interrupted, so the caller keeps waiting for its result, and
+    /// the steps after it still run.
+    ///
+    /// Admitted like the other async native entry points: `shutdown()` waits
+    /// for an in-flight stop before destroying the handle, and a stop
+    /// requested once a shutdown has begun throws `invalidHandle` before any
+    /// native work. While the stop is in flight:
+    /// - [`startShieldedSync(intervalSeconds:)`], [`syncShieldedNow()`],
+    ///   [`syncShieldedWalletNow(walletId:)`], the blocking stop,
+    ///   [`clearShielded()`] and [`bindShielded(walletId:resolver:accounts:)`]
+    ///   throw `walletOperation`;
+    /// - the synchronous native operations that refuse to run beside an
+    ///   admitted async operation (wallet create, load and delete) throw
+    ///   `invalidHandle`;
+    /// - the native call holds the FFI handle registry's read guard for the
+    ///   whole drain, as the native SPV stop does.
+    public func stopShieldedSync() async throws {
+        try ensureShieldedLifecycleAllowed("stopShieldedSync")
+        // Admission and the in-flight count change on the main actor with no
+        // suspension in between, so neither `shutdown()`'s drain nor the
+        // event handlers can miss this stop.
+        try admitNativeOp("stopShieldedSync")
+        defer { finishNativeOp() }
+        shieldedStopsInFlight += 1
+        defer { shieldedStopsInFlight -= 1 }
+
+        let h = handle
+        let stop = nativeTeardownCalls.shieldedSyncStop
+        // Map the result on the queue: the raw result's Rust-owned message
+        // never crosses the continuation.
+        let (failure, milliseconds): (PlatformWalletError?, Int) = await withCheckedContinuation { continuation in
+            shieldedStopQueue.async {
+                let started = CFAbsoluteTimeGetCurrent()
+                let result = PlatformWalletResult(stop(h))
+                let milliseconds = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+                continuation.resume(
+                    returning: (result.isSuccess ? nil : PlatformWalletError(result: result), milliseconds))
+            }
+        }
+        SDKLogger.event(
+            "shielded_sync_stop_completed",
+            category: .lifecycle,
+            severity: failure == nil ? .info : .warning,
+            fields: ["duration_ms": .integer(Int64(milliseconds))],
+            error: failure
+        )
+        // Same main-actor turn as the deferred in-flight release, so no
+        // event of the drained pass can land between the two.
+        if failure == nil, !shutdownRequested {
+            shieldedSyncGeneration.bump()
+            resetCurrentShieldedProgress()
+        }
+        // The last stop in flight settles the held completion: stale after
+        // the bump above, still current after a timeout.
+        if shieldedStopsInFlight == 1, let held = shieldedCompletionHeldByStop {
+            shieldedCompletionHeldByStop = nil
+            if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
+                lastShieldedSyncEvent = held.event
+                resetCurrentShieldedProgress()
+            }
+        }
+        if let failure {
+            throw failure
+        }
     }
 
     /// Reset the Rust-side shielded state on this manager:
@@ -311,13 +448,16 @@ extension PlatformWalletManager {
     /// [`bindShielded`] call repopulates the coordinator's
     /// registries and the next sync pass re-saves notes via
     /// the changeset path.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight: Clear quiesces the same loop and would wait on the calling
+    /// thread for the pass that stop is draining.
     public func clearShielded() throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
+        try ensureShieldedLifecycleAllowed("clearShielded")
+        try ensureNoShieldedStopInFlight(before: "clearing shielded state")
+        try withShieldedLocalBalanceMutation {
+            try platform_wallet_manager_shielded_clear(handle).check()
         }
-        try platform_wallet_manager_shielded_clear(handle).check()
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after Clear is dropped
         // (it would otherwise briefly repopulate the mirror the host is
@@ -346,6 +486,12 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        return try Self.readIsShieldedSyncing(handle)
+    }
+
+    /// The native read behind [`isShieldedSyncing()`] (an atomic load,
+    /// never parks); also what the progress poller runs.
+    nonisolated static func readIsShieldedSyncing(_ handle: Handle) throws -> Bool {
         var syncing = false
         try platform_wallet_manager_shielded_sync_is_syncing(handle, &syncing).check()
         return syncing
@@ -363,20 +509,16 @@ extension PlatformWalletManager {
     }
 
     public func setShieldedSyncInterval(seconds: UInt64) throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("setShieldedSyncInterval")
         try platform_wallet_manager_shielded_sync_set_interval(handle, seconds).check()
     }
 
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight: once the stop's drain succeeds the native gate reopens, so a
+    /// pass requested meanwhile could start and outlive that stop.
     public func syncShieldedNow() async throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("syncShieldedNow")
+        try ensureNoShieldedStopInFlight(before: "a manual shielded sync")
         // No generation reset needed: this run's completion event snapshots
         // the current generation and passes the guard, while a trailing
         // event from a prior stopped run still carries the older generation.
@@ -462,21 +604,46 @@ extension PlatformWalletManager {
         case unshield = 1
         /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
         case withdrawal = 2
+        /// ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`):
+        /// the conservative complete-fee floor (compute + note storage
+        /// allowance + identity write allowance) consensus requires the
+        /// identity to hold on top of the amount; the exact fee is metered
+        /// at execution.
+        case shieldFromIdentity = 3
+        /// IdentityTopUpFromShieldedPool
+        /// (`compute_shielded_identity_top_up_fee`): the base flat fee plus
+        /// the flat identity-balance write cost, carved from the value
+        /// balance so the pool pays it.
+        case identityTopUpFromPool = 4
     }
 
     /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
-    /// shielded transition with `numActions` Orchard actions. Pure
-    /// computation on the Rust side (no handle, no network) against
-    /// `PlatformVersion::latest()` — the same version the builders pin —
-    /// so the estimate can't drift from the carved fee. A single-note
-    /// spend with change is `numActions: 2`.
-    public static func estimateShieldedFee(
+    /// shielded transition with `numActions` Orchard actions, computed at
+    /// this manager's network-tracked platform version (`sdk.version()`) —
+    /// the same version the shielded builders carve fees with — so the
+    /// estimate can't drift from the carved fee even when the connected
+    /// network hasn't activated the client's latest protocol version yet.
+    /// No network round-trip; just the handle → version lookup and a pure
+    /// computation. A single-note spend with change is `numActions: 2`.
+    public func estimateShieldedFee(
         kind: ShieldedFeeKind,
         numActions: Int = 2
     ) throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`,
+        // whose checked initializer traps on a negative Int.
+        guard numActions >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "numActions must be non-negative, got \(numActions)"
+            )
+        }
         var fee: UInt64 = 0
-        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
         try platform_wallet_shielded_estimate_fee(
+            handle,
             kind.rawValue,
             UInt(numActions),
             &fee
@@ -579,10 +746,90 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Cached Platform-to-shielded capacity for one payment account.
+    ///
+    /// All values come from the same Rust planner used by `shieldedShield`.
+    /// `reason` is non-nil only for a normal zero-capacity result; bad handles,
+    /// wallet IDs, and missing payment accounts throw instead.
+    public struct ShieldedShieldPreflight: Sendable {
+        public let canShield: Bool
+        public let accountBalanceCredits: UInt64
+        public let usableBalanceCredits: UInt64
+        public let feeReserveCredits: UInt64
+        public let maxShieldableCredits: UInt64
+        public let reason: String?
+    }
+
+    /// Return the cached amount a Platform Payment account can currently
+    /// shield without signing, proving, broadcasting, or querying DAPI.
+    ///
+    /// Rust sorts funded addresses lexicographically, excludes the leading
+    /// prefix before the first address that can retain the fee reserve, omits
+    /// later addresses below the protocol version's minimum input amount, and
+    /// truncates the lexicographically earliest usable set to the versioned
+    /// maximum input count. The result is executable under that deterministic
+    /// wallet policy rather than globally optimized over later balances. A
+    /// fragmented/no-capacity account returns `canShield == false` with
+    /// meaningful numeric fields and a reason; it is not thrown as an error.
+    public func shieldedShieldPreflight(
+        walletId: Data,
+        paymentAccount: UInt32 = 0
+    ) async throws -> ShieldedShieldPreflight {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> ShieldedShieldPreflight in
+            var out = ShieldedShieldPreflightFFI(
+                can_shield: false,
+                account_balance_credits: 0,
+                usable_balance_credits: 0,
+                fee_reserve_credits: 0,
+                max_shieldable_credits: 0
+            )
+            let result = try walletId.withUnsafeBytes { walletIdRaw in
+                guard let walletIdPointer = walletIdRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+                return PlatformWalletResult(
+                    platform_wallet_manager_shielded_shield_preflight(
+                        handle,
+                        walletIdPointer,
+                        paymentAccount,
+                        &out
+                    )
+                )
+            }
+            try result.throwIfError()
+            let reason = out.can_shield ? nil : result.message
+            return ShieldedShieldPreflight(
+                canShield: out.can_shield,
+                accountBalanceCredits: out.account_balance_credits,
+                usableBalanceCredits: out.usable_balance_credits,
+                feeReserveCredits: out.fee_reserve_credits,
+                maxShieldableCredits: out.max_shieldable_credits,
+                reason: reason
+            )
+        }.value
+    }
+
     /// Platform → Shielded. Spends credits from a Platform Payment
     /// account on `walletId` into the bound shielded sub-wallet's
     /// pool. Inputs are auto-selected from the account's addresses
-    /// in ascending derivation order until they cover `amount` plus
+    /// in lexicographic Platform-address order until they cover `amount` plus
     /// a conservative on-chain fee buffer; the actual fee is
     /// deducted from input 0 by the network via the shield
     /// transition's fee strategy.
@@ -623,20 +870,203 @@ extension PlatformWalletManager {
         let signerHandle = addressSigner.handle
 
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `topUpFromAddresses`.
-            // The trampoline ctx pointer inside the signer
-            // dangles unless the Swift owner outlives this
-            // detached work.
-            _ = addressSigner
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            // KeychainSigner is passed to Rust via `passUnretained`, so
+            // the Rust ctx pointer dangles unless the Swift owner stays
+            // alive across the whole FFI call — Rust re-materializes it
+            // inside the proof worker and signs through it. A bare
+            // `_ = addressSigner` is folklore the optimizer may elide in
+            // -O builds; `withExtendedLifetime` is the guaranteed
+            // keepalive (same as `shieldedTransfer`).
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try platform_wallet_manager_shielded_shield(
+                        handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
+                    ).check()
                 }
-                try platform_wallet_manager_shielded_shield(
-                    handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
-                ).check()
+            }
+        }.value
+    }
+
+    /// Identity → Shielded. The Type 21 `ShieldFromIdentity` transition:
+    /// credits leave `identityId`'s Platform identity balance and enter the
+    /// bound shielded sub-wallet's pool directly: no transparent Platform
+    /// address and no payment account in between. The new note lands on
+    /// `shieldedAccount`'s default Orchard address.
+    ///
+    /// `identityId` is a 32-byte identity id managed by `walletId`'s wallet.
+    /// `identitySigner` is the host-side `KeychainSigner` whose `.handle`
+    /// signs the transition with the identity's TRANSFER key: the same
+    /// signer the identity credit-transfer path uses. Borrowed for the
+    /// duration of the call.
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the
+    /// shielded compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
+    /// Returns the identity's proven post-debit balance; the wallet only
+    /// confirms on the identity's own balance proof, and any other result
+    /// throws `.shieldedSpendUnconfirmed` (do not resubmit).
+    ///
+    /// Heavy CPU work (Halo 2 proof + the identity signature) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed: the shield may already be on chain, so the caller must
+    /// NOT retry (a retry would rebuild the bundle and could double-shield;
+    /// the next sync reconciles the outcome). Like every shield it spends
+    /// no notes. An unresolved debit blocks a fresh shield from that identity
+    /// with `.shieldedIdentityDebitPending`. Inspect durable records with
+    /// `shieldedIdentityDebitRecoveryRecords(walletId:)`; explicit abandonment
+    /// requires acknowledging that another payment may be an additional debit.
+    @discardableResult
+    public func shieldedShieldFromIdentity(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64,
+        identitySigner: KeychainSigner
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = identitySigner.handle
+
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            // Rust writes the proven post-debit identity balance here on
+            // success; it leaves the slot untouched on every error path, so
+            // the initializer is the value a failed call keeps (and a call
+            // that throws never returns it).
+            var newBalance: UInt64 = 0
+            // Guaranteed signer keepalive across the whole FFI call :
+            // same rationale as `shieldedShield`.
+            try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try platform_wallet_manager_shielded_shield_from_identity(
+                            handle, widPtr, shieldedAccount, idPtr, amount,
+                            signerHandle, &newBalance
+                        ).check()
+                    }
+                }
+            }
+            return newBalance
+        }.value
+    }
+
+    /// Platform → EXTERNAL Shielded. The Type 15 shield with the note
+    /// assigned to `recipientRaw43` (a third-party raw 43-byte Orchard
+    /// payment address — same shape [`shieldedTransfer`] takes) instead
+    /// of the wallet's own default address. Input selection, fees, and
+    /// error shapes are identical to [`shieldedShield`]; the wallet
+    /// still needs a bound shielded sub-wallet at `shieldedAccount`
+    /// because the send is OVK-encrypted to (and its activity recorded
+    /// under) that account — that is how the wallet's own scan later
+    /// shows it as sent history.
+    ///
+    /// The recipient must actually be a third party: an address the
+    /// account's own keys recognize (default or diversified) is
+    /// rejected by Rust — self-shields go through [`shieldedShield`].
+    ///
+    /// `memo` follows [`shieldedTransfer`]'s rules: `nil` / empty means
+    /// no memo; a non-empty memo's UTF-8 byte length must be at most 32
+    /// or Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the shield may already be on chain, so the caller
+    /// must NOT retry (a retry would rebuild the bundle and could
+    /// double-pay; the next sync reconciles the outcome). A shield
+    /// spends no notes, so nothing is reserved wallet-side.
+    public func shieldedShieldToRecipient(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        paymentAccount: UInt32 = 0,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil,
+        addressSigner: KeychainSigner
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipient must be exactly 43 raw Orchard bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = addressSigner.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Guaranteed signer keepalive across the whole FFI call :
+            // same rationale as `shieldedShield`.
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try recipientRaw43.withUnsafeBytes { recipientRaw in
+                        guard let recipientPtr = recipientRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "recipient baseAddress is nil"
+                            )
+                        }
+                        // `nil` / empty → null pointer (no memo); otherwise
+                        // pass the text as a C string — Rust validates the
+                        // 32-byte limit and does the 36-byte encoding.
+                        let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                            try platform_wallet_manager_shielded_shield_to_recipient(
+                                handle, widPtr, shieldedAccount, paymentAccount,
+                                recipientPtr, amount, memoCStr, signerHandle
+                            ).check()
+                        }
+                        if let memo, !memo.isEmpty {
+                            try memo.withCString { try send($0) }
+                        } else {
+                            try send(nil)
+                        }
+                    }
+                }
             }
         }.value
     }
@@ -685,7 +1115,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Guaranteed resolver keepalive across the FFI call —
+            // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
                 try walletId.withUnsafeBytes { widRaw in
@@ -696,6 +1126,79 @@ extension PlatformWalletManager {
                     try toPlatformAddress.withCString { addrCStr in
                         try platform_wallet_manager_shielded_unshield(
                             handle, widPtr, resolverHandle, account, addrCStr, amount
+                        ).check()
+                    }
+                }
+            }
+        }.value
+    }
+
+    /// Shielded → an EXISTING identity's balance. The Type 22
+    /// `IdentityTopUpFromShieldedPool` transition: notes from
+    /// `walletId`'s shielded balance on `account` are spent so that
+    /// `identityId` receives `amount` credits. The flat pool-paid fee
+    /// (`estimateShieldedFee(kind: .identityTopUpFromPool)`) is spent
+    /// from the notes on top of `amount`.
+    ///
+    /// The identity only has to exist on Platform; it does NOT have to
+    /// be managed by this wallet, and no identity-side signer is
+    /// involved: the only spend authority is the Orchard one `resolver`
+    /// supplies per operation (see [`shieldedTransfer`]), exactly as for
+    /// [`shieldedUnshield`].
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed: the spend may already be on chain, so the caller must
+    /// NOT retry (the spent notes stay reserved Rust-side; the next
+    /// shielded sync reconciles them).
+    public func shieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+        guard let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            // Guaranteed resolver keepalive across the FFI call :
+            // same rationale as `shieldedTransfer`.
+            try withExtendedLifetime(resolver) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try platform_wallet_manager_shielded_identity_top_up_from_pool(
+                            handle, widPtr, resolverHandle, account, idPtr, amount
                         ).check()
                     }
                 }
@@ -742,7 +1245,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            // Guaranteed resolver keepalive across the FFI call —
+            // Guaranteed resolver keepalive across the FFI call :
             // same rationale as `shieldedTransfer`.
             try withExtendedLifetime(resolver) {
                 try walletId.withUnsafeBytes { widRaw in
@@ -925,12 +1428,11 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, like [`syncShieldedNow()`].
     public func syncShieldedWalletNow(walletId: Data) async throws {
-        guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle(
-                "PlatformWalletManager not configured"
-            )
-        }
+        try ensureShieldedLifecycleAllowed("syncShieldedWalletNow")
+        try ensureNoShieldedStopInFlight(before: "a manual shielded sync")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"

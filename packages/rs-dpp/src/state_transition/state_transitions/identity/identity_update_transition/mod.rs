@@ -20,9 +20,11 @@ use fields::*;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -37,12 +39,14 @@ use serde::{Deserialize, Serialize};
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -101,7 +105,7 @@ impl StateTransitionFieldTypes for IdentityUpdateTransition {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
@@ -137,8 +141,8 @@ mod test {
     fn test_serialization_roundtrip() {
         let t = make_update();
         let bytes = t.serialize_to_bytes().expect("should serialize");
-        let restored =
-            IdentityUpdateTransition::deserialize_from_bytes(&bytes).expect("should deserialize");
+        let restored = IdentityUpdateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("should deserialize");
         assert_eq!(t, restored);
     }
 

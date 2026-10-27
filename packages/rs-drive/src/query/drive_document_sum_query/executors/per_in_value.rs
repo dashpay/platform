@@ -11,6 +11,7 @@ use super::super::{DriveDocumentSumQuery, RangeSumOptions, SumEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -23,12 +24,13 @@ impl Drive {
     /// (deduplicated by key bytes) and emits per-In-value `SumEntry`
     /// where `in_key: None`, `key: serialized_value`, `sum: Some(i64)`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_per_in_value_no_proof(
+    pub(crate) fn execute_document_sum_per_in_value_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         sum_property: String,
         options: RangeSumOptions,
         transaction: TransactionArg,
@@ -82,6 +84,7 @@ impl Drive {
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
+                resolved_time_ranges,
             )
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

@@ -61,6 +61,27 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// gRPC method name
     fn method_name(&self) -> &'static str;
 
+    /// When the request asks a proof of nothing (an empty id list), the INVALID_ARGUMENT
+    /// message every node refuses it with. [DapiClient](crate::DapiClient) then refuses it
+    /// the same way without sending it: a node released before that refusal answers with an
+    /// internal error, or with a proof of nothing the client cannot verify, and either one
+    /// gets the node banned and the request sent to the next. Without a proof, nodes answer
+    /// an empty list with an empty result, so the request is sent.
+    fn names_nothing(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// The lowest protocol version at which every node of a network serves this request as
+    /// asked. Below it some nodes run a release that does not know the request's method or
+    /// one of its fields: they answer UNIMPLEMENTED, or drop the field and answer a different
+    /// question, and either gets them banned. `None` when nodes of every version serve it.
+    ///
+    /// The SDK's fetch paths refuse such a request until the network has proven that
+    /// version; a caller that executes the request directly owns the check.
+    fn needs_protocol_version(&self) -> Option<u32> {
+        None
+    }
+
     /// Perform transport request asynchronously.
     fn execute_transport<'c>(
         self,
@@ -153,6 +174,24 @@ pub trait TransportClient: Send + Sized {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError>;
+
+    /// Build client using node's url and [AppliedRequestSettings], together
+    /// with the pool generation of the connection it took (see
+    /// [ConnectionPool::generation]). When an attempt misses its deadline,
+    /// the executor evicts the node's connections up to that generation.
+    ///
+    /// The default reads the pool's generation after building the client, so
+    /// it can also cover a connection another thread pooled in between.
+    /// Clients that take their connection from `pool` override it with the
+    /// generation [ConnectionPool::get_or_create_with_generation] returns.
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let client = Self::with_uri_and_settings(uri, settings, pool)?;
+        Ok((client, pool.generation()))
+    }
 }
 
 #[cfg(test)]

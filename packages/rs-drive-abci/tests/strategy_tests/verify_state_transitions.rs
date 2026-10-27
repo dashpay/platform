@@ -3,13 +3,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
-use dpp::state_transition::proof_result::{StateTransitionProofOutcome, StateTransitionProofResult};
+use dpp::state_transition::proof_result::{StateTransitionProofResult};
 use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
@@ -116,7 +116,7 @@ fn assert_transition_yields_affected_state_snapshot(
     // The post-state proof cannot be bound to this transition's execution,
     // so the outcome must stay tagged as an affected-state snapshot.
     assert!(
-        matches!(outcome, StateTransitionProofOutcome::AffectedState(_)),
+        !outcome.is_execution_proved(),
         "{operation}: post-state proof must not be treated as execution evidence, got {outcome:?}"
     );
 }
@@ -262,6 +262,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
+    // From prover version 1 every owned, fee-paying transition's proof also
+    // carries the owner's balance; its own part is then one subset of it.
+    let proof_carries_owner_balance =
+        platform_version.drive.methods.prove.prove_state_transition >= 1;
     let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
@@ -389,7 +393,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        false,
+                        proof_carries_owner_balance,
                         true,
                         data_contract_create.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -422,7 +426,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
                         Some(keeps_history),
-                        false,
+                        proof_carries_owner_balance,
                         true,
                         data_contract_update.data_contract_ref().id().into_buffer(),
                         platform_version,
@@ -507,9 +511,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             //         .to_string(Encoding::Base58)
                             // );
 
+                            // From prover version 1 the batch proof carries the
+                            // owner's balance next to the document, so each is
+                            // read as one subset of it.
                             let (root_hash, document) = query
                                 .verify_proof(
-                                    false,
+                                    platform_version.drive.methods.prove.prove_state_transition
+                                        >= 1,
                                     &response_proof.grovedb_proof,
                                     document_type,
                                     platform_version,
@@ -522,6 +530,34 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 "state last block info {:?}",
                                 platform.state.last_committed_block_info()
                             );
+
+                            if proof_carries_owner_balance {
+                                let owner_id = batch_transition.owner_id();
+                                let (balance_root_hash, proved_owner_balance) =
+                                    Drive::verify_identity_balance_for_identity_id(
+                                        &response_proof.grovedb_proof,
+                                        owner_id.into_buffer(),
+                                        true,
+                                        platform_version,
+                                    )
+                                    .expect("expected to verify the owner's balance");
+                                assert_eq!(
+                                    balance_root_hash, root_hash,
+                                    "the document and the owner's balance come from one state"
+                                );
+                                let stored_owner_balance = platform
+                                    .drive
+                                    .fetch_identity_balance(
+                                        owner_id.into_buffer(),
+                                        None,
+                                        platform_version,
+                                    )
+                                    .expect("expected to fetch the owner's balance");
+                                assert_eq!(
+                                    proved_owner_balance, stored_owner_balance,
+                                    "the proved owner balance is the stored one"
+                                );
+                            }
 
                             match document_action {
                                 DocumentTransitionAction::CreateAction(creation_action) => {
@@ -541,15 +577,28 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         //     )
                                         //     .expect("expected to get document")
                                         // );
-                                        assert_eq!(
-                                            document,
+                                        let mut expected_document =
                                             Document::try_from_create_transition_action(
                                                 creation_action,
                                                 batch_transition.owner_id(),
                                                 platform_version,
                                             )
-                                            .expect("expected to get document")
-                                        );
+                                            .expect("expected to get document");
+                                        // The contract-version stamp records the
+                                        // contract version at execution time inside
+                                        // the block, but this harness rebuilds the
+                                        // action against post-block state — so a
+                                        // same-block contract update makes the
+                                        // rebuilt stamp postdate the stored one.
+                                        // Align only in that direction; a stored
+                                        // stamp must never exceed the rebuilt one.
+                                        if document.contract_version()
+                                            < expected_document.contract_version()
+                                        {
+                                            expected_document
+                                                .set_contract_version(document.contract_version());
+                                        }
+                                        assert_eq!(document, expected_document);
                                     } else {
                                         //there is the possibility that the state transition was not executed because it already existed,
                                         // we can discount that for now in tests
@@ -560,15 +609,24 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if *was_executed {
                                         // it's also possible we deleted something we replaced
                                         if let Some(document) = document {
-                                            assert_eq!(
-                                                document,
+                                            let mut expected_document =
                                                 Document::try_from_replace_transition_action(
                                                     replace_action,
                                                     batch_transition.owner_id(),
                                                     platform_version,
                                                 )
-                                                .expect("expected to get document")
-                                            );
+                                                .expect("expected to get document");
+                                            // Same post-block rebuild skew as the
+                                            // create arm: align the stamp only when
+                                            // the rebuilt one postdates the stored one
+                                            if document.contract_version()
+                                                < expected_document.contract_version()
+                                            {
+                                                expected_document.set_contract_version(
+                                                    document.contract_version(),
+                                                );
+                                            }
+                                            assert_eq!(document, expected_document);
                                         }
                                     } else {
                                         //there is the possibility that the state transition was not executed and the state is equal to the previous
@@ -589,6 +647,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                 DocumentTransitionAction::DeleteAction(_) => {
                                     // we expect no document
+                                    assert!(document.is_none());
+                                }
+                                DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
+                                    // indexOnly documents never have a
+                                    // primary-storage row, so the by-id query
+                                    // this harness proves against returns
+                                    // nothing whether or not the delete
+                                    // executed; strategies do not generate
+                                    // indexOnly deletes today.
                                     assert!(document.is_none());
                                 }
                                 DocumentTransitionAction::TransferAction(transfer_action) => {
@@ -684,7 +751,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                 let (root_hash, serialized_document) = query
                                     .verify_proof_keep_serialized(
-                                        false,
+                                        platform_version.drive.methods.prove.prove_state_transition
+                                            >= 1,
                                         &response_proof.grovedb_proof,
                                         platform_version,
                                     )
@@ -834,7 +902,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         ),
                         false,
                         false,
-                        false,
+                        proof_carries_owner_balance,
                         platform_version,
                     )
                     .expect("expected to verify identity keys");
@@ -967,12 +1035,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 platform.state.last_committed_block_info()
                             );
 
-                            let StateTransitionProofOutcome::ExecutionProved(
-                                StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
-                                    proved_identity,
-                                    proof_address_infos_map,
-                                ),
-                            ) = proof_result
+                            assert!(
+                                proof_result.is_execution_proved(),
+                                "expected ExecutionProved, got {:?}",
+                                proof_result
+                            );
+
+                            let StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
+                                proved_identity,
+                                proof_address_infos_map,
+                            ) = proof_result.into_result()
                             else {
                                 panic!("expected identity/address infos for identity create from addresses proof");
                             };
@@ -1066,15 +1138,20 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             )
                             .expect("IdentityTopUpFromAddressesAction proof should verify");
 
-                        let StateTransitionProofOutcome::AffectedState(
-                            StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                                identity,
-                                proof_address_infos,
-                            ),
-                        ) = data
+                        assert!(
+                            !data.is_execution_proved(),
+                            "expected AffectedState, got {:?}",
+                            data
+                        );
+
+                        let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                            identity,
+                            proof_address_infos,
+                        ) = data.into_result()
                         else {
-                            panic!("expected identity/address infos for top up from addresses proof, got {}",
-                        std::any::type_name_of_val(&data));
+                            panic!(
+                                "expected identity/address infos for top up from addresses proof"
+                            );
                         };
 
                         assert!(
@@ -1159,12 +1236,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
 
                         if *was_executed {
-                            let StateTransitionProofOutcome::AffectedState(
-                                StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                                    proved_identity,
-                                    proof_address_infos_map,
-                                ),
-                            ) = proof_result
+                            assert!(
+                                !proof_result.is_execution_proved(),
+                                "expected AffectedState, got {:?}",
+                                proof_result
+                            );
+                            let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                                proved_identity,
+                                proof_address_infos_map,
+                            ) = proof_result.into_result()
                             else {
                                 panic!("expected identity/address infos for credit transfer proof");
                             };
@@ -1281,7 +1361,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::UnshieldAction(_)
                 | StateTransitionAction::ShieldFromAssetLockAction(_)
                 | StateTransitionAction::ShieldedWithdrawalAction(_)
-                | StateTransitionAction::IdentityCreateFromShieldedPoolAction(_) => {
+                | StateTransitionAction::IdentityCreateFromShieldedPoolAction(_)
+                | StateTransitionAction::ShieldFromIdentityAction(_)
+                | StateTransitionAction::IdentityKeyLimitsUpdateAction(_)
+                | StateTransitionAction::ContractUserModerationAction(_)
+                | StateTransitionAction::ContractFeeClaimAction(_)
+                | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_)
+                | StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
                     // The strategy harness does not generate shielded transitions (no shielded
                     // `OperationType`), so their proof-verification roundtrip isn't exercised here.
                     // IdentityCreateFromShieldedPool's strict prove/verify is covered by the unit

@@ -63,6 +63,29 @@ private func jsonString(_ data: Data?) -> String? {
     return str
 }
 
+// MARK: - PersistentIdentityBalanceMetadata
+
+struct IdentityBalanceMetadataStorageDetailView: View {
+    let record: PersistentIdentityBalanceMetadata
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Identity ID", value: hexString(record.identityId))
+            }
+            Section("Balance Freshness") {
+                FieldRow(label: "Platform Height", value: String(UInt64(bitPattern: record.platformHeight)))
+                FieldRow(label: "Core Height", value: String(record.coreHeight))
+                FieldRow(label: "Timestamp (ms)", value: String(UInt64(bitPattern: record.timestampMillis)))
+            }
+        }
+        .navigationTitle("Balance Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentIdentity
 
 struct IdentityStorageDetailView: View {
@@ -174,6 +197,7 @@ struct DPNSNameStorageDetailView: View {
                 FieldRow(label: "Network", value: record.network.displayName)
             }
             Section("Status") {
+                FieldRow(label: "Currently Owned", value: record.isOwned ? "Yes" : "No")
                 // `acquiredAt` is Unix-millis from
                 // `DpnsNameInfo.acquired_at`. Zero when the FFI
                 // changeset didn't carry a timestamp (legacy rows
@@ -188,6 +212,35 @@ struct DPNSNameStorageDetailView: View {
                     )
                     FieldRow(label: "Acquired", value: dateString(date))
                 }
+            }
+            Section("Marketplace") {
+                FieldRow(label: "Document ID", value: record.documentIdBase58 ?? "—")
+                FieldRow(
+                    label: "Sale Status",
+                    value: record.saleStatus.map(DpnsMarketplaceUI.status) ?? "Not tracked"
+                )
+                FieldRow(
+                    label: "Price",
+                    value: record.listedPriceCredits.map(DpnsMarketplaceUI.price) ?? "Not listed"
+                )
+                FieldRow(label: "Counterparty", value: record.counterpartyIdBase58 ?? "—")
+                FieldRow(
+                    label: "Document Created (ms)",
+                    value: record.documentCreatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Updated (ms)",
+                    value: record.documentUpdatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Transferred (ms)",
+                    value: record.documentTransferredAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Marketplace Synced (ms)",
+                    value: record.marketplaceUpdatedAt == 0
+                        ? "—" : String(record.marketplaceUpdatedAt)
+                )
             }
             Section("Relationships") {
                 NavigationLink(destination: IdentityStorageDetailView(record: record.identity)) {
@@ -735,13 +788,18 @@ struct PublicKeyStorageDetailView: View {
             }
             Section("Data") {
                 FieldRow(label: "Public Key", value: hexString(record.publicKeyData))
+                // The kind row always shows, so a row whose stored kind
+                // says "bound" but whose id blob is missing or unreadable
+                // still surfaces the persisted discriminator instead of a
+                // bare "None".
+                FieldRow(label: "Contract Bounds", value: contractBoundsKindDisplay)
                 if let bounds = record.contractBounds, !bounds.isEmpty {
-                    FieldRow(label: "Contract Bounds", value: "\(bounds.count)")
-                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, contractId in
-                        FieldRow(label: "Contract", value: contractId.toBase58String())
+                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, boundId in
+                        FieldRow(label: boundIdLabel, value: boundId.toBase58String())
                     }
-                } else {
-                    FieldRow(label: "Contract Bounds", value: "None")
+                    if let docType = record.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        FieldRow(label: "Document Type", value: docType)
+                    }
                 }
                 // Surface the keychain identifier itself rather than a
                 // bare presence/absence flag — it's load-bearing for
@@ -783,6 +841,28 @@ struct PublicKeyStorageDetailView: View {
     private var keyTypeDisplay: String {
         if let t = record.keyTypeEnum { return "\(t.name) (\(record.keyType))" }
         return record.keyType
+    }
+
+    /// The bounds variant the row restores as. Reads the stored kind
+    /// when there is one and the legacy inference otherwise, so a row
+    /// written before the kind column shows what it will actually
+    /// restore as, not what it was meant to be.
+    private var contractBoundsKindDisplay: String {
+        let kind = record.effectiveContractBoundsKind
+        let name: String
+        switch kind {
+        case 0: name = "None"
+        case 1: name = "Single contract"
+        case 2: name = "Single contract document type"
+        case 3: name = "Contract group"
+        default: name = "Unknown"
+        }
+        if kind == 0 && record.contractBoundsKind == nil { return name }
+        return record.contractBoundsKind == nil ? "\(name) (\(kind), inferred)" : "\(name) (\(kind))"
+    }
+
+    private var boundIdLabel: String {
+        record.effectiveContractBoundsKind == 3 ? "Contract Group" : "Contract"
     }
 }
 
@@ -1110,6 +1190,22 @@ struct DocumentTypeStorageDetailView: View {
             Section("Flags") {
                 FieldRow(label: "Keeps History", value: record.documentsKeepHistory ? "Yes" : "No")
                 FieldRow(label: "Mutable", value: record.documentsMutable ? "Yes" : "No")
+                // Protocol version 14 per-property freeze, read off the
+                // stored schema; rows appear only when the type declares it,
+                // so a pre-v14 type renders as before.
+                let immutability = record.immutability
+                if !immutability.isEmpty {
+                    FieldRow(
+                        label: "Immutable",
+                        value: immutability.immutableProperties.joined(separator: ", ")
+                    )
+                    if !immutability.immutableAllowSetting.isEmpty {
+                        FieldRow(
+                            label: "Settable Once While Absent",
+                            value: immutability.immutableAllowSetting.joined(separator: ", ")
+                        )
+                    }
+                }
                 FieldRow(label: "Can Be Deleted", value: record.documentsCanBeDeleted ? "Yes" : "No")
                 FieldRow(label: "Transferable", value: record.documentsTransferable ? "Yes" : "No")
                 FieldRow(
@@ -1172,6 +1268,52 @@ struct IndexStorageDetailView: View {
                 FieldRow(label: "Unique", value: record.unique ? "Yes" : "No")
                 FieldRow(label: "Null Searchable", value: record.nullSearchable ? "Yes" : "No")
                 FieldRow(label: "Contested", value: record.contested ? "Yes" : "No")
+            }
+            // Protocol v14 index keywords - persisted verbatim as authored
+            // and rendered raw here (this is the storage debug view); rows
+            // appear only when set, so pre-v14 indexes render as before
+            if record.countable != nil || record.summable != nil || record.averageable != nil
+                || record.terminal != nil || record.preallocated || record.timeRangeJSON != nil {
+                Section("Axes & Storage Mode") {
+                    if let countable = record.countable {
+                        FieldRow(label: "Countable", value: countable)
+                    }
+                    if record.rangeCountable {
+                        FieldRow(label: "Range Countable", value: "Yes")
+                    }
+                    if let summable = record.summable {
+                        FieldRow(label: "Summable", value: summable)
+                    }
+                    if record.rangeSummable {
+                        FieldRow(label: "Range Summable", value: "Yes")
+                    }
+                    if let averageable = record.averageable {
+                        FieldRow(label: "Averageable", value: averageable)
+                    }
+                    if record.rangeAverageable {
+                        FieldRow(label: "Range Averageable", value: "Yes")
+                    }
+                    if record.rankedCountable {
+                        FieldRow(label: "Ranked by Count", value: "Yes")
+                    }
+                    if record.rankedSummable {
+                        FieldRow(label: "Ranked by Sum", value: "Yes")
+                    }
+                    if record.rankedAverageable {
+                        FieldRow(label: "Ranked by Average", value: "Yes")
+                    }
+                    if let terminal = record.terminal {
+                        FieldRow(label: "Terminal", value: terminal)
+                    }
+                    if record.preallocated {
+                        FieldRow(label: "Preallocated", value: "Yes")
+                    }
+                    if let timeRange = record.timeRange,
+                       let range = timeRange["range"] as? Int,
+                       let step = timeRange["step"] as? Int {
+                        FieldRow(label: "Time Range", value: "\(range)s windows every \(step)s")
+                    }
+                }
             }
             if let props = record.properties, !props.isEmpty {
                 Section("Properties") {
@@ -1250,6 +1392,12 @@ struct PropertyStorageDetailView: View {
                     label: "Max Items",
                     value: record.maxItems.map { "\($0)" } ?? "—"
                 )
+                // A typed array's element schema has no column: it is read
+                // off the document type's persisted schema
+                if let typedArray = record.documentType?.typedArray(named: record.name) {
+                    FieldRow(label: "Items", value: typedArray.element.summary)
+                    FieldRow(label: "Unique Items", value: typedArray.uniqueItems ? "Yes" : "No")
+                }
                 FieldRow(
                     label: "Min Value",
                     value: record.minValue.map { "\($0)" } ?? "—"
@@ -2187,6 +2335,34 @@ struct MasternodeStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentTrackedMasternode
+
+struct TrackedMasternodeStorageDetailView: View {
+    let record: PersistentTrackedMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: record.network?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "proTxHash (wire)", value: hexString(record.proTxHash))
+                FieldRow(label: "Label", value: record.label ?? "—")
+                FieldRow(
+                    label: "Added",
+                    value: dateString(Date(timeIntervalSince1970: TimeInterval(record.addedAt))))
+            }
+            Section("Snapshot") {
+                // Opaque, Rust-owned document (PUBLIC material only) —
+                // shown verbatim; only Rust interprets it.
+                Text(record.snapshotJSON)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle(record.label ?? "Tracked Masternode")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentShieldedNote
 
 struct ShieldedNoteStorageDetailView: View {
@@ -2333,6 +2509,8 @@ struct ShieldedActivityStorageDetailView: View {
         case 5: name = "Withdrawal"
         case 6: name = "IdentityCreate"
         case 7: name = "ShieldedSpend"
+        case 8: name = "ShieldFromIdentity"
+        case 9: name = "IdentityTopUpFromPool"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

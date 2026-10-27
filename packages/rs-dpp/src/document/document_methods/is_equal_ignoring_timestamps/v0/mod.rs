@@ -56,6 +56,7 @@ mod tests {
         properties.insert("score".to_string(), Value::U64(100));
 
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties,
@@ -70,6 +71,8 @@ mod tests {
             updated_at_core_block_height: Some(6),
             transferred_at_core_block_height: Some(7),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

@@ -6,6 +6,7 @@ pub mod property_names {
     pub const REVISION: &str = "$revision";
     pub const OWNER_ID: &str = "$ownerId";
     pub const CREATOR_ID: &str = "$creatorId";
+    pub const CONTRACT_VERSION: &str = "$contractVersion";
     pub const PRICE: &str = "$price";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
@@ -16,6 +17,8 @@ pub mod property_names {
     pub const CREATED_AT_CORE_BLOCK_HEIGHT: &str = "$createdAtCoreBlockHeight";
     pub const UPDATED_AT_CORE_BLOCK_HEIGHT: &str = "$updatedAtCoreBlockHeight";
     pub const TRANSFERRED_AT_CORE_BLOCK_HEIGHT: &str = "$transferredAtCoreBlockHeight";
+    pub const MODERATED_AT: &str = "$moderatedAt";
+    pub const MODERATED_BY: &str = "$moderatedBy";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 3] = [

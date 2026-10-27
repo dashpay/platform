@@ -56,6 +56,8 @@ Given current root version and its type:
 3. Run `yarn release -v=<target-version>` (this pushes a branch and opens a PR — an outward-facing action; confirm before running unless already told to proceed).
 4. Report back: new version, the `release_<version>` branch, the changelog-from tag used, and the PR URL. Verify the bump landed in `package.json` + `Cargo.toml` and that the versions match.
 
+**Changelog base tag.** `find_latest_tag.js` resolves the tag the changelog is generated from and `release.sh` prints it (`Changelog base tag : <tag>`) for verification before generating — an interactive run also pauses for confirmation. The base must be the **immediately-preceding release** (by creation date); a too-far-back base regenerates already-present `CHANGELOG.md` sections and duplicates them. The resolver bases a first prerelease of a new id (e.g. the first `rc` after betas) off the newest prerelease on that `X.Y.0` line, and warns if existing tags would be duplicated. If the base is ever wrong, abort and re-run with `-c=<correct-tag>`.
+
 ## First 4.1 beta example
 
 Current version `4.0.0` on branch `v4.1-dev`, cutting the first 4.1 beta:
@@ -80,7 +82,7 @@ Note also that the heavy E2E suites (`test:browsers`, `test:suite`, functional, 
 
 ## Publishing the GitHub release (after the PR merges)
 
-Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages and Docker images.
+Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages, Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` + checksum.
 
 1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
 2. Write concise, **non-technical** release notes: a short highlights list (main features) + a bug-fixes/hardening summary + a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks) — don't paste the raw commit list.
@@ -94,31 +96,71 @@ gh release create v<version> --target <merge-commit-sha> \
 
 Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
 
-4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release.
+4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release. The Kotlin and Swift SDK jobs run in the same workflow but take longer (the Kotlin native build can run ~3 h) — the release page fills in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
 
-## Known gotcha: a brand-new npm package breaks the publish
+## Known gotcha: a new npm package without a trusted publisher breaks the publish
 
-`release.yml`'s **Release NPM packages** job publishes with `yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public` over **npm trusted-publishers OIDC**. OIDC trusted publishing can **only publish to a package that already exists** on npm with a trusted publisher configured — it **cannot create (bootstrap) a brand-new package**. So the first release after someone adds a new `@dashevo/*` package fails: the job publishes every existing package fine, then exits 1 on the new one (which is `404 Not Found` on the registry). `--access public` and `--tolerate-republish` are already set — they are **not** the fix.
+`release.yml`'s **Release NPM packages** job publishes with `yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public` over **npm trusted-publishers OIDC**. OIDC can only publish to a package that has a **trusted publisher configured** on npm for it. Two ways a new `@dashevo/*` package trips this:
 
-**Symptom:** the release run's "Release NPM packages" job fails; `yarn` reports `The command failed in workspace @dashevo/<new-pkg> ... exit code 1`; `npm view @dashevo/<new-pkg>` → `E404`, while the other contracts show the release version.
+- **Never published** — the package does not exist on npm; OIDC cannot bootstrap it (`404`).
+- **Exists but has no trusted publisher** — e.g. it was first-published manually with a token. The package exists, but OIDC has nothing to authenticate against, so publishing a *new version* fails. This is the subtle one: a one-off manual publish is **not** a permanent fix — the publish job keeps failing on that package **every** release until the trusted publisher is configured.
 
-**Fix (needs `@dashevo` publish rights + a 2FA OTP — a human with npm access must do it):**
+`--access public` and `--tolerate-republish` are already set — they are **not** the fix.
 
-1. Check out the package at the released version and publish it once with a token (not OIDC). The npm dist-tag matches CI's: for a prerelease it is `<major>.<minor>-<suffix>` (e.g. `4.1-beta`); for a stable release it is `latest`. Read it from an already-published package: `npm view @dashevo/dpns-contract dist-tags`.
+**Symptom:** the run's "Release NPM packages" job fails; `yarn` reports `The command failed in workspace @dashevo/<pkg> ... exit code 1`. The per-package error is `YN0033: No authentication configured for request` (no trusted publisher) or a `404`/`E404` (never published). Confirm which package and how it was last published:
 
 ```sh
-git checkout origin/<dev-branch> -- packages/<new-pkg>          # get the released version
-cd packages/<new-pkg>
-npm publish --access public --tag <major.minor-suffix> --otp=<code>
-git checkout HEAD -- packages/<new-pkg>                          # restore working tree
+# what published the latest version — GitHub Actions (OIDC) has a trustedPublisher field; a
+# human username means it was a manual token publish and OIDC is NOT wired up:
+curl -s https://registry.npmjs.org/@dashevo/<pkg>/<version> | python3 -c "import sys,json;print(json.load(sys.stdin).get('_npmUser'))"
 ```
 
-2. Re-run the failed job — `--tolerate-republish` now skips every package (all already at the release version) → green:
+**Permanent fix (a human with owner rights on the package, via the npm web UI):** configure the trusted publisher, then re-run the failed job.
+
+**Bootstrap first if the package was _never published_.** Trusted-publisher configuration needs an existing package page — a `404` package has no **Access** settings to configure. So you must create the package before you can wire up OIDC:
+
+0. Publish one version with a token (`npm publish --access public` from the package dir, or the Stopgap command below). This creates the package on npm.
+
+Then, for **both** cases (never-published-now-bootstrapped, and exists-without-a-publisher):
+
+1. npmjs.com → the package → **Access** → **Trusted Publisher** → **GitHub Actions**: organization/user `dashpay`, repository `platform`, workflow filename `release.yml`, environment **blank** (the `release-npm` job uses no environment). Save.
+2. Re-run the failed job — OIDC now publishes the missing version and `--tolerate-republish` skips the rest → green:
 
 ```sh
 gh run rerun <release-run-id> --repo dashpay/platform --failed
 ```
 
-After this first publish the package exists on npm, so **every later release publishes it automatically**. Note: right after publishing, `npm view` may still `404` for a few minutes (npm CDN negative-cache); the `http fetch PUT 200` line in `~/.npm/_logs/…` confirms the publish landed.
+**Stopgap only (does not stop the recurrence):** publish the exact release version once with a token, then re-run the failed job (`--tolerate-republish` skips it). The dist-tag matches CI's — prerelease `<major>.<minor>-<suffix>` (e.g. `4.1-rc`), stable `latest` (`npm view @dashevo/dpns-contract dist-tags`). This unblocks the current release but the next one fails the same way until the trusted publisher is configured.
 
-**Prevention:** whenever you add a new publishable npm package to the monorepo, first-publish it manually (or set up its trusted publisher on npm) **before** cutting the release that would ship it.
+**Prevention:** whenever you add a new publishable npm package, bootstrap it **before** cutting the release that ships it — publish one version with a token so the package exists, then configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) on the freshly created package. The publisher cannot be configured until the package exists, so the token publish is the required first step, not an optional stopgap. `release.sh` prints this reminder after opening the release PR.
+
+## Post-stable-release: graduate the dev branch
+
+After a **stable** `vX.Y.0` release PR merges into `vX.Y-dev`, promote the branches so `vX.Y-dev` becomes the `X.Y.x` patch line and the next dev line takes over. Only do this for a **stable** release, not prereleases. (Example below is the 4.1.0 run: current dev `v4.1-dev`, next dev `v4.2-dev`. If the next release is a **major** bump, the user says so — e.g. `v5.0-dev`.)
+
+**Read first — the ruleset, not classic protection, is what blocks direct pushes.** `master`, `main`, `develop`, and every `v*` branch are covered by a repo **ruleset** (`Block deletions, require PR`, `id 501248`) that requires a PR and is **separate** from classic branch protection — a repo admin does **not** automatically bypass it, and `gh api repos/.../branches/<b>/protection` does **not** show it. Only users in the ruleset's `bypass_actors` can push directly (currently shumkov `24296` and QuantumExplorer `11468583`, both `always`). To grant a user standing bypass, fetch the ruleset, append them, and PUT it back:
+
+```sh
+gh api repos/dashpay/platform/rulesets/501248 > r.json
+jq '{name,target,enforcement,bypass_actors:(.bypass_actors+[{actor_id:<userId>,actor_type:"User",bypass_mode:"always"}]),conditions,rules}' r.json > put.json
+gh api --method PUT repos/dashpay/platform/rulesets/501248 --input put.json   # find <userId>: gh api users/<login> --jq .id
+```
+
+Steps (skip whatever is already done — e.g. the next dev branch and default may have been set early):
+
+1. **Ensure the next dev branch exists** — `v(X.Y+1)-dev`. If it exists but is behind current dev, it just needs the sync in step 3.
+2. **Merge current dev → `master`** (master tracks the latest stable). master is usually far behind and its only unique commits are **auto-generated** (e.g. `.github/grpc-queries-cache.json`, committed by `tests-rs-sdk-grpc-coverage.yml` as `chore: update gRPC queries cache [skip ci]`) — disposable. **Merge, don't force-reset** (master sets `allow_force_pushes:false`, and `required_linear_history:false` so a merge commit is allowed); resolve the generated cache toward the dev branch:
+   ```sh
+   git checkout master && git reset --hard origin/master
+   git merge origin/vX.Y-dev                                    # conflicts only on generated caches
+   git checkout --theirs .github/grpc-queries-cache.json && git add -A
+   git commit --no-edit && git push origin master
+   ```
+3. **Fast-forward next dev to current dev** (carry the release commits into the next line). It is typically strictly behind → a clean fast-forward:
+   ```sh
+   git push origin origin/vX.Y-dev:v(X.Y+1)-dev
+   ```
+   The next dev branch **stays at version `X.Y.0`** until its first `v(X.Y+1).0-dev.1` release is cut — do **not** bump it now.
+4. **Make next dev the default branch** if it isn't already (repo Settings → Branches, or `gh api`).
+5. **Milestones** — ensure `vX.Y.x` (patches for the just-released line) and `v(X.Y+1).0` (next dev prereleases) exist. Create with `gh api repos/dashpay/platform/milestones -f title="vX.Y.x" -f state=open`. (Stable-release milestone convention is `vX.Y.x`; prerelease is `vX.Y.0`.)
+6. **Re-target open PRs** from current dev → next dev: `gh pr edit <n> --base v(X.Y+1)-dev`. Leave genuine `vX.Y.x` patch PRs on `vX.Y-dev`. Note the `milestone.yml` workflow auto-assigns a PR's milestone by its base branch.

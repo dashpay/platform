@@ -57,7 +57,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Parse document ID
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
@@ -161,9 +161,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create delete transition: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to create delete transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -220,7 +218,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
     info!("[DOCUMENT DELETE] starting document delete operation");
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     // Parse document ID
@@ -353,7 +351,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT DELETE] SDK call failed");
-                FFIError::InternalError(format!("Failed to delete document and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to delete document and wait", e)
             })?;
 
         info!("[DOCUMENT DELETE] SDK call completed successfully");
@@ -400,6 +398,7 @@ mod tests {
         properties.insert("name".to_string(), Value::Text("Test Document".to_string()));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,
@@ -414,6 +413,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

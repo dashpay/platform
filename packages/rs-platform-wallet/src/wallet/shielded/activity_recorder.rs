@@ -33,10 +33,46 @@ use super::activity::{
     ShieldedDirection,
 };
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedNote, SubwalletId};
+use super::store::{PendingRedrive, ShieldedNote, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::shielded::SerializedAction;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
+use dpp::state_transition::StateTransition;
+
+/// Why a durable debit could not be matched to proposed viewing keys.
+#[derive(Debug)]
+pub(super) enum IdentityRecoveryError {
+    Malformed(String),
+    /// Wrong keys and damaged ciphertext/commitment metadata are indistinguishable.
+    OutputsUnrecoverable,
+}
+
+/// Recover the exact outputs identifying a durable debit. Malformed signed
+/// bytes are distinguished from keys that cannot recover the original output set.
+pub(super) fn identity_redrive_output_cmxs(
+    redrive: &PendingRedrive,
+    keys: &AccountViewingKeys,
+) -> Result<Vec<[u8; 32]>, IdentityRecoveryError> {
+    if !redrive.nullifiers.is_empty() {
+        return Err(IdentityRecoveryError::Malformed(
+            "not an identity debit".to_owned(),
+        ));
+    }
+    let transition = StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes)
+        .map_err(|e| IdentityRecoveryError::Malformed(format!("invalid signed transition: {e}")))?;
+    let StateTransition::ShieldFromIdentity(transition) = transition else {
+        return Err(IdentityRecoveryError::Malformed(
+            "unexpected transition type".to_owned(),
+        ));
+    };
+    let cmxs = visible_output_cmxs(transition.actions(), keys);
+    if cmxs.is_empty() || compute_activity_id(&cmxs) != redrive.activity_id {
+        return Err(IdentityRecoveryError::OutputsUnrecoverable);
+    }
+    Ok(cmxs)
+}
 
 /// Reconstruct the wallet-visible output cmxs from a built bundle's
 /// serialized actions, using the wallet's own viewing keys — the same
@@ -130,6 +166,10 @@ pub fn build_pending_entry(
         block_height: None,
         status: ShieldedActivityStatus::Pending,
         created_at_ms: ShieldedActivityEntry::now_ms(),
+        // Live entries order by their real record time; the chain-order
+        // key is the scan deriver's (positions aren't known at record
+        // time — the notes are discovered by a later scan).
+        min_note_position: None,
         note_cmxs,
         spent_nullifiers,
     })
@@ -190,6 +230,7 @@ mod tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 123,
+            min_note_position: None,
             note_cmxs: vec![[7u8; 32]],
             spent_nullifiers: vec![[3u8; 32]],
         };
@@ -226,6 +267,7 @@ mod tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 0,
+            min_note_position: None,
             note_cmxs: vec![[1u8; 32]],
             spent_nullifiers: vec![],
         };

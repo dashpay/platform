@@ -50,9 +50,12 @@ import org.dashfoundation.example.util.Base58
 /**
  * Load an existing identity by id — port of `LoadIdentityView.swift`. Paste
  * or scan an identity id, fetch it via `sdk.identities.fetch`, and persist a
- * Room [IdentityEntity] with `isLocal = false` (matching the Swift
- * `PersistentIdentity(isLocal: false)` on load). Key-material import (voting /
- * owner / payout / user private keys) rides the key-management milestone.
+ * Room [IdentityEntity] with `isLocal = true`: a manual add is an identity the
+ * owner deliberately tracks, which is what the flag means under the owner
+ * semantics. It carries no `walletId`, so neither the persister's wallet-link
+ * promotion nor the load-path heal ever reaches it — this write is the only
+ * thing that can set it. Key-material import (voting / owner / payout / user
+ * private keys) rides the key-management milestone.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,7 +163,9 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             IdentityEntity(
                                 identityId = idBytes,
                                 balance = balance,
-                                isLocal = false,
+                                // A manual add is a tracked identity under the
+                                // owner's semantics — see the file header.
+                                isLocal = true,
                                 alias = alias.trim().ifBlank { null },
                                 networkRaw = network.ffiValue,
                             ),

@@ -30,9 +30,12 @@ impl IdentityWallet {
     ///
     /// * `identity_id` - The identifier of the identity to top up.
     /// * `amount_duffs` - Amount of Dash (in duffs) to add.
-    /// * `account_index` - BIP44 standard-account index to draw the
-    ///   funding UTXOs from. Only BIP44 standard accounts are
-    ///   supported today (CoinJoin / BIP32 are out of scope).
+    /// * `account_index` - Index addressing the standard (BIP44/BIP32)
+    ///   families of the pooled funding set. The top-up draws from the
+    ///   union of those two accounts and every DashPay contact-receiving
+    ///   account (which span their own indices); CoinJoin stays out of
+    ///   the pool, since mixing it with transparent coins in one
+    ///   transaction would undo the mixing.
     /// * `asset_lock_signer` - External ECDSA signer that produces both
     ///   the funding-input P2PKH signatures during asset-lock build and
     ///   the consume-phase outer signature on the IdentityTopUp

@@ -12,7 +12,7 @@ export default async function revokeCertificate(
   apiKey,
   id,
 ) {
-  const url = `https://api.zerossl.com/certificates/${id}/revoke?access_key=${apiKey}`;
+  const url = `https://api.zerossl.com/certificates/${id}/revoke`;
 
   const requestOptions = {
     method: 'POST',
@@ -21,5 +21,5 @@ export default async function revokeCertificate(
     },
   };
 
-  return requestApi(url, requestOptions);
+  return requestApi(apiKey, url, requestOptions);
 }

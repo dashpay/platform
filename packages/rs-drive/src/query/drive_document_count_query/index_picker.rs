@@ -3,40 +3,74 @@
 //! Pure functions on the document type's index map + where clauses;
 //! no Drive, no proof. Picks a covering index for a given query
 //! shape, returning `None` if no index can serve the query.
+//!
+//! The clauses must already be keyed by
+//! [`key_array_element_clauses`](crate::query::key_array_element_clauses),
+//! which judges a clause on a typed array: a keyed element read and a raw
+//! `==` or `in` on the array look alike here, and both select the array's
+//! index, whose entries are per element.
 
 use super::super::conditions::WhereClause;
-use super::DriveDocumentCountQuery;
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, terminal_reads_documents, DriveDocumentCountQuery,
+};
+use crate::query::ResolvedTimeRange;
+use crate::query::{index_admissible_for_query, pins_reach_chain, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DriveDocumentCountQuery<'_> {
     /// Finds a `countable: true` index whose properties **exactly match** the
     /// indexable (Equal/In) where-clause fields — every index property has a
-    /// corresponding clause AND every clause's field appears in the index.
+    /// corresponding clause AND every clause's field appears in the index —
+    /// or, failing that, a `rangeCountable: true` index whose properties
+    /// match the clause fields **plus one trailing free property** — or,
+    /// failing that, an index with a prefix-level ranking
+    /// (`rankedCountable: { at }`) whose count-bearing chain reaches the
+    /// deepest pinned property, serving contiguous pins of **any** depth.
     ///
-    /// Exact coverage is the contract for both no-proof and prove count
-    /// paths: a countable index counts exactly what it indexes, and queries
-    /// against partially-covered indexes are rejected with a clear error
-    /// directing the caller at the index-design fix. This avoids the
-    /// product-of-uncovered-branching-factors walk that a prefix-match
-    /// approach would silently fall through to, and keeps the storage's
-    /// "count maintained only at the terminal level" trade-off intact (no
-    /// need to maintain counts at intermediate index levels just to serve
-    /// partial-coverage queries cheaply).
+    /// Exact coverage is the preferred contract for both no-proof and prove
+    /// count paths: a countable index counts exactly what it indexes. The
+    /// prefix-to-last fallback exists because a `rangeCountable` index also
+    /// maintains one aggregate no exact-coverage query can reach — its
+    /// terminal property-name tree is count-bearing, and that tree's own
+    /// element carries the **whole-prefix** total (every last-property value
+    /// tree contributes its count to it). So `count WHERE hashtag == X` on
+    /// `[hashtag, postId]` is one element read at `…/hashtag/X/postId`, not
+    /// a walk — the same shape as the exact form, one level up. Any other
+    /// partial coverage stays rejected: intermediate levels carry no
+    /// aggregates, so there is nothing cheap to read.
+    ///
+    /// A `summableOffCountIndex` index is a candidate in all three forms
+    /// through its sums, its document counts: countable or not, its counters'
+    /// trees always sum ([`document_count_chain_position`] for the chain).
     ///
     /// Returns `None` if:
     /// - Any where clause uses an operator other than `Equal` / `In`.
-    /// - The set of indexable where-clause fields doesn't exactly equal the
-    ///   set of properties of any single `countable: true` index.
+    /// - The set of indexable where-clause fields neither exactly equals the
+    ///   property set of a `countable: true` index nor exactly covers all
+    ///   but the last property of a `rangeCountable: true` index.
     ///
     /// For the `documents_countable: true` case (total count with no where
     /// clauses), the dispatcher reads the document-type primary-key tree's
     /// CountTree directly — that path doesn't use this picker because no
     /// index is involved.
+    ///
+    /// `resolved_time_ranges` names the fields whose equality clause was
+    /// produced by `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::resolve_time_range_bucket_clause`]); it gates which
+    /// indexes are candidates at all — see
+    /// [`index_admissible_for_resolved_time_range`](crate::query::index_admissible_for_resolved_time_range).
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         if Self::has_unsupported_operator(where_clauses) {
             return None;
         }
@@ -56,7 +90,15 @@ impl DriveDocumentCountQuery<'_> {
         }
 
         for index in indexes.values() {
-            if !index.countable.is_countable() {
+            // A time-range index holds one entry per bucket containing the
+            // document, keyed by bucket start: counting over it multi-counts
+            // every document unless the query pins a single bucket, and only
+            // a resolution-produced equality does that. Conversely a raw
+            // clause must never bind to bucket keys.
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
+                continue;
+            }
+            if !point_count_reads_documents(index) {
                 continue;
             }
             if index.properties.len() != indexable_fields.len() {
@@ -75,6 +117,73 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
 
+        // Prefix-to-last fallback: exactly the first `len - 1` properties
+        // are covered and the last one is free — servable only when the
+        // terminal property-name tree is count-bearing, i.e.
+        // `rangeCountable`. The exact form above stays preferred so a
+        // shorter exact index (one merk layer cheaper) keeps winning when
+        // both exist. Position matters here, unlike the set-equality
+        // form: a clause on the LAST property with an earlier one free is
+        // not a prefix and reads nothing meaningful.
+        for index in indexes.values() {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
+                continue;
+            }
+            // The terminal property-name tree's own element: its count on a
+            // range-countable index, its sum on a `summableOffCountIndex`
+            // index (where every index is sum-bearing). A ranked terminal is
+            // skipped until grovedb's dispatch admits indexed elements; a
+            // prefix-level ranking (`rankedCountable: { at }`) keeps its
+            // terminal non-indexed and stays servable.
+            if !prefix_to_last_count_reads_documents(index) {
+                continue;
+            }
+            let Some(leading_len) = index.properties.len().checked_sub(1) else {
+                continue;
+            };
+            if leading_len != indexable_fields.len() || leading_len == 0 {
+                continue;
+            }
+            let leading_covered = index.properties[..leading_len]
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if leading_covered {
+                return Some(index);
+            }
+        }
+
+        // At-chain value-tree fallback: on an index with a prefix-level
+        // ranking (`rankedCountable: { at }`), every level from the
+        // shallowest `at` property down is count-bearing — its value
+        // trees are `CountTree`s whose count IS the whole-subtree total
+        // — so contiguous pins of ANY depth k landing at or below that
+        // level are servable by reading the deepest pin's value tree
+        // element. This also covers what the loop above cannot: a
+        // ranked-terminal (`at` + boolean) index, since the value-tree
+        // read never touches the indexed property-name tree grovedb
+        // refuses to return. Pins landing ABOVE the shallowest `at`
+        // level stay rejected — those levels are plain trees.
+        for index in indexes.values() {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
+                continue;
+            }
+            if !point_count_reads_documents(index) {
+                continue;
+            }
+            let pin_depth = indexable_fields.len();
+            // An average ranking's chain carries the counts as well, and a
+            // `summableOffCountIndex` index's sum chain its document counts.
+            if !pins_reach_chain(index, pin_depth, document_count_chain_position(index)) {
+                continue;
+            }
+            let leading_covered = index.properties[..pin_depth]
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if leading_covered {
+                return Some(index);
+            }
+        }
+
         None
     }
 
@@ -86,17 +195,32 @@ impl DriveDocumentCountQuery<'_> {
     /// - There is exactly one range-operator where-clause, on a property
     ///   that is the *last* property of the index (the IndexLevel
     ///   terminator). This is the property whose values get walked.
-    /// - The index has `range_countable = true` and `countable.is_countable()`.
+    /// - The index has `range_countable = true` and `countable.is_countable()`,
+    ///   or is a `summableOffCountIndex` index, read through its range sums
+    ///   ([`Self::counter_sums_query`]) since its count trees count groups.
     ///
     /// Returns `None` if no such index exists or if there's more than one
     /// range operator in the where clauses (which would require nested range
     /// walks the current model doesn't support). Pure point-lookup queries
     /// (no range operator) should fall back to
     /// [`Self::find_countable_index_for_where_clauses`].
+    ///
+    /// `resolved_time_ranges` gates the candidate set exactly as in
+    /// [`Self::find_countable_index_for_where_clauses`]. A resolved field
+    /// never arrives as a range clause — resolution always produces an
+    /// equality — so with a non-empty list the only bucketed index this can
+    /// return is one whose resolved equality is a prefix property and whose
+    /// range terminator is a different property. That is the intended shape:
+    /// a range over one property within a single time bucket.
     pub fn find_range_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         let range_clauses: Vec<&WhereClause> = where_clauses
             .iter()
             .filter(|wc| Self::is_range_operator(wc.operator))
@@ -147,7 +271,14 @@ impl DriveDocumentCountQuery<'_> {
             .collect();
 
         for index in indexes.values() {
-            if !index.range_countable || !index.countable.is_countable() {
+            // Same admissibility rule as the point-lookup picker: bucketed
+            // indexes store one entry per containing bucket, so only a query
+            // pinned to a single bucket by a resolution-produced equality may
+            // walk them, and raw clauses may never bind to bucket keys.
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
+                continue;
+            }
+            if !terminal_reads_documents(index) {
                 continue;
             }
 
@@ -174,14 +305,26 @@ impl DriveDocumentCountQuery<'_> {
                 // properties. For the widget contract there are no
                 // such middle properties on byBrandColor, but the
                 // builder handles the general case.
+                let intermediate_props = &index.properties[1..index.properties.len() - 1];
                 let mut intermediate_props_ok = true;
-                for prop in &index.properties[1..index.properties.len() - 1] {
+                for prop in intermediate_props {
                     if !prefix_fields.contains(prop.name.as_str()) {
                         intermediate_props_ok = false;
                         break;
                     }
                 }
-                if intermediate_props_ok {
+                // Strict-coverage check, mirroring sum's picker: every
+                // Equal/In prefix field must appear in the index's
+                // intermediate properties. Without this
+                // `intermediate_props.len() == prefix_fields.len()` guard,
+                // a query with extra prefix fields would silently pick an
+                // index that *doesn't* cover them — the carrier path-query
+                // builder iterates only index properties, so the uncovered
+                // clause would simply be dropped and the per-group counts
+                // would span all its values (an over-broad result that
+                // even verifies, since the verifier rebuilds the same
+                // path query from the same picker).
+                if intermediate_props_ok && intermediate_props.len() == prefix_fields.len() {
                     return Some(index);
                 }
                 continue;

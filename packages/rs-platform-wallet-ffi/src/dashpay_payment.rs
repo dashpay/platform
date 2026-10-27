@@ -1,4 +1,6 @@
-//! FFI getter for per-contact DashPay payment history.
+//! FFI surface for per-contact DashPay payment history: the persister
+//! callback's row type ([`DashpayPaymentPersistEntryFFI`]) and an
+//! on-demand getter over a live handle.
 //!
 //! Swift's `ContactDetailView` renders a payment list per contact
 //! (`PaymentEntry` on the managed identity's `DashPayState.payments`, keyed by
@@ -8,29 +10,49 @@
 //! [`crate::platform_wallet_get_managed_identity`]) as a flat array of
 //! POD-plus-C-string rows.
 //!
-//! ## Why a getter, not a persister callback
+//! ## Persistence: the callback is authoritative, the getter reconciles
 //!
-//! The `dashpay_payments` map is already part of the persisted
-//! `ManagedIdentity` state (it round-trips through `IdentityEntry` and
-//! the `dashpay_payments_overlay` changeset field), and the FFI already
-//! hands the host a live `ManagedIdentity` handle from which DashPay
-//! fields are read directly (e.g.
-//! [`crate::established_contact_is_payment_channel_broken`]). A
-//! getter therefore lands the smaller, lower-risk diff: no new
-//! persister callback, no new SwiftData rehydration path. It mirrors the
-//! handle-based array-return pattern already used by
-//! [`ContactRequestHandleArray`](crate::dashpay::ContactRequestHandleArray)
-//! and [`IdentifierArray`](crate::IdentifierArray).
+//! Payment history persists event-driven through
+//! `on_persist_dashpay_payments_fn` on the persister vtable, exactly
+//! like contact requests and profiles: `record_dashpay_payment` — the
+//! single writer for every payment mutation — rides the changed
+//! `(owner, txid)` row on `dashpay_payments_overlay`, and every
+//! `store()` round carrying that overlay projects it to the host.
+//! Only the overlay is projected (never the full-map
+//! `IdentityEntry.dashpay_payments` snapshots), so per-round work is
+//! bounded by the delta rather than the accumulated history. This
+//! closes the write half of the durability loop whose read half — the
+//! `payments` array on `IdentityRestoreEntryFFI` — already rehydrates
+//! the map at load. (An earlier revision shipped only the
+//! [`managed_identity_get_dashpay_payments`] getter, on the rationale
+//! that the map "already persists through the changeset" — which was
+//! true of the desktop SQLite persister but never of FFI hosts, whose
+//! vtable had no payments slot. A host-side `store()` returned Ok while
+//! dropping every Sent entry + memo unless the app happened to call the
+//! getter-backed refresh path first.)
+//!
+//! The getter remains as (a) the on-demand read Swift's
+//! `refreshDashPayPayments` uses to reconcile persisted rows against
+//! live state — belt-and-suspenders over the callback — and (b) the
+//! per-contact history read for UI surfaces that want current in-memory
+//! state without a persistence round-trip.
 //!
 //! ## Ownership
 //!
 //! Each [`DashpayPaymentFFI`] owns its `txid` and (optional) `memo`
 //! C-strings. [`dashpay_payment_array_free`] releases every string
 //! across the array and the array backing buffer itself.
+//! [`DashpayPaymentPersistEntryFFI`] rows are Rust-owned for the
+//! duration of the persist callback only (the caller keeps the backing
+//! `CString`s alive across the call and drops them after — no paired
+//! free function, matching the other persist-direction callbacks).
 
+use std::collections::BTreeMap;
+use std::ffi::CString;
 use std::os::raw::c_char;
 
-use platform_wallet::wallet::identity::{PaymentDirection, PaymentStatus};
+use dpp::prelude::Identifier;
+use platform_wallet::wallet::identity::{PaymentDirection, PaymentEntry, PaymentStatus};
 
 use crate::error::*;
 use crate::handle::*;
@@ -76,6 +98,86 @@ impl From<PaymentStatus> for DashpayPaymentStatusFFI {
             PaymentStatus::Failed => DashpayPaymentStatusFFI::Failed,
         }
     }
+}
+
+/// One DashPay payment-history row forwarded to the host by the
+/// `on_persist_dashpay_payments_fn` persister callback.
+///
+/// Field set mirrors the load-side
+/// [`PaymentRestoreEntryFFI`](crate::wallet_restore_types::PaymentRestoreEntryFFI)
+/// — same raw `u8` direction/status discriminants, same
+/// txid/memo C-string shape — plus the leading `owner_identity_id`,
+/// because the persist callback is wallet-scoped while the restore
+/// rows already ride inside a per-identity buffer. Keeping the write
+/// and restore shapes field-for-field means a host handler and its
+/// restore assembler agree by construction.
+///
+/// All pointers are Rust-owned and valid only for the callback window
+/// — the host must copy before returning. Persist direction needs no
+/// paired free function (Rust drops the backing `CString`s after the
+/// call), matching the other `on_persist_*` callbacks.
+#[repr(C)]
+pub struct DashpayPaymentPersistEntryFFI {
+    /// The identity that owns this payment-history row (the
+    /// `ManagedIdentity` whose `dashpay_payments` map carries it).
+    pub owner_identity_id: [u8; 32],
+    /// The other identity in this payment. Whether they are the sender
+    /// or the receiver is encoded in `direction_raw`.
+    pub counterparty_id: [u8; 32],
+    /// Amount in duffs. Always positive; `direction_raw` carries the sign.
+    pub amount_duffs: u64,
+    /// `PaymentDirection` discriminant: 0=Sent, 1=Received.
+    pub direction_raw: u8,
+    /// `PaymentStatus` discriminant: 0=Pending, 1=Confirmed, 2=Failed.
+    pub status_raw: u8,
+    /// NUL-terminated transaction id (hex) — the `dashpay_payments`
+    /// map key. Always non-null (rows whose txid cannot form a
+    /// C-string are dropped at build time).
+    pub txid: *const c_char,
+    /// NUL-terminated sender memo, or null when the source `Option`
+    /// was `None`.
+    pub memo: *const c_char,
+}
+
+/// Flatten a `dashpay_payments_overlay` into persist-callback rows.
+///
+/// Returns the row array plus the `CString` storage backing every
+/// `txid` / `memo` pointer — the caller must keep the storage alive
+/// until the callback returns. Rows whose txid contains an interior
+/// NUL are dropped (unreachable for hex txids; defensive rather than
+/// panicking); a memo with an interior NUL degrades to null, matching
+/// [`cstring_or_null`]'s contract on the getter side.
+pub(crate) fn build_payment_persist_entries(
+    overlay: &BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>,
+) -> (Vec<DashpayPaymentPersistEntryFFI>, Vec<CString>) {
+    let mut storage: Vec<CString> = Vec::new();
+    let mut rows: Vec<DashpayPaymentPersistEntryFFI> = Vec::new();
+    for (owner_id, payments) in overlay {
+        for (txid, entry) in payments {
+            let Ok(txid_c) = CString::new(txid.as_str()) else {
+                continue;
+            };
+            storage.push(txid_c);
+            let txid_ptr = storage.last().expect("pushed txid CString above").as_ptr();
+            let memo_ptr = match entry.memo.as_deref().map(CString::new) {
+                Some(Ok(memo_c)) => {
+                    storage.push(memo_c);
+                    storage.last().expect("pushed memo CString above").as_ptr()
+                }
+                _ => std::ptr::null(),
+            };
+            rows.push(DashpayPaymentPersistEntryFFI {
+                owner_identity_id: owner_id.to_buffer(),
+                counterparty_id: entry.counterparty_id.to_buffer(),
+                amount_duffs: entry.amount_duffs,
+                direction_raw: DashpayPaymentDirectionFFI::from(entry.direction) as u8,
+                status_raw: DashpayPaymentStatusFFI::from(entry.status) as u8,
+                txid: txid_ptr,
+                memo: memo_ptr,
+            });
+        }
+    }
+    (rows, storage)
 }
 
 /// Flat C mirror of one [`PaymentEntry`](platform_wallet::wallet::identity::PaymentEntry)

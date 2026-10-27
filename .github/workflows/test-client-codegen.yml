@@ -1,0 +1,42 @@
+name: Native client generation
+on:
+  pull_request:
+    paths:
+      - 'packages/dapi-grpc/**'
+      - '.github/workflows/test-client-codegen.yml'
+      - 'yarn.lock'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  generate:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/dash/client-codegen
+          key: client-codegen/${{ runner.os }}/${{ runner.arch }}/${{ hashFiles('packages/dapi-grpc/codegen.json') }}
+      - name: Build the locked native compilers
+        run: python3 packages/dapi-grpc/scripts/setup-codegen.py --install
+      - uses: ./.github/actions/nodejs
+      - name: Regenerate and test clients
+        run: |
+          yarn workspace @dashevo/dapi-grpc build
+          git diff --exit-code -- packages/dapi-grpc/clients
+          yarn workspace @dashevo/dapi-grpc test:unit
+          yarn workspace @dashevo/dapi-grpc exec python3 -m unittest discover -s tests/codegen -v
+      - name: Verify published client contents
+        run: |
+          mkdir -p npm-packages
+          yarn workspace @dashevo/dapi-grpc pack --out "$GITHUB_WORKSPACE/npm-packages/dapi-grpc.tgz"
+          python3 packages/dapi-grpc/scripts/check-packed-clients.py npm-packages

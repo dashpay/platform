@@ -547,6 +547,7 @@ fn insert_grade_document(
     properties.insert("instructor".to_string(), Value::Bytes(instructor.to_vec()));
 
     let document: Document = DocumentV0 {
+        contract_version: None,
         id: Identifier::from(document_id(row)),
         owner_id: Identifier::from([7u8; 32]),
         properties,
@@ -561,6 +562,8 @@ fn insert_grade_document(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into();
 

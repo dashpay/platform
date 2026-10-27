@@ -152,7 +152,7 @@ fn test_contested_resource_voters_for_identity() {
 
     // Use contestant id from vectors (hex → base58)
     let contender_id = to_c_string(&base58_from_hex32(
-        "a496fe4262159124ad8aad5f92a7739650584bbeccfa7dbbd72f8510321c95b2",
+        "c5b2761e93571bc94ed94f0c7a2336c5ba60fe98c5f59eaf5142b0482594eaa6",
     ));
 
     unsafe {

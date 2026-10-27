@@ -4,40 +4,7 @@ use crate::Error;
 use dapi_grpc::platform::v0::{get_finalized_epoch_infos_request, GetFinalizedEpochInfosRequest};
 use dpp::block::epoch::EpochIndex;
 
-/// Query used to fetch multiple finalized epochs from Platform.
-#[derive(Clone, Debug)]
-pub struct FinalizedEpochQuery {
-    /// Starting epoch index.
-    pub start_epoch_index: EpochIndex,
-    /// Whether to include the start epoch.
-    pub start_epoch_index_included: bool,
-    /// Ending epoch index.
-    pub end_epoch_index: EpochIndex,
-    /// Whether to include the end epoch.
-    pub end_epoch_index_included: bool,
-}
-
-impl Default for FinalizedEpochQuery {
-    fn default() -> Self {
-        Self {
-            start_epoch_index: 0,
-            start_epoch_index_included: true,
-            end_epoch_index: 0,
-            end_epoch_index_included: true,
-        }
-    }
-}
-
-impl From<(EpochIndex, EpochIndex)> for FinalizedEpochQuery {
-    fn from((start, end): (EpochIndex, EpochIndex)) -> Self {
-        Self {
-            start_epoch_index: start,
-            start_epoch_index_included: true,
-            end_epoch_index: end,
-            end_epoch_index_included: true,
-        }
-    }
-}
+pub use dash_platform_queries::types::finalized_epoch::FinalizedEpochQuery;
 
 impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
     fn query(
@@ -46,7 +13,9 @@ impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         Ok(GetFinalizedEpochInfosRequest {
             version: Some(get_finalized_epoch_infos_request::Version::V0(

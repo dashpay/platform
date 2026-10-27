@@ -10,22 +10,25 @@ use super::super::{DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Range-count walk against a `range_countable` index.
+    /// Range-count walk against a `range_countable` index, or a
+    /// `summableOffCountIndex` index read through its range sums.
     /// Returns a summed entry or per-distinct-value entries
     /// depending on `options.distinct`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_no_proof(
+    pub(crate) fn execute_document_count_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         options: RangeCountOptions,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -33,10 +36,11 @@ impl Drive {
         let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "range count requires a `range_countable: true` index whose last \
+                "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                      property matches the range field, with all other clauses covering \
                      its prefix as `==` matches"
                     .to_string(),

@@ -20,12 +20,35 @@
 //! This FFI therefore takes the raw 32-byte **voting private key** plus the
 //! 32-byte `pro_tx_hash`. From the private key it derives:
 //!   * a [`SingleKeySigner`] that signs the transition, and
-//!   * the matching `ECDSA_HASH160` [`IdentityPublicKey`] (the masternode
-//!     voting key) whose `data` is `hash160(pubkey)`.
+//!   * `hash160(pubkey)` — the voting address, which identifies both the voter
+//!     identity (`create_voter_identifier`) and the key on it.
 //!
-//! The `SingleKeySigner::can_sign_with` check for `ECDSA_HASH160` recomputes
-//! `hash160(pubkey)` from the same private key, so the derived key and signer
-//! always agree.
+//! The voting [`IdentityPublicKey`] is **built locally, not fetched**.
+//! Platform always assigns a voter identity's voting key id 0:
+//! `create_voter_identity_v0` passes 0, and a rotation creates a *different*
+//! identity — the identifier includes the voting address — whose key is
+//! likewise 0. So the key Platform holds is knowable without a round trip, and
+//! `SingleKeySigner::can_sign_with` for `ECDSA_HASH160` recomputes the same
+//! `hash160(pubkey)` from the private key, so key and signer agree by
+//! construction.
+//!
+//! # Diagnosis is deferred to the failure path
+//!
+//! Two things do fail, and Platform reports both as the same opaque
+//! "Public key 0 doesn't exist":
+//!
+//!   * no voter identity exists for this `(pro_tx_hash, voting address)` pair,
+//!     or
+//!   * after a rotation `update_voter_identity_v0` **disabled** the old
+//!     identity's keys, so key 0 exists but is unusable.
+//!
+//! Telling those apart needs the identity, but fetching it before every cast
+//! would spend a Platform round trip per (node, contest) on runs that
+//! overwhelmingly succeed — a bulk vote of 6 nodes across 10 names is 60
+//! fetches. So the fetch happens only after a broadcast has already failed,
+//! where the cost is paid on a path that is already lost. A diagnosis replaces
+//! the opaque error; an unrelated failure (network, fees, a closed poll)
+//! survives unchanged rather than being recast as a key problem.
 //!
 //! A regular wallet is **not** a masternode and has no voting key, so a vote
 //! broadcast from such a wallet reaches a deterministic *authorization*
@@ -39,15 +62,17 @@ use crate::types::{FFINetwork, Network, SDKHandle};
 use crate::{DashSDKResult, FFIError};
 use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dash_sdk::dpp::platform_value::{BinaryData, Identifier, Value};
+use dash_sdk::dpp::dashcore::ProTxHash;
+use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::platform::transition::masternode_vote_keys::{
+    diagnose_voting_key_failure, is_voting_key_failure, voter_identity_voting_key, VotingKeyProblem,
+};
 use dash_sdk::platform::transition::vote::PutVote;
 use simple_signer::SingleKeySigner;
 use std::ffi::{c_char, CStr};
@@ -106,7 +131,17 @@ pub enum ContestedResourceVoteChoiceFFI {
 ///   `InvalidParameter`.
 /// * `contender_identity_id` — base58-encoded contender identity; required
 ///   (and only used) when `vote_choice == 0`, otherwise ignored / may be null.
-/// * `voter_pro_tx_hash` — pointer to the masternode's 32-byte pro_tx_hash.
+/// * `voter_pro_tx_hash` — pointer to the masternode's 32-byte pro_tx_hash in
+///   **wire order**: the orientation `Txid` stores, which is what a parsed
+///   ProRegTx yields (`reg.txid()`) and what a wallet holds internally. This is
+///   NOT the byte order of the hex Core displays, which is its reverse.
+///
+///   The two are not interchangeable. Platform identifies masternodes by the
+///   opposite orientation — `ProTxHash` is declared `#[hash_newtype(forward)]`
+///   while `Txid` is not — so this function reverses these bytes before
+///   deriving the voter identity and building the transition. Passing display
+///   order asks Platform for an identity that has never existed, and the vote
+///   is rejected as having no voter identity.
 /// * `voting_private_key` — pointer to the 32-byte masternode voting private
 ///   key. Both the signer and the matching `ECDSA_HASH160` voting public key
 ///   are derived from this; the key never leaves this call as raw bytes.
@@ -268,9 +303,26 @@ unsafe fn cast_vote_inner(
     }));
 
     // ---- pro_tx_hash ---------------------------------------------------------
+    // Callers pass WIRE order — the orientation `Txid` stores, which is what a
+    // parsed ProRegTx yields (`reg.txid()`) and what the iOS wallet holds.
+    //
+    // Platform identifies masternodes by the OTHER orientation. `ProTxHash` is
+    // declared `#[hash_newtype(forward)]` while `Txid` is not, so
+    // `ProTxHash::to_byte_array()` is display order — the reverse of a `Txid`'s
+    // bytes for the same transaction. `rpc-json`'s `MasternodeListItem` holds
+    // both conventions side by side (`pro_tx_hash: ProTxHash`,
+    // `collateral_hash: Txid`), and drive-abci builds the voter identity from
+    // `masternode.pro_tx_hash.to_byte_array()`.
+    //
+    // Feeding wire order to `create_voter_identifier` therefore asks Platform
+    // for an identity that has never existed, and the vote is rejected as
+    // having no voter identity — with the real one sitting under the reversed
+    // hash. Reverse once, here, and use the corrected value for both the
+    // identifier and the transition so they cannot drift apart.
     let pro_tx_hash_slice = std::slice::from_raw_parts(voter_pro_tx_hash, 32);
     let mut pro_tx_hash_arr = [0u8; 32];
     pro_tx_hash_arr.copy_from_slice(pro_tx_hash_slice);
+    pro_tx_hash_arr.reverse();
     let pro_tx_hash = Identifier::new(pro_tx_hash_arr);
 
     // ---- Derive the masternode voting key + signer --------------------------
@@ -285,9 +337,7 @@ unsafe fn cast_vote_inner(
         .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
 
     // The masternode voting key is the 20-byte hash160 of the (compressed)
-    // public key, packaged as an ECDSA_HASH160 / VOTING / HIGH key with id 0 —
-    // exactly the shape Platform assigns to voter identities
-    // (`get_voter_identity_key_v0`). `MasternodeVoteTransition` calls
+    // public key. `MasternodeVoteTransition` calls
     // `masternode_voting_key.public_key_hash()` to derive the voter
     // identifier, and `SingleKeySigner::can_sign_with` recomputes the same
     // hash160 from the private key, so the two agree by construction.
@@ -297,23 +347,17 @@ unsafe fn cast_vote_inner(
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
     let voting_address = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
 
-    let masternode_voting_key: IdentityPublicKey = IdentityPublicKeyV0 {
-        id: 0,
-        purpose: Purpose::VOTING,
-        security_level: SecurityLevel::HIGH,
-        key_type: KeyType::ECDSA_HASH160,
-        read_only: true,
-        data: BinaryData::new(voting_address.to_vec()),
-        disabled_at: None,
-        contract_bounds: None,
-    }
-    .into();
-
-    // ---- Broadcast ----------------------------------------------------------
+    // ---- Broadcast, then diagnose only on failure ---------------------------
     let wrapper = &*(sdk_handle as *const SDKWrapper);
     let sdk = &wrapper.sdk;
 
-    wrapper.runtime.block_on(async {
+    // The key Platform holds, built without a lookup — see the rs-sdk helper
+    // for why the id is knowable. `SingleKeySigner::can_sign_with` recomputes
+    // the same hash160 from the private key, so key and signer agree by
+    // construction.
+    let masternode_voting_key = voter_identity_voting_key(&voting_address);
+
+    let broadcast = wrapper.runtime.block_on(async {
         vote.put_to_platform_and_wait_for_response(
             pro_tx_hash,
             &masternode_voting_key,
@@ -322,10 +366,37 @@ unsafe fn cast_vote_inner(
             None,
         )
         .await
-        .map_err(FFIError::from)
-    })?;
+    });
 
-    Ok(())
+    let Err(broadcast_error) = broadcast else {
+        return Ok(());
+    };
+
+    // Only a signature failure about the voting key is worth explaining. A
+    // closed poll, a fee failure or a transport error says nothing about the
+    // identity, and diagnosing those would let an absent voter identity
+    // masquerade as their cause — reporting "no voting identity" for a vote
+    // that actually arrived too late.
+    if !is_voting_key_failure(&broadcast_error) {
+        return Err(FFIError::from(broadcast_error));
+    }
+
+    // A missing voter identity and a rotated (disabled) key are
+    // indistinguishable from Platform's side — both surface as
+    // "Public key 0 doesn't exist". Fetching the identity says which, but only
+    // here: doing it before every cast would spend a round trip per
+    // (node, contest) on runs that overwhelmingly succeed.
+    let problem = wrapper.runtime.block_on(diagnose_voting_key_failure(
+        sdk,
+        ProTxHash::from_byte_array(pro_tx_hash_arr),
+        &voting_address,
+    ));
+
+    // Still fall back to the original when the identity and key both check out
+    // — the signature failure was about something else on the key path.
+    Err(problem
+        .map(describe_voting_key_problem)
+        .unwrap_or_else(|| FFIError::from(broadcast_error)))
 }
 
 fn invalid(message: &str) -> FFIError {
@@ -336,6 +407,33 @@ unsafe fn cstr<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError>
     CStr::from_ptr(ptr)
         .to_str()
         .map_err(|e| invalid(&format!("Invalid UTF-8 in {}: {}", field, e)))
+}
+
+/// Render a [`VotingKeyProblem`] as the message a host surfaces.
+///
+/// rs-sdk reports the fact; phrasing it is a binding concern, so the sentence
+/// lives here rather than in the SDK where every caller would inherit it.
+fn describe_voting_key_problem(problem: VotingKeyProblem) -> FFIError {
+    match problem {
+        VotingKeyProblem::NoVoterIdentity {
+            pro_tx_hash,
+            expected_voter_identity,
+        } => FFIError::InvalidParameter(format!(
+            "No voting identity exists on Platform for masternode {} with this voting key \
+             (expected voter identity {}). Either the voting key does not match the \
+             masternode's registered voting address, or Platform has not created the \
+             voter identity yet.",
+            Identifier::new(pro_tx_hash.to_byte_array()),
+            expected_voter_identity
+        )),
+        VotingKeyProblem::NoUsableVotingKey { voter_identity } => {
+            FFIError::InvalidParameter(format!(
+                "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
+                 private key. The masternode's voting key may have been rotated.",
+                voter_identity
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -455,5 +553,50 @@ mod tests {
             dash_sdk_error_free(result.error);
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
+    }
+
+    // ---- describe_voting_key_problem ----------------------------------------
+    //
+    // Selection, the failure gate and the diagnosis itself now live in rs-sdk
+    // (`platform::transition::masternode_vote_keys`) and are tested there. What
+    // remains here is the one thing this layer owns: turning the SDK's typed
+    // fact into the sentence a host shows.
+
+    use dash_sdk::dpp::dashcore::ProTxHash;
+    use dash_sdk::platform::transition::masternode_vote_keys::VotingKeyProblem;
+
+    #[test]
+    fn missing_identity_message_names_both_identifiers() {
+        let pro_tx = ProTxHash::from_byte_array([1u8; 32]);
+        let expected = Identifier::new([3u8; 32]);
+        let msg = format!(
+            "{:?}",
+            describe_voting_key_problem(VotingKeyProblem::NoVoterIdentity {
+                pro_tx_hash: pro_tx,
+                expected_voter_identity: expected,
+            })
+        );
+
+        assert!(msg.contains(&format!("{}", Identifier::new(pro_tx.to_byte_array()))));
+        assert!(msg.contains(&format!("{}", expected)));
+        // The message crosses the FFI boundary verbatim and is shown to users,
+        // so it must read as prose — an earlier version rendered with blank
+        // gaps from an unescaped multi-line literal.
+        assert!(!msg.contains("  "), "message has whitespace runs: {msg}");
+    }
+
+    #[test]
+    fn rotated_key_message_names_the_identity_and_the_cause() {
+        let voter = Identifier::new([5u8; 32]);
+        let msg = format!(
+            "{:?}",
+            describe_voting_key_problem(VotingKeyProblem::NoUsableVotingKey {
+                voter_identity: voter,
+            })
+        );
+
+        assert!(msg.contains(&format!("{}", voter)));
+        assert!(msg.contains("rotated"));
+        assert!(!msg.contains("  "), "message has whitespace runs: {msg}");
     }
 }

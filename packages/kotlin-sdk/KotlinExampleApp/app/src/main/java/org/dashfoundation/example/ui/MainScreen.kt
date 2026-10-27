@@ -15,8 +15,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -42,6 +44,23 @@ fun MainScreen() {
 
     fun isSelected(tab: RootTab): Boolean =
         currentDestination?.hierarchy()?.any { it.hasRoute(tab.routeClass) } == true
+
+    // An incoming invitation link routes to the DashPay tab (the analog of
+    // iOS routing pendingInviteURL to RootTab.dashpay); the tab's own
+    // consumption effect opens the claim sheet once a wallet is available.
+    // The URI itself stays parked in AppUiState until then.
+    val container = org.dashfoundation.example.di.LocalAppContainer.current
+    val pendingInvite by container.appUiState.pendingInviteUri
+        .collectAsStateWithLifecycle()
+    LaunchedEffect(pendingInvite) {
+        if (pendingInvite != null && !isSelected(RootTab.DASHPAY)) {
+            navController.navigate(RootTab.DASHPAY.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {

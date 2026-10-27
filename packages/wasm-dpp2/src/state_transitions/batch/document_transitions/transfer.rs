@@ -2,6 +2,7 @@ use crate::data_contract::document::DocumentWasm;
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::action_fee_agreement::DocumentActionFeeAgreementWasm;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_transfer_transition;
@@ -21,6 +22,7 @@ export interface DocumentTransferTransitionOptions {
     identityContractNonce: bigint;
     recipientOwnerId: IdentifierLike;
     tokenPaymentInfo?: TokenPaymentInfo;
+    actionFeeAgreement?: DocumentActionFeeAgreement;
 }
 "#;
 
@@ -63,12 +65,16 @@ impl DocumentTransferTransitionWasm {
         let token_payment_info: Option<TokenPaymentInfoWasm> =
             try_from_options_optional(&options, "tokenPaymentInfo")?;
 
+        let action_fee_agreement: Option<DocumentActionFeeAgreementWasm> =
+            try_from_options_optional(&options, "actionFeeAgreement")?;
+
         let rs_transfer_transition = generate_transfer_transition(
             &document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
             recipient_owner_id.into(),
             token_payment_info,
+            action_fee_agreement,
         );
 
         Ok(DocumentTransferTransitionWasm(rs_transfer_transition))

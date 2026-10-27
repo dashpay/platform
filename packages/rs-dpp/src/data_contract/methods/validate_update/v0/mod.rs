@@ -1,30 +1,8 @@
-use std::collections::HashSet;
-
 use crate::block::block_info::BlockInfo;
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-
-use crate::consensus::basic::data_contract::{
-    DuplicateKeywordsError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
-    InvalidDescriptionLengthError, InvalidKeywordCharacterError, InvalidKeywordLengthError,
-    TooManyKeywordsError,
-};
-use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
-use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
-use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use crate::data_contract::accessors::v1::DataContractV1Getters;
-use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
-use crate::data_contract::document_type::schema::validate_schema_compatibility;
-use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use serde_json::json;
 
 pub trait DataContractUpdateValidationMethodsV0 {
     fn validate_update(
@@ -43,286 +21,43 @@ impl DataContract {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        // Check if the contract is owned by the same identity
-        if self.owner_id() != new_data_contract.owner_id() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                DataContractUpdatePermissionError::new(self.id(), new_data_contract.owner_id())
-                    .into(),
-            ));
+        let result = self.validate_update_ownership_and_version(new_data_contract);
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        // Check version is bumped
-        // Failure (version != previous version + 1): Keep ST and transform it to a nonce bump action.
-        // How: A user pushed an update that was not the next version.
-
-        let new_version = new_data_contract.version();
-        let old_version = self.version();
-        if new_version < old_version || new_version - old_version != 1 {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDataContractVersionError::new(old_version + 1, new_version).into(),
-            ));
+        let result = self.validate_update_config(new_data_contract, platform_version)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        // Validate that the config was not updated
-        // * Includes verifications that:
-        //     - Old contract is not read_only
-        //     - New contract is not read_only
-        //     - Keeps history did not change
-        //     - Can be deleted did not change
-        //     - Documents keep history did not change
-        //     - Documents can be deleted contract default did not change
-        //     - Documents mutable contract default did not change
-        //     - Requires identity encryption bounded key did not change
-        //     - Requires identity decryption bounded key did not change
-        // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
-        // * How: A user pushed an update to a contract that changed its configuration.
-
-        let config_validation_result = self.config().validate_update(
-            new_data_contract.config(),
-            self.id(),
-            platform_version,
-        )?;
-
-        if !config_validation_result.is_valid() {
-            return Ok(SimpleConsensusValidationResult::new_with_errors(
-                config_validation_result.errors,
-            ));
+        let result =
+            self.validate_update_existing_document_types(new_data_contract, platform_version)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        // Validate updates for existing document types to make sure that previously created
-        // documents will be still valid with a new version of the data contract
-        for (document_type_name, old_document_type) in self.document_types() {
-            // Make sure that existing document aren't removed
-            let Some(new_document_type) =
-                new_data_contract.document_type_optional_for_name(document_type_name)
-            else {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    DocumentTypeUpdateError::new(
-                        self.id(),
-                        document_type_name,
-                        "document type can't be removed",
-                    )
-                    .into(),
-                ));
-            };
-
-            // Validate document type update rules
-            let validate_update_result = old_document_type
-                .as_ref()
-                .validate_update(new_document_type, platform_version)?;
-
-            if !validate_update_result.is_valid() {
-                return Ok(SimpleConsensusValidationResult::new_with_errors(
-                    validate_update_result.errors,
-                ));
-            }
+        let result = self.validate_update_schema_defs(new_data_contract, platform_version)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        // Schema $defs should be compatible
-        if let Some(old_defs_map) = self.schema_defs() {
-            // If new contract doesn't have $defs, it means that it's $defs was removed and compatibility is broken
-            let Some(new_defs_map) = new_data_contract.schema_defs() else {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    IncompatibleDataContractSchemaError::new(
-                        self.id(),
-                        "remove".to_string(),
-                        "/$defs".to_string(),
-                    )
-                    .into(),
-                ));
-            };
-
-            // If $defs is updated we need to make sure that our data contract is still compatible
-            // with previously created data
-            if old_defs_map != new_defs_map {
-                // both new and old $defs already validated as a part of new and old contract
-                let old_defs_json = Value::from(old_defs_map)
-                    .try_into_validating_json()
-                    .map_err(ProtocolError::ValueError)?;
-
-                let new_defs_json = Value::from(new_defs_map)
-                    .try_into_validating_json()
-                    .map_err(ProtocolError::ValueError)?;
-
-                let old_defs_schema = json!({
-                    "$defs": old_defs_json
-                });
-
-                let new_defs_schema = json!({
-                    "$defs": new_defs_json
-                });
-
-                // We do not allow to remove or modify $ref in document type schemas
-                // it means that compatible changes in $defs won't break the overall compatibility
-                // Make sure that updated $defs schema is compatible
-                let compatibility_validation_result = validate_schema_compatibility(
-                    &old_defs_schema,
-                    &new_defs_schema,
-                    platform_version,
-                )?;
-
-                if !compatibility_validation_result.is_valid() {
-                    let errors = compatibility_validation_result
-                        .errors
-                        .into_iter()
-                        .map(|operation| {
-                            IncompatibleDataContractSchemaError::new(
-                                self.id(),
-                                operation.name,
-                                operation.path,
-                            )
-                            .into()
-                        })
-                        .collect();
-
-                    return Ok(SimpleConsensusValidationResult::new_with_errors(errors));
-                }
-            }
+        let result = self.validate_update_groups(new_data_contract);
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        if self.groups() != new_data_contract.groups() {
-            // No groups can have been removed
-            for old_group_position in self.groups().keys() {
-                if !new_data_contract.groups().contains_key(old_group_position) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DataContractUpdateActionNotAllowedError::new(
-                            self.id(),
-                            "remove group".to_string(),
-                        )
-                        .into(),
-                    ));
-                }
-            }
-
-            // Ensure no group has been changed
-            for (old_group_position, old_group) in self.groups() {
-                if let Some(new_group) = new_data_contract.groups().get(old_group_position) {
-                    if old_group != new_group {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DataContractUpdateActionNotAllowedError::new(
-                                self.id(),
-                                format!(
-                                    "change group at position {} is not allowed",
-                                    old_group_position
-                                ),
-                            )
-                            .into(),
-                        ));
-                    }
-                }
-            }
+        let result = self.validate_update_tokens(new_data_contract, block_info);
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        if self.tokens() != new_data_contract.tokens() {
-            for (token_position, old_token_config) in self.tokens() {
-                // Check if a token has been removed
-                if !new_data_contract.tokens().contains_key(token_position) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DataContractUpdateActionNotAllowedError::new(
-                            self.id(),
-                            format!("remove token at position {}", token_position),
-                        )
-                        .into(),
-                    ));
-                }
-
-                // Check if a token configuration has been changed
-                if let Some(new_token_config) = new_data_contract.tokens().get(token_position) {
-                    if old_token_config != new_token_config {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DataContractUpdateActionNotAllowedError::new(
-                                self.id(),
-                                format!("update token at position {}", token_position),
-                            )
-                            .into(),
-                        ));
-                    }
-                }
-            }
-
-            // Validate any newly added tokens
-            for (token_contract_position, token_configuration) in new_data_contract.tokens() {
-                if !self.tokens().contains_key(token_contract_position) {
-                    if let Some(distribution) = token_configuration
-                        .distribution_rules()
-                        .pre_programmed_distribution()
-                    {
-                        if let Some((timestamp, _)) = distribution.distributions().iter().next() {
-                            if timestamp < &block_info.time_ms {
-                                return Ok(SimpleConsensusValidationResult::new_with_error(
-                                    StateError::PreProgrammedDistributionTimestampInPastError(
-                                        PreProgrammedDistributionTimestampInPastError::new(
-                                            new_data_contract.id(),
-                                            *token_contract_position,
-                                            *timestamp,
-                                            block_info.time_ms,
-                                        ),
-                                    )
-                                    .into(),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
+        let result = self.validate_update_keywords(new_data_contract);
+        if !result.is_valid() {
+            return Ok(result);
         }
 
-        if self.keywords() != new_data_contract.keywords() {
-            // Validate there are no more than 50 contract keywords
-            if new_data_contract.keywords().len() > 50 {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
-                        .into(),
-                ));
-            }
-
-            // Validate the keywords are all unique and between 3 and 50 characters
-            let mut seen_keywords = HashSet::new();
-            for keyword in new_data_contract.keywords() {
-                // First check keyword length
-                if keyword.len() < 3 || keyword.len() > 50 {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidKeywordLengthError::new(self.id(), keyword.to_string()).into(),
-                    ));
-                }
-
-                if !keyword
-                    .chars()
-                    .all(|c| !c.is_control() && !c.is_whitespace())
-                {
-                    // This would mean we have an invalid character
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidKeywordCharacterError::new(
-                            new_data_contract.id(),
-                            keyword.to_string(),
-                        )
-                        .into(),
-                    ));
-                }
-
-                // Then check uniqueness
-                if !seen_keywords.insert(keyword) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DuplicateKeywordsError::new(self.id(), keyword.to_string()).into(),
-                    ));
-                }
-            }
-        }
-
-        if self.description() != new_data_contract.description() {
-            // Validate the description is between 3 and 100 characters
-            if let Some(description) = new_data_contract.description() {
-                let char_count = description.chars().count();
-                if !(3..=100).contains(&char_count) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidDescriptionLengthError::new(self.id(), description.to_string())
-                            .into(),
-                    ));
-                }
-            }
-        }
-
-        Ok(SimpleConsensusValidationResult::new())
+        Ok(self.validate_update_description(new_data_contract))
     }
 }
 
@@ -332,7 +67,11 @@ mod tests {
     use crate::consensus::basic::basic_error::BasicError;
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::accessors::v1::DataContractV1Getters;
     use crate::data_contract::config::v0::DataContractConfigSettersV0;
+    use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
+    use crate::data_contract::schema::DataContractSchemaMethodsV0;
     use crate::prelude::IdentityNonce;
     use crate::tests::fixtures::get_data_contract_fixture;
     use assert_matches::assert_matches;
@@ -348,7 +87,9 @@ mod tests {
         use crate::data_contract::associated_token::token_configuration::accessors::v0::{
             TokenConfigurationV0Getters, TokenConfigurationV0Setters,
         };
+        use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
         use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
         use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
         use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
@@ -356,6 +97,7 @@ mod tests {
         use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+        use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use crate::data_contract::document_type::DocumentTypeMutRef;
         use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
         use crate::data_contract::group::v0::GroupV0;
@@ -811,6 +553,70 @@ mod tests {
                     StateError::DataContractUpdateActionNotAllowedError(e)
                 )] if e.action() == format!("update token at position {}", first_token_pos)
             );
+        }
+
+        /// An existing token is immutable through a contract update because its whole
+        /// configuration is compared, so every field `TokenConfigurationV1` carries is immutable
+        /// with no code of its own. The destructuring names each field without `..`, so a field
+        /// appended later stops this test compiling until the pattern names it too; that is the
+        /// moment to add a case changing it to the list below.
+        #[test]
+        fn should_return_invalid_result_when_any_token_configuration_v1_field_is_updated() {
+            let platform_version = PlatformVersion::latest();
+            let mut pooled =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            pooled.set_has_shielded_pool(true);
+            let TokenConfiguration::V1(original) = &pooled else {
+                panic!("a pooled configuration is V1");
+            };
+            let TokenConfigurationV1 {
+                base: _,
+                has_shielded_pool: _,
+                minimum_pool_notes_for_outgoing: _,
+                minimum_pool_notes_for_outgoing_change_rules: _,
+                transferable: _,
+            } = original;
+
+            type Change = fn(&mut TokenConfigurationV1);
+            let changes: [(&str, Change); 4] = [
+                ("has_shielded_pool", |v1| v1.has_shielded_pool = false),
+                ("minimum_pool_notes_for_outgoing", |v1| {
+                    v1.minimum_pool_notes_for_outgoing = Some(1)
+                }),
+                ("minimum_pool_notes_for_outgoing_change_rules", |v1| {
+                    v1.minimum_pool_notes_for_outgoing_change_rules
+                        .set_authorized_to_make_change_action_takers(
+                            AuthorizedActionTakers::ContractOwner,
+                        )
+                }),
+                ("transferable", |v1| v1.transferable = false),
+            ];
+            for (field, change) in changes {
+                let mut old_data_contract =
+                    get_data_contract_fixture(None, IdentityNonce::default(), 9)
+                        .data_contract_owned();
+                old_data_contract.set_tokens(BTreeMap::from([(0, pooled.clone())]));
+
+                let mut changed = original.clone();
+                change(&mut changed);
+                assert_ne!(&changed, original, "{field} must actually change");
+                let mut new_data_contract = old_data_contract.clone();
+                new_data_contract.set_version(old_data_contract.version() + 1);
+                new_data_contract
+                    .set_tokens(BTreeMap::from([(0, TokenConfiguration::V1(changed))]));
+
+                let result = old_data_contract
+                    .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
+                    .expect("failed validate update");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::DataContractUpdateActionNotAllowedError(e)
+                    )] if e.action() == "update token at position 0",
+                    "a contract update changing {field} must be refused"
+                );
+            }
         }
 
         #[test]

@@ -1,5 +1,6 @@
 package org.dashfoundation.example
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -41,6 +42,11 @@ class MainActivity : FragmentActivity() {
         // route through it). Re-binding on recreation is intentional.
         container.biometricGate.delegate = AuthPrompt(this)
 
+        // Cold-start deep link (`dashpay://invite` / legacy applink) — the
+        // analog of iOS `.onOpenURL`. Parked in AppUiState until the claim
+        // sheet can consume it (survives a walletless fresh install).
+        captureInviteIntent(intent, container)
+
         setContent {
             // Expose Compose testTags as uiautomator resource-ids so the
             // TEST_PLAN's on-device flows are drivable via adb (the Android
@@ -60,6 +66,35 @@ class MainActivity : FragmentActivity() {
             }
             }
         }
+    }
+
+    /** Warm-start deep link (launchMode=singleTop). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureInviteIntent(intent, (application as ExampleApplication).container)
+    }
+
+    /**
+     * Park an invitation link from a VIEW intent. Accepts the custom
+     * `dashpay://invite` scheme and the legacy AppsFlyer
+     * `https://invitations.dashpay.io/applink` host (both parsed leniently
+     * Rust-side). The URI is a bearer credential — never log it. The intent
+     * is consumed one-shot: its data is scrubbed after capture so an
+     * Activity recreation (rotation, process restore) can't re-park a link
+     * that was already claimed.
+     */
+    private fun captureInviteIntent(intent: Intent?, container: AppContainer) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        val isInviteScheme = uri.scheme == "dashpay" && uri.host == "invite"
+        val isLegacyApplink = uri.scheme == "https" &&
+            uri.host == "invitations.dashpay.io" && uri.path == "/applink"
+        if (isInviteScheme || isLegacyApplink) {
+            container.appUiState.pendingInviteUri.value = uri.toString()
+        }
+        intent.data = null
+        setIntent(intent)
     }
 
     private fun setSecureScreen(secure: Boolean) {

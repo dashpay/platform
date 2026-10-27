@@ -65,6 +65,12 @@ function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
     return false;
   }
 
+  // Dash Core disables difficulty retargeting on regtest.
+  if (network === 'regtest' && normalizedPreviousHeaders.length > 0) {
+    const previousHeader = normalizedPreviousHeaders[normalizedPreviousHeaders.length - 1];
+    return normalizedHeader.bits === previousHeader.bits;
+  }
+
   // A trusted checkpoint may contain fewer than a full DGW window. Proof of
   // work, the network pow limit, and timestamp rules still apply immediately;
   // exact difficulty validation begins as soon as the required history exists.

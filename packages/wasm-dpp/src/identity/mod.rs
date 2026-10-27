@@ -12,7 +12,7 @@ mod identity_public_key;
 // use dpp::identity::IdentityPublicKey;
 // use dpp::identity::{Identity, KeyID};
 // use dpp::metadata::Metadata;
-// use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+// use dpp::serialization::serialization_traits::{PlatformDeserializableUntrusted, PlatformSerializable};
 // use dpp::{ ProtocolError};
 //
 // use crate::identifier::IdentifierWrapper;

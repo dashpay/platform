@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -13,6 +14,7 @@ use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -28,6 +30,9 @@ where
     /// * `block_info` - Information about the current block being processed.
     /// * `transaction` - The transaction associated with the execution event.
     /// * `address_balances_in_update` - Optional map to track address balance changes.
+    /// * `block_credit_mints` - Accumulates the credits the applied operations mint into
+    ///   Platform (`AddToSystemCredits`), which the block records as credit inflows for the
+    ///   net daily withdrawal limit.
     /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
     ///   the method to call.
     ///
@@ -49,6 +54,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -64,12 +70,23 @@ where
                 block_info,
                 transaction,
                 address_balances_in_update,
+                block_credit_mints,
+                platform_version,
+                previous_fee_versions,
+            ),
+            1 => self.execute_event_v1(
+                event,
+                consensus_errors,
+                block_info,
+                transaction,
+                address_balances_in_update,
+                block_credit_mints,
                 platform_version,
                 previous_fee_versions,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "execute_event".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

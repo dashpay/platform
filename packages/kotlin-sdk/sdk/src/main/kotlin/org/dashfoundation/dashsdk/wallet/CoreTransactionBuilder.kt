@@ -18,10 +18,13 @@ import java.util.concurrent.atomic.AtomicLong
  * backstop; the class is NOT thread-safe (the FFI builder must be used from
  * one thread at a time).
  *
- * ## Not a public API — drive only through [ManagedPlatformWallet.sendToAddresses]
+ * ## Not a public API — drive only through [ManagedPlatformWallet]
  *
- * The old [setFunding] + [buildSigned] sequence remains only as a deprecated ABI
- * compatibility path and is not used by SDK convenience sends.
+ * SDK consumers reach this builder through
+ * [ManagedPlatformWallet.sendToAddresses] (immediate broadcast) and
+ * [ManagedPlatformWallet.buildSignedPayment] (deferred BIP70/BIP270 flows and
+ * MAYACHAIN-style deposits — the option parameters there thread [addOpReturn],
+ * [preserveOutputOrder] and [changeToFirstInput] into the build).
  *
  * @param network the wallet network — output and change addresses are
  *   validated against it Rust-side.
@@ -33,11 +36,43 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         BIP44(0),
         BIP32(1),
         COIN_JOIN(2),
+
+        /**
+         * Pool every spendable transparent source: BIP44 + BIP32 + all DashPay
+         * contact-receiving accounts. Change returns to BIP44 (the first
+         * pooled source). CoinJoin stays out (separate privacy domain), as do
+         * a contact's watch-only external coins. The default for a plain send.
+         */
+        ALL_SPENDABLE(3),
     }
 
     /**
      * Coin-selection strategy — mirror of key-wallet's `SelectionStrategy`
-     * (`CoreSelectionStrategyFFI`). [ALL] drains the account.
+     * (`CoreSelectionStrategyFFI`).
+     *
+     * [ALL] drains — it selects every spendable UTXO the chosen funding
+     * source offers, sets the single destination output to
+     * `total inputs − fee`, and leaves no change. **Its scope is whatever
+     * [AccountType] names, not "the wallet's main account":**
+     *
+     * - [AccountType.BIP44] / [AccountType.BIP32] / [AccountType.COIN_JOIN]
+     *   drain that one account family;
+     * - [AccountType.ALL_SPENDABLE] — **the default** — drains BIP44 **and**
+     *   BIP32 **and** every DashPay contact-receiving account, in one
+     *   transaction.
+     *
+     * So `selectionStrategy = ALL` on a call that does not name an
+     * [AccountType] sweeps the wallet's whole spendable balance, contact
+     * receiving accounts included. That is the intended shape of a drain: a
+     * host asking to send everything means everything it can sign for, and
+     * before the pooled selector existed a host had to sweep accounts
+     * together on-chain first to achieve it. Name a single [AccountType] only
+     * when the drain is genuinely scoped to one family — a CoinJoin sweep,
+     * say, which must stay in its own privacy domain.
+     *
+     * Read what a drain actually pays from
+     * [SignedCoreTransaction.deliverableAmountDuffs]; the engine computes it,
+     * and the caller's requested amount is discarded.
      */
     enum class SelectionStrategy(val ffiValue: Int) {
         SMALLEST_FIRST(0),
@@ -61,9 +96,41 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         WalletManagerNative.coreTxBuilderAddOutput(handle, address, amountDuffs)
     }
 
+    /**
+     * Add a zero-value OP_RETURN output carrying [data] for a MAYACHAIN-style
+     * deposit memo (mirror of Swift's `addOpReturn` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift). Payloads over the
+     * 80-byte standardness limit are rejected Rust-side without disturbing
+     * outputs already added.
+     * See https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions
+     */
+    internal fun addOpReturn(data: ByteArray): CoreTransactionBuilder = apply {
+        WalletManagerNative.coreTxBuilderAddOpReturn(handle, data)
+    }
+
     /** Override the change address (network-checked Rust-side). */
     internal fun setChangeAddress(address: String): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetChangeAddress(handle, address)
+    }
+
+    /**
+     * Preserve outputs in insertion order (skip BIP-69 sorting) for a
+     * MAYACHAIN-style deposit — vault must stay VOUT0, memo VOUT1 (mirror of
+     * Swift's `preserveOutputOrder` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift).
+     */
+    internal fun preserveOutputOrder(): CoreTransactionBuilder = apply {
+        WalletManagerNative.coreTxBuilderPreserveOutputOrder(handle)
+    }
+
+    /**
+     * Route change to the first selected input's address (VIN0) for a
+     * MAYACHAIN-style deposit — MAYAChain identifies the depositor by VIN0
+     * and pays refunds there (mirror of Swift's `changeToFirstInput` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift).
+     */
+    internal fun changeToFirstInput(): CoreTransactionBuilder = apply {
+        WalletManagerNative.coreTxBuilderChangeToFirstInput(handle)
     }
 
     /** Set the fee rate in duffs/kB (> 0). */
@@ -79,51 +146,6 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
     /** Set the advisory chain-tip height (non-negative). */
     internal fun setCurrentHeight(height: Int): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetCurrentHeight(handle, height)
-    }
-
-    /** Fund from the account's UTXOs and set its change address. */
-    @Deprecated("Use finalizeAtomic; split funding/signing is not concurrency-safe")
-    internal fun setFunding(
-        wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: Int,
-    ): CoreTransactionBuilder = apply {
-        WalletManagerNative.coreTxBuilderSetFunding(
-            handle,
-            wallet.handle,
-            accountType.ffiValue,
-            accountIndex,
-        )
-    }
-
-    /**
-     * Build + sign against the account; returns the signed transaction
-     * WITHOUT broadcasting. CONSUMES the builder (it is freed Rust-side and
-     * this instance must not be reused afterwards).
-     *
-     * @param coreSignerHandle a `MnemonicResolverHandle` (the manager's
-     *   resolver) used for the Core ECDSA signatures.
-     */
-    @Deprecated("Use finalizeAtomic; split funding/signing is not concurrency-safe")
-    internal fun buildSigned(
-        wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: Int,
-        coreSignerHandle: Long,
-    ): CoreTransaction {
-        val builderPtr = handleRef.getAndSet(0)
-        check(builderPtr != 0L) { "CoreTransactionBuilder has been consumed or closed" }
-        // The FFI frees the builder on every path — mark it consumed (the
-        // AtomicLong swap above) so [close] / the cleaner never double-free
-        // it, matching Swift's `consumed = true` before the check.
-        val txPtr = WalletManagerNative.coreTxBuilderBuildSigned(
-            builderPtr,
-            wallet.handle,
-            accountType.ffiValue,
-            accountIndex,
-            coreSignerHandle,
-        )
-        return CoreTransaction(txPtr, accountType, accountIndex)
     }
 
     /**
@@ -151,12 +173,62 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
             coreSignerHandle,
         )
         val fee = try {
-            WalletManagerNative.coreSignedTransactionV2Fee(transaction)
+            WalletManagerNative.coreSignedTransactionFee(transaction)
         } catch (error: Throwable) {
-            WalletManagerNative.coreSignedTransactionV2Free(transaction)
+            WalletManagerNative.coreSignedTransactionFree(transaction)
             throw error
         }
         return FinalizedCoreTransaction(transaction, fee)
+    }
+
+    /**
+     * Consume this configured builder and, in ONE atomic native operation,
+     * select + reserve + sign the inputs and register the built transaction for
+     * deferred (BIP70/BIP270) submission. Selection and reservation commit as
+     * a single unit under the wallet-manager lock, so concurrent deferred
+     * builds cannot double-select an input. Returns the decoded
+     * [ManagedPlatformWallet.SignedCoreTransaction].
+     */
+    internal fun finalizeSignedPayment(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ManagedPlatformWallet.SignedCoreTransaction {
+        require(accountIndex >= 0) { "accountIndex must be non-negative" }
+        require(coreSignerHandle != 0L) { "coreSignerHandle must be non-zero" }
+        // Validate every borrowed dependency before transferring builder
+        // ownership. Once getAndSet(0) runs, JNI consumes the native builder.
+        val walletHandle = wallet.handle
+        val builderPtr = handleRef.getAndSet(0)
+        check(builderPtr != 0L) { "CoreTransactionBuilder has been consumed or closed" }
+        val blob = WalletManagerNative.coreWalletFinalizeSignedPayment(
+            builderPtr,
+            walletHandle,
+            accountType.ffiValue,
+            accountIndex,
+            coreSignerHandle,
+        )
+        // Native finalization has ALREADY inserted the payment and committed its
+        // reservation by the time this blob returns; the token only gains its
+        // owning NativeCleaner once fromRegisterBlob finishes constructing the
+        // SignedCoreTransaction. So if construction throws (allocation failure, a
+        // malformed blob from an ABI mismatch, or Cleaner-registration failure)
+        // the native token would be registered with no JVM owner able to release
+        // it, leaking the reservation until key-wallet's TTL. Parse the token
+        // first (its 8 big-endian bytes lead the blob) and release it defensively
+        // if ownership construction fails, mirroring the owner-guarded release on
+        // the rest of the deferred path (dashpay/platform#4185).
+        var token: Long? = null
+        return try {
+            token = java.nio.ByteBuffer.wrap(blob).long
+            ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
+        } catch (error: Throwable) {
+            token?.let { value ->
+                runCatching { WalletManagerNative.coreWalletReleaseSignedPayment(value) }
+            }
+            throw error
+        }
     }
 
     override fun close() {
@@ -185,51 +257,25 @@ class FinalizedCoreTransaction internal constructor(handle: Long, val fee: Long)
 
     internal fun takeForAbandon(): Long = takeForBroadcast()
 
+    /**
+     * Consensus-serialized signed transaction bytes (copied out) WITHOUT
+     * consuming the ownership token — mirror of Swift's `serializedData()` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift.
+     * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
+     * vault/OP_RETURN/change output order) before deciding to broadcast.
+     */
+    fun serializedData(): ByteArray {
+        val handle = handleRef.get()
+        check(handle != 0L) { "FinalizedCoreTransaction has already been consumed" }
+        return WalletManagerNative.coreSignedTransactionBytes(handle)
+    }
+
     override fun close() = cleanable.clean()
 
     private class Cleanup(private val handleRef: AtomicLong) : Runnable {
         override fun run() {
             val handle = handleRef.getAndSet(0)
-            if (handle != 0L) WalletManagerNative.coreSignedTransactionV2Free(handle)
-        }
-    }
-}
-
-/**
- * A built, signed core transaction — Android port of Swift's `CoreTransaction`.
- * Broadcast it via [ManagedCoreWallet.broadcastTransaction]; its native bytes
- * are freed on [close] or a [NativeCleaner] backstop.
- *
- * @property accountType the funding account captured at build time —
- *   [ManagedCoreWallet.broadcastTransaction] forwards it so a failed
- *   broadcast releases the UTXO reservation `buildSigned` took.
- */
-class CoreTransaction internal constructor(
-    handle: Long,
-    val accountType: CoreTransactionBuilder.AccountType,
-    val accountIndex: Int,
-) : AutoCloseable {
-
-    private val handleRef = AtomicLong(handle)
-    private val cleanable = NativeCleaner.register(this, TransactionCleanup(handleRef))
-
-    /** Opaque native `FFICoreTransaction` pointer; throws if already freed. */
-    internal val handle: Long
-        get() = handleRef.get().also {
-            check(it != 0L) { "CoreTransaction has been freed" }
-        }
-
-    override fun close() {
-        cleanable.clean()
-    }
-
-    /** Frees the native transaction (box + tx bytes) exactly once. */
-    private class TransactionCleanup(private val handleRef: AtomicLong) : Runnable {
-        override fun run() {
-            val handle = handleRef.getAndSet(0)
-            if (handle != 0L) {
-                WalletManagerNative.coreTransactionFree(handle)
-            }
+            if (handle != 0L) WalletManagerNative.coreSignedTransactionFree(handle)
         }
     }
 }

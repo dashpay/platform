@@ -91,7 +91,7 @@ where    = color IN[...] AND brand > "brand_050"
 group_by = [color, brand]
 ```
 
-> `where clause on non indexed property error: range count requires a `range_countable: true` index whose last property matches the range field`
+> `where clause on non indexed property error: range count requires a `range_countable: true` (or summableOffCountIndex) index whose last property matches the range field`
 
 **Why.** The covering index for `(group_by[0] = color, group_by[1] = brand)` would need to be `byColorBrand` with `rangeCountable: true` on the `brand` terminator. The widget contract doesn't have that index — only `byBrand`, `byColor`, and `byBrandColor`. The dispatcher's index picker walks every declared index, finds none whose `(properties, last_property_is_range_countable)` shape matches the request, and rejects with the "non-indexed property" error.
 
@@ -1222,7 +1222,7 @@ Each brand has all 1 000 colors in its byBrandColor terminator; the strict `>` c
 
 **Proof size:** 4 332 B. **Mode:** `CountMode::GroupByIn` routed to `DocumentCountMode::RangeAggregateCarrierProof` (the new dispatcher arm wired up against [grovedb PR #663](https://github.com/dashpay/grovedb/pull/663)).
 
-This is the natural answer to "give me a per-brand aggregate count over a colour range" — same per-In-aggregate semantics as the no-proof per-In fan-out, just verifiable in a single proof. Strictly smaller and asymptotically better than the alternative two-field shape [G5](#g5--compound-in--range-grouped-by-brand-color):
+This is the natural answer to "give me a per-brand aggregate count over a colour range", verifiable in a single proof. Without a proof the same request runs the per-In fan-out and folds the brands into one total entry; only the proved answer keeps one entry per brand. Strictly smaller and asymptotically better than the alternative two-field shape [G5](#g5--compound-in--range-grouped-by-brand-color):
 
 - **G5** (compound distinct walk, `group_by = [brand, color]`): `O(k · R' · log C')` bytes; emits one `KVValueHashFeatureTypeWithChildHash` per resolved `(brand, color)` pair → 11 554 B for `k=2, R'≈50`. Carries per-pair granularity the caller may not want.
 - **G7** (carrier aggregate, `group_by = [brand]`): `O(k · (log B + log C'))` bytes; emits one `HashWithCount`/`KVDigestCount` ACOR boundary walk per brand → 4 332 B for `k=2, log C'≈10`. **~2.7× smaller** than G5 for the same input data, at the cost of losing per-color resolution (which the `group_by = [brand]` caller didn't ask for anyway).

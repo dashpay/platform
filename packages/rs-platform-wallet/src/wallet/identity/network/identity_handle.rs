@@ -20,11 +20,13 @@
 //! `SpvBroadcaster` because the [`AssetLockManager`] itself is pinned; that
 //! invariant lives in `PlatformWallet::new`.
 
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
+use dpp::prelude::Identifier;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -310,6 +312,19 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: crate::wallet::persister::WalletPersister,
+    /// The manager's persistence-fault latch (see
+    /// [`PlatformWalletManager::sync_fault_detected`](crate::PlatformWalletManager::sync_fault_detected)).
+    /// While it is set the wallet-event adapter holds the durable
+    /// `synced_height` back at the last fully persisted height, and a
+    /// direct cursor write from this side would advance it past rows that
+    /// never landed. The DashPay rescan reconcile consults it before it
+    /// stores a backfill record with a lowered cursor.
+    pub(crate) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The manager's shared record of each wallet's durable sync cursor,
+    /// also the lock that orders cursor writes between the wallet-event
+    /// adapter and the DashPay rescan reconcile. See
+    /// [`DurableCursors`](crate::changeset::DurableCursors).
+    pub(crate) durable_cursors: crate::changeset::DurableCursors,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -322,6 +337,14 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// Serializes DPNS marketplace mutations and sync reconciliation for
+    /// this wallet. Every cloned handle shares the same gate.
+    pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
+    /// Bounded ownership-scan cursors, one per wallet identity. This is a
+    /// short-lived in-memory optimization; durable marketplace rows remain
+    /// the source rendered after process restart.
+    pub(crate) dpns_sync_progress:
+        Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -343,8 +366,12 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             wallet_id: self.wallet_id,
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
+            sync_fault: Arc::clone(&self.sync_fault),
+            durable_cursors: Arc::clone(&self.durable_cursors),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
         }
     }
 }
@@ -467,7 +494,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 mod tests {
     use super::*;
     use dpp::util::hash::ripemd160_sha256;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -485,8 +512,7 @@ mod tests {
     /// touches — the identity-auth derivation walks the master xpriv,
     /// not the per-account collection, so no accounts are needed.
     fn mnemonic_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
             .expect("from_mnemonic should build a Mnemonic wallet")
     }
@@ -496,8 +522,7 @@ mod tests {
     /// (`RootExtendedPrivKey::new_master(seed).to_extended_priv_key(network)`
     /// is byte-for-byte `ExtendedPrivKey::new_master(network, seed)`).
     fn master_for(network: Network) -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
     }

@@ -1,0 +1,2901 @@
+//! indexOnly document types — parser-generation gating and the structural
+//! constraint matrix.
+//!
+//! The `indexOnly` doctype keyword and the `terminal` index keyword joined
+//! the grammar at generation 3 (meta-schema v3, protocol version 14), like
+//! the ranked keywords next door. The same two-sided gating has to hold on
+//! the pre-PV14 side:
+//!
+//!   * `terminal` (index-level, strict grammar): rejected as an unknown key
+//!     on BOTH validation modes below generation 3.
+//!   * `indexOnly` (doctype-level, loose grammar): ignored by earlier
+//!     generations on the non-validating path — exactly how every
+//!     doctype-level keyword they predate behaves — and rejected by their
+//!     meta-schemas under `full_validation`.
+//!
+//! The constraint matrix itself (`apply_index_only`) runs regardless of
+//! `full_validation` because the on-disk layout depends on it, so every
+//! rejection test here goes through the non-validating parse — the
+//! smuggling path — and the happy path is additionally exercised under full
+//! validation to pin the meta-schema admission.
+
+use super::immutable_tests::expect_structure_error;
+use super::*;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use platform_value::platform_value;
+
+/// Parse through this generation with validation mode spelled out.
+fn parse_with(
+    schema: Value,
+    platform_version: &PlatformVersion,
+    full_validation: bool,
+) -> Result<DocumentTypeV2, ProtocolError> {
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available on this platform version");
+    try_from_schema_generation_3(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "like",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        full_validation,
+        &mut vec![],
+        platform_version,
+    )
+}
+
+/// Parse through the real dispatcher, which picks the parser generation out
+/// of the platform version's `try_from_schema` table value (generation 2 at
+/// PV13, generation 3 at PV14).
+fn parse_dispatched(
+    schema: Value,
+    platform_version: &PlatformVersion,
+    full_validation: bool,
+) -> Result<DocumentType, ProtocolError> {
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available on this platform version");
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "like",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        full_validation,
+        &mut vec![],
+        platform_version,
+    )
+}
+
+/// The worked example from the design: a Yappr-style `like` type. Two
+/// schema properties (`hashtag`, `postId` — the latter a refersTo-typed
+/// identifier), three indexes:
+///
+///   * `byHashtagPost` — ranked per-hashtag top posts, terminal `$ownerId`
+///   * `byPost` — global ranking + one-like-per-(post, owner) constraint;
+///     terminal omitted to exercise the `$ownerId` default
+///   * `byLiker` — "what did I like", `$ownerId` prefix, `postId` terminal
+fn likes_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": {
+                "type": "string",
+                "maxLength": 63,
+                "position": 0
+            },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": 1
+            }
+        },
+        "required": ["hashtag", "postId"],
+        "indices": [
+            {
+                "name": "byHashtagPost",
+                "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byLiker",
+                "properties": [{ "$ownerId": "asc" }],
+                "terminal": "postId"
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+/// The base schema with one doctype-level key set (added or replaced).
+fn likes_schema_with(key: &str, value: Value) -> Value {
+    let mut schema = likes_schema();
+    schema.set_value(key, value).expect("doctype key applies");
+    schema
+}
+
+/// The base schema with one key set (added or replaced) on the index at
+/// `index_position` (0 = byHashtagPost, 1 = byPost, 2 = byLiker).
+fn likes_schema_with_index_key(index_position: usize, key: &str, value: Value) -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(index_position)
+        .expect("index exists")
+        .set_value(key, value)
+        .expect("index key applies");
+    schema
+}
+
+/// The terminal shares the prefix positions' shape checks, which report
+/// through the typed index consensus errors rather than a structure error.
+fn expect_basic_error(
+    result: Result<DocumentTypeV2, ProtocolError>,
+    what: &str,
+    check: impl Fn(&BasicError) -> bool,
+) {
+    match result {
+        Err(ProtocolError::ConsensusError(err)) => match *err {
+            ConsensusError::BasicError(ref basic) if check(basic) => {}
+            other => panic!("expected {what}, got {other}"),
+        },
+        Err(other) => panic!("expected {what}, got {other}"),
+        Ok(_) => panic!("expected {what}, but the schema parsed"),
+    }
+}
+
+/// Add a schema property to the likes schema and list it in `required`.
+fn with_required_property(schema: &mut Value, name: &str, definition: Value) {
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(name, definition)
+        .expect("property applies");
+    let mut required = schema
+        .get_optional_array("required")
+        .expect("required readable")
+        .unwrap_or_default();
+    required.push(Value::Text(name.to_string()));
+    schema
+        .set_value("required", Value::Array(required))
+        .expect("required applies");
+}
+
+// ── the happy path ──────────────────────────────────────────────────────
+
+#[test]
+fn likes_schema_parses_on_both_validation_modes() {
+    let platform_version = PlatformVersion::latest();
+
+    for full_validation in [false, true] {
+        let document_type = parse_with(likes_schema(), platform_version, full_validation)
+            .unwrap_or_else(|error| {
+                panic!("likes schema should parse (full_validation: {full_validation}): {error}")
+            });
+
+        assert!(document_type.index_only());
+        assert!(!document_type.documents_mutable);
+        assert_eq!(document_type.indices.len(), 3);
+    }
+}
+
+#[test]
+fn terminal_defaults_to_owner_id() {
+    let document_type =
+        parse_with(likes_schema(), PlatformVersion::latest(), false).expect("should parse");
+
+    // `byPost` omits its terminal; normalization spells it out, so the
+    // omitted and explicit forms parse to equal indexes.
+    assert_eq!(
+        document_type.indices["byPost"].single_terminal(),
+        Some("$ownerId")
+    );
+    assert_eq!(
+        document_type.indices["byHashtagPost"].single_terminal(),
+        Some("$ownerId")
+    );
+    assert_eq!(
+        document_type.indices["byLiker"].single_terminal(),
+        Some("postId")
+    );
+}
+
+// ── doctype-level constraint matrix (non-validating parse: the checks are
+//    structural, not meta-schema lints) ─────────────────────────────────
+
+#[test]
+fn rejects_mutable_documents() {
+    let schema = likes_schema_with("documentsMutable", Value::Bool(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "documentsMutable: false",
+    );
+}
+
+#[test]
+fn rejects_transferable_documents() {
+    let schema = likes_schema_with("transferable", Value::U8(1));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must not be transferable",
+    );
+}
+
+#[test]
+fn rejects_keep_history() {
+    let schema = likes_schema_with("documentsKeepHistory", Value::Bool(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "cannot keep history",
+    );
+}
+
+#[test]
+fn rejects_transient_properties() {
+    let schema = likes_schema_with("transient", platform_value!(["hashtag"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "transient",
+    );
+}
+
+#[test]
+fn rejects_doctype_level_aggregates() {
+    let schema = likes_schema_with("documentsCountable", Value::Bool(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "doctype-level aggregate keywords",
+    );
+}
+
+#[test]
+fn rejects_missing_indices() {
+    let schema = likes_schema_with("indices", platform_value!([]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "at least one index",
+    );
+}
+
+// ── per-index constraint matrix ─────────────────────────────────────────
+
+#[test]
+fn rejects_unique_indexes() {
+    let schema = likes_schema_with_index_key(2, "unique", Value::Bool(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "cannot be unique",
+    );
+}
+
+#[test]
+fn rejects_null_searchable_false() {
+    let schema = likes_schema_with_index_key(2, "nullSearchable", Value::Bool(false));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "nullSearchable",
+    );
+}
+
+#[test]
+fn accepts_summable_index() {
+    // The sum axes are admitted on indexOnly indexes: the terminal entry
+    // becomes an `ItemWithSumItem(commitment, amount)`. The summable
+    // declaration goes through the same doctype-level aggregate
+    // cross-checks as stored types (integer type, required membership),
+    // and the summed property must still satisfy the indexOnly
+    // every-property-indexed rule — here it joins byLiker's prefix.
+    let mut schema = likes_schema_with_index_key(2, "summable", platform_value!("likeWeight"));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("index exists")
+        .set_value(
+            "properties",
+            platform_value!([{ "$ownerId": "asc" }, { "likeWeight": "asc" }]),
+        )
+        .expect("index properties apply");
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "likeWeight",
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 2 }),
+        )
+        .expect("property applies");
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "likeWeight"]),
+        )
+        .expect("required applies");
+    let document_type =
+        parse_with(schema, PlatformVersion::latest(), false).expect("summable index admitted");
+    let summable_index = document_type
+        .indices
+        .values()
+        .find(|index| index.summable.is_some())
+        .expect("an index carries the summable declaration");
+    assert_eq!(summable_index.summable.as_deref(), Some("likeWeight"));
+}
+
+#[test]
+fn rejects_summable_naming_non_integer_property() {
+    // The doctype-level aggregate cross-checks (shared with stored types)
+    // still apply to indexOnly indexes: a summable naming a string
+    // property fails the integer-type rule.
+    let schema = likes_schema_with_index_key(2, "summable", platform_value!("hashtag"));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "integer type",
+    );
+}
+
+#[test]
+fn accepts_time_range_bucketed_index() {
+    // A bucketed indexOnly index writes one entry per containing bucket,
+    // sharing the stored types' walker fan-out. `$createdAt` must be the
+    // transform source (the prefix rule admits no other system timestamp)
+    // and must be required (shared timeRange rule).
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("bucketed indexOnly index admitted");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the bucketed index parsed");
+    assert_eq!(bucketed.time_range.as_ref().unwrap().overlap_factor(), 4);
+}
+
+#[test]
+fn rejects_time_range_bucketed_index_without_required_created_at() {
+    // Same shape, but $createdAt missing from `required` — the indexOnly
+    // indexed-$createdAt rule fires (creation only assigns the timestamp
+    // for required system times, and an entry cannot represent a missing
+    // value).
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_only_bucketed_indexes() {
+    // A bucketed index involves $createdAt, so a doctype whose every index
+    // is bucketed has no $createdAt-free proof index and stays refused.
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .set_value(
+            "indices",
+            platform_value!([{
+                "name": "byHourHashtagPost",
+                "properties": [
+                    { "$createdAt": "asc" },
+                    { "hashtag": "asc" },
+                    { "postId": "asc" }
+                ],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+            }]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "neither involves $createdAt nor sets skipIfAbsent",
+    );
+}
+
+/// A `like` carrying a rating, the likes schema plus a required integer
+/// `stars` property (0..=5, so a `u8`).
+fn rated_likes_schema() -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .insert_at_end(
+            "stars".into(),
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 5, "position": 2 }),
+        )
+        .expect("the stars property applies");
+    schema
+        .set_value("required", platform_value!(["hashtag", "postId", "stars"]))
+        .expect("required applies");
+    schema
+}
+
+#[test]
+fn should_reject_integer_range_on_an_index_only_type() {
+    // An indexOnly entry is keyed by (prefix values, terminal); a bucketed
+    // level holds window starts, so two likes that differ only in `stars`
+    // would claim the same entry in every window they share.
+    let mut schema = rated_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byStarsPost",
+            "properties": [{ "stars": "asc" }, { "postId": "asc" }],
+            "terminal": "$ownerId",
+            "integerRange": { "on": "stars", "range": 2u64, "step": 2u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares integerRange",
+    );
+}
+
+/// The "trending posts" contract shape: a like is an indexOnly entry, and
+/// trending means posts with many likes inside a time window — so the
+/// window timestamp is the LIKE's `$createdAt`, not the post's. Windowed
+/// like-counts per post come from a bucketed countable index over
+/// `(timeRange($createdAt), postId)` with daily tumbling windows; the
+/// ranked `byPost` provides all-time top posts and doubles as the
+/// required `$createdAt`-free proof index.
+fn trending_posts_likes_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": 0
+            }
+        },
+        "required": ["postId", "$createdAt"],
+        "indices": [
+            {
+                "name": "byWindowPost",
+                "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 86_400u64, "step": 86_400u64 },
+                "countable": true,
+                "rangeCountable": true
+            },
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn trending_posts_contract_with_windowed_like_counts_validates() {
+    // What the trending-posts shape can register today: provable per-post
+    // like counts in any daily window (current via NEWEST/OLDEST, historic
+    // via BY_START), plus all-time top posts from the ranked `byPost`.
+    // Server-ORDERED top posts within a window would need the ranked flags
+    // on the bucketed index, which is still rejected — see the companion
+    // test below.
+    let document_type = parse_with(
+        trending_posts_likes_schema(),
+        PlatformVersion::latest(),
+        false,
+    )
+    .expect("the trending-posts likes shape validates");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the windowed index parsed");
+    assert!(
+        bucketed.countable.is_countable(),
+        "windowed counts need the count trees"
+    );
+    assert!(
+        !bucketed.ranked_countable,
+        "the bucketed index carries counts only — ranking it is not yet grammar"
+    );
+    assert_eq!(
+        bucketed.time_range.as_ref().unwrap().overlap_factor(),
+        1,
+        "daily tumbling windows: every like lands in exactly one bucket"
+    );
+}
+
+#[test]
+fn trending_posts_ranked_windowed_index_validates() {
+    // The former tripwire for the ranked-x-timeRange gap, flipped into the
+    // acceptance test it was written to become: server-ordered "top posts
+    // this window" declares `rankedCountable` on the bucketed index, and
+    // validation now admits ranked levels below the bucketed one.
+    let mut schema = trending_posts_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("byWindowPost exists")
+        .set_value("rankedCountable", platform_value!(true))
+        .expect("index key applies");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("ranked below the bucketed level must validate");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the windowed index parsed");
+    assert!(
+        bucketed.ranked_countable,
+        "the windowed index carries the per-window ranking"
+    );
+}
+
+#[test]
+fn trending_posts_ranked_at_bucketed_source_still_rejected() {
+    // The one spelling that stays deferred: ranking the bucketed level
+    // itself (ordering the windows by their aggregates). `at` naming the
+    // transform source is that spelling.
+    let mut schema = trending_posts_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("byWindowPost exists")
+        .set_value(
+            "rankedCountable",
+            platform_value!({ "at": ["$createdAt", "postId"] }),
+        )
+        .expect("index key applies");
+    let error = parse_with(schema, PlatformVersion::latest(), false)
+        .expect_err("ranking the bucketed level itself must stay refused");
+    assert!(
+        error.to_string().contains("bucketed source"),
+        "expected the bucketed-source rejection, got: {error}"
+    );
+}
+
+#[test]
+fn rejects_terminal_repeating_an_index_property() {
+    // byLiker's prefix is [$ownerId]; making $ownerId its terminal too
+    // indexes the same dimension twice.
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!("$ownerId"));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "repeats its terminal",
+    );
+}
+
+#[test]
+fn accepts_a_plain_scalar_terminal() {
+    // `hashtag` is a bounded string with no refersTo: any property a prefix
+    // position admits may be the member key, so byLiker becomes
+    // `[$ownerId] → hashtag` — one entry per (owner, hashtag).
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!("hashtag"));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a string terminal parses");
+        assert_eq!(
+            document_type.indices["byLiker"].single_terminal(),
+            Some("hashtag")
+        );
+    }
+}
+
+#[test]
+fn accepts_byte_array_and_integer_terminals() {
+    // A 33-byte array (a compressed public key) and a bounded integer as
+    // member keys, each carried by a fourth index so every property stays
+    // indexed: byLiker becomes `[$ownerId] → pubKey`, byScore is
+    // `[$ownerId, pubKey] → score`.
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("pubKey"));
+    with_required_property(
+        &mut schema,
+        "pubKey",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 33,
+            "maxItems": 33,
+            "position": 2
+        }),
+    );
+    with_required_property(
+        &mut schema,
+        "score",
+        platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
+    );
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byScore",
+            "properties": [{ "$ownerId": "asc" }, { "pubKey": "asc" }],
+            "terminal": "score"
+        }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("byte array and integer terminals parse");
+        assert_eq!(
+            document_type.indices["byLiker"].single_terminal(),
+            Some("pubKey")
+        );
+        assert_eq!(
+            document_type.indices["byScore"].single_terminal(),
+            Some("score")
+        );
+    }
+}
+
+#[test]
+fn object_terminals_are_not_addressable_but_their_leaves_are() {
+    // Only leaf properties exist in the flattened property map, so an
+    // object cannot be named as a terminal at all — the same as at a prefix
+    // position — while a nested leaf can, provided its ancestor is required
+    // (the no-null invariant every indexOnly property carries).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("profile"));
+    with_required_property(
+        &mut schema,
+        "profile",
+        platform_value!({
+            "type": "object",
+            "properties": { "nick": { "type": "string", "maxLength": 8, "position": 0 } },
+            "required": ["nick"],
+            "position": 2
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema.clone(), PlatformVersion::latest(), false),
+        "does not name a property",
+    );
+
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("byLiker exists")
+        .set_value("terminal", platform_value!("profile.nick"))
+        .expect("terminal applies");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("a nested leaf terminal parses");
+    assert_eq!(
+        document_type.indices["byLiker"].single_terminal(),
+        Some("profile.nick")
+    );
+}
+
+#[test]
+fn rejects_an_unbounded_byte_array_terminal() {
+    // 256 bytes exceeds the indexed byte-array bound (255, grovedb's key cap).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("blob"));
+    with_required_property(
+        &mut schema,
+        "blob",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 0,
+            "maxItems": 256,
+            "position": 2
+        }),
+    );
+    expect_basic_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "InvalidIndexedPropertyConstraintError",
+        |error| matches!(error, BasicError::InvalidIndexedPropertyConstraintError(_)),
+    );
+}
+
+#[test]
+fn rejects_an_overlong_string_terminal() {
+    // 64 characters exceeds the indexed string bound (63).
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("caption"));
+    with_required_property(
+        &mut schema,
+        "caption",
+        platform_value!({ "type": "string", "maxLength": 64, "position": 2 }),
+    );
+    expect_basic_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "InvalidIndexedPropertyConstraintError",
+        |error| matches!(error, BasicError::InvalidIndexedPropertyConstraintError(_)),
+    );
+}
+
+#[test]
+fn rejects_system_property_terminals_other_than_owner_id() {
+    // `$createdAt` may be indexed in the prefix, where the rules that reason
+    // about it look; it is not admitted as a terminal.
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!("$createdAt"));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "only $ownerId may be a terminal",
+    );
+}
+
+#[test]
+fn rejects_terminal_naming_unknown_property() {
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!("nonsense"));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not name a property",
+    );
+}
+
+#[test]
+fn rejects_disallowed_system_properties_in_prefix() {
+    let schema =
+        likes_schema_with_index_key(2, "properties", platform_value!([{ "$updatedAt": "asc" }]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "$ownerId and $createdAt",
+    );
+}
+
+#[test]
+fn accepts_created_at_in_prefix_when_required() {
+    // `$createdAt` is assigned from block time at create (only when it is
+    // required — which indexing it therefore demands) and recoverable from
+    // the entry path — the one system property besides `$ownerId` an
+    // indexOnly index may carry.
+    let mut schema = likes_schema_with_index_key(
+        2,
+        "properties",
+        platform_value!([{ "$ownerId": "asc" }, { "$createdAt": "asc" }]),
+    );
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("$createdAt in an index prefix should be accepted when required");
+}
+
+/// The unified matcher: terminals participate as an index's deepest
+/// matchable component, with generic (non-terminal) matches keeping
+/// absolute precedence and difference-scored best-match inside each
+/// class.
+#[test]
+fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+    let document_type_ref =
+        &parse_with(likes_schema(), PlatformVersion::latest(), false).expect("likes schema parses");
+
+    // A pure-property cover exists (`byPost` = [postId] → $ownerId used
+    // generically): it must win over `byLiker`'s terminal cover of the
+    // same field, and report the terminal unused.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["postId"],
+            None,
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byPost");
+    assert_eq!((difference, terminal_used), (0, false));
+
+    // No pure-property cover for {$ownerId, postId}: `byLiker`
+    // ([$ownerId] → postId) covers it exactly through its terminal
+    // (difference 0) and must beat `byHashtagPost`'s costlier terminal
+    // cover (hashtag unused, difference 1).
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["$ownerId", "postId"],
+            None,
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byLiker");
+    assert_eq!((difference, terminal_used), (0, true));
+
+    // The full tuple {hashtag, postId, $ownerId} is only coverable with
+    // `byHashtagPost`'s terminal; an unused terminal never costs score,
+    // so the exact cover reports difference 0.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["hashtag", "postId", "$ownerId"],
+            None,
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byHashtagPost");
+    assert_eq!((difference, terminal_used), (0, true));
+}
+
+#[test]
+fn rejects_when_every_index_involves_created_at() {
+    // Executed-transition proofs locate an entry from the transition's
+    // values alone — a client verifier cannot reproduce the block
+    // timestamp a time-keyed entry was written with. At least one index
+    // must therefore stay $createdAt-free (the proof index); with every
+    // index time-keyed, creates and deletes would work while every
+    // wait-for-transition proof failed.
+    let mut schema = likes_schema_with(
+        "indices",
+        platform_value!([
+            {
+                "name": "byHashtagPostTime",
+                "properties": [
+                    { "hashtag": "asc" },
+                    { "postId": "asc" },
+                    { "$createdAt": "asc" }
+                ],
+                "terminal": "$ownerId"
+            }
+        ]),
+    );
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "neither involves $createdAt nor sets skipIfAbsent",
+    );
+}
+
+#[test]
+fn rejects_indexed_created_at_that_is_not_required() {
+    // Document creation assigns `created_at` only for a REQUIRED
+    // $createdAt; indexing an unrequired one would silently take the
+    // missing-value branch instead of storing block time.
+    let schema = likes_schema_with_index_key(
+        2,
+        "properties",
+        platform_value!([{ "$ownerId": "asc" }, { "$createdAt": "asc" }]),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "\"$createdAt\" must be listed in `required`",
+    );
+}
+
+#[test]
+fn accepts_an_identity_public_key_reference_terminal() {
+    // An identityPublicKey reference is a 32-byte identifier like any other
+    // as a member key; the companion key id is indexed in the prefix, so
+    // entries for different keys of one identity stay distinct. The old
+    // "referable entity" restriction no longer applies: a terminal is any
+    // indexable property.
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("keyRef"));
+    with_required_property(
+        &mut schema,
+        "keyRef",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": { "type": "identityPublicKey", "keyIdProperty": "keyId" },
+            "position": 2
+        }),
+    );
+    with_required_property(
+        &mut schema,
+        "keyId",
+        platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
+    );
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("byLiker exists")
+        .set_value(
+            "properties",
+            platform_value!([{ "$ownerId": "asc" }, { "keyId": "asc" }]),
+        )
+        .expect("properties apply");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an identityPublicKey reference terminal parses");
+    assert_eq!(
+        document_type.indices["byLiker"].single_terminal(),
+        Some("keyRef")
+    );
+}
+
+#[test]
+fn rejects_owner_less_indexes() {
+    // Every index must be bound to its owner: an owner-less index would
+    // let a crafted delete splice a victim's row in with the signer's own
+    // owner-bearing row.
+    let schema =
+        likes_schema_with_index_key(2, "properties", platform_value!([{ "hashtag": "asc" }]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must include $ownerId",
+    );
+}
+
+// ── coverage, requiredness, ownership ───────────────────────────────────
+
+#[test]
+fn rejects_unindexed_property() {
+    // Drop the compound index entirely: `hashtag` then appears in no
+    // index and would be silently unrecoverable.
+    let schema = likes_schema_with(
+        "indices",
+        platform_value!([
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byLiker",
+                "properties": [{ "$ownerId": "asc" }],
+                "terminal": "postId"
+            }
+        ]),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not appear in any index that neither sets skipIfAbsent nor outlivesDelete",
+    );
+}
+
+#[test]
+fn rejects_optional_property() {
+    let schema = likes_schema_with("required", platform_value!(["postId"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_missing_owner_id() {
+    // An index carrying no $ownerId anywhere is refused outright — every
+    // entry must be self-authorizing for deletes.
+    let schema = likes_schema_with(
+        "indices",
+        platform_value!([
+            {
+                "name": "byHashtag",
+                "properties": [{ "hashtag": "asc" }],
+                "terminal": "postId"
+            }
+        ]),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must include $ownerId",
+    );
+}
+
+// ── composite and flat terminals ────────────────────────────────────────
+
+/// The likes schema with one extra index appended.
+fn likes_schema_with_extra_index(index: Value) -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(index);
+    schema
+}
+
+#[test]
+fn accepts_a_composite_terminal_below_a_prefix() {
+    // byLiker becomes `[$ownerId] → postId ‖ hashtag`: a 32-byte identifier
+    // followed by a string, which may only be the last component.
+    let mut schema =
+        likes_schema_with_index_key(2, "terminal", platform_value!(["postId", "hashtag"]));
+    // The hashtag is bounded to 40 characters here: a string bound counts
+    // characters of up to four bytes, and 32 + 4 × 63 would exceed the
+    // 255-byte member key cap.
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "hashtag",
+            platform_value!({ "type": "string", "maxLength": 40, "position": 0 }),
+        )
+        .expect("property applies");
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a composite terminal parses");
+        let index = &document_type.indices["byLiker"];
+        assert_eq!(
+            index.terminal_components(),
+            &["postId".to_string(), "hashtag".to_string()]
+        );
+        assert!(index.single_terminal().is_none());
+        assert!(!index.is_flat());
+    }
+}
+
+#[test]
+fn accepts_a_flat_composite_terminal() {
+    // An index with no properties at all: a flat index keyed by
+    // `postId ‖ $ownerId`, living under its own zero-byte-prefixed level.
+    let schema = likes_schema_with_extra_index(platform_value!({
+        "name": "byPostOwner",
+        "terminal": ["postId", "$ownerId"]
+    }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a flat composite terminal parses");
+        let index = &document_type.indices["byPostOwner"];
+        assert!(index.is_flat());
+        assert!(index.properties.is_empty());
+        assert_eq!(
+            index.flat_level_key().as_deref(),
+            Some("\0postId\0$ownerId")
+        );
+        assert!(
+            document_type
+                .index_structure
+                .sub_levels()
+                .contains_key("\0postId\0$ownerId"),
+            "the flat level is a top-level entry of the index structure"
+        );
+        assert!(
+            document_type.index_structure.sub_levels()["\0postId\0$ownerId"]
+                .has_index_with_type()
+                .is_some(),
+            "the flat level terminates its index"
+        );
+    }
+}
+
+#[test]
+fn rejects_a_variable_width_leading_component() {
+    // A string is never fixed width, so it cannot be followed by another
+    // component.
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!(["hashtag", "postId"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is not fixed width",
+    );
+}
+
+#[test]
+fn should_bound_flat_level_names_independently_of_member_values() {
+    // Four booleans and an owner encode to only 36 member-key bytes, but
+    // the names used for their flat level can exceed GroveDB's key limit.
+    for last_name_length in [50, 51, 64] {
+        let names = [
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(last_name_length),
+        ];
+        let mut schema = platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        });
+        for (position, name) in names.iter().enumerate() {
+            with_required_property(
+                &mut schema,
+                name,
+                platform_value!({ "type": "boolean", "position": position }),
+            );
+        }
+        let mut terminal: Vec<Value> = names.into_iter().map(Value::Text).collect();
+        terminal.push(Value::Text("$ownerId".to_string()));
+        schema
+            .set_value(
+                "indices",
+                platform_value!([{
+                    "name": "byValues",
+                    "terminal": terminal
+                }]),
+            )
+            .expect("indices apply");
+
+        for full_validation in [false, true] {
+            let result = parse_with(schema.clone(), PlatformVersion::latest(), full_validation);
+            if last_name_length == 50 {
+                let document_type = result.expect("a 255-byte flat level key is accepted");
+                assert_eq!(
+                    document_type.indices["byValues"]
+                        .flat_level_key()
+                        .unwrap()
+                        .len(),
+                    255
+                );
+            } else {
+                expect_structure_error(result, "flat level key cap");
+            }
+        }
+    }
+}
+
+#[test]
+fn rejects_a_composite_terminal_over_the_key_cap() {
+    // Two 200-byte arrays: 400 bytes, over grovedb's 255-byte key cap.
+    let mut schema =
+        likes_schema_with_index_key(2, "terminal", platform_value!(["blobA", "blobB"]));
+    for (name, position) in [("blobA", 2), ("blobB", 3)] {
+        with_required_property(
+            &mut schema,
+            name,
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 200,
+                "maxItems": 200,
+                "position": position
+            }),
+        );
+    }
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "member key cap",
+    );
+}
+
+#[test]
+fn rejects_a_terminal_component_name_with_a_zero_byte() {
+    let mut schema = login_response_schema();
+    with_required_property(
+        &mut schema,
+        "bad\0name",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 4,
+            "maxItems": 4,
+            "position": 3
+        }),
+    );
+    schema
+        .set_value(
+            "indices",
+            platform_value!([
+                { "name": "byRequest", "terminal": ["bad\0name", "$ownerId"] }
+            ]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "zero byte",
+    );
+}
+
+#[test]
+fn rejects_a_terminal_with_no_components() {
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!([]));
+    match parse_with(schema, PlatformVersion::latest(), false) {
+        Ok(_) => panic!("an empty terminal list must be refused"),
+        Err(error) => assert!(
+            error.to_string().contains("at least one property"),
+            "expected the empty-terminal rejection, got: {error}"
+        ),
+    }
+}
+
+/// The flat level's storage key is the zero-joined component names, which
+/// the value-width cap does not bound: five one-byte components named at
+/// the 64-character limit fit the member key with room to spare and still
+/// spell a 300-byte level key.
+#[test]
+fn rejects_a_flat_level_key_over_the_key_cap() {
+    let names: Vec<String> = (0..5)
+        .map(|position| format!("{position}{}", "n".repeat(63)))
+        .collect();
+    let mut properties = platform_value::Value::Map(Default::default());
+    for (position, name) in names.iter().enumerate() {
+        properties
+            .set_value(
+                name,
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "position": position as u64
+                }),
+            )
+            .expect("property applies");
+    }
+    let required: Vec<platform_value::Value> = names
+        .iter()
+        .map(|name| platform_value!(name.as_str()))
+        .collect();
+    let mut terminal = required.clone();
+    terminal.push(platform_value!("$ownerId"));
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "indices": [{ "name": "byNames", "terminal": platform_value::Value::Array(terminal) }],
+        "properties": properties,
+        "required": platform_value::Value::Array(required),
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "flat level key cap",
+    );
+}
+
+#[test]
+fn rejects_a_terminal_naming_a_component_twice() {
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!(["postId", "postId"]));
+    match parse_with(schema, PlatformVersion::latest(), false) {
+        Ok(_) => panic!("a duplicate terminal component must be refused"),
+        Err(error) => assert!(
+            error.to_string().contains("twice"),
+            "expected the duplicate-component refusal, got {error}"
+        ),
+    }
+}
+
+#[test]
+fn rejects_aggregates_on_a_flat_index() {
+    // No prefix level exists for an aggregate to apply to.
+    let schema = likes_schema_with_extra_index(platform_value!({
+        "name": "byPostOwner",
+        "terminal": ["postId", "$ownerId"],
+        "countable": true
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "has no properties (a flat index",
+    );
+}
+
+#[test]
+fn rejects_a_flat_index_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
+        },
+        "indices": [{ "name": "flat" }],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "only allowed on an indexOnly document type",
+    );
+}
+
+// ── entry payload ───────────────────────────────────────────────────────
+
+/// The app-connect login response: a flat index keyed by the request hash
+/// and the responding identity, with the wallet's ephemeral key and the
+/// ciphertext in every entry's value.
+fn login_response_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "indices": [
+            { "name": "byRequest", "terminal": ["appEphemeralPubKeyHash", "$ownerId"] }
+        ],
+        "entryPayload": ["walletEphemeralPubKey", "encryptedPayload"],
+        "properties": {
+            "appEphemeralPubKeyHash": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 20,
+                "maxItems": 20,
+                "position": 0
+            },
+            "walletEphemeralPubKey": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 33,
+                "maxItems": 33,
+                "position": 1
+            },
+            "encryptedPayload": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 60,
+                "maxItems": 572,
+                "position": 2
+            }
+        },
+        "required": ["appEphemeralPubKeyHash", "walletEphemeralPubKey", "encryptedPayload"],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn accepts_an_entry_payload_on_a_flat_composite_index() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            login_response_schema(),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .expect("the login response schema parses");
+        assert_eq!(
+            document_type
+                .entry_payload
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["encryptedPayload", "walletEphemeralPubKey"],
+            "payload properties are kept in name order"
+        );
+        assert!(document_type.indices["byRequest"].is_flat());
+    }
+}
+
+#[test]
+fn rejects_an_entry_payload_property_that_is_also_indexed() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "entryPayload",
+            platform_value!([
+                "appEphemeralPubKeyHash",
+                "walletEphemeralPubKey",
+                "encryptedPayload"
+            ]),
+        )
+        .expect("entryPayload applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "also appears in index",
+    );
+}
+
+#[test]
+fn rejects_an_unbounded_entry_payload_property() {
+    let mut schema = login_response_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "encryptedPayload",
+            platform_value!({ "type": "array", "byteArray": true, "position": 2 }),
+        )
+        .expect("property applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be bounded",
+    );
+}
+
+/// A string whose `maxLength` puts its worst case past `u16::MAX` bytes
+/// overflows the width computation, which is a refused contract rather than
+/// an internal error.
+#[test]
+fn rejects_an_entry_payload_string_wider_than_the_width_computation() {
+    let mut schema = login_response_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "encryptedPayload",
+            platform_value!({ "type": "string", "maxLength": 16384, "position": 2 }),
+        )
+        .expect("property applies");
+    for full_validation in [false, true] {
+        expect_structure_error(
+            parse_with(schema.clone(), PlatformVersion::latest(), full_validation),
+            "may encode to more than 65535 bytes",
+        );
+    }
+}
+
+#[test]
+fn rejects_an_optional_entry_payload_property() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["appEphemeralPubKeyHash", "walletEphemeralPubKey"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_an_entry_payload_naming_an_unknown_property() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "entryPayload",
+            platform_value!(["nonsense", "encryptedPayload"]),
+        )
+        .expect("entryPayload applies");
+    // walletEphemeralPubKey is then in no index and no payload either, but
+    // the unknown name is refused first.
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is not a top-level property",
+    );
+}
+
+#[test]
+fn rejects_an_entry_payload_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "note": { "type": "string", "maxLength": 63, "position": 1 }
+        },
+        "required": ["hashtag", "note"],
+        "indices": [{ "name": "byHashtag", "properties": [{ "hashtag": "asc" }] }],
+        "entryPayload": ["note"],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `entryPayload`",
+    );
+}
+
+// ── terminal without indexOnly ──────────────────────────────────────────
+
+#[test]
+fn rejects_terminal_on_non_index_only_type() {
+    let mut schema = likes_schema();
+    schema
+        .remove_optional_value("indexOnly")
+        .expect("removal applies");
+    // Without indexOnly the doctype-flag constraints don't apply, but the
+    // dangling `terminal` declarations must be rejected.
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `terminal`",
+    );
+}
+
+// ── cross-generation gating ─────────────────────────────────────────────
+
+#[test]
+fn terminal_keyword_is_rejected_below_generation_3_on_both_modes() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+
+    for full_validation in [false, true] {
+        let result = parse_dispatched(likes_schema(), platform_version_13, full_validation);
+        assert!(
+            result.is_err(),
+            "PV13 must reject the likes schema (full_validation: {full_validation}): \
+             `terminal` is not part of generation 2's index grammar"
+        );
+    }
+}
+
+#[test]
+fn index_only_keyword_is_inert_below_generation_3_without_validation() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+
+    // A doctype-level `indexOnly` with no `terminal` keywords: generation 2
+    // ignores unknown doctype keys on the non-validating path — exactly how
+    // it treats every keyword it predates — so the parse succeeds and the
+    // flag is NOT set.
+    let mut schema = likes_schema();
+    for index_value in schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+    {
+        // Strip the generation-3 index grammar so only `indexOnly` remains.
+        let _ = index_value.remove_optional_value("terminal");
+        let _ = index_value.remove_optional_value("rankedCountable");
+    }
+
+    let document_type = parse_dispatched(schema.clone(), platform_version_13, false)
+        .expect("generation 2 ignores unknown doctype-level keywords when not validating");
+    assert!(
+        !document_type.index_only(),
+        "generation 2 must not set index_only"
+    );
+
+    // Under full validation the v2 meta-schema rejects the unknown key.
+    assert!(
+        parse_dispatched(schema, platform_version_13, true).is_err(),
+        "meta-schema v2 must reject the indexOnly keyword"
+    );
+}
+
+#[test]
+fn index_only_flag_survives_the_dispatcher_at_latest() {
+    let document_type = parse_dispatched(likes_schema(), PlatformVersion::latest(), true)
+        .expect("likes schema parses through the dispatcher at PV14");
+    assert!(document_type.index_only());
+}
+
+// ── preallocated indexes ────────────────────────────────────────────────
+
+/// Replaces `postId`'s `refersTo` declaration in place (`set_value` writes
+/// literal top-level keys, so nested keys need the walk).
+fn set_post_id_refers_to(schema: &mut Value, refers_to: Value) {
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .get_mut("postId")
+        .expect("postId accessible")
+        .expect("postId present")
+        .set_value("refersTo", refers_to)
+        .expect("refersTo applies");
+}
+
+/// The likes schema with `postId` carrying a same-contract
+/// permanentDocument reference to `post` agreeing on `hashtag` — the shape
+/// whose `byHashtagPost` and `byPost` paths are pure functions of the
+/// referenced post, so both may declare `preallocated`.
+fn preallocatable_likes_schema() -> Value {
+    let mut schema = likes_schema();
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+                "hashtag": "hashtag"
+            }
+        }),
+    );
+    schema
+}
+
+#[test]
+fn preallocated_accepts_a_reference_determined_index() {
+    for full_validation in [false, true] {
+        let mut schema = preallocatable_likes_schema();
+        for index_position in [0, 1] {
+            schema
+                .get_mut("indices")
+                .expect("indices accessible")
+                .expect("indices present")
+                .as_array_mut()
+                .expect("indices is an array")
+                .get_mut(index_position)
+                .expect("index exists")
+                .set_value("preallocated", Value::Bool(true))
+                .expect("index key applies");
+        }
+        let document_type = parse_with(schema, PlatformVersion::latest(), full_validation)
+            .expect("a reference-determined preallocated index parses");
+        assert!(
+            document_type
+                .indices
+                .get("byHashtagPost")
+                .unwrap()
+                .preallocated
+        );
+        assert!(document_type.indices.get("byPost").unwrap().preallocated);
+        assert!(!document_type.indices.get("byLiker").unwrap().preallocated);
+
+        // The flag is stamped onto the terminating index level, where the
+        // rs-drive delete walker reads it to skip upward pruning.
+        let hashtag_level = document_type
+            .index_structure
+            .sub_levels()
+            .get("hashtag")
+            .unwrap();
+        let post_level = hashtag_level.sub_levels().get("postId").unwrap();
+        assert!(post_level.has_index_with_type().unwrap().preallocated);
+        let owner_level = document_type
+            .index_structure
+            .sub_levels()
+            .get("$ownerId")
+            .unwrap();
+        assert!(!owner_level.has_index_with_type().unwrap().preallocated);
+    }
+}
+
+#[test]
+fn rejects_preallocated_without_a_document_reference() {
+    // The base schema's `postId` refers to an identity — no referenced
+    // document determines the path.
+    expect_structure_error(
+        parse_with(
+            likes_schema_with_index_key(0, "preallocated", Value::Bool(true)),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn rejects_preallocated_with_an_uncovered_property() {
+    // A permanentDocument reference WITHOUT the hashtag agreement leaves
+    // byHashtagPost's `hashtag` undetermined.
+    let mut schema = likes_schema_with_index_key(0, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post"
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+
+    // `byPost` ([postId], terminal $ownerId) stays fully determined by the
+    // reference alone, so the same schema with the flag there parses.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post"
+        }),
+    );
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an agreement-free reference still determines a [postId] index");
+}
+
+/// The preallocatable schema with `preallocated: true` on the index at
+/// `index_position` (0 = byHashtagPost, 1 = byPost, 2 = byLiker).
+fn preallocatable_likes_schema_with_flag_on(index_position: usize) -> Value {
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(index_position)
+        .expect("index exists")
+        .set_value("preallocated", Value::Bool(true))
+        .expect("index key applies");
+    schema
+}
+
+#[test]
+fn rejects_preallocated_on_owner_prefixed_index() {
+    // byLiker's `$ownerId` prefix can never be determined by the
+    // referenced document.
+    expect_structure_error(
+        parse_with(
+            preallocatable_likes_schema_with_flag_on(2),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn rejects_preallocated_through_a_deletable_document_reference() {
+    // A deletableDocument reference shapes the path exactly as a
+    // permanentDocument one would, but its target may be deleted: the
+    // trees created alongside it would outlive it with other owners'
+    // entries inside, so it is not a preallocation binding.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "deletableDocument",
+            "documentType": "post",
+            "where": {
+                "hashtag": "hashtag"
+            }
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn accepts_a_deletable_document_reference_as_the_terminal() {
+    // The member key is an Item holding the referenced id, not a
+    // Reference, so an entry simply outlives a deleted target.
+    for full_validation in [false, true] {
+        let mut schema = likes_schema();
+        set_post_id_refers_to(
+            &mut schema,
+            platform_value!({
+                "type": "deletableDocument",
+                "documentType": "post"
+            }),
+        );
+        let document_type = parse_with(schema, PlatformVersion::latest(), full_validation)
+            .expect("a deletableDocument terminal parses");
+        assert_eq!(
+            document_type
+                .indices
+                .get("byLiker")
+                .unwrap()
+                .single_terminal(),
+            Some("postId")
+        );
+    }
+}
+
+#[test]
+fn rejects_preallocated_on_cross_contract_reference() {
+    // The reference names a DIFFERENT contract — its document inserts
+    // happen in a subtree this contract's insert path never touches.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "contractId": Value::Identifier([2; 32]),
+            "documentType": "post"
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+
+    // Naming the declaring contract's own id explicitly counts as
+    // same-contract (the parse helper registers under [1; 32]).
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "contractId": Value::Identifier([1; 32]),
+            "documentType": "post"
+        }),
+    );
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an own-id reference is a same-contract reference");
+}
+
+#[test]
+fn rejects_preallocated_on_non_index_only_type() {
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .remove_optional_value("indexOnly")
+        .expect("removal applies");
+    for index_value in schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+    {
+        let _ = index_value.remove_optional_value("terminal");
+    }
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(1)
+        .expect("byPost exists")
+        .set_value("preallocated", Value::Bool(true))
+        .expect("index key applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `preallocated`",
+    );
+}
+
+#[test]
+fn preallocated_keyword_is_rejected_below_generation_3_on_both_modes() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+    let schema = preallocatable_likes_schema_with_flag_on(1);
+
+    for full_validation in [false, true] {
+        assert!(
+            parse_dispatched(schema.clone(), platform_version_13, full_validation).is_err(),
+            "PV13 must reject the preallocated keyword (full_validation: {full_validation}): \
+             it is not part of generation 2's index grammar"
+        );
+    }
+}
+
+#[test]
+fn rejects_preallocated_on_bucketed_index() {
+    // A bucketed level is keyed by grid-qualified bucket starts computed
+    // from a timestamp at write time — nothing a referenced document could
+    // determine, so `preallocated` + `timeRange` is rejected outright.
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 },
+            "countable": true,
+            "rangeCountable": true,
+            "preallocated": true
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `preallocated` together with `timeRange`",
+    );
+}
+
+// ── skipIfAbsent: conditional index participation ───────────────────────
+
+/// The likes schema with `hashtag` optional and `byHashtagPost` marked
+/// `skipIfAbsent` — the canonical conditional-participation shape: an
+/// untagged like writes no `byHashtagPost` entry at all.
+fn skip_likes_schema() -> Value {
+    let mut schema = likes_schema_with_index_key(0, "skipIfAbsent", platform_value!(true));
+    schema
+        .set_value("required", platform_value!(["postId"]))
+        .expect("required applies");
+    schema
+}
+
+/// The base skip schema with one more index appended.
+fn skip_likes_schema_with_extra_index(index: Value) -> Value {
+    let mut schema = skip_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(index);
+    schema
+}
+
+#[test]
+fn accepts_skip_if_absent_index_with_optional_trigger() {
+    let platform_version = PlatformVersion::latest();
+
+    for full_validation in [false, true] {
+        let document_type = parse_with(skip_likes_schema(), platform_version, full_validation)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "skip likes schema should parse (full_validation: {full_validation}): {error}"
+                )
+            });
+
+        assert!(document_type.index_only());
+        assert!(
+            document_type
+                .indices
+                .get("byHashtagPost")
+                .expect("index present")
+                .skip_if_absent,
+            "the flag must survive parsing"
+        );
+        assert!(
+            !document_type.required_fields.contains("hashtag"),
+            "the trigger stays optional"
+        );
+    }
+}
+
+#[test]
+fn should_reject_skip_if_absent_index_with_no_optional_property() {
+    // Flag on, but `hashtag` still required: the index could never skip.
+    let schema = likes_schema_with_index_key(0, "skipIfAbsent", platform_value!(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "none of its properties is optional",
+    );
+}
+
+#[test]
+fn rejects_skip_if_absent_with_system_property_trigger() {
+    // byLiker's only property is $ownerId, which is always present: `true`
+    // resolves to an empty skip set, and naming it is refused outright.
+    let schema = likes_schema_with_index_key(2, "skipIfAbsent", platform_value!(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "none of its properties is optional",
+    );
+    let schema = likes_schema_with_index_key(2, "skipIfAbsent", platform_value!(["$ownerId"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "skips on system property",
+    );
+}
+
+#[test]
+fn rejects_optional_property_in_non_skip_index() {
+    // `hashtag` is byHashtagPost's trigger, but a second, non-skip index
+    // also leads with it — that index would have to represent absence,
+    // which has no index encoding.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byHashtag",
+        "properties": [{ "hashtag": "asc" }],
+        "terminal": "$ownerId"
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "which does not skip documents that omit it",
+    );
+}
+
+#[test]
+fn should_reject_optional_property_below_first_position_in_non_skip_index() {
+    // An optional property anywhere in an index that does not skip would
+    // need an index representation for its absence, which indexOnly types
+    // do not have.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byPostHashtag",
+        "properties": [{ "postId": "asc" }, { "hashtag": "asc" }],
+        "terminal": "$ownerId"
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "which does not skip documents that omit it",
+    );
+}
+
+#[test]
+fn should_accept_skip_property_below_first_position() {
+    // A skip property may sit at any position: the walkers only build a
+    // level when an index the document takes part in continues through it,
+    // so an untagged like writes nothing under `postId` for this index.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byPostHashtag",
+        "properties": [{ "postId": "asc" }, { "hashtag": "asc" }],
+        "terminal": "$ownerId",
+        "skipIfAbsent": true
+    }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        assert_eq!(
+            document_type
+                .indices
+                .get("byPostHashtag")
+                .expect("index present")
+                .skip_if_absent_properties,
+            vec!["hashtag".to_string()]
+        );
+    }
+}
+
+#[test]
+fn rejects_optional_terminal() {
+    // `postId` is a skip index's trigger (so legitimately optional) but
+    // also another index's terminal — and a terminal is every entry's
+    // member key, which can never be absent.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": 0
+            }
+        },
+        "required": [],
+        "indices": [
+            {
+                "name": "byLiker",
+                "properties": [{ "$ownerId": "asc" }],
+                "terminal": "postId"
+            },
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is the terminal of index",
+    );
+}
+
+#[test]
+fn rejects_when_every_proof_candidate_is_skippable() {
+    // The only $createdAt-free index is skipIfAbsent: a trigger-absent
+    // document would have no entry an executed-transition proof could
+    // locate from the transition's values alone.
+    let mut schema = skip_likes_schema();
+    schema
+        .set_value("required", platform_value!(["postId", "$createdAt"]))
+        .expect("required applies");
+    schema
+        .set_value(
+            "indices",
+            platform_value!([
+                {
+                    "name": "byHashtagPost",
+                    "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId",
+                    "skipIfAbsent": true
+                },
+                {
+                    "name": "byTime",
+                    "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId"
+                }
+            ]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "nor sets skipIfAbsent",
+    );
+}
+
+#[test]
+fn skip_if_absent_keyword_is_rejected_below_generation_3_on_both_modes() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+    let schema = skip_likes_schema();
+
+    for full_validation in [false, true] {
+        assert!(
+            parse_dispatched(schema.clone(), platform_version_13, full_validation).is_err(),
+            "PV13 must reject the skipIfAbsent keyword (full_validation: {full_validation}): \
+             it is not part of generation 2's index grammar"
+        );
+    }
+}
+
+#[test]
+fn skip_if_absent_flag_is_frozen_on_contract_update() {
+    // `validate_index_definitions_unchanged` compares parsed `Index` values
+    // by full equality, so flipping the flag (with the trigger's
+    // requiredness necessarily moving alongside) is a rejected index
+    // change — the walkers derive the skip from `required` membership, so
+    // historical entries would go undeletable if either could drift.
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+
+    let platform_version = PlatformVersion::latest();
+    let old =
+        parse_dispatched(skip_likes_schema(), platform_version, false).expect("skip schema parses");
+    let new =
+        parse_dispatched(likes_schema(), platform_version, false).expect("base schema parses");
+
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, platform_version)
+        .expect("validate_update should not error");
+
+    assert!(
+        result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            ) if e.index_path() == "changed index 'byHashtagPost'"
+        )),
+        "expected a changed-index rejection, got: {:?}",
+        result.errors
+    );
+}
+
+/// A windowed like: `byDayHashtagPost` buckets `$createdAt` by day with a
+/// seven-day TTL, then ranks hashtags and the posts under each within the
+/// window, and skips untagged likes. `byHashtagPost` gives `hashtag` a skip
+/// index of its own, and `byPost` is the proof index.
+fn windowed_skip_likes_schema(day_index_skip: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            }
+        },
+        "required": ["$createdAt", "postId"],
+        "indices": [
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byHashtagPost",
+                "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["hashtag", "postId"] },
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byDayHashtagPost",
+                "properties": [
+                    { "$createdAt": "asc" },
+                    { "hashtag": "asc" },
+                    { "postId": "asc" }
+                ],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["hashtag", "postId"] },
+                "timeRange": {
+                    "on": "$createdAt",
+                    "range": 86400u64,
+                    "step": 86400u64,
+                    "ttl": 604800u64
+                },
+                "skipIfAbsent": day_index_skip
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn should_accept_skip_property_below_a_time_window() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            windowed_skip_likes_schema(platform_value!(true)),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        let index = document_type
+            .indices
+            .get("byDayHashtagPost")
+            .expect("index present");
+        assert!(index.skip_if_absent);
+        assert_eq!(index.skip_if_absent_properties, vec!["hashtag".to_string()]);
+    }
+}
+
+#[test]
+fn should_parse_both_spellings_of_one_skip_set_to_equal_indexes() {
+    let platform_version = PlatformVersion::latest();
+    let with_true = parse_with(
+        windowed_skip_likes_schema(platform_value!(true)),
+        platform_version,
+        true,
+    )
+    .expect("true parses");
+    let with_array = parse_with(
+        windowed_skip_likes_schema(platform_value!(["hashtag"])),
+        platform_version,
+        true,
+    )
+    .expect("array parses");
+    assert_eq!(with_true.indices, with_array.indices);
+    assert_eq!(with_true.index_structure, with_array.index_structure);
+}
+
+#[test]
+fn should_accept_respelling_a_skip_set_on_contract_update() {
+    let platform_version = PlatformVersion::latest();
+    let old = parse_dispatched(
+        windowed_skip_likes_schema(platform_value!(true)),
+        platform_version,
+        false,
+    )
+    .expect("true parses");
+    let new = parse_dispatched(
+        windowed_skip_likes_schema(platform_value!(["hashtag"])),
+        platform_version,
+        false,
+    )
+    .expect("array parses");
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, platform_version)
+        .expect("validate_update should not error");
+    assert!(
+        result.errors.is_empty(),
+        "respelling the same skip set is no index change, got: {:?}",
+        result.errors
+    );
+}
+
+/// A like with two optional properties, `hashtag` and `mood`, in one skip
+/// index, and `extra` spliced into the document type (properties, required
+/// and indices).
+fn two_optional_likes_schema(extra_indices: Value) -> Value {
+    let mut schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "mood": { "type": "string", "maxLength": 16, "position": 1 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 2
+            }
+        },
+        "required": ["postId"],
+        "indices": [
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byHashtagMoodPost",
+                "properties": [{ "hashtag": "asc" }, { "mood": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    let indices = schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array");
+    for index in extra_indices.as_array().expect("an array").iter() {
+        indices.push(index.clone());
+    }
+    schema
+}
+
+#[test]
+fn should_accept_true_with_two_optional_properties_each_with_its_own_skip_index() {
+    let schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        },
+        {
+            "name": "byMood",
+            "properties": [{ "mood": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": ["mood"]
+        }
+    ]));
+    let document_type = parse_with(schema, PlatformVersion::latest(), true).expect("schema parses");
+    assert_eq!(
+        document_type
+            .indices
+            .get("byHashtagMoodPost")
+            .expect("index present")
+            .skip_if_absent_properties,
+        vec!["hashtag".to_string(), "mood".to_string()]
+    );
+}
+
+#[test]
+fn should_reject_optional_property_only_covered_by_a_wider_skip_index() {
+    // `mood` has no skip index of its own: a like carrying `mood` but no
+    // `hashtag` would skip byHashtagMoodPost and store `mood` nowhere.
+    let schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        }
+    ]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "whose only skip property it is",
+    );
+}
+
+#[test]
+fn should_reject_skip_array_missing_an_optional_property_of_an_index_only_index() {
+    // Listing only `hashtag` would leave an absent `mood` with nothing to
+    // write: an indexOnly index has no null layout.
+    let mut schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        },
+        {
+            "name": "byMood",
+            "properties": [{ "mood": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        }
+    ]));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(1)
+        .expect("byHashtagMoodPost")
+        .set_value("skipIfAbsent", platform_value!(["hashtag"]))
+        .expect("skip set applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "which does not skip documents that omit it",
+    );
+}
+
+#[test]
+fn should_reject_malformed_skip_arrays() {
+    let platform_version = PlatformVersion::latest();
+    for (skip, needle) in [
+        (platform_value!([]), "must name at least one property"),
+        (platform_value!(["hashtag", "hashtag"]), "twice"),
+        (
+            platform_value!(["hashtag", "mood"]),
+            "not one of the index's properties",
+        ),
+        (platform_value!(["postId"]), "which is listed in `required`"),
+    ] {
+        let schema = windowed_skip_likes_schema(skip);
+        expect_structure_error(parse_with(schema, platform_version, false), needle);
+    }
+}
+
+#[test]
+fn should_reject_skip_array_under_full_validation_when_items_are_not_names() {
+    let schema = windowed_skip_likes_schema(platform_value!([7]));
+    assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
+    assert!(parse_with(schema, PlatformVersion::latest(), false).is_err());
+}
+
+#[test]
+fn should_reject_ranking_above_a_skip_property() {
+    // byMoodHashtag ranks moods by like count, but only tagged likes enter
+    // the index, and no query can read it without binding `hashtag`.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "mood": { "type": "string", "maxLength": 16, "position": 1 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 2
+            }
+        },
+        "required": ["postId", "mood"],
+        "indices": [
+            {
+                "name": "byPostMood",
+                "properties": [{ "postId": "asc" }, { "mood": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byHashtag",
+                "properties": [{ "hashtag": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byMoodHashtag",
+                "properties": [{ "mood": "asc" }, { "hashtag": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["mood", "hashtag"] },
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "ranks at \"mood\", above its skip property \"hashtag\"",
+    );
+}
+
+// ── skipIfAbsent on stored document types ───────────────────────────────
+
+/// A stored `post` type: `hashtag` and `language` optional, one index over
+/// both and the post's `$createdAt`, with `skip` as its `skipIfAbsent`.
+fn stored_post_schema(skip: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "language": { "type": "string", "maxLength": 8, "position": 1 },
+            "text": { "type": "string", "maxLength": 280, "position": 2 }
+        },
+        "required": ["text", "$createdAt"],
+        "indices": [
+            {
+                "name": "byHashtagLanguageTime",
+                "properties": [
+                    { "hashtag": "asc" },
+                    { "language": "asc" },
+                    { "$createdAt": "asc" }
+                ],
+                "skipIfAbsent": skip
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn should_accept_skip_if_absent_on_a_stored_type() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            stored_post_schema(platform_value!(true)),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        assert!(!document_type.index_only());
+        assert_eq!(
+            document_type
+                .indices
+                .get("byHashtagLanguageTime")
+                .expect("index present")
+                .skip_if_absent_properties,
+            vec!["hashtag".to_string(), "language".to_string()],
+            "`true` skips on every optional property of the index"
+        );
+    }
+}
+
+#[test]
+fn should_accept_a_partial_skip_array_on_a_stored_type() {
+    // `language` keeps the null layout: a tagged post without a language is
+    // written with `language` under the empty key.
+    let document_type = parse_with(
+        stored_post_schema(platform_value!(["hashtag"])),
+        PlatformVersion::latest(),
+        true,
+    )
+    .expect("schema parses");
+    assert_eq!(
+        document_type
+            .indices
+            .get("byHashtagLanguageTime")
+            .expect("index present")
+            .skip_if_absent_properties,
+        vec!["hashtag".to_string()]
+    );
+    let terminal = document_type
+        .index_structure
+        .sub_levels()
+        .get("hashtag")
+        .and_then(|level| level.sub_levels().get("language"))
+        .and_then(|level| level.sub_levels().get("$createdAt"))
+        .and_then(|level| level.has_index_with_type())
+        .expect("the index ends at $createdAt");
+    assert_eq!(
+        terminal.skip_if_absent_properties,
+        vec!["hashtag".to_string()]
+    );
+}
+
+#[test]
+fn should_accept_skip_if_absent_with_unique_time_range_and_ranking_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            "slug": { "type": "string", "maxLength": 63, "position": 1 }
+        },
+        "required": ["$createdAt"],
+        "indices": [
+            {
+                "name": "bySlug",
+                "properties": [{ "slug": "asc" }],
+                "unique": true,
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byDayHashtag",
+                "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                "rangeCountable": true,
+                "rankedCountable": true,
+                "timeRange": { "on": "$createdAt", "range": 86400u64, "step": 86400u64 },
+                "skipIfAbsent": ["hashtag"]
+            }
+        ],
+        "additionalProperties": false
+    });
+    for full_validation in [false, true] {
+        parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+    }
+}
+
+#[test]
+fn should_reject_skip_if_absent_with_null_searchable_false_on_a_stored_type() {
+    let mut schema = stored_post_schema(platform_value!(true));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("index exists")
+        .set_value("nullSearchable", platform_value!(false))
+        .expect("key applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "sets both `skipIfAbsent` and `nullSearchable: false`",
+    );
+}
+
+#[test]
+fn should_reject_skip_if_absent_on_a_contested_index() {
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "properties": {
+            "label": { "type": "string", "minLength": 3, "maxLength": 19, "position": 0 }
+        },
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{ "label": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "label", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                    ],
+                    "resolution": 0
+                },
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is contested and declares `skipIfAbsent`",
+    );
+}
+
+#[test]
+fn should_reject_skip_if_absent_on_a_stored_index_with_no_optional_property() {
+    let mut schema = stored_post_schema(platform_value!(true));
+    schema
+        .set_value(
+            "required",
+            platform_value!(["text", "$createdAt", "hashtag", "language"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "none of its properties is optional",
+    );
+}
+
+#[test]
+fn should_reject_a_nested_skip_property_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "topic": { "type": "string", "maxLength": 32, "position": 0 }
+                },
+                "additionalProperties": false,
+                "position": 0
+            }
+        },
+        "indices": [
+            {
+                "name": "byTopic",
+                "properties": [{ "meta.topic": "asc" }],
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "skips on nested property",
+    );
+}
+
+#[test]
+fn should_keep_the_last_of_repeated_skip_if_absent_keys() {
+    // A map may repeat a key; the meta-schema's JSON view keeps the last
+    // value, and so does the parse: the flag and the skip set are replaced
+    // together.
+    for (values, skips) in [
+        (
+            [platform_value!(["hashtag"]), platform_value!(false)],
+            false,
+        ),
+        ([platform_value!(false), platform_value!(["hashtag"])], true),
+    ] {
+        let mut schema = stored_post_schema(values[0].clone());
+        let Value::Map(index) = schema
+            .get_mut("indices")
+            .expect("indices accessible")
+            .expect("indices present")
+            .as_array_mut()
+            .expect("indices is an array")
+            .get_mut(0)
+            .expect("index exists")
+        else {
+            panic!("an index is a map");
+        };
+        index.push((Value::Text("skipIfAbsent".to_string()), values[1].clone()));
+        for full_validation in [false, true] {
+            let document_type =
+                parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+                    .unwrap_or_else(|error| panic!("{values:?}: {error}"));
+            let index = document_type
+                .indices
+                .get("byHashtagLanguageTime")
+                .expect("index present");
+            assert_eq!(index.skip_if_absent, skips, "{values:?}");
+            assert_eq!(
+                index.skip_if_absent_properties.is_empty(),
+                !skips,
+                "{values:?}: the skip set follows the flag"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_reject_an_optional_property_covered_only_by_a_time_windowed_skip_index() {
+    // A windowed index keeps `hashtag` only in day windows, which document
+    // queries do not read and the `ttl` drains.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            }
+        },
+        "required": ["postId", "$createdAt"],
+        "indices": [
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byDayHashtagPost",
+                "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "needs an index without a timeRange whose only skip property it is",
+    );
+}
+
+#[test]
+fn should_reject_a_stored_ranking_at_a_skip_property_whose_level_another_index_shares() {
+    // byHashtagLanguage keeps the null layout for `hashtag`, so it would
+    // create the null value tree inside byHashtag's ranked level.
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "language": { "type": "string", "maxLength": 8, "position": 1 }
+        },
+        "indices": [
+            {
+                "name": "byHashtag",
+                "properties": [{ "hashtag": "asc" }],
+                "rangeCountable": true,
+                "rankedCountable": true,
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byHashtagLanguage",
+                "properties": [{ "hashtag": "asc" }, { "language": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema.clone(), PlatformVersion::latest(), false),
+        "ranks at its skip property \"hashtag\"",
+    );
+
+    // Skipping on `hashtag` in the sharing index too leaves no null group.
+    let mut schema = schema;
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(1)
+        .expect("index exists")
+        .set_value("skipIfAbsent", platform_value!(["hashtag"]))
+        .expect("key applies");
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("no index keeps the null layout at the ranked level");
+}
+
+#[test]
+fn should_reject_a_stored_skip_on_a_byte_array_that_may_be_empty() {
+    let schema = |min_items: Option<u64>| {
+        let mut tag = platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "maxItems": 32,
+            "position": 0
+        });
+        if let Some(min_items) = min_items {
+            tag.set_value("minItems", platform_value!(min_items))
+                .expect("key applies");
+        }
+        platform_value!({
+            "type": "object",
+            "properties": { "tag": tag },
+            "indices": [
+                {
+                    "name": "byTag",
+                    "properties": [{ "tag": "asc" }],
+                    "skipIfAbsent": true
+                }
+            ],
+            "additionalProperties": false
+        })
+    };
+    for min_items in [None, Some(0)] {
+        expect_structure_error(
+            parse_with(schema(min_items), PlatformVersion::latest(), false),
+            "which may be empty",
+        );
+    }
+    parse_with(schema(Some(1)), PlatformVersion::latest(), false)
+        .expect("a byte array of at least one byte never takes the empty key");
+}

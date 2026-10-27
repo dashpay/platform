@@ -230,6 +230,16 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_reset(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
+        // Mirrors `platform_wallet_manager_shielded_clear`: an incomplete
+        // drain is surfaced with its own code so the host can distinguish
+        // "callback-capable work is still running" from an ordinary reset
+        // failure.
+        if matches!(
+            e,
+            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
+        ) {
+            return PlatformWalletFFIResult::from(e);
+        }
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("reset_platform_address_sync_state failed: {e}"),

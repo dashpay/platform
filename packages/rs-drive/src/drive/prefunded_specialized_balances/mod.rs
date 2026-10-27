@@ -14,6 +14,8 @@ mod estimation_costs;
 mod fetch;
 #[cfg(feature = "server")]
 mod prove;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};
@@ -30,6 +32,11 @@ pub fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::PreFundedSpecializedBalances,
     )]
+}
+
+/// prefunded specialized balances vector
+pub fn prefunded_specialized_balances_path_vec() -> Vec<Vec<u8>> {
+    vec![Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec()]
 }
 
 /// prefunded specialized balances for voting

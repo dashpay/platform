@@ -26,6 +26,7 @@ use crate::prelude::AssetLockProof;
 use crate::shielded::builder::build_shield_from_asset_lock_transition_with_signer;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::StateTransition;
 use dashcore::OutPoint;
@@ -105,6 +106,15 @@ fn extract_v0(state_transition: StateTransition) -> ShieldFromAssetLockTransitio
     v0
 }
 
+fn extract_v1(state_transition: StateTransition) -> ShieldFromAssetLockTransitionV1 {
+    let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(v1)) =
+        state_transition
+    else {
+        panic!("expected ShieldFromAssetLock V1 variant");
+    };
+    v1
+}
+
 #[tokio::test]
 async fn try_from_asset_lock_with_bundle_and_signer_produces_recoverable_compact_sig_v0() {
     // Exercises `ShieldFromAssetLockTransitionV0::try_from_asset_lock_with_bundle_and_signer`
@@ -153,9 +163,25 @@ async fn try_from_asset_lock_with_bundle_and_signer_produces_recoverable_compact
 async fn try_from_asset_lock_with_bundle_and_signer_via_outer_dispatcher() {
     // Same call but routed through the outer-enum dispatcher in
     // `methods/mod.rs` — pins that the version-routing path lands in
-    // the V0 impl and returns an equivalent transition.
+    // the version the protocol version builds: 1 at the latest, 0 at 13.
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
+
+    let st_13 = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
+        make_chain_asset_lock_proof(),
+        &path,
+        &signer,
+        vec![],
+        500_000,
+        [0u8; 32],
+        vec![],
+        [0u8; 64],
+        None,
+        PlatformVersion::get(13).expect("protocol version 13"),
+    )
+    .await
+    .expect("outer dispatch should succeed");
+    assert_eq!(extract_v0(st_13).value_balance, 500_000);
 
     let st = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
         make_chain_asset_lock_proof(),
@@ -172,20 +198,19 @@ async fn try_from_asset_lock_with_bundle_and_signer_via_outer_dispatcher() {
     .await
     .expect("outer dispatch should succeed");
 
-    let v0 = extract_v0(st);
-    assert_eq!(v0.value_balance, 500_000);
-    assert_eq!(v0.signature.len(), 65);
+    let v1 = extract_v1(st);
+    assert_eq!(v1.value_balance, 500_000);
+    assert_eq!(v1.signature.len(), 65);
 }
 
 #[tokio::test]
 async fn outer_dispatcher_rejects_unknown_serialization_version() {
     // Synthesise a platform-version whose
     // `shield_from_asset_lock_state_transition.default_current_version`
-    // is non-zero, and confirm the dispatcher surfaces
-    // `UnknownVersionMismatch` instead of silently coercing to V0.
-    // This guards the V0-only assumption baked into the dispatcher
-    // so a future V1 introduction can't accidentally route through
-    // the wrong impl without an explicit code change.
+    // is an unknown version (99), and confirm the dispatcher surfaces
+    // `UnknownVersionMismatch` instead of silently coercing to a known
+    // version, so a future version can't route through the wrong impl
+    // without an explicit code change.
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
 
@@ -255,18 +280,18 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
     .await
     .expect("builder should succeed");
 
-    let v0 = extract_v0(st);
+    let v1 = extract_v1(st);
     assert_eq!(
-        v0.value_balance, shield_amount,
+        v1.value_balance, shield_amount,
         "builder must thread the shield amount into the transition's value_balance",
     );
     assert_eq!(
-        v0.signature.len(),
+        v1.signature.len(),
         65,
         "asset-lock signature must be 65-byte recoverable compact",
     );
     assert!(
-        !v0.actions.is_empty(),
+        !v1.actions.is_empty(),
         "output-only bundle must produce at least one Orchard action",
     );
 }
@@ -315,14 +340,14 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
         max,
     );
 
-    let v0 = extract_v0(st);
+    let v1 = extract_v1(st);
     assert_eq!(
-        v0.actions.len(),
+        v1.actions.len(),
         6,
         "1 real + 5 dummy outputs must serialize to 6 Orchard actions",
     );
     assert_eq!(
-        v0.value_balance, 50_000,
+        v1.value_balance, 50_000,
         "dummy outputs are zero-value: value_balance must equal the real amount",
     );
 }

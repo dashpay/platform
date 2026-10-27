@@ -18,7 +18,7 @@ Tenderdash can operate in different modes depending on the node's role in the ne
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.drive.tenderdash.docker.image` | Docker image for Tenderdash | `dashpay/tenderdash:1` | `dashpay/tenderdash:latest` |
+| `platform.drive.tenderdash.docker.image` | Docker image for Tenderdash | `dashpay/tenderdash:1.8` | `dashpay/tenderdash:latest` |
 
 ## P2P
 
@@ -144,8 +144,6 @@ These settings control the consensus mechanism:
 | `platform.drive.tenderdash.consensus.unsafeOverride.propose.delta` | Delta for propose phase | `500ms` | `1s` |
 | `platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout` | Timeout for vote phase | `1s` | `2s` |
 | `platform.drive.tenderdash.consensus.unsafeOverride.vote.delta` | Delta for vote phase | `500ms` | `1s` |
-| `platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout` | Timeout for commit phase | `1s` | `2s` |
-| `platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass` | Whether to bypass commit phase | `false` | `true` |
 
 Consensus configuration example:
 ```json
@@ -165,10 +163,6 @@ Consensus configuration example:
       "vote": {
         "timeout": "1s",
         "delta": "500ms"
-      },
-      "commit": {
-        "timeout": "1s",
-        "bypass": false
       }
     }
   }

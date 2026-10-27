@@ -21,6 +21,7 @@ describe('VotingFacade', () => {
   let getVotePollsByEndDateStub: SinonStub;
   let getVotePollsByEndDateWithProofInfoStub: SinonStub;
   let masternodeVoteStub: SinonStub;
+  let recordedVote: wasmSDKPackage.Vote;
 
   beforeEach(async function setup() {
     await init();
@@ -60,9 +61,8 @@ describe('VotingFacade', () => {
     });
 
     // Stub transition method
-    masternodeVoteStub = this.sinon.stub(wasmSdk, 'masternodeVote').resolves({
-      success: true,
-    });
+    recordedVote = Object.create(wasmSDKPackage.Vote.prototype);
+    masternodeVoteStub = this.sinon.stub(wasmSdk, 'masternodeVote').resolves(recordedVote);
   });
 
   describe('contestedResourceVoteState()', () => {
@@ -167,7 +167,7 @@ describe('VotingFacade', () => {
   });
 
   describe('masternodeVote()', () => {
-    it('should cast a vote on a contested resource', async () => {
+    it('should cast a vote on a contested resource and return the recorded vote', async () => {
       const options = {
         masternodeProTxHash,
         contractId: dataContractId,
@@ -178,9 +178,10 @@ describe('VotingFacade', () => {
         signer,
       };
 
-      await client.voting.masternodeVote(options);
+      const vote = await client.voting.masternodeVote(options);
 
       expect(masternodeVoteStub).to.be.calledOnceWithExactly(options);
+      expect(vote).to.equal(recordedVote);
     });
 
     it('should support abstain vote choice', async () => {

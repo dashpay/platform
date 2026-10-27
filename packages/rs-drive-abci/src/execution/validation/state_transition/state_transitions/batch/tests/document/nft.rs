@@ -37,6 +37,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -92,6 +95,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -170,7 +174,7 @@ mod nft_tests {
     async fn test_document_set_price() {
         run_document_set_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2485600,
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -220,6 +224,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -275,6 +282,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -285,6 +293,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -406,9 +415,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase() {
         run_document_set_price_and_purchase_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160,
-            2485600,
-            4092360,
+            126450900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -473,6 +482,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -552,6 +564,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -562,6 +575,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -826,10 +840,10 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
         run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            141238960,
-            2729120,
-            2733160,
-            4357440,
+            141249700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2729860, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2733900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4358180, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -914,6 +928,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -993,6 +1010,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1003,6 +1021,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1405,9 +1424,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch() {
         run_document_set_price_and_purchase_different_epoch_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160,
-            2485600,
-            4092360,
+            126450900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -1474,6 +1493,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1553,6 +1575,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1563,6 +1586,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1880,6 +1904,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -2038,7 +2065,13 @@ mod nft_tests {
         else {
             panic!("expected a paid consensus error");
         };
-        assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
+        assert_eq!(
+            consensus_error.to_string(),
+            format!(
+                "{} document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)",
+                document.id()
+            )
+        );
     }
 
     /// PROTOCOL_VERSION_12+: bump emission active on Purchase failure paths.
@@ -2098,6 +2131,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -2306,6 +2342,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -2459,6 +2498,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2469,6 +2509,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2577,7 +2618,7 @@ mod nft_tests {
         };
         assert_eq!(
             consensus_error.to_string(),
-            "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document not for sale"
+            format!("{} document not for sale", document.id())
         );
     }
 
@@ -2603,7 +2644,7 @@ mod nft_tests {
     ) {
         run_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2485600,
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -2658,6 +2699,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -2713,6 +2757,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2723,6 +2768,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2960,6 +3006,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -3091,6 +3140,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3192,6 +3242,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -3256,6 +3309,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3266,6 +3320,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3572,6 +3627,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -3685,6 +3743,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 4, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -3792,6 +3853,7 @@ mod nft_tests {
             buyer_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3822,6 +3884,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());
@@ -3948,6 +4013,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document4
+            .set_id_for_creation(card_document_type, &entropy4.0, 6, platform_version)
+            .expect("expected to set the document id");
 
         document4.set("attack", 9.into());
         document4.set("defense", 2.into());
@@ -4006,6 +4074,7 @@ mod nft_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4024,6 +4093,7 @@ mod nft_tests {
             creator_id_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4142,6 +4212,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -4253,6 +4326,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 4, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -4367,6 +4443,9 @@ mod nft_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());
@@ -4625,6 +4704,7 @@ mod nft_tests {
             buyer1_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4642,6 +4722,7 @@ mod nft_tests {
             buyer2_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 

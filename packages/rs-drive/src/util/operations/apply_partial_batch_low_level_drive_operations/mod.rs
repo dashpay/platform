@@ -30,6 +30,8 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
+    ///   A batch holding a [`LowLevelDriveOperation::RepaidIdentityDebt`] is refused, as by
+    ///   `apply_batch_low_level_drive_operations`.
     ///
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
@@ -48,6 +50,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        // Its credits are owed to a fee pool; applying the rest would drop them
+        if LowLevelDriveOperation::holds_repaid_identity_debt(&batch_operations) {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a repaid identity debt must be routed to the processing fee pool before its \
+                 batch is applied",
+            )));
+        }
         match drive_version
             .methods
             .operations

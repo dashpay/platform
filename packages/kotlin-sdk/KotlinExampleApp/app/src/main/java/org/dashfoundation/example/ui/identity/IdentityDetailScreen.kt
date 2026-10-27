@@ -44,6 +44,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.DashPayHome
+import org.dashfoundation.example.navigation.DpnsMarketplace
 import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
 import org.dashfoundation.example.navigation.SelectMainName
@@ -353,6 +354,13 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                ListItem(
+                    headlineContent = { Text("DPNS Marketplace") },
+                    supportingContent = { Text("Browse, buy, price, transfer, and view history") },
+                    modifier = Modifier
+                        .clickable { navController.navigate(DpnsMarketplace(identityIdHex)) }
+                        .testTag("identityDetail.dpnsMarketplace"),
+                )
                 ListItem(
                     headlineContent = { Text("Register Name") },
                     modifier = Modifier

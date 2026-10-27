@@ -82,13 +82,28 @@ fun QrScannerScreen(navController: NavHostController) {
     // One-shot result delivery guard — ML Kit keeps analyzing frames after
     // the first match; without this the pop could fire twice.
     var delivered by remember { mutableStateOf(false) }
+    val appUiState = org.dashfoundation.example.di.LocalAppUiState.current
     fun deliver(raw: String) {
         if (delivered) return
         delivered = true
-        navController.previousBackStackEntry
-            ?.savedStateHandle
-            ?.set(QrScanner.RESULT_KEY, raw)
+        // An armed in-memory sink takes the result INSTEAD of the
+        // SavedStateHandle: bearer-credential scans (invitation links) must
+        // never enter saved-instance state, which Android snapshots to disk.
+        val sink = appUiState.scanResultSink
+        if (sink != null) {
+            appUiState.scanResultSink = null
+            sink(raw)
+        } else {
+            navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.set(QrScanner.RESULT_KEY, raw)
+        }
         navController.popBackStack()
+    }
+    DisposableEffect(Unit) {
+        // A cancelled scan must not leave a stale sink armed for a later,
+        // unrelated generic scan.
+        onDispose { appUiState.scanResultSink = null }
     }
 
     DisposableEffect(Unit) {

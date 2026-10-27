@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::tokens::info::IdentityTokenInfo;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
@@ -54,7 +54,7 @@ impl Drive {
                     match proved_key_value.2 {
                         Some(Item(value, ..)) => Ok((
                             token_id.into(),
-                            Some(IdentityTokenInfo::deserialize_from_bytes(&value)?),
+                            Some(IdentityTokenInfo::deserialize_from_bytes_untrusted(&value)?),
                         )),
                         None => Ok((token_id.into(), None)),
                         _ => Err(Error::Proof(ProofError::IncorrectProof(

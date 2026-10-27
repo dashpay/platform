@@ -10,6 +10,12 @@
 '@dashevo/keyword-search-contract': &keyword-search-contract
   - packages/keyword-search-contract/**
 
+'@dashevo/app-connect-contract': &app-connect-contract
+  - packages/app-connect-contract/**
+
+'@dashevo/moderation-charters-contract': &moderation-charters-contract
+  - packages/moderation-charters-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - packages/dashpay-contract/**
 
@@ -35,6 +41,8 @@
   - *token-history-contract
   - *document-history-contract
   - *keyword-search-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**

@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 
 import chalk from 'chalk';
 
+import lodash from 'lodash';
 import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_FULLNODE,
@@ -14,6 +15,8 @@ import {
   isNodeTypeNameHighPerformance,
 } from './nodeTypes.js';
 import generateRandomString from '../../../util/generateRandomString.js';
+
+const { cloneDeep: lodashCloneDeep } = lodash;
 
 /**
  * @param {ConfigFile} configFile
@@ -89,10 +92,14 @@ export default function setupRegularPresetTaskFactory(
             ctx.config.set('platform.drive.tenderdash.mode', 'full');
           }
 
-          Object.values(ctx.config.get('core.rpc.users')).forEach((options) => {
+          // Reads hand back a frozen snapshot, so build the new value and set it
+          // back rather than writing through the object get() returned.
+          const rpcUsers = lodashCloneDeep(ctx.config.get('core.rpc.users'));
+          Object.values(rpcUsers).forEach((options) => {
             // eslint-disable-next-line no-param-reassign
             options.password = generateRandomString(12);
           });
+          ctx.config.set('core.rpc.users', rpcUsers);
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.nodeTypeName;
@@ -144,6 +151,34 @@ export default function setupRegularPresetTaskFactory(
       {
         enabled: (ctx) => ctx.isMasternodeRegistered || ctx.nodeType === NODE_TYPE_FULLNODE,
         task: () => configureNodeTask(),
+      },
+      {
+        title: 'Configure Tor',
+        task: async (ctx, task) => {
+          if (ctx.enableTor === undefined) {
+            ctx.enableTor = await task.prompt({
+              type: 'toggle',
+              header: `  Dashmate runs a Tor sidecar next to Core. Core then reaches onion peers
+  through it and publishes its own onion service, so peers on Tor can reach
+  this node too. Clearnet traffic, including masternode quorum traffic, stays
+  direct, and the node keeps its public IPv4 address: masternodes must still be
+  registered with that address, the onion service is an extra one.\n`,
+              message: 'Enable Tor?',
+              enabled: 'Yes',
+              disabled: 'No',
+              initial: true,
+            });
+          }
+
+          ctx.config.set('core.tor.enabled', ctx.enableTor === true);
+          ctx.config.set('core.tor.control.password', generateRandomString(12));
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = ctx.enableTor ? 'enabled' : 'disabled';
+        },
+        options: {
+          persistentOutput: true,
+        },
       },
       {
         enabled: (ctx) => ctx.config && ctx.config.get('platform.enable'),

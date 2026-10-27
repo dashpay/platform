@@ -1,6 +1,9 @@
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::non_transferable_token_cost::external_non_transferable_token_cost_error;
 use crate::error::Error;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::ConsensusError;
 use dpp::block::block_info::BlockInfo;
 use std::collections::BTreeSet;
 
@@ -17,6 +20,7 @@ use dpp::consensus::state::token::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
@@ -350,20 +354,38 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     if let Some(fetch_info) = contract_fetch_info.1 {
                         let contract_tokens = fetch_info.contract.tokens();
                         for token_position in &token_positions {
-                            if !contract_tokens.contains_key(token_position) {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                    StateTransitionAction::BumpIdentityNonceAction(
-                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                                    ),
-                                    vec![StateError::InvalidTokenPositionStateError(
-                                        InvalidTokenPositionStateError::new(
-                                            contract_tokens.last_key_value().map(|(token_contract_position,_)| *token_contract_position),
-                                            *token_position,
+                            let error: ConsensusError = match contract_tokens.get(token_position) {
+                                None => StateError::InvalidTokenPositionStateError(
+                                    InvalidTokenPositionStateError::new(
+                                        contract_tokens.last_key_value().map(
+                                            |(token_contract_position, _)| *token_contract_position,
                                         ),
+                                        *token_position,
+                                    ),
+                                )
+                                .into(),
+                                // An external token cost always pays the contract owner (an
+                                // external burn is refused when the schema is parsed), which a
+                                // non-transferable token forbids. Inert before protocol version
+                                // 14: only a format 1 token configuration is non-transferable, and
+                                // the pre-activation gate refuses that format on every earlier
+                                // version, so no stored contract an earlier version reads here
+                                // holds one.
+                                Some(configuration) if !configuration.is_transferable() => {
+                                    external_non_transferable_token_cost_error(
+                                        document_type,
+                                        contract_id,
+                                        *token_position,
                                     )
-                                        .into()],
-                                ));
-                            }
+                                }
+                                Some(_) => continue,
+                            };
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                StateTransitionAction::BumpIdentityNonceAction(
+                                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                ),
+                                vec![error],
+                            ));
                         }
                     } else {
                         let bump_action = StateTransitionAction::BumpIdentityNonceAction(
@@ -398,13 +420,20 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         // The transformation of the state transition into the state transition action will transform
         // The contract in serialized form into it's execution form
-        let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
-            self,
-            block_info,
-            validation_mode.should_fully_validate_contract_on_transform_into_action(),
-            &mut validation_operations,
+        let result = validate_document_schemas_depth_for_check_tx(
+            self.data_contract(),
+            validation_mode,
             platform_version,
-        );
+        )
+        .and_then(|()| {
+            DataContractCreateTransitionAction::try_from_borrowed_transition(
+                self,
+                block_info,
+                validation_mode.should_fully_validate_contract_on_transform_into_action(),
+                &mut validation_operations,
+                platform_version,
+            )
+        });
 
         execution_context.add_dpp_operations(validation_operations);
 
@@ -443,7 +472,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-    use dpp::platform_value::Value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -544,6 +573,109 @@ mod tests {
 
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_required_since_reached_through_a_ref_exceeds_the_contract_version(
+        ) {
+            // The create-time basic-structure check scans only raw top-level
+            // property JSON, so a `requiredSince` annotation hidden behind
+            // `$ref` slips past it. Contract deserialization enforces the
+            // invariant on parsed properties instead, and its failure must be
+            // classified as a consensus error converted to a nonce bump —
+            // never as an execution error, which would abort processing.
+            let platform_version = PlatformVersion::latest();
+            let identity_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
+
+            contract
+                .schema_defs
+                .get_or_insert_with(Default::default)
+                .insert(
+                    "annotated".to_string(),
+                    platform_value!({
+                        "type": "string",
+                        "maxLength": 60_u32,
+                        "requiredSince": 2_u32,
+                    }),
+                );
+            contract.document_schemas.insert(
+                "note".to_string(),
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "message": {"$ref": "#/$defs/annotated", "position": 0_u32},
+                    },
+                    "required": ["message"],
+                    "additionalProperties": false
+                }),
+            );
+
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract_for_serialization,
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate state");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
+                )] if e.document_type() == "note"
+                    && e.details().contains("requiredSince 2 which exceeds the contract version 1")
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityNonceAction(action))
+                if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
+            );
         }
 
         #[test]

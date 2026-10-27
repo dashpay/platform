@@ -43,12 +43,13 @@ fn existing_asset_lock_funding(
 
 /// Register a new asset-lock-funded identity using an external signer.
 ///
-/// `account_index` selects which BIP44 *standard* account (by BIP44
-/// account index) the asset-lock funding UTXOs are drawn from. Only
-/// BIP44 standard accounts are supported today; the Swift UI is
-/// expected to filter the funding picker accordingly (CoinJoin / BIP32
-/// funding for new-identity registration is not yet wired through
-/// `create_funded_asset_lock_proof`).
+/// `account_index` addresses the *standard* families: the asset-lock
+/// funding POOLS the BIP44 and BIP32 accounts at that index together
+/// with every DashPay receiving account (change returns to BIP44).
+/// The index does not restrict which DashPay receiving accounts
+/// contribute, so the UI must not present it as an account-scoped
+/// funding or privacy choice. CoinJoin funding remains drain-only and
+/// is not reachable here.
 ///
 /// # Safety
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`

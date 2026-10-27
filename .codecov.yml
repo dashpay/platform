@@ -1,8 +1,18 @@
 codecov:
   require_ci_to_pass: true
 
+# Coverage is collected by the nightly run of tests.yml only (23:00 UTC on
+# the dev branches); pull request and post-merge push runs execute the same
+# tests uninstrumented and upload nothing. Every nightly uploads all three
+# flags; carryforward only matters when one phase fails and its report is
+# missing, so a single broken phase doesn't read as a coverage drop for the
+# whole suite.
 flags:
   rust:
+    carryforward: true
+  rust-strategy:
+    carryforward: true
+  rust-shielded:
     carryforward: true
 
 ignore:
@@ -43,6 +53,8 @@ ignore:
   - "packages/data-contracts/src/**"
   - "packages/dpns-contract/src/**"
   - "packages/keyword-search-contract/src/**"
+  - "packages/app-connect-contract/src/**"
+  - "packages/moderation-charters-contract/src/**"
   - "packages/masternode-reward-shares-contract/src/**"
   - "packages/token-history-contract/src/**"
   - "packages/wallet-utils-contract/src/**"
@@ -144,20 +156,20 @@ ignore:
   # Versioned dispatch methods — pure version routing with no logic
   - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
 
+# Statuses attach to the nightly commit only (no PR ever uploads), so they
+# are informational: a nightly dip shows on the Codecov commit page without
+# painting the branch tip red. Patch coverage has no meaningful base without
+# PR uploads, and PR comments have nothing to attach to.
 coverage:
   status:
     project:
       default:
         target: auto
         threshold: 2%
-    patch:
-      default:
-        target: 50%
+        informational: true
+    patch: off
 
-comment:
-  layout: "condensed_header, diff, components, condensed_files"
-  behavior: default
-  require_changes: true
+comment: false
 
 component_management:
   individual_components:

@@ -217,6 +217,32 @@ This intermediate format is important because serialization versions and code st
 
 There is also `versioned_limit_deserialize`, which imposes a size limit and always performs full validation -- this is used for data coming from untrusted sources (anything not from Drive's own storage).
 
+## Evolving a Contract: Adding Required Fields
+
+Contract updates are deliberately conservative: existing documents must stay valid and their stored bytes must stay readable, so most schema changes that would break either are rejected. Historically that froze the `required` set of a document type in both directions — requiredness is baked into the document wire format (required properties serialize raw, optional ones carry a presence flag), so changing it would desynchronize every stored document's bytes from the schema used to read them.
+
+From protocol v14, an update **may add a brand-new required property** by annotating it with `requiredSince` equal to the contract version the update creates:
+
+```json
+"properties": {
+  "newField": { "type": "string", "maxLength": 63, "position": 4, "requiredSince": 3 }
+},
+"required": ["existingField", "newField"]
+```
+
+The rules, enforced by consensus (`DataContractInvalidRequiredFieldsUpdateError`, code 10276, on violation):
+
+- The annotation must name **exactly the new contract version** — requiredness can be neither pre-scheduled for a future version nor backdated.
+- Only **brand-new properties** can become required. Promoting an existing (optional) property is still rejected, as is removing anything from `required` or touching an existing `requiredSince` annotation.
+- On contract **creation**, `requiredSince` may only be `1`.
+- Annotations sit on **top-level properties** listed in `required`; nested properties cannot carry them.
+
+What happens to data:
+
+- **Existing documents are grandfathered.** Each document carries a *contract version stamp* recording the contract version its bytes conform to (see [Document Serialization](../serialization/document-serialization.md)); a document stamped below a property's `requiredSince` may omit that property and still reads, transfers, and deletes normally.
+- **New writes are held to the new schema.** Creates must supply the property; replaces re-supply full content, so replacing a grandfathered document requires the new property and re-stamps the document at the current version — lazy migration, one document at a time.
+- **Indexes are unaffected** because index additions on update remain banned — a newly added required field cannot be indexed retroactively (there is no backfill).
+
 ## Rules and Guidelines
 
 **Do:**

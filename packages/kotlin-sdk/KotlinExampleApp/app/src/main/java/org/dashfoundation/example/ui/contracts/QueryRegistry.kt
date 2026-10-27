@@ -222,6 +222,23 @@ internal val QUERY_REGISTRY: List<QueryDefinition> = listOf(
             "{\"serializedBytes\": $bytes, \"json\": ${result.json}}"
         }
     },
+    QueryDefinition(
+        name = "getDataContractsByRange",
+        label = "Get Data Contracts by Range",
+        description = "Enumerate data contracts one page at a time, ordered by id.",
+        inputs = listOf(
+            QueryInput("limit", "Limit", required = false, placeholder = "5"),
+            QueryInput("startAfter", "Start After (base58 id)", required = false),
+            QueryInput("idsOnly", "IDs Only", required = false, placeholder = "false"),
+        ),
+        diagnosticInputs = mapOf("limit" to "5"),
+    ) { sdk, inputs ->
+        sdk.contracts.fetchByRange(
+            limit = inputs["limit"]?.toIntOrNull() ?: 0,
+            startAfter = inputs["startAfter"]?.takeIf { it.isNotBlank() },
+            idsOnly = inputs["idsOnly"]?.toBooleanStrictOrNull() ?: false,
+        )
+    },
 
     // ── Documents ───────────────────────────────────────────────────────
     QueryDefinition(

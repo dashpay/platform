@@ -1,3 +1,4 @@
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -35,6 +36,21 @@ pub trait TransferToIdentity: Waitable {
     ) -> Result<(u64, u64), Error>;
 }
 
+/// Balance operations that also expose the committed proof metadata.
+#[async_trait::async_trait]
+pub trait TransferToIdentityWithMetadata: Waitable {
+    /// Returns the confirmed balance result and its proof metadata.
+    async fn transfer_credits_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        to_identity_id: Identifier,
+        amount: u64,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<((u64, u64), ResponseMetadata), Error>;
+}
+
 #[async_trait::async_trait]
 impl TransferToIdentity for Identity {
     async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
@@ -46,6 +62,30 @@ impl TransferToIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), Error> {
+        self.transfer_credits_with_metadata(
+            sdk,
+            to_identity_id,
+            amount,
+            signing_transfer_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(|(balance, _)| balance)
+    }
+}
+
+#[async_trait::async_trait]
+impl TransferToIdentityWithMetadata for Identity {
+    async fn transfer_credits_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        to_identity_id: Identifier,
+        amount: u64,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<((u64, u64), ResponseMetadata), Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
         let state_transition = IdentityCreditTransferTransition::try_from_identity(
@@ -62,9 +102,10 @@ impl TransferToIdentity for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let (sender, receiver): (PartialIdentity, PartialIdentity) = state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
-            .await?;
+        let ((sender, receiver), metadata): ((PartialIdentity, PartialIdentity), _) =
+            state_transition
+                .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
+                .await?;
 
         let sender_balance = sender.balance.ok_or_else(|| {
             Error::Generic("expected an identity balance after transfer (sender)".to_string())
@@ -74,6 +115,6 @@ impl TransferToIdentity for Identity {
             Error::Generic("expected an identity balance after transfer (receiver)".to_string())
         })?;
 
-        Ok((sender_balance, receiver_balance))
+        Ok(((sender_balance, receiver_balance), metadata))
     }
 }

@@ -8,6 +8,7 @@ use super::super::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use crate::query::WhereClause;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -19,12 +20,13 @@ impl Drive {
     /// (PR 670). Returns proof bytes verified via
     /// `GroveDb::verify_aggregate_sum_query`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_range_proof(
+    pub(crate) fn execute_document_sum_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         sum_property: String,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -33,6 +35,7 @@ impl Drive {
             document_type.indexes(),
             &where_clauses,
             &sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

@@ -2,11 +2,23 @@ use crate::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
+use crate::state_transition::batch_transition::batched_transition::DocumentIndexOnlyDeleteTransition;
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use crate::consensus::basic::token::InvalidTokenAmountError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+use crate::state_transition::state_transitions::shielded::common_validation::{
+    validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
+    validate_proof_not_empty,
+};
+use crate::tokens::token_payment_info::v1::TokenShieldedPayment;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::state_transition::batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
@@ -29,6 +41,13 @@ use crate::state_transition::batch_transition::token_mint_transition::validate_s
 use crate::state_transition::batch_transition::token_claim_transition::validate_structure::TokenClaimTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_direct_purchase_transition::validate_structure::TokenDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::validate_structure::TokenSetPriceForDirectPurchaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shield_transition::validate_structure::TokenShieldTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::validate_structure::TokenMintToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::validate_structure::TokenBurnFromPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_claim_to_pool_transition::validate_structure::TokenClaimToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::validate_structure::TokenDirectPurchaseToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -101,6 +120,58 @@ impl BatchTransition {
                     result.add_error(BasicError::NonceOutOfBoundsError(
                         NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
+                }
+
+                // A shielded token payment (`TokenPaymentInfo::V1`) carries an Orchard spend
+                // bundle: the same stateless checks the token pool transitions run. The amount
+                // it pays is matched against the document type's token cost in the transformer.
+                if let Some(TokenPaymentInfo::V1(payment_info)) =
+                    transition.base().token_payment_info_ref()
+                {
+                    let payment_result = validate_shielded_token_payment_structure(
+                        payment_info.shielded_payment(),
+                        platform_version,
+                    );
+                    if !payment_result.is_valid() {
+                        result.merge(payment_result);
+                    }
+                }
+
+                // The indexOnlyDelete kind joined the wire at PV14. Old
+                // software cannot decode it at all, so no historical block
+                // can contain one — this check exists so that NEW software
+                // agrees with old software while a pre-PV14 protocol
+                // version is still active: without it, an indexOnly delete
+                // submitted at PV13 would decode fine here while being
+                // undecodable on 4.1 nodes.
+                if let DocumentTransition::IndexOnlyDelete(index_only_delete) = transition {
+                    let feature_version = match index_only_delete {
+                        DocumentIndexOnlyDeleteTransition::V0(_) => 0,
+                    };
+                    match &platform_version
+                        .dpp
+                        .state_transition_serialization_versions
+                        .document_index_only_delete_state_transition
+                    {
+                        None => {
+                            // The kind does not exist at this protocol
+                            // version; the empty supported range (min 1,
+                            // max 0) states exactly that.
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(feature_version, 1, 0),
+                            ));
+                        }
+                        Some(bounds) if !bounds.bounds.check_version(feature_version) => {
+                            result.add_error(BasicError::UnsupportedVersionError(
+                                UnsupportedVersionError::new(
+                                    feature_version,
+                                    bounds.bounds.min_version,
+                                    bounds.bounds.max_version,
+                                ),
+                            ));
+                        }
+                        Some(_) => {}
+                    }
                 }
             }
 
@@ -180,6 +251,33 @@ impl BatchTransition {
                 ) => {
                     set_price_for_direct_purchase_transition.validate_structure(platform_version)?
                 }
+                // Released protocol versions cannot reach the token shielded pool arms below:
+                // the batch's `is_allowed` gate refuses each pool transition kind until the
+                // version that admits them. This generation is the only one there is, so the
+                // version that admits them runs these arms as its live path — they are the
+                // structure validation for a pool transition, not filler to keep the match
+                // exhaustive.
+                TokenTransition::Shield(shield_transition) => {
+                    shield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::Unshield(unshield_transition) => {
+                    unshield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ShieldedTransfer(shielded_transfer_transition) => {
+                    shielded_transfer_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::MintToPool(mint_to_pool_transition) => {
+                    mint_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::BurnFromPool(burn_from_pool_transition) => {
+                    burn_from_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ClaimToPool(claim_to_pool_transition) => {
+                    claim_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::DirectPurchaseToPool(direct_purchase_to_pool_transition) => {
+                    direct_purchase_to_pool_transition.validate_structure(platform_version)?
+                }
             };
 
             if !consensus_result.is_valid() {
@@ -221,6 +319,45 @@ impl BatchTransition {
 
         Ok(result)
     }
+}
+
+/// The stateless checks of a document's shielded token payment bundle: a non-zero amount within
+/// the token amount bound, a bounded action count, note sizes, a non-empty proof and a non-zero
+/// anchor. The proof itself is verified against state, where its cost can be charged.
+fn validate_shielded_token_payment_structure(
+    payment: &TokenShieldedPayment,
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    if payment.amount > MAX_DISTRIBUTION_PARAM || payment.amount == 0 {
+        return SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+            BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
+                MAX_DISTRIBUTION_PARAM,
+                payment.amount,
+            )),
+        ));
+    }
+
+    let result = validate_actions_count(
+        &payment.actions,
+        platform_version
+            .system_limits
+            .max_shielded_transition_actions,
+    );
+    if !result.is_valid() {
+        return result;
+    }
+
+    let result = validate_encrypted_note_sizes(&payment.actions);
+    if !result.is_valid() {
+        return result;
+    }
+
+    let result = validate_proof_not_empty(&payment.proof);
+    if !result.is_valid() {
+        return result;
+    }
+
+    validate_anchor_not_zero(&payment.anchor)
 }
 
 #[cfg(test)]
@@ -287,6 +424,57 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // indexOnlyDelete (delete-by-values kind) wire gate
+    // -----------------------------------------------------------------------
+
+    /// An indexOnlyDelete transition cannot decode at all on pre-4.2
+    /// software, so blocks never contain one below PV14 — this check is
+    /// what keeps NEW software agreeing with old software at check_tx
+    /// while an earlier protocol version is still active. Admitted at PV14
+    /// (`document_index_only_delete_state_transition` is `Some` in
+    /// STATE_TRANSITION_SERIALIZATION_VERSIONS_V3), rejected below (where
+    /// the kind's table entry is `None`).
+    #[test]
+    fn validate_base_structure_v0_gates_index_only_delete_by_protocol_version() {
+        use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::DocumentIndexOnlyDeleteTransitionV0;
+
+        let index_only_delete = DocumentTransition::IndexOnlyDelete(
+            DocumentIndexOnlyDeleteTransition::V0(DocumentIndexOnlyDeleteTransitionV0 {
+                base: make_base(1, "like"),
+                data: Default::default(),
+            }),
+        );
+
+        let batch = make_batch_v0(vec![index_only_delete]);
+
+        let pv13 = PlatformVersion::get(13).expect("PV13 exists");
+        let result = batch
+            .validate_base_structure_v0(pv13)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV13 must reject an indexOnly delete as an unsupported version, got {:?}",
+            result.errors
+        );
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let result = batch
+            .validate_base_structure_v0(pv14)
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV14 must admit an indexOnly delete, got {:?}",
+            result.errors
+        );
     }
 
     // -----------------------------------------------------------------------

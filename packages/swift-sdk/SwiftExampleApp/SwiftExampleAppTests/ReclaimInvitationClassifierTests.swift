@@ -3,9 +3,8 @@ import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Pins `ReclaimInvitationSheet.isAlreadyConsumed(message:)` — the classifier
-/// that decides whether a failed reclaim is the benign "voucher already claimed"
-/// case (flip the row to Claimed, show a neutral message) versus a real error
-/// (surface it).
+/// that decides whether a failed reclaim is a consumption-unknown case versus
+/// a real unrelated error.
 ///
 /// The SDK surfaces a consensus error as
 /// `"SDK error: Protocol error: <consensus Display verbatim>"`, so the match is
@@ -21,13 +20,11 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
     func test_typedAlreadyConsumed_classifiedTrue() {
         let error = PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
         XCTAssertTrue(ReclaimInvitationSheet.isAlreadyConsumed(error))
-        XCTAssertTrue(ReclaimInvitationSheet.isLocallyConsumedTombstone(error))
     }
 
     func test_typedNotTracked_classifiedFalse() {
         let error = PlatformWalletError.assetLockNotTracked("deadbeef:0")
         XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(error))
-        XCTAssertFalse(ReclaimInvitationSheet.isLocallyConsumedTombstone(error))
     }
 
     /// The real already-consumed rejection, as surfaced to Swift.
@@ -56,7 +53,7 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
         XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(message: message))
     }
 
-    /// An unrelated transport failure must not be swallowed as "already claimed".
+    /// An unrelated transport failure must not be swallowed as consumption unknown.
     func test_networkError_classifiedFalse() {
         XCTAssertFalse(
             ReclaimInvitationSheet.isAlreadyConsumed(
@@ -85,40 +82,35 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             + "output 0 already completely used"
     )
 
-    /// Consensus already-consumed wording + our own reclaim was in flight is
-    /// explicitly ambiguous: the marker only proves that a local attempt
-    /// started, while the consensus error cannot attribute who consumed it.
-    func test_classify_consensusAlreadyConsumed_priorInFlight_isAmbiguous() {
+    /// Consensus wording is unauthenticated, regardless of the local marker.
+    func test_classify_consensusAlreadyConsumed_priorInFlight_isUnknown() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.alreadyConsumed, hadPriorReclaimInFlight: true),
-            .consumedAmbiguous
+            .consumptionUnknown
         )
     }
 
-    /// Consensus already-consumed wording + no prior reclaim resolves to Claimed.
-    func test_classify_consensusAlreadyConsumed_noPrior_isClaimed() {
+    func test_classify_consensusAlreadyConsumed_noPrior_isUnknown() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.alreadyConsumed, hadPriorReclaimInFlight: false),
-            .claimed
+            .consumptionUnknown
         )
     }
 
-    /// Typed code 24 is emitted from the wallet's retained local consumed
-    /// tombstone, which is written only after this wallet successfully consumed
-    /// the lock. It therefore recovers Reclaimed regardless of the UI marker.
-    func test_classify_typedConsumedTombstone_isReclaimed_regardlessOfMarker() {
+    /// Code 24 no longer distinguishes a local tombstone from a remote report.
+    func test_classify_typedAlreadyConsumed_isUnknown_regardlessOfMarker() {
         let error = PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: error, hadPriorReclaimInFlight: true),
-            .reclaimed
+            .consumptionUnknown
         )
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: error, hadPriorReclaimInFlight: false),
-            .reclaimed
+            .consumptionUnknown
         )
     }
 
@@ -148,7 +140,7 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
     /// A retry after our own crash-interrupted consume can fail LOCALLY
     /// ("…is not tracked"). With the marker set that is consistent with our
     /// consume having landed, but it is NOT on-chain proof — so it resolves to
-    /// the explicitly ambiguous `.untrackedAfterOwnAttempt`, never `.reclaimed`.
+    /// the explicitly ambiguous `.untrackedAfterOwnAttempt`, never success.
     func test_classify_lockNotTracked_priorInFlight_isUntrackedAmbiguous() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(

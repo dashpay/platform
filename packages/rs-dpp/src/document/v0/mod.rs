@@ -17,8 +17,8 @@ use std::fmt;
 use platform_value::Value;
 
 use crate::document::document_methods::{
-    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentIsEqualIgnoringTimestampsV0,
+    DocumentGetRawArrayElementsForDocumentTypeV0, DocumentGetRawForContractV0,
+    DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentIsEqualIgnoringTimestampsV0,
 };
 
 use crate::identity::TimestampMillis;
@@ -98,6 +98,42 @@ pub struct DocumentV0 {
     /// The creator id.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "$creatorId", default))]
     pub creator_id: Option<Identifier>,
+    /// The block time in milliseconds at which a moderator of the contract last wrote the
+    /// fields the document type keeps for its moderators (`moderatorAbilities.changeFields`).
+    /// `None` until one does, and on every document of a type that keeps no such fields.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$moderatedAt",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub moderated_at: Option<TimestampMillis>,
+    /// The moderator who last wrote those fields: set together with `moderated_at`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$moderatedBy",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub moderated_by: Option<Identifier>,
+    /// The data contract version this document's bytes conform to — assigned
+    /// by Drive when document content is (re-)supplied (create/replace) and
+    /// preserved across server-side rewrites (transfer/purchase). Selects the
+    /// per-property byte layout when the document type carries `requiredSince`
+    /// annotations. `None` for documents serialized before format 3.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$contractVersion",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub contract_version: Option<u32>,
 }
 
 impl DocumentGetRawForContractV0 for DocumentV0 {
@@ -109,6 +145,10 @@ impl DocumentIsEqualIgnoringTimestampsV0 for DocumentV0 {
 }
 
 impl DocumentGetRawForDocumentTypeV0 for DocumentV0 {
+    //automatically done
+}
+
+impl DocumentGetRawArrayElementsForDocumentTypeV0 for DocumentV0 {
     //automatically done
 }
 
@@ -176,6 +216,13 @@ impl fmt::Display for DocumentV0 {
         if let Some(creator_id) = self.creator_id {
             write!(f, "creator_id:{} ", creator_id)?;
         }
+        if let Some(moderated_at) = self.moderated_at {
+            let datetime = DateTime::from_timestamp_millis(moderated_at as i64).unwrap_or_default();
+            write!(f, "moderated_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
+        if let Some(moderated_by) = self.moderated_by {
+            write!(f, "moderated_by:{} ", moderated_by)?;
+        }
 
         if self.properties.is_empty() {
             write!(f, "no properties")?;
@@ -197,6 +244,7 @@ mod tests {
 
     fn minimal_doc() -> DocumentV0 {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),
@@ -211,6 +259,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

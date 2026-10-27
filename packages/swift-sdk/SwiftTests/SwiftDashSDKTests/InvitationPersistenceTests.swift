@@ -52,6 +52,21 @@ final class InvitationPersistenceTests: XCTestCase {
             | PlatformWalletPersistenceCapabilities.providerTransactions
             | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
             | PlatformWalletPersistenceCapabilities.walletRestore
+            // DPNS username-marketplace name states: the handler wires
+            // `on_persist_dpns_name_states_fn` and lands the rows on
+            // `PersistentDPNSName`, so this bit is genuinely attested.
+            | PlatformWalletPersistenceCapabilities.dpnsNameStates
+            | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+            // Tracked (wallet-independent) masternodes: the handler wires
+            // the persist/load/free trio onto `PersistentTrackedMasternode`,
+            // so restart survival is genuinely attested.
+            | PlatformWalletPersistenceCapabilities.trackedMasternodes
+            | PlatformWalletPersistenceCapabilities.coreSweepRemoval
+            // DashPay payment rows: the handler wires
+            // `on_persist_dashpay_payments_fn` and lands the overlay on
+            // `PersistentDashpayPayment` rows, so the sweep's Failed flip
+            // may ride this store's rounds — genuinely attested.
+            | PlatformWalletPersistenceCapabilities.dashpayPayments
 
         XCTAssertEqual(
             capabilities.version,
@@ -74,6 +89,9 @@ final class InvitationPersistenceTests: XCTestCase {
         XCTAssertFalse(diagnostic.contains(
             PlatformWalletPersistenceCapabilities.pendingContactCrypto
         ))
+        XCTAssertTrue(diagnostic.contains(
+            PlatformWalletPersistenceCapabilities.coreSweepRemoval
+        ))
     }
 
     /// Create inserts one row (fields mapped, `walletId` set), a re-upsert of the
@@ -86,7 +104,11 @@ final class InvitationPersistenceTests: XCTestCase {
 
         // 1. Create.
         handler.beginChangeset(walletId: walletId)
-        handler.persistInvitations(walletId: walletId, upserts: [snapshot(statusRaw: 0)], removed: [])
+        XCTAssertTrue(
+            handler.persistInvitations(
+                walletId: walletId, upserts: [snapshot(statusRaw: 0)], removed: []
+            )
+        )
         _ = handler.endChangeset(walletId: walletId, success: true)
 
         var rows = try fetchRows(container)
@@ -101,7 +123,11 @@ final class InvitationPersistenceTests: XCTestCase {
 
         // 2. Status change → upsert in place, no duplicate row.
         handler.beginChangeset(walletId: walletId)
-        handler.persistInvitations(walletId: walletId, upserts: [snapshot(statusRaw: 1)], removed: [])
+        XCTAssertTrue(
+            handler.persistInvitations(
+                walletId: walletId, upserts: [snapshot(statusRaw: 1)], removed: []
+            )
+        )
         _ = handler.endChangeset(walletId: walletId, success: true)
 
         rows = try fetchRows(container)

@@ -356,7 +356,10 @@ mechanism** and **no refund mechanism**:
 
 - **Identity fees** can create a negative balance when the processing fee cannot
   be fully covered. This debt is tracked and must be repaid before the identity
-  can submit new transitions.
+  can submit new transitions: credits the identity receives while its balance
+  is empty repay the debt first. From protocol version 14 the repaid part goes
+  to the processing fee pool of the epoch it is repaid in, where the unpaid fee
+  would have gone.
 - **Address fees** must be fully covered by available inputs and outputs. If the
   fee cannot be paid, the transition is rejected outright.
 

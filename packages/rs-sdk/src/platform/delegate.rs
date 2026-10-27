@@ -26,6 +26,8 @@
 #[macro_export]
 macro_rules! delegate_transport_request_variant {
     ($request:ty, $response:ty, $($variant:ident),+) => {
+        impl $crate::platform::query::WireQuery for $request {}
+
         impl $crate::platform::dapi::transport::TransportRequest for $request {
 
             type Client = $crate::platform::dapi::transport::PlatformGrpcClient;
@@ -40,6 +42,16 @@ macro_rules! delegate_transport_request_variant {
                 match self {
                     $(
                         $variant(request) => request.method_name(),
+                    )*
+                }
+            }
+
+            fn needs_protocol_version(&self) -> Option<u32> {
+                use $request::*;
+
+                match self {
+                    $(
+                        $variant(request) => request.needs_protocol_version(),
                     )*
                 }
             }

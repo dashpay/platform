@@ -5,6 +5,10 @@ import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
 export default class ReindexCommand extends ConfigBaseCommand {
+  // Reindex temporarily replaces the Core service configuration, so other
+  // configuration renderers must wait until it restores the ordinary files.
+  static mutatesConfig = true;
+
   static description = 'Reindex Core data';
 
   static flags = {

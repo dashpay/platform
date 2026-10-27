@@ -1,24 +1,14 @@
 //! SQLite-backed [`KvStore`] implementation for [`SqlitePersister`].
 //!
-//! One dedicated table per [`ObjectId`] variant (`meta_global`,
-//! `meta_wallet`, `meta_identity`, `meta_token`, `meta_contact`,
-//! `meta_platform_address`). Each table has a composite PRIMARY KEY of
-//! its id column(s) plus `key`, so uniqueness comes straight from the PK
-//! — no partial indexes, no nullable scope column. None of the tables
-//! carry an FK: a `put` succeeds before its parent object exists. The
-//! `AFTER DELETE` triggers in `V001__initial.rs` clean a scope's
-//! metadata up when its parent is deleted.
+//! One dedicated `meta_*` table per [`ObjectId`] variant, each with a
+//! composite PRIMARY KEY (id columns + `key`) for uniqueness and no FK
+//! (a `put` may precede its parent; `AFTER DELETE` triggers in
+//! `V001__initial.rs` reap metadata when the parent is deleted).
 //!
-//! `match scope` resolves each operation to its table and id-column
-//! bindings; the SQL body (length-precheck read, upsert, delete,
-//! prefix-list) is factored once per op and parameterised by table name
-//! and id predicate. Table and column names come from the matched
-//! variant — compile-time constants, never caller input — so they are
-//! `format!`-spliced; the id *values* are bound parameters.
-//!
-//! All operations reuse `SqlitePersister`'s single `Mutex<Connection>`
-//! via the crate-private `conn()` accessor; no separate connection is
-//! opened.
+//! `format!`-spliced table/column names are always compile-time constants
+//! from the matched variant, never caller input; id *values* and keys are
+//! bound parameters. Operations reuse the persister's single
+//! `Mutex<Connection>` via `conn()`.
 
 use rusqlite::{OptionalExtension, ToSql};
 
@@ -132,11 +122,16 @@ impl From<WalletStorageError> for KvError {
         match err {
             WalletStorageError::LockPoisoned => KvError::LockPoisoned,
             WalletStorageError::Sqlite(e) => KvError::Sqlite(e),
+            // Mapped explicitly: the catch-all below would bury a
+            // recovery-mode refusal inside a `ToSqlConversionFailure`,
+            // where no caller would think to match on it.
+            WalletStorageError::ReadOnlyRecoveryMode { operation } => {
+                KvError::ReadOnlyRecoveryMode { operation }
+            }
             other => {
-                // Other variants don't arise from the `conn()` accessor
-                // — the accessor either yields `LockPoisoned` or hands
-                // back the guard. Stuff anything else into `Sqlite`
-                // via its Display, preserving the source chain.
+                // `conn()` only ever yields `LockPoisoned` or the guard,
+                // so other variants are unreachable here; preserve the
+                // source chain anyway by wrapping into `Sqlite`.
                 KvError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(other)))
             }
         }
@@ -152,13 +147,10 @@ impl KvStore for SqlitePersister {
         // Bind the id values then the key in placeholder order.
         let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
         params.push(&key);
-        // Single-snapshot read: select `length(value)` and `value` in one
-        // row. The length (column 0) is checked against `MAX_VALUE_LEN`
-        // before `row.get(1)` materialises the BLOB — rusqlite reads the
-        // BLOB lazily on that call, so the cap gates the allocation with
-        // no cross-snapshot TOCTOU window. The inner `Result` carries the
-        // over-cap length out of the closure without ever touching
-        // column 1.
+        // Select `length(value)` and `value` in one row: rusqlite reads
+        // the BLOB lazily on `row.get(1)`, so checking the length first
+        // gates the allocation with no TOCTOU window. The inner `Result`
+        // carries an over-cap length out without touching column 1.
         let row: Option<Result<Vec<u8>, usize>> = conn
             .query_row(
                 &format!("SELECT length(value), value FROM {} {where_key}", sql.table),
@@ -184,10 +176,10 @@ impl KvStore for SqlitePersister {
     }
 
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
+        self.ensure_writable("kv_put").map_err(KvError::from)?;
         validate_key(key)?;
-        // Cap the value before it reaches SQL so a `put` can never plant
-        // a row that a later `get` would refuse to materialise. The read
-        // path gates on the same `MAX_VALUE_LEN`.
+        // Cap before SQL so a `put` can't plant a row a later `get` would
+        // refuse to materialise (same `MAX_VALUE_LEN` on both paths).
         if value.len() > MAX_VALUE_LEN {
             return Err(KvError::ValueTooLarge {
                 found: value.len(),
@@ -196,9 +188,8 @@ impl KvStore for SqlitePersister {
         }
         let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
-        // Column list / placeholders / conflict target all include the
-        // id columns ahead of `key`; the plain composite PK is the
-        // conflict target. Upsert refreshes `updated_at` on overwrite.
+        // Columns/placeholders/conflict-target put id columns ahead of
+        // `key` (the composite PK); upsert refreshes `updated_at`.
         let mut cols: Vec<&str> = sql.id_cols.to_vec();
         cols.push("key");
         let col_list = cols.join(", ");
@@ -224,6 +215,7 @@ impl KvStore for SqlitePersister {
     }
 
     fn delete(&self, scope: &ObjectId, key: &str) -> Result<(), KvError> {
+        self.ensure_writable("kv_delete").map_err(KvError::from)?;
         validate_key(key)?;
         let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
@@ -279,6 +271,12 @@ mod tests {
 
     fn open_persister() -> (SqlitePersister, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("tempdir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o700))
+                .expect("secure tempdir permissions");
+        }
         let path = tmp.path().join("wallet.db");
         let cfg = crate::sqlite::config::SqlitePersisterConfig::new(&path);
         let p = SqlitePersister::open(cfg).expect("open persister");
@@ -289,11 +287,11 @@ mod tests {
         let wid: WalletId = [id; 32];
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             params![wid.as_slice()],
         )
-        .expect("seed wallet_metadata");
+        .expect("seed wallets");
         wid
     }
 
@@ -333,8 +331,7 @@ mod tests {
 
     #[test]
     fn global_composite_pk_rejects_duplicate() {
-        // Direct INSERTs (no ON CONFLICT) must be rejected because the
-        // composite PRIMARY KEY enforces per-key uniqueness.
+        // A direct INSERT (no ON CONFLICT) must hit the composite PK.
         let (p, _tmp) = open_persister();
         let conn = p.lock_conn_for_test();
         conn.execute(
@@ -388,9 +385,8 @@ mod tests {
 
     #[test]
     fn get_rejects_oversized_value_before_materialising() {
-        // A row larger than MAX_VALUE_LEN (planted via direct SQL —
-        // bypassing `put`'s cap) must surface as ValueTooLarge instead
-        // of OOMing the process.
+        // A row over MAX_VALUE_LEN (planted directly, bypassing `put`)
+        // must surface ValueTooLarge instead of OOMing.
         let (p, _tmp) = open_persister();
         let oversize = vec![0u8; MAX_VALUE_LEN + 1];
         {
@@ -442,7 +438,7 @@ mod tests {
                 unreachable!()
             };
             conn.execute(
-                "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+                "DELETE FROM wallets WHERE wallet_id = ?1",
                 params![wid.as_slice()],
             )
             .expect("delete wallet");

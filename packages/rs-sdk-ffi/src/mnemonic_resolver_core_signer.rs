@@ -109,7 +109,21 @@ pub enum MnemonicResolverSignerError {
     /// The Swift-side resolver reported that no mnemonic is stored for
     /// the wallet_id this signer was constructed with. Translates the
     /// FFI `NOT_FOUND` return code.
-    #[error("mnemonic not found in keychain for the given wallet_id")]
+    ///
+    /// Renders with
+    /// [`DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`](crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    /// at position 0: this is the missing-key completion of the
+    /// `Signer` surface, whose error is only `Display`, so the reserved
+    /// machine marker at the START of the rendering is the one typed
+    /// signal a caller may recognize (position-0 check, never a
+    /// substring sniff — dashpay/platform#4183 review).
+    /// `platform-wallet`'s message signing promotes it to its typed
+    /// key-unavailable error, which the FFI maps to code 31
+    /// (`ErrorSigningKeyUnavailable`).
+    #[error(
+        "{}mnemonic not found in keychain for the given wallet_id",
+        crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+    )]
     NotFound,
 
     /// The resolver requested a longer output buffer than this signer
@@ -929,7 +943,7 @@ mod tests {
     #[tokio::test]
     async fn extended_public_key_matches_wallet_derivation_for_dashpay_path() {
         use key_wallet::account::AccountType;
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -946,8 +960,7 @@ mod tests {
         .expect("DashPay receiving path");
 
         // Old route: resident-seed wallet from the same mnemonic.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -985,7 +998,7 @@ mod tests {
     /// this pins them equal.
     #[tokio::test]
     async fn ecdh_shared_secret_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -998,8 +1011,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → ECDH through the single crypto source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1039,7 +1051,7 @@ mod tests {
     /// this pins the signer route equal to `Wallet`'s and confirms the inverse.
     #[tokio::test]
     async fn account_reference_matches_wallet_derivation_and_round_trips() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1051,8 +1063,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → mask through the single accountReference source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1103,7 +1114,7 @@ mod tests {
     /// so contactInfo the signer seals is readable by the reference clients.
     #[tokio::test]
     async fn contact_info_seal_open_round_trips_and_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1139,8 +1150,7 @@ mod tests {
         );
 
         // Parity: encToUserId equals a resident wallet's derive+encrypt.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1184,6 +1194,21 @@ mod tests {
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The producer half of the key-unavailable contract: `NotFound` renders
+    /// with the reserved machine marker at position 0. Consumers of the
+    /// `Signer` surface (whose error is only `Display`) recognize the missing
+    /// key by exactly this start-of-rendering marker — a mid-string move
+    /// would silently break the promotion to FFI code 31 without failing any
+    /// structural match.
+    #[test]
+    fn not_found_renders_the_key_unavailable_marker_at_position_zero() {
+        let rendered = MnemonicResolverSignerError::NotFound.to_string();
+        assert!(
+            rendered.starts_with(crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX),
+            "NotFound must stamp the reserved marker at position 0, got: {rendered:?}"
+        );
     }
 
     #[tokio::test]

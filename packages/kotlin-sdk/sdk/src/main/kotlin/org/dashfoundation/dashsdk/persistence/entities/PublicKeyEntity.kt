@@ -48,6 +48,16 @@ data class PublicKeyEntity(
     val keyType: String,
     val readOnly: Boolean = false,
     val disabledAt: Long? = null,
+    /**
+     * Usage limit (protocol version 14): the credits the key may take from the
+     * identity over its lifetime, null for a key without a budget.
+     */
+    val totalBudget: Long? = null,
+    /**
+     * Usage limit (protocol version 14): the block time in milliseconds from which
+     * the key can no longer sign, null for a key that does not expire.
+     */
+    val expiresAt: Long? = null,
     val publicKeyData: ByteArray,
     /**
      * JSON-encoded `[base64(contractId)]` blob — legacy shape kept verbatim
@@ -56,7 +66,28 @@ data class PublicKeyEntity(
     val contractBoundsData: ByteArray? = null,
     /** Document-type qualifier for `.singleContractDocumentType` bounds. */
     val contractBoundsDocumentTypeName: String? = null,
+    /**
+     * Contract-bounds kind as the native row carried it: 0 none, 1
+     * SingleContract, 2 SingleContractDocumentType, 3 ContractGroup (then
+     * [contractBoundsData] holds the contract group id). Null on rows
+     * written before schema 13, whose kind is inferred on restore.
+     */
+    val contractBoundsKind: Int? = null,
     val privateKeyKeychainIdentifier: String? = null,
+    /**
+     * Derivation breadcrumb (DIP-9 identity index) captured from the
+     * persist-callback payload whenever Rust supplied derivation indices —
+     * on SUCCESSFUL derives too, not just failures (the breadcrumb is not a
+     * failure marker; a null [privateKeyKeychainIdentifier] is). Makes the
+     * "keys pending repair" state reconstructible after process restart:
+     * a row with breadcrumbs whose private half is missing or undecryptable
+     * re-seeds `PlatformWalletPersistenceHandler.pendingIdentityKeys`
+     * (dashpay/platform#4060 finding 5). Null for rows persisted without
+     * derivation indices (read-only / foreign keys).
+     */
+    val derivationIdentityIndex: Int? = null,
+    /** Derivation breadcrumb (key index) — see [derivationIdentityIndex]. */
+    val derivationKeyIndex: Int? = null,
     /** Owning identity id as base58 String (Swift stores String here). */
     val identityId: String,
     val createdAt: Date = Date(),

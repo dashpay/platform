@@ -52,6 +52,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         });
 
         let withdrawal_document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id: identity_credit_withdrawal.identity_id,
             properties: document_data.into_btree_string_map().unwrap(),
@@ -66,6 +67,8 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -176,6 +179,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         });
 
         let withdrawal_document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id: identity_credit_withdrawal.identity_id,
             properties: document_data.into_btree_string_map()?,
@@ -190,6 +194,8 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 

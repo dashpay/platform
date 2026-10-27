@@ -11,6 +11,7 @@ use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::platform::VersionedGrpcResponse;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use dash_context_provider::ContextProvider;
@@ -47,6 +48,65 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+#[cfg(all(test, feature = "mocks"))]
+mod document_query_shape_tests;
+#[cfg(all(test, feature = "mocks"))]
+mod identity_discovery_tests;
+mod protocol_gate;
+#[cfg(all(test, feature = "mocks"))]
+mod protocol_gate_tests;
+mod quorum_key;
+#[cfg(all(test, feature = "mocks"))]
+mod signed_version_tests;
+
+/// Metadata needed to select the rules for interpreting a proved response.
+/// Reading it does not authenticate it or update the SDK's stored version.
+pub trait ProofResponseMetadata {
+    /// Read the response metadata before proof and signature verification.
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error>;
+}
+
+impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        self.metadata()
+            .map_err(|error| drive_proof_verifier::Error::ResponseDecodeError {
+                error: error.to_string(),
+            })
+    }
+}
+
+/// Select proof rules without weakening the SDK's stored version.
+///
+/// Document query verifiers also require the answer to be signed at the selected
+/// version.
+pub(crate) fn verifier_version(
+    stored: &'static PlatformVersion,
+    signed: u32,
+) -> &'static PlatformVersion {
+    if signed <= stored.protocol_version {
+        return stored;
+    }
+
+    // The quorum signature binds metadata.protocol_version as StateId.app_version.
+    // Selecting interpretation rules before authentication cannot accept a false
+    // version claim: its signature must still verify before metadata is learned.
+    match (signed <= PlatformVersion::latest().protocol_version)
+        .then(|| PlatformVersion::get(signed))
+    {
+        Some(Ok(version)) => version,
+        _ => {
+            let newest = PlatformVersion::latest();
+            tracing::debug!(
+                signed_protocol_version = signed,
+                stored_protocol_version = stored.protocol_version,
+                verifier_protocol_version = newest.protocol_version,
+                "unverified protocol version is unknown; selecting newest known verifier table"
+            );
+            newest
+        }
+    }
+}
+
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many token configs fit in the cache.
@@ -56,18 +116,28 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// Per-network *default* seed used only when an unpinned SDK has no explicit
 /// initial version.
 ///
+/// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
+/// any of those networks still runs. Devnets seed at 14: they are cut from the
+/// current development line. Proved reads can use a newer version named in
+/// their signed response metadata even when the SDK starts with a lower seed;
+/// the stored version ratchets only after proof and signature verification.
+///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
 /// ([`Sdk::maybe_update_protocol_version`]) only ratchets the stored version
 /// *upward* via `fetch_max` when the network reports a newer one.
-const fn min_protocol_version(network: Network) -> u32 {
+pub const fn min_protocol_version(network: Network) -> u32 {
     match network {
-        Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
-        Network::Testnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Devnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Regtest => dpp::version::v12::PROTOCOL_VERSION_12,
+        Network::Mainnet => dpp::version::v13::PROTOCOL_VERSION_13,
+        Network::Testnet => dpp::version::v13::PROTOCOL_VERSION_13,
+        Network::Devnet => dpp::version::v14::PROTOCOL_VERSION_14,
+        Network::Regtest => dpp::version::v13::PROTOCOL_VERSION_13,
     }
 }
+
+/// Called with the new protocol version each time auto-detect ratchets it
+/// upward. See [`SdkBuilder::with_protocol_version_observer`].
+pub type ProtocolVersionObserver = Arc<dyn Fn(u32) + Send + Sync>;
 
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
@@ -95,6 +165,18 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 /// Malformed upstream entries are silently skipped rather than panicking;
 /// the DAPI client handles retry/rotation across the remaining addresses.
 ///
+/// Seeds whose recorded Platform TLS probe shows a certificate that this
+/// client's rustls stack would deterministically reject (`Expired`,
+/// `SelfSigned`, `Untrusted`) are skipped: every connect to them fails the
+/// handshake, so keeping them in rotation only costs retry/ban churn.
+/// `NoHandshake` is skipped only when the probe's TCP connect succeeded
+/// (`reachable == Ok`) — the prober also stamps `NoHandshake` on TCP
+/// timeouts and probe-budget expiry, which are transient conditions best
+/// left to runtime banning. `Valid` and `Unknown` (not probed) are kept. If the
+/// filter would empty the list (e.g. a seed file with all-stale probes),
+/// it falls back to the unfiltered set so the client can still bootstrap
+/// and let runtime banning sort it out.
+///
 /// ## Panics
 ///
 /// Panics on networks other than `Mainnet` and `Testnet` — no upstream
@@ -103,11 +185,51 @@ fn default_address_list_for_network(network: Network) -> AddressList {
     if !matches!(network, Network::Mainnet | Network::Testnet) {
         panic!("default address list is only available for mainnet and testnet");
     }
+
+    let seeds = dash_network_seeds::evo_seeds(network);
+    let filtered = address_list_from_seeds(&seeds, true);
+    if filtered.is_empty() {
+        tracing::warn!(
+            ?network,
+            "all seed entries have failing TLS probes; falling back to unfiltered seed list"
+        );
+        return address_list_from_seeds(&seeds, false);
+    }
+    filtered
+}
+
+/// Whether a seed's recorded Platform TLS probe is a failure this client
+/// would deterministically reproduce on every connect. `NoHandshake` is
+/// also stamped by the prober on TCP timeout / probe-budget expiry, which
+/// are transient — it only counts when the probe's TCP connect itself
+/// succeeded. An unprobed seed (`None` / `Unknown`) is never rejected.
+fn seed_tls_deterministically_bad(platform: Option<&dash_network_seeds::PlatformStatus>) -> bool {
+    use dash_network_seeds::{Reachability, SslStatus};
+    let Some(platform) = platform else {
+        return false;
+    };
+    match platform.ssl {
+        SslStatus::Expired | SslStatus::SelfSigned | SslStatus::Untrusted => true,
+        SslStatus::NoHandshake => platform.reachable == Reachability::Ok,
+        SslStatus::Valid | SslStatus::Unknown => false,
+    }
+}
+
+/// Build an [`AddressList`] of `https://<ip>:<platform_http_port>` entries
+/// from `seeds`, optionally skipping seeds whose TLS probe is a
+/// deterministic failure (see [`seed_tls_deterministically_bad`]).
+fn address_list_from_seeds(
+    seeds: &[dash_network_seeds::MasternodeSeed],
+    skip_bad_tls: bool,
+) -> AddressList {
     let mut list = AddressList::new();
-    for seed in dash_network_seeds::evo_seeds(network) {
+    for seed in seeds {
         let Some(port) = seed.platform_http_port else {
             continue;
         };
+        if skip_bad_tls && seed_tls_deterministically_bad(seed.platform.as_ref()) {
+            continue;
+        }
         let url = format!("https://{}:{}", seed.address.ip(), port);
         if let Ok(uri) = url.parse::<Uri>() {
             if let Ok(address) = Address::try_from(uri) {
@@ -116,6 +238,13 @@ fn default_address_list_for_network(network: Network) -> AddressList {
         }
     }
     list
+}
+
+/// Independent local height and clock anchors when a response arrives.
+#[derive(Clone, Copy)]
+pub(crate) struct MetadataArrival {
+    height: u64,
+    time_ms: u64,
 }
 
 /// Dash Platform SDK
@@ -149,7 +278,8 @@ pub struct Sdk {
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
     ///
-    /// This is set to `true` by default. `false` is not implemented yet.
+    /// Enabled by default. Unsupported proof modes return a configuration error;
+    /// some query paths always request proofs regardless of this setting.
     proofs: bool,
 
     /// Nonce cache managed exclusively by the SDK.
@@ -169,6 +299,21 @@ pub struct Sdk {
     /// response metadata is disabled. Set to `true` when the user explicitly calls
     /// [`SdkBuilder::with_version()`].
     version_pinned: bool,
+
+    /// Highest protocol version seen in a response whose proof, signature and
+    /// freshness were verified, or 0 before the first one. Unlike `protocol_version`
+    /// it is never seeded or pinned and also records versions this build does not
+    /// know: it is evidence of what the network runs, not a choice of rules. Shared
+    /// between clones.
+    verified_protocol_version: Arc<atomic::AtomicU32>,
+
+    /// Notified each time auto-detect ratchets the protocol version upward, so a
+    /// host can persist the learned version and seed the next SDK with it.
+    protocol_version_observer: Option<ProtocolVersionObserver>,
+
+    /// Enforce the protocol version gate on a mock SDK, as on a network one.
+    #[cfg(all(test, feature = "mocks"))]
+    enforce_protocol_gate_on_mock: bool,
 
     /// Last seen height; used to determine if the remote node is stale.
     ///
@@ -205,6 +350,10 @@ impl Clone for Sdk {
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
             version_pinned: self.version_pinned,
+            verified_protocol_version: Arc::clone(&self.verified_protocol_version),
+            protocol_version_observer: self.protocol_version_observer.clone(),
+            #[cfg(all(test, feature = "mocks"))]
+            enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -294,18 +443,56 @@ impl Sdk {
         }
     }
 
-    /// Verify response metadata against the current state of the SDK.
+    /// Check that response metadata is fresh: its time within the time tolerance, and
+    /// its height not too far below the highest height seen so far.
+    ///
+    /// Pass only the metadata of an answer whose proof and quorum signature were
+    /// verified: its height raises the height every later answer is checked against,
+    /// for this SDK and its clones.
+    ///
+    /// Protocol versions are learned only from answers the SDK verified itself, so
+    /// this changes neither [`Self::version`] nor the network version the SDK has
+    /// verified, whatever `metadata.protocol_version` says.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
+    ) -> Result<(), Error> {
+        self.check_response_freshness_as_of(method_name, metadata, None)
+    }
+
+    /// Check the freshness of `metadata` ([`Self::verify_response_metadata`]), with
+    /// optional arrival-time height and clock anchors, and learn its protocol version
+    /// as the stored one, without recording it as verified.
+    pub(crate) fn verify_response_metadata_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        self.check_response_freshness_as_of(method_name, metadata, arrival)?;
+        self.maybe_update_protocol_version(metadata.protocol_version);
+        Ok(())
+    }
+
+    /// Check that response metadata is fresh, with optional arrival-time height
+    /// and clock anchors. A response verified after fetching its quorum key is
+    /// not made stale by the client's wait or by newer responses accepted while
+    /// it waited.
+    fn check_response_freshness_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
         // response-derived height high-water mark.
         if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let now = arrival
+                .map(|arrival| arrival.time_ms)
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
         if let Some(height_tolerance) = metadata_height_tolerance {
@@ -313,12 +500,141 @@ impl Sdk {
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
+                arrival.map(|arrival| arrival.height),
             )?;
         };
 
-        self.maybe_update_protocol_version(metadata.protocol_version);
-
         Ok(())
+    }
+
+    /// Learn the protocol version of a fresh response whose proof and signature
+    /// were verified: record it as verified, then raise the stored version.
+    ///
+    /// In that order, whatever reads the raised stored version also reads the
+    /// verified version that raised it (the stored version is raised with
+    /// `Release` and read with `Acquire`), so a document query refused at the
+    /// new version is classified with the evidence for it.
+    fn learn_verified_protocol_version(&self, protocol_version: u32) {
+        self.record_verified_protocol_version(protocol_version);
+        self.maybe_update_protocol_version(protocol_version);
+    }
+
+    /// Record the protocol version of a fresh response whose proof and signature
+    /// were verified. Never lowers it; unknown versions are recorded too.
+    fn record_verified_protocol_version(&self, protocol_version: u32) {
+        self.verified_protocol_version
+            .fetch_max(protocol_version, Ordering::Relaxed);
+    }
+
+    /// Accept the metadata of a response whose proof and signature were
+    /// verified: check it is fresh and learn its protocol version.
+    ///
+    /// Security invariant: call this only after the proof and its signature
+    /// were verified. It ratchets the protocol version from
+    /// `metadata.protocol_version`, which must not come from unverified
+    /// metadata.
+    pub(crate) fn accept_verified_metadata(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        if metadata.protocol_version > self.protocol_version_number()
+            && PlatformVersion::get(metadata.protocol_version).is_err()
+        {
+            tracing::warn!(
+                signed_protocol_version = metadata.protocol_version,
+                stored_protocol_version = self.protocol_version_number(),
+                verifier_protocol_version = PlatformVersion::latest().protocol_version,
+                "authenticated network protocol version is unknown; using newest known verifier table"
+            );
+        }
+        self.check_response_freshness_as_of(method_name, metadata, arrival)
+            .inspect_err(|err| {
+                tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
+            })?;
+        self.learn_verified_protocol_version(metadata.protocol_version);
+        Ok(())
+    }
+
+    /// Turn a proof verifier error into an SDK error.
+    ///
+    /// Document queries are verified only at the protocol version that signed the
+    /// answer ([`drive_proof_verifier::Error::ProofProtocolVersionMismatch`]). An answer
+    /// signed below the SDK's version is classified by what verified answers have shown:
+    /// * the network runs the SDK's version: the node is behind, so the error stays
+    ///   [`Error::Proof`], the request moves to another node and this one is banned;
+    /// * nothing has shown it yet: the SDK may be pinned, seeded or persisted ahead of its
+    ///   network, where every node would be refused and banned alike, so the error is
+    ///   [`StaleNodeError::ProtocolVersion`]: the request moves to another node and none is
+    ///   banned, and a query whose every attempt ends so fails with [`Error::Config`]. An
+    ///   answer outside the height or time tolerance still fails as stale
+    ///   ([`StaleNodeError::Height`], [`StaleNodeError::Time`]), so a node that stopped
+    ///   following the network is banned: answers from nodes keeping up with the network
+    ///   are fresh.
+    ///
+    /// An answer naming no protocol version is malformed, whatever the network runs: it stays
+    /// [`Error::Proof`] and its node is banned.
+    ///
+    /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
+    /// it arrived.
+    fn classify_verifier_error(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        arrival: MetadataArrival,
+    ) -> Error {
+        if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
+            error
+        {
+            // An answer naming no protocol version is malformed whatever the network runs,
+            // so its node is not spared.
+            if signed != 0
+                && signed < verifier
+                && self.verified_protocol_version.load(Ordering::Relaxed) < verifier
+            {
+                if let Some(metadata) = metadata {
+                    if let Err(stale) =
+                        self.check_unverified_freshness(method_name, metadata, arrival)
+                    {
+                        return stale;
+                    }
+                }
+                return StaleNodeError::ProtocolVersion {
+                    expected_protocol_version: verifier,
+                    received_protocol_version: signed,
+                }
+                .into();
+            }
+        }
+        error.into()
+    }
+
+    /// Check that metadata whose proof was not verified is fresh as of `arrival`, without
+    /// learning anything from it: the height mark is compared with, never raised.
+    fn check_unverified_freshness(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: MetadataArrival,
+    ) -> Result<(), Error> {
+        let (height_tolerance, time_tolerance) = self.freshness_criteria(method_name);
+        if let Some(tolerance) = time_tolerance {
+            verify_metadata_time(metadata, arrival.time_ms, tolerance)?;
+        }
+        if let Some(tolerance) = height_tolerance {
+            check_metadata_height(metadata.height, arrival.height, tolerance)?;
+        }
+        Ok(())
+    }
+
+    /// The SDK's height and clock anchors now, for a response that has just arrived.
+    fn metadata_arrival(&self) -> MetadataArrival {
+        MetadataArrival {
+            height: self.metadata_last_seen_height.load(Ordering::Acquire),
+            time_ms: chrono::Utc::now().timestamp_millis() as u64,
+        }
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -353,7 +669,7 @@ impl Sdk {
 
         let previous = self
             .protocol_version
-            .fetch_max(received_version, Ordering::Relaxed);
+            .fetch_max(received_version, Ordering::Release);
         if previous < received_version {
             tracing::info!(
                 target: "dash_sdk::protocol_version",
@@ -361,23 +677,33 @@ impl Sdk {
                 to = received_version,
                 "ratcheting protocol version upward"
             );
+            if let Some(observer) = &self.protocol_version_observer {
+                observer(received_version);
+            }
         }
     }
 
     /// Eagerly teach this SDK the network's current protocol version and ratchet up to it.
     ///
-    /// Issues one ordinary **proven** `getEpochsInfo` query
+    /// Issues ordinary **proven** `getEpochsInfo` queries
     /// ([`ExtendedEpochInfo::fetch_current`]) and discards the epoch payload. The
-    /// protocol version that query carries in its verified response metadata is
+    /// protocol version those queries carry in their verified response metadata is
     /// ratcheted in by the *same* [`Self::maybe_update_protocol_version`] path
     /// every other query uses — only after proof + quorum-signature verification
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
     /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
-    /// on) this issues no request and returns the pinned version. If the proven
-    /// query fails the failure is **non-fatal**: the stored version is left
-    /// untouched — we never fall back to an unverified one.
+    /// on) this issues no request and returns the pinned version.
+    ///
+    /// If the fetch fails the failure is **non-fatal**: whatever version was
+    /// already learned is kept — we never fall back to an unverified one. Note
+    /// that [`ExtendedEpochInfo::fetch_current`] makes more than one round trip,
+    /// and each verified response ratchets the version on its own. A refresh that
+    /// ends in an error may therefore still have raised the stored version, and
+    /// the value returned here reflects that. This is by construction: every
+    /// ratchet step is proof-verified and upward-only, so a partial refresh can
+    /// only ever leave the SDK closer to the network's real version.
     ///
     /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
     /// no-op that returns the current version: refresh relies on a proven query,
@@ -395,8 +721,10 @@ impl Sdk {
                 tracing::warn!(
                     target: "dash_sdk::protocol_version",
                     %error,
-                    "proven protocol-version refresh failed; keeping current version \
-                     (never falling back to an unverified one)"
+                    version = self.protocol_version_number(),
+                    "proven protocol-version refresh failed; keeping the highest \
+                     proof-verified version learned so far (never falling back to \
+                     an unverified one)"
                 );
             }
         }
@@ -414,19 +742,19 @@ impl Sdk {
     ///
     /// ## Protocol version bootstrapping
     ///
-    /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses the per-network [`min_protocol_version`] floor as a fallback
-    /// because no network response has been received yet to teach the SDK the real network version.
-    ///
-    /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
-    /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and the seeded [`min_protocol_version`], the very first request may
-    /// fail before the SDK can correct itself.  Subsequent requests will use the correct version.
-    ///
-    /// This is a known bootstrap limitation.  Callers that must guarantee correct version
-    /// behaviour on the first request should pin the version explicitly via
-    /// [`SdkBuilder::with_version()`].
+    /// Proof interpretation uses the response's signed protocol version when
+    /// it is newer than the stored version, including on a pinned SDK. An
+    /// unknown newer version uses the newest known verifier table with a warning.
+    /// The stored version is learned only after proof and signature verification
+    /// succeeds, and is never lowered; a pin still governs construction. Some
+    /// requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
+    /// Document query answers signed below the stored version are not verified:
+    /// they fail with [`Error::Proof`] once a verified answer has shown the network
+    /// running the stored version, and before that with
+    /// [`StaleNodeError::ProtocolVersion`], which the retry loop moves past without
+    /// banning the node, or as stale when outside the height or time tolerance.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -434,37 +762,44 @@ impl Sdk {
         method_name: &'static str,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + Clone,
+        O::Response: Clone + ProofResponseMetadata,
     {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        let (object, metadata, proof) = match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
-                self.version(),
-                &provider,
-            ),
+        match self.inner {
+            SdkInstance::Dapi { .. } => {
+                self.verify_fetching_quorum_key::<R, O>(request, response, &provider, method_name)
+                    .await
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let guard = mock.lock().await;
-                guard.parse_proof_with_metadata(request, response)
+                let metadata = response.response_metadata().ok().cloned();
+                let arrival = self.metadata_arrival();
+                let (verified, from_expectation) = mock
+                    .lock()
+                    .await
+                    .parse_proof_with_metadata(request, response, self.version())
+                    .map_err(|error| {
+                        self.classify_verifier_error(error, method_name, metadata.as_ref(), arrival)
+                    })?;
+                if from_expectation {
+                    // An expectation's metadata is made up, not verified: it moves
+                    // the stored version as a real answer would, but is no evidence
+                    // of what a network serves. Recording it would also change the
+                    // request versions later fetches send, and so the keys of
+                    // expectations registered before this fetch.
+                    self.verify_response_metadata_as_of(method_name, &verified.1, None)?;
+                } else {
+                    // Proof and signature verification (the `?`) must precede this
+                    // call; see `accept_verified_metadata`.
+                    self.accept_verified_metadata(method_name, &verified.1, None)?;
+                }
+                Ok(verified)
             }
-        }?;
-
-        // Security invariant: proof+signature verification above (the `?`) must
-        // precede this call, which ratchets the protocol version from the now-trusted
-        // `metadata.protocol_version`. Never reorder — the ratchet must not consume
-        // unverified metadata.
-        self.verify_response_metadata(method_name, &metadata)
-            .inspect_err(|err| {
-                tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
-            })?;
-
-        Ok((object, metadata, proof))
+        }
     }
 
     /// Return [ContextProvider] used by the SDK.
@@ -557,13 +892,13 @@ impl Sdk {
     /// — auto-detection only ever ratchets *upward* (`fetch_max`). A version pinned
     /// via [`SdkBuilder::with_version()`] is returned as pinned.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
-        let v = self.protocol_version.load(Ordering::Relaxed);
+        let v = self.protocol_version.load(Ordering::Acquire);
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
     }
 
     /// Return the raw protocol version number currently used by this SDK.
     pub fn protocol_version_number(&self) -> u32 {
-        self.protocol_version.load(Ordering::Relaxed)
+        self.protocol_version.load(Ordering::Acquire)
     }
 
     // TODO: Move to settings
@@ -572,16 +907,30 @@ impl Sdk {
         self.proofs
     }
 
-    /// Build a [`QuerySettings`] borrowing this SDK's protocol version,
-    /// request settings, and `prove` flag.
+    /// Build a [`QuerySettings`] borrowing this SDK's protocol version
+    /// and `prove` flag.
     ///
     /// Hand the resulting context to [`crate::platform::Query::query`] when
     /// you need to encode a user-facing query into a wire `TransportRequest`
     /// without taking a full `&Sdk` dependency through the encoder layer.
+    ///
+    /// Its protocol version is [`Self::version`], except that an unpinned SDK on a
+    /// network a verified answer showed runs a version this build does not know
+    /// encodes with the newest version it knows, the rules it reads those answers with.
     pub fn query_settings(&self) -> crate::platform::QuerySettings<'_> {
+        // The stored version first: a verified answer raises it only after recording its
+        // version as verified (see `learn_verified_protocol_version`), so the verified
+        // version read next is at least the one that raised it.
+        let stored = self.version();
+        let verified = self.verified_protocol_version.load(Ordering::Relaxed);
         crate::platform::QuerySettings {
             request_settings: &self.dapi_client_settings,
-            protocol_version: self.version(),
+            protocol_version: protocol_gate::version_for_requests(
+                stored,
+                verified,
+                self.version_pinned,
+            ),
+            verified_protocol_version: verified,
             prove: self.prove(),
         }
     }
@@ -667,14 +1016,27 @@ fn verify_metadata_height(
     metadata: &ResponseMetadata,
     tolerance: u64,
     last_seen_height: Arc<atomic::AtomicU64>,
+    seen_height: Option<u64>,
 ) -> Result<(), Error> {
     let received_height = metadata.height;
     // Linearize the response at an atomic max update, then reload so a racing
     // higher response that committed before this validation completes is also
-    // considered. A lower accepted response can never reduce the baseline.
+    // considered. A lower accepted response can never reduce the baseline. A
+    // response that waited before this check is judged against the mark when
+    // it arrived, `seen_height`, instead.
     let previous_height = last_seen_height.fetch_max(received_height, Ordering::AcqRel);
-    let expected_height = previous_height.max(last_seen_height.load(Ordering::Acquire));
+    let expected_height = seen_height
+        .unwrap_or_else(|| previous_height.max(last_seen_height.load(Ordering::Acquire)));
+    check_metadata_height(received_height, expected_height, tolerance)
+}
 
+/// The remote node is stale if `received_height` is behind `expected_height` by more than
+/// `tolerance`.
+fn check_metadata_height(
+    received_height: u64,
+    expected_height: u64,
+    tolerance: u64,
+) -> Result<(), Error> {
     if expected_height > tolerance && received_height < expected_height.saturating_sub(tolerance) {
         return Err(StaleNodeError::Height {
             expected_height,
@@ -749,6 +1111,9 @@ pub struct SdkBuilder {
     /// `with_version()`. When true, auto-detection of protocol version from network
     /// metadata is disabled.
     version_pinned: bool,
+
+    /// See [`SdkBuilder::with_protocol_version_observer`].
+    protocol_version_observer: Option<ProtocolVersionObserver>,
 
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
@@ -830,6 +1195,7 @@ impl Default for SdkBuilder {
             // sets one.
             version: None,
             version_pinned: false,
+            protocol_version_observer: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -844,6 +1210,8 @@ impl SdkBuilder {
     ///
     /// In mock/offline testing with recorded vectors, set to false to match dumps
     /// that were captured without proofs.
+    /// Proof-only query builders return [`Error::Config`] when proofs are disabled.
+    /// Queries that force proofs and explicit unproved APIs keep their own proof mode.
     pub fn with_proofs(mut self, proofs: bool) -> Self {
         self.proofs = proofs;
         self
@@ -952,6 +1320,15 @@ impl SdkBuilder {
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
     ///
+    /// The pin governs construction. Proof verification may use a newer table
+    /// named in the response's quorum-signed metadata without changing the pin.
+    /// Some requests also need a verified network version before they use a newer
+    /// request version (see
+    /// [`QuerySettings::verified_protocol_version`](crate::platform::QuerySettings::verified_protocol_version)).
+    /// Document queries need answers signed at least at the pinned version: pinned
+    /// above the network, they fail with [`Error::Config`] once every node the request
+    /// may ask has answered below it, and no node is banned for it.
+    ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].
     ///
@@ -981,6 +1358,20 @@ impl SdkBuilder {
     pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = Some(version);
         self.version_pinned = false;
+        self
+    }
+
+    /// Observe upward protocol-version ratchets.
+    ///
+    /// Auto-detect learns the network's protocol version from verified response
+    /// metadata and keeps it in the SDK instance only. A host that wants the next
+    /// instance to start where this one ended (so its first proved request already
+    /// uses the right version) persists the value from here and seeds it back with
+    /// [`SdkBuilder::with_initial_version`]. Called after the stored version has
+    /// moved, once per upward step, with the new version; never for equal, lower,
+    /// zero or unknown versions, and never on a pinned SDK.
+    pub fn with_protocol_version_observer(mut self, observer: ProtocolVersionObserver) -> Self {
+        self.protocol_version_observer = Some(observer);
         self
     }
 
@@ -1148,6 +1539,10 @@ impl SdkBuilder {
                     // pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    protocol_version_observer: self.protocol_version_observer.clone(),
+                    #[cfg(all(test, feature = "mocks"))]
+                    enforce_protocol_gate_on_mock: false,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
                     )),
@@ -1217,6 +1612,10 @@ impl SdkBuilder {
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
+                    verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    protocol_version_observer: self.protocol_version_observer.clone(),
+                    #[cfg(all(test, feature = "mocks"))]
+                    enforce_protocol_gate_on_mock: false,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
@@ -1246,7 +1645,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
         .with_big_endian()
         .with_no_limit();
     let grovedb_proof: Result<GroveDBProof, DecodeError> =
-        bincode::decode_from_slice(&proof.grovedb_proof, config).map(|(a, _)| a);
+        bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map(|(a, _)| a);
 
     let grovedb_proof_string = match grovedb_proof {
         Ok(proof) => format!("{}", proof),
@@ -1328,6 +1727,115 @@ mod test {
                 Some(MAINNET_PLATFORM_HTTP_PORT),
                 "mainnet bootstrap address must use the platform HTTP port",
             );
+        }
+    }
+
+    mod seed_tls_filter {
+        use super::super::{address_list_from_seeds, seed_tls_deterministically_bad};
+        use dash_network_seeds::{
+            CoreStatus, MasternodeSeed, MasternodeType, PlatformStatus, Reachability, SslStatus,
+        };
+
+        /// `host` disambiguates seeds — [`AddressList`] dedupes by URI, so
+        /// every test seed needs a distinct IP.
+        fn seed(host: u8, platform: Option<PlatformStatus>) -> MasternodeSeed {
+            MasternodeSeed {
+                address: format!("203.0.113.{host}:9999").parse().unwrap(),
+                mn_type: MasternodeType::Evo,
+                platform_http_port: Some(443),
+                core: CoreStatus::default(),
+                platform,
+            }
+        }
+
+        fn status(ssl: SslStatus, reachable: Reachability) -> PlatformStatus {
+            PlatformStatus {
+                reachable,
+                ssl,
+                ..PlatformStatus::default()
+            }
+        }
+
+        /// Every `SslStatus` × probe-reachability combination, against the
+        /// contract: cert-level verdicts (`Expired`/`SelfSigned`/`Untrusted`)
+        /// are deterministic regardless of reachability; `NoHandshake` is
+        /// deterministic only when the probe's TCP connect succeeded;
+        /// `Valid`/`Unknown`/unprobed are never rejected.
+        #[test]
+        fn classification_covers_every_status_combination() {
+            let reachabilities = [
+                Reachability::Unknown,
+                Reachability::Ok,
+                Reachability::Timeout,
+                Reachability::Refused,
+                Reachability::Error,
+            ];
+            for reachable in reachabilities {
+                for ssl in [
+                    SslStatus::Expired,
+                    SslStatus::SelfSigned,
+                    SslStatus::Untrusted,
+                ] {
+                    assert!(
+                        seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must be rejected regardless of {reachable:?}"
+                    );
+                }
+                for ssl in [SslStatus::Valid, SslStatus::Unknown] {
+                    assert!(
+                        !seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must never be rejected ({reachable:?})"
+                    );
+                }
+                assert_eq!(
+                    seed_tls_deterministically_bad(Some(&status(
+                        SslStatus::NoHandshake,
+                        reachable
+                    ))),
+                    reachable == Reachability::Ok,
+                    "NoHandshake must be rejected only when TCP connect succeeded ({reachable:?})"
+                );
+            }
+            assert!(
+                !seed_tls_deterministically_bad(None),
+                "an unprobed seed must never be rejected"
+            );
+        }
+
+        #[test]
+        fn filter_drops_only_deterministic_failures() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Valid, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(
+                    3,
+                    Some(status(SslStatus::NoHandshake, Reachability::Timeout)),
+                ),
+                seed(4, Some(status(SslStatus::NoHandshake, Reachability::Ok))),
+                seed(5, None),
+            ];
+            assert_eq!(address_list_from_seeds(&seeds, true).len(), 3);
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 5);
+        }
+
+        /// The all-rejected input exercises the empty-filter result the
+        /// caller falls back from; the fallback itself must retain the
+        /// full set.
+        #[test]
+        fn all_rejected_input_yields_empty_filtered_and_full_unfiltered() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Untrusted, Reachability::Timeout))),
+            ];
+            assert!(address_list_from_seeds(&seeds, true).is_empty());
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 2);
+        }
+
+        #[test]
+        fn seed_without_platform_port_is_always_skipped() {
+            let mut no_port = seed(1, Some(status(SslStatus::Valid, Reachability::Ok)));
+            no_port.platform_http_port = None;
+            assert!(address_list_from_seeds(&[no_port], false).is_empty());
         }
     }
 
@@ -1452,8 +1960,12 @@ mod test {
 
         let last_seen_height = Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
 
-        let result =
-            super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));
+        let result = super::verify_metadata_height(
+            &metadata,
+            tolerance,
+            Arc::clone(&last_seen_height),
+            None,
+        );
 
         assert_eq!(result.is_err(), expect_err);
         if result.is_ok() {
@@ -1476,6 +1988,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("one block behind is within tolerance");
         assert_eq!(
@@ -1490,6 +2003,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect_err("a second rollback step must be compared with the high-water mark");
         assert_eq!(
@@ -1504,6 +2018,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("a newer height should advance the high-water mark");
         assert_eq!(
@@ -1623,7 +2138,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), 2);
@@ -1643,7 +2158,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), original_version);
@@ -1663,7 +2178,7 @@ mod test {
         };
 
         clone
-            .verify_response_metadata("test", &metadata)
+            .verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -1685,7 +2200,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), 2);
@@ -1704,7 +2219,7 @@ mod test {
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.protocol_version_number(), original_version);
@@ -1729,7 +2244,7 @@ mod test {
                     ..Default::default()
                 };
                 sdk_clone
-                    .verify_response_metadata("test", &metadata)
+                    .verify_response_metadata_as_of("test", &metadata, None)
                     .expect("metadata should be valid");
             }));
         }
@@ -1765,14 +2280,14 @@ mod test {
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
         assert!(sdk.version_pinned);
 
-        // Network reports version 12 (> pinned) — should be ignored because version is pinned
+        // Network reports version 14 (> pinned) — should be ignored because version is pinned
         let metadata = ResponseMetadata {
-            protocol_version: dpp::version::v12::PROTOCOL_VERSION_12,
+            protocol_version: dpp::version::v14::PROTOCOL_VERSION_14,
             height: 1,
             ..Default::default()
         };
 
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -1813,19 +2328,19 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), floor);
 
         // And a newer network version still ratchets upward.
-        let newer = dpp::version::v12::PROTOCOL_VERSION_12;
+        let newer = dpp::version::v14::PROTOCOL_VERSION_14;
         assert!(newer > floor, "ratchet target must exceed the floor");
         let metadata = ResponseMetadata {
             protocol_version: newer,
             height: 2,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), newer);
     }
@@ -1870,7 +2385,7 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), v_latest.protocol_version);
     }
@@ -1912,7 +2427,7 @@ mod test {
             height: 1,
             ..Default::default()
         };
-        sdk.verify_response_metadata("test", &metadata)
+        sdk.verify_response_metadata_as_of("test", &metadata, None)
             .expect("metadata should be valid");
 
         assert_eq!(sdk.version().protocol_version, v_new.protocol_version);
@@ -1954,12 +2469,12 @@ mod test {
         let floor = min_protocol_version(Network::Mainnet);
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Ratchet to a fixed known target (PV12), not `floor + N`: stays valid as the
+        // Ratchet to a fixed known target (PV14), not `floor + N`: stays valid as the
         // floor advances, and `maybe_update_protocol_version` only accepts known versions.
-        let target = dpp::version::v12::PROTOCOL_VERSION_12;
+        let target = dpp::version::v14::PROTOCOL_VERSION_14;
         assert!(
             target > floor,
-            "ratchet test target must exceed the floor; bump it if the floor reaches v12"
+            "ratchet test target must exceed the floor; bump it if the floor reaches v14"
         );
         sdk.maybe_update_protocol_version(target);
         assert_eq!(
@@ -1982,7 +2497,7 @@ mod test {
     /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
     /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
     /// Both ratchet sites run the `FromProof` verifier (structural + `verify_tenderdash_proof`)
-    /// BEFORE `verify_response_metadata` → `maybe_update_protocol_version`: the query path via
+    /// BEFORE `accept_verified_metadata` → `maybe_update_protocol_version`: the query path via
     /// `parse_proof_with_metadata_and_proof`, the broadcast wait-path in `broadcast.rs` (see the
     /// guard comments at both call sites). Here we lock in the ratchet's own gates: it must NOT
     /// raise the stored version off untrustworthy inputs (unknown / zero / lower), so even a
@@ -2070,6 +2585,83 @@ mod test {
         assert!(!sdk.version_pinned);
     }
 
+    /// Devnets are cut from the current development line and their contracts use
+    /// index grammar older versions cannot deserialize, so the devnet floor is the
+    /// current version while the public networks keep the lowest version they run.
+    #[test]
+    fn test_per_network_floors() {
+        assert_eq!(
+            min_protocol_version(Network::Devnet),
+            dpp::version::v14::PROTOCOL_VERSION_14,
+            "devnet floor must be the current development version"
+        );
+        for network in [Network::Mainnet, Network::Testnet, Network::Regtest] {
+            assert_eq!(
+                min_protocol_version(network),
+                dpp::version::v13::PROTOCOL_VERSION_13,
+                "{network} floor must be the lowest version the network runs"
+            );
+        }
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Devnet)
+            .build()
+            .expect("mock Sdk should be created");
+        assert_eq!(
+            sdk.protocol_version_number(),
+            min_protocol_version(Network::Devnet)
+        );
+        assert!(!sdk.version_pinned);
+    }
+
+    /// The observer fires once per upward ratchet with the new version, and stays
+    /// silent for the inputs the ratchet rejects (equal, lower, zero, unknown).
+    #[test]
+    fn test_protocol_version_observer_fires_only_on_upward_ratchet() {
+        use dpp::version::PlatformVersion;
+        use std::sync::Mutex;
+        let seen: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+        let observer = {
+            let seen = Arc::clone(&seen);
+            Arc::new(move |version: u32| {
+                seen.lock().expect("observer log lock").push(version);
+            })
+        };
+        let sdk = SdkBuilder::new_mock()
+            .with_protocol_version_observer(observer)
+            .build()
+            .expect("mock Sdk should be created");
+        let floor = min_protocol_version(Network::Mainnet);
+        let target = dpp::version::v14::PROTOCOL_VERSION_14;
+        assert!(target > floor, "ratchet target must exceed the floor");
+
+        sdk.maybe_update_protocol_version(floor);
+        sdk.maybe_update_protocol_version(floor - 1);
+        sdk.maybe_update_protocol_version(0);
+        sdk.maybe_update_protocol_version(dpp::version::LATEST_VERSION + 1);
+        assert!(
+            seen.lock().expect("observer log lock").is_empty(),
+            "rejected inputs must not notify the observer"
+        );
+
+        sdk.maybe_update_protocol_version(target);
+        sdk.maybe_update_protocol_version(target);
+        assert_eq!(
+            *seen.lock().expect("observer log lock"),
+            vec![target],
+            "one upward step must notify exactly once"
+        );
+
+        // Clones share the observer, and a pinned SDK never ratchets.
+        let clone = sdk.clone();
+        assert!(clone.protocol_version_observer.is_some());
+        let pinned = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(floor).expect("floor PV exists"))
+            .with_protocol_version_observer(Arc::new(|_| panic!("pinned SDK must not ratchet")))
+            .build()
+            .expect("mock Sdk should be created");
+        pinned.maybe_update_protocol_version(target);
+    }
+
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
     #[test_matrix([0,89,111], 100, 10, true; "invalid time")]
     #[test_matrix([0,100], [0,100], 100, false; "zero time")]
@@ -2103,14 +2695,21 @@ mod test {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
+        use drive_proof_verifier::types::ExtendedEpochInfos;
 
-        // Must match the query `ExtendedEpochInfo::fetch_current` issues.
-        let query = LimitQuery {
-            query: EpochQuery {
-                start: None,
-                ascending: false,
-            },
+        // Must match the two queries `ExtendedEpochInfo::fetch_current` issues: a
+        // genesis probe, then a two-epoch ascending confirmation from the hinted
+        // current epoch (mock expectation metadata reports epoch 0, so the hint is
+        // 0). The confirmation answers with epoch 0 alone, which is how a real
+        // proof says "no epoch above 0 has started".
+        let probe_query = LimitQuery {
+            query: EpochQuery::genesis(),
             limit: Some(1),
+            start_info: None,
+        };
+        let confirmation_query = LimitQuery {
+            query: EpochQuery::ascending_from(0),
+            limit: Some(2),
             start_info: None,
         };
 
@@ -2124,7 +2723,14 @@ mod test {
         });
 
         sdk.mock()
-            .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch))
+            .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+            .await
+            .expect("register epoch probe expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                confirmation_query,
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
             .await
             .expect("register epoch refresh expectation");
     }

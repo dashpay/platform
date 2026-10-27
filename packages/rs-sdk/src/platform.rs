@@ -7,37 +7,54 @@
 
 pub mod address_sync;
 pub mod block_info_from_metadata;
+pub mod contract_fee_pots;
+pub mod contract_groups;
+pub mod contract_moderation;
 pub mod dashpay;
+pub mod data_contracts_by_range;
+pub mod data_contracts_latest_versions;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;
+pub mod encrypted_for;
 mod fetch;
 pub mod fetch_current_no_parameters;
 mod fetch_many;
 mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
+pub mod identity_keys_remaining_budgets;
+pub mod moderation_charters;
 pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]
 pub mod shielded;
+mod system_data_contract;
 pub mod tokens;
 pub mod transition;
 pub mod trunk_branch_sync;
 pub mod types;
 
 pub use dapi_grpc::platform::v0 as proto;
-pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use dash_context_provider::{ContextProvider, QuorumKeyFuture};
+pub use documents::chained_document_query::ChainedDocumentQuery;
+pub use documents::composite_document_query::{
+    CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,
+};
 pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;
+/// Sdk-bound constructors for [`DocumentQuery`]. Must be in scope to call
+/// [`DocumentQuery::new_with_data_contract_id`], which fetches the contract.
+pub use documents::DocumentQuerySdk;
 pub use dpp::{
     self as dpp,
     document::Document,
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
 pub use drive::query::DriveDocumentQuery;
+pub use drive_proof_verifier::{ChainedDocuments, CompositeDocuments, CompositeSubQueryResult};
 pub use rs_dapi_client as dapi;
 pub use {
     fetch::Fetch,
@@ -45,7 +62,7 @@ pub use {
     fetch_unproved::FetchUnproved,
     query::{
         IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
-        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
+        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery, WireQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
     query_settings::QuerySettings,

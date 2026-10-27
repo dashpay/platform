@@ -257,7 +257,34 @@ mod tests {
 
     #[test]
     fn test_identity_top_up_validation_latest_version() {
-        let platform_version = PlatformVersion::latest();
+        run_test_identity_top_up_validation_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            583880,
+            149993611120,
+        );
+    }
+
+    /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
+    /// adds the documents expirations tree under `Misc` (key `E`), beside the total system
+    /// credits item this transition rewrites, and the extra key reshapes the `Misc` Merk
+    /// the write rehashes. v14's `ContractGroups` root tree (key 124) sits under the
+    /// `Versions` node no fee-bearing transition rewrites and changes nothing here. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[test]
+    fn test_identity_top_up_validation_protocol_version_13() {
+        run_test_identity_top_up_validation_at_protocol_version(13, 588840, 149993606160);
+    }
+
+    /// Helper for the paired fee tests above: the same scenario at the requested protocol
+    /// version, asserting the processing fee and the resulting identity balance.
+    fn run_test_identity_top_up_validation_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+        expected_identity_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -267,6 +294,7 @@ mod tests {
         };
 
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -363,7 +391,10 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 588840);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         platform
             .drive
@@ -382,7 +413,170 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, expected_identity_balance); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+    }
+
+    /// Regression for the proposer-side mint accounting: a minting transition (an asset-lock
+    /// top up) that executes but is then dropped from the proposal (`InternalError` ->
+    /// `TxAction::Removed`) has its GroveDB writes rolled back to the savepoint — its mint
+    /// must leave the block's credit-mint accumulator with them, or the block records a
+    /// credit inflow for a transition the proposal omits and validators re-executing the
+    /// proposal compute different state.
+    #[test]
+    fn test_identity_top_up_dropped_from_proposal_must_not_record_a_credit_mint() {
+        use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(999),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        let identity_already_in_system: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: 50000000000,
+            revision: 0,
+        }
+        .into();
+
+        platform
+            .drive
+            .add_new_identity(
+                identity_already_in_system.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identity_top_up_transition: StateTransition =
+            IdentityTopUpTransition::try_from_identity_with_private_key(
+                &identity_already_in_system,
+                asset_lock_proof,
+                pk.as_slice(),
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_top_up_serialized_transition = identity_top_up_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        // Control: on a transaction we discard, the successful top up reports its asset-lock
+        // mint in the block's credit mints.
+        let control_transaction = platform.drive.grove.start_transaction();
+        let control_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_top_up_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &control_transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+        assert_eq!(control_result.valid_count(), 1);
+        let expected_mint = control_result.credit_mints();
+        assert!(
+            expected_mint > 0,
+            "sanity: a successful asset-lock top up must report its mint"
+        );
+        platform
+            .drive
+            .grove
+            .rollback_transaction(&control_transaction)
+            .expect("expected to roll back the control transaction");
+        drop(control_transaction);
+
+        // Injected run while proposing: the top up executes, is overridden to the
+        // `InternalError` a post-apply failure would produce, and is rolled back to the
+        // savepoint. Its mint must roll back with it.
+        let transaction = platform.drive.grove.start_transaction();
+        FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.set(true));
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_top_up_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+        assert!(
+            !FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.get()),
+            "sanity: the injection must have been consumed (the top up must have executed \
+             successfully before being overridden)"
+        );
+        assert!(
+            matches!(
+                processing_result.execution_results().first(),
+                Some(StateTransitionExecutionResult::InternalError(_))
+            ),
+            "expected the injected InternalError"
+        );
+        assert_eq!(
+            processing_result.credit_mints(),
+            0,
+            "PHANTOM MINT: a transition dropped from the proposal left its mint in the \
+             block's credit-mint accumulator"
+        );
     }
 
     #[test]

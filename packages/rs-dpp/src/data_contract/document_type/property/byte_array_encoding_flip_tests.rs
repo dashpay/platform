@@ -105,6 +105,7 @@ fn build_document_with_ff_prefixed_bytes(_contract: &DataContract) -> Document {
     properties.insert(BYTE_ARRAY_FIELD.to_string(), Value::Bytes32(bytes));
 
     DocumentV0 {
+        contract_version: None,
         id: Identifier::new([1; 32]),
         owner_id: Identifier::new([2; 32]),
         properties,
@@ -119,6 +120,8 @@ fn build_document_with_ff_prefixed_bytes(_contract: &DataContract) -> Document {
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into()
 }

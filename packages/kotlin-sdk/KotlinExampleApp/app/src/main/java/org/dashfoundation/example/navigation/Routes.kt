@@ -105,6 +105,9 @@ import kotlinx.serialization.Serializable
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
 
+/** Browse, buy and manage DPNS marketplace names for one wallet identity. */
+@Serializable data class DpnsMarketplace(val identityIdHex: String)
+
 /** All public keys of an identity (← `KeysListView.swift`). */
 @Serializable data class KeysList(val identityIdHex: String)
 
@@ -186,8 +189,21 @@ import kotlinx.serialization.Serializable
 /** Seed the shielded note pool (← `SeedShieldedPoolView.swift`). */
 @Serializable data class SeedShieldedPool(val walletIdHex: String)
 
-/** Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`). */
-@Serializable data class ShieldedFund(val walletIdHex: String)
+/**
+ * Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`).
+ *
+ * [resumeOutPointHex] carries the `<txid display hex>:<vout>` of an already-
+ * tracked orphan SHIELDED top-up lock (`fundingTypeRaw == 5`) when the
+ * screen is opened in RESUME mode — the shielded twin of
+ * [FundFromAssetLock.resumeOutPointHex], and the counterpart of the Swift
+ * view's `resumeFromLock` parameter. Empty means fresh-shield mode; nav args
+ * don't support a nullable `String`, so `""` stands in for "no lock to
+ * resume".
+ */
+@Serializable data class ShieldedFund(
+    val walletIdHex: String,
+    val resumeOutPointHex: String = "",
+)
 
 /**
  * Live shielded-funding progress (← `ShieldedFundFromAssetLockProgressView.swift`).
@@ -226,6 +242,14 @@ import kotlinx.serialization.Serializable
 
 /** Hidden established-contacts list (← `HiddenContactsView.swift`). */
 @Serializable data class DashPayHidden(val ownerIdentityIdHex: String)
+
+/**
+ * Sent-invitations list (← `InvitationsView.swift`); hosts create/reclaim.
+ * [activeIdentityIdHex] carries the DashPay tab's active identity so the
+ * create sheet funds from — and advertises — the identity the user actually
+ * selected, not an arbitrary first row; null when the tab had none.
+ */
+@Serializable data class DashPayInvitations(val activeIdentityIdHex: String?)
 
 // ── Contracts graph ────────────────────────────────────────────────────
 

@@ -4,15 +4,27 @@ use crate::group::group_action::GroupActionAccessors;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    PlatformSerialize,
+    DecodeUntrusted,
 )]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version

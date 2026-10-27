@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import ContainerIsNotPresentError
   from '../../../../src/docker/errors/ContainerIsNotPresentError.js';
 import DockerComposeError from '../../../../src/docker/errors/DockerComposeError.js';
@@ -33,6 +36,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient = {
         mnsync: this.sinon.stub(),
         getBlockchainInfo: this.sinon.stub(),
+        getDeploymentInfo: this.sinon.stub(),
         masternode: this.sinon.stub(),
       };
       mockDockerCompose = {
@@ -44,7 +48,7 @@ describe('getPlatformScopeFactory', () => {
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
-      // eslint-disable-next-line
+
       mockFetch = this.sinon.stub(globalThis, 'fetch');
       mockGetConnectionHost = this.sinon.stub();
 
@@ -78,16 +82,20 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
+      // node_info app differs from consensus params so the expectation pins the live source
       const mockStatus = {
         node_info: {
           protocol_version: {
             p2p: '10',
             block: '14',
-            app: '3',
+            app: '11',
           },
           version: '0',
           network: 'test',
           moniker: 'test',
+        },
+        application_info: {
+          version: '999',
         },
         sync_info: {
           catching_up: false,
@@ -105,6 +113,13 @@ describe('getPlatformScopeFactory', () => {
           app_version: 4,
           last_block_height: 90,
           last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+      const mockConsensusParams = {
+        consensus_params: {
+          version: {
+            app_version: '3',
+          },
         },
       };
 
@@ -149,12 +164,155 @@ describe('getPlatformScopeFactory', () => {
         .onSecondCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
         .onThirdCall()
-        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) })
+        .onCall(3)
+        .resolves({ json: () => Promise.resolve(mockConsensusParams) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
 
       expect(scope).to.deep.equal(expectedScope);
+    });
+
+    /**
+     * Stub a healthy synced node so the protocol-version tests only vary
+     * the version sources.
+     *
+     * @param {Object} options
+     * @param {string} options.nodeInfoApp - node_info.protocol_version.app (process-start snapshot)
+     * @param {number} options.abciAppVersion - abci_info app_version (installed/desired)
+     * @param {Object} [options.consensusParams] - /consensus_params response body
+     * @param {Error} [options.consensusParamsError] - reject the /consensus_params request instead
+     */
+    function mockHealthyPlatform({
+      nodeInfoApp, abciAppVersion, consensusParams, consensusParamsError,
+    }) {
+      mockDetermineDockerStatus.returns(DockerStatusEnum.running);
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
+      mockDockerCompose.isServiceRunning.returns(true);
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
+      mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
+
+      const mockStatus = {
+        node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: nodeInfoApp,
+          },
+          version: '0',
+          network: 'test',
+          moniker: 'test',
+        },
+        sync_info: {
+          catching_up: false,
+          latest_app_hash: 'DEADBEEF',
+          latest_block_height: 1,
+          latest_block_hash: 'DEADBEEF',
+          latest_block_time: 1337,
+        },
+      };
+      const mockNetInfo = { n_peers: 6, listening: true };
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: abciAppVersion,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
+      mockFetch
+        .onFirstCall()
+        .resolves({ json: () => Promise.resolve(mockStatus) })
+        .onSecondCall()
+        .resolves({ json: () => Promise.resolve(mockNetInfo) })
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
+
+      if (consensusParamsError) {
+        mockFetch.onCall(3).rejects(consensusParamsError);
+      } else {
+        mockFetch.onCall(3).resolves({ json: () => Promise.resolve(consensusParams) });
+      }
+    }
+
+    it('should fall back to node_info app version when consensus params omit app_version', async () => {
+      mockHealthyPlatform({
+        nodeInfoApp: '3',
+        abciAppVersion: 4,
+        consensusParams: { consensus_params: { block: { max_bytes: '2097152' } } },
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(3);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
+    it('should fall back to node_info app version when consensus params app_version is not a plain integer', async () => {
+      // '3.5' would parseInt to 3 and mask the fallback; it must be rejected
+      // whole. node_info is 2 here so a leaked prefix-parse (3) fails the test.
+      mockHealthyPlatform({
+        nodeInfoApp: '2',
+        abciAppVersion: 4,
+        consensusParams: { consensus_params: { version: { app_version: '3.5' } } },
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(2);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
+    it('should fall back to node_info app version when consensus params app_version is not a primitive', async () => {
+      // [3] would coerce to '3' via String(); non-primitives must be rejected.
+      mockHealthyPlatform({
+        nodeInfoApp: '2',
+        abciAppVersion: 4,
+        consensusParams: { consensus_params: { version: { app_version: [3] } } },
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(2);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
+    it('should fall back to node_info app version when the consensus params request fails', async () => {
+      mockHealthyPlatform({
+        nodeInfoApp: '3',
+        abciAppVersion: 4,
+        consensusParamsError: new Error('consensus_params endpoint unavailable'),
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(3);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
+    it('should keep active consensus protocol distinct from newer desired version during rollout', async () => {
+      // Mid-rollout (#4135): consensus already activated 11, the installed
+      // software supports 12, and node_info still snapshots pre-upgrade 10.
+      mockHealthyPlatform({
+        nodeInfoApp: '10',
+        abciAppVersion: 12,
+        consensusParams: { consensus_params: { version: { app_version: '11' } } },
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(11);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(12);
     });
 
     it('should return platform syncing when it is catching up', async () => {
@@ -182,6 +340,9 @@ describe('getPlatformScopeFactory', () => {
           network: 'test',
           moniker: 'test',
         },
+        application_info: {
+          version: '3',
+        },
         sync_info: {
           catching_up: true,
           latest_app_hash: 'DEADBEEF',
@@ -198,6 +359,13 @@ describe('getPlatformScopeFactory', () => {
           app_version: 4,
           last_block_height: 90,
           last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+      const mockConsensusParams = {
+        consensus_params: {
+          version: {
+            app_version: '3',
+          },
         },
       };
 
@@ -242,7 +410,9 @@ describe('getPlatformScopeFactory', () => {
         .onSecondCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
         .onThirdCall()
-        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) })
+        .onCall(3)
+        .resolves({ json: () => Promise.resolve(mockConsensusParams) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -445,6 +615,9 @@ describe('getPlatformScopeFactory', () => {
           network: 'test',
           moniker: 'test',
         },
+        application_info: {
+          version: '3',
+        },
         sync_info: {
           catching_up: false,
           latest_app_hash: 'DEADBEEF',
@@ -463,6 +636,13 @@ describe('getPlatformScopeFactory', () => {
           last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
         },
       };
+      const mockConsensusParams = {
+        consensus_params: {
+          version: {
+            app_version: '3',
+          },
+        },
+      };
 
       mockFetch
         .onFirstCall()
@@ -470,7 +650,9 @@ describe('getPlatformScopeFactory', () => {
         .onSecondCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
         .onThirdCall()
-        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) })
+        .onCall(3)
+        .resolves({ json: () => Promise.resolve(mockConsensusParams) });
 
       const expectedScope = {
         platformActivation: 'Activated (at height 1337)',
@@ -567,6 +749,114 @@ describe('getPlatformScopeFactory', () => {
 
       const scope = await getPlatformScope(config);
       expect(scope).to.deep.equal(expectedScope);
+    });
+
+    describe('platform activation', () => {
+      /**
+       * Read a Core RPC answer recorded from an official Dash Core build on regtest with
+       * testactivationheight=mn_rr@1000 and without -deprecatedrpc=softforks, at height 512
+       * (before mn_rr) or 1112 (after it). Every call parses the file again, so a test may
+       * change the answer it gets.
+       *
+       * @param {string} coreVersion
+       * @param {string} name
+       * @returns {{result: Object}}
+       */
+      function readCoreAnswer(coreVersion, name) {
+        const file = path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc', coreVersion, `${name}.json`);
+
+        return { result: JSON.parse(fs.readFileSync(file, 'utf8')) };
+      }
+
+      beforeEach(() => {
+        mockDockerCompose.isServiceRunning.withArgs(config, 'drive_tenderdash').returns(false);
+        mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
+          .returns(DockerStatusEnum.running);
+        mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+        mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
+      });
+
+      [
+        {
+          height: 1112,
+          platformActivation: 'Activated (at height 1000)',
+          driveServiceStatus: ServiceStatusEnum.up,
+        },
+        {
+          height: 512,
+          platformActivation: 'Waiting for activation on height 1000',
+          driveServiceStatus: ServiceStatusEnum.wait_for_activation,
+        },
+      ].forEach(({ height, platformActivation, driveServiceStatus }) => {
+        it(`should report platform activation and status at height ${height} on Core v24, which by default no longer reports softforks in getblockchaininfo`, async () => {
+          mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer('24.0.0-rc.3', 'mnsync-status'));
+          mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('24.0.0-rc.3', `getblockchaininfo-${height}`));
+          mockRpcClient.getDeploymentInfo.returns(readCoreAnswer('24.0.0-rc.3', `getdeploymentinfo-${height}`));
+
+          const scope = await getPlatformScope(config);
+
+          expect(scope.platformActivation).to.equal(platformActivation);
+          expect(scope.coreIsSynced).to.be.true();
+          expect(scope.tenderdash.serviceStatus).to.equal(ServiceStatusEnum.stopped);
+          expect(scope.drive).to.deep.equal({
+            dockerStatus: DockerStatusEnum.running,
+            serviceStatus: driveServiceStatus,
+            version: '1.4.1',
+          });
+        });
+      });
+
+      it('should read platform activation from getblockchaininfo softforks on Core v23 without calling getdeploymentinfo', async () => {
+        // Core v23 has no getdeploymentinfo and reports deployments only in getblockchaininfo softforks
+        mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer('23.1.8', 'mnsync-status'));
+        mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('23.1.8', 'getblockchaininfo-1112'));
+
+        const scope = await getPlatformScope(config);
+
+        expect(scope.platformActivation).to.equal('Activated (at height 1000)');
+        expect(scope.coreIsSynced).to.be.true();
+        expect(scope.drive.serviceStatus).to.equal(ServiceStatusEnum.up);
+        expect(mockRpcClient.getDeploymentInfo).to.not.have.been.called();
+      });
+
+      [
+        {
+          coreVersion: '23.1.8',
+          getDeploymentInfoCalls: 0,
+          mockDeployments: () => {
+            const blockchainInfo = readCoreAnswer('23.1.8', 'getblockchaininfo-1112');
+            delete blockchainInfo.result.softforks.mn_rr;
+            mockRpcClient.getBlockchainInfo.returns(blockchainInfo);
+          },
+        },
+        {
+          coreVersion: '24.0.0-rc.3',
+          getDeploymentInfoCalls: 1,
+          mockDeployments: () => {
+            const deploymentInfo = readCoreAnswer('24.0.0-rc.3', 'getdeploymentinfo-1112');
+            delete deploymentInfo.result.deployments.mn_rr;
+            mockRpcClient.getBlockchainInfo.returns(readCoreAnswer('24.0.0-rc.3', 'getblockchaininfo-1112'));
+            mockRpcClient.getDeploymentInfo.returns(deploymentInfo);
+          },
+        },
+      ].forEach(({ coreVersion, getDeploymentInfoCalls, mockDeployments }) => {
+        it(`should return the empty platform scope instead of failing when Core ${coreVersion} reports no mn_rr deployment`, async () => {
+          mockRpcClient.mnsync.withArgs('status').returns(readCoreAnswer(coreVersion, 'mnsync-status'));
+          mockDeployments();
+
+          const scope = await getPlatformScope(config);
+
+          expect(scope.platformActivation).to.be.null();
+          expect(scope.coreIsSynced).to.be.null();
+          expect(scope.tenderdash.serviceStatus).to.be.null();
+          expect(scope.drive).to.deep.equal({
+            dockerStatus: null,
+            serviceStatus: null,
+            version: null,
+          });
+          expect(mockRpcClient.getDeploymentInfo.callCount).to.equal(getDeploymentInfoCalls);
+        });
+      });
     });
   });
 });

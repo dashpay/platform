@@ -1,4 +1,5 @@
-//! JNI bridge for the platform-wallet-ffi `EventHandlerCallbacks` vtable.
+//! JNI bridge for the platform-wallet-ffi `EventHandlerCallbacks` vtable
+//! and its size/version-tagged additive event extension.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge`,
 //! reached from the manager built in [`crate::wallet_manager`].
@@ -28,7 +29,9 @@
 use crate::support::JVM;
 use jni::objects::{GlobalRef, JByteArray, JObject, JValue};
 use jni::JNIEnv;
-use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
+use platform_wallet_ffi::event_handler::{
+    DpnsSyncWalletResultFFI, EventHandlerCallbacks, EventHandlerCallbacksExtension,
+};
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
 use platform_wallet_ffi::shielded_types::ShieldedSyncWalletResultFFI;
 use std::ffi::{c_void, CStr};
@@ -39,9 +42,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Boxed context for the event-handler vtable. Holds the Kotlin
 /// `NativeWalletEventBridge` as a `GlobalRef` so it survives across the
-/// vtable's lifetime and across threads. Owned by the manager bundle in
-/// [`crate::wallet_manager`]; dropped only after the native manager's
-/// `shutdown()` has quiesced every callback-firing task.
+/// vtable's lifetime and across threads. Ownership transfers to the
+/// native manager at create (the vtable's `release_fn` is
+/// [`release_event_ctx`]): Rust frees the box — and with it the
+/// `GlobalRef` — exactly once, when the manager and every worker that
+/// could still dispatch an event have dropped their references.
 pub(crate) struct KotlinEventCtx {
     pub(crate) bridge: GlobalRef,
 }
@@ -208,6 +213,49 @@ unsafe extern "C" fn tramp_platform_address_sync_completed(
     });
 }
 
+// ── on_dpns_marketplace_sync_completed (versioned extension) ─────────
+
+unsafe extern "C" fn tramp_dpns_marketplace_sync_completed(
+    context: *mut c_void,
+    results: *const DpnsSyncWalletResultFFI,
+    count: usize,
+    sync_unix_seconds: u64,
+) {
+    with_bridge(context, |env, bridge| {
+        for result in slice_or_empty(results, count) {
+            env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+                let wallet_id = id32(env, &result.wallet_id)?;
+                let error = cstr_opt(env, result.error_message)?;
+                env.call_method(
+                    bridge,
+                    "onDpnsMarketplaceSyncCompleted",
+                    "([BZIIIILjava/lang/String;)V",
+                    &[
+                        (&wallet_id).into(),
+                        JValue::Bool(result.success as u8),
+                        JValue::Int(result.names_tracked as i32),
+                        JValue::Int(result.names_added as i32),
+                        JValue::Int(result.names_departed as i32),
+                        JValue::Int(result.prices_changed as i32),
+                        (&error).into(),
+                    ],
+                )?;
+                Ok(())
+            })?;
+        }
+        env.call_method(
+            bridge,
+            "onDpnsMarketplaceSyncPassCompleted",
+            "(JI)V",
+            &[
+                JValue::Long(sync_unix_seconds as i64),
+                JValue::Int(count as i32),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
 // ── on_shielded_sync_completed ────────────────────────────────────────
 
 unsafe extern "C" fn tramp_shielded_sync_completed(
@@ -299,7 +347,8 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
 /// [`KotlinEventCtx`]). Every slot is wired: the two ABI-simple event /
 /// error slots, plus the platform-address + shielded completion / progress
 /// slots that marshal their payload arrays into per-entry flat calls on the
-/// Kotlin bridge.
+/// Kotlin bridge. DPNS completion lives in [`build_event_extension`] so the
+/// legacy by-value vtable never grows.
 pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks {
     EventHandlerCallbacks {
         context,
@@ -309,5 +358,31 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
         on_shielded_sync_completed_fn: Some(tramp_shielded_sync_completed),
         on_shielded_sync_progress_fn: Some(tramp_shielded_sync_progress),
         on_shielded_tree_progress_fn: Some(tramp_shielded_tree_progress),
+        release_fn: Some(release_event_ctx),
+    }
+}
+
+/// Build the size/version-tagged additive event extension. It shares the
+/// legacy vtable's context and destructor and is copied during manager
+/// creation.
+pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
+    EventHandlerCallbacksExtension {
+        on_dpns_marketplace_sync_completed_fn: Some(tramp_dpns_marketplace_sync_completed),
+        ..EventHandlerCallbacksExtension::default()
+    }
+}
+
+/// `release_fn` for the event vtable: frees the boxed [`KotlinEventCtx`]
+/// when the native manager's last event-handler reference drops. The FFI
+/// guarantees exactly one call, which may land on any Rust thread —
+/// `GlobalRef`'s own `Drop` attaches that thread to the JVM before
+/// deleting the reference, so no manual attach is needed here.
+///
+/// # Safety
+/// `context` must be the live boxed [`KotlinEventCtx`] this vtable was
+/// built around, never freed elsewhere.
+unsafe extern "C" fn release_event_ctx(context: *mut c_void) {
+    if !context.is_null() {
+        drop(Box::from_raw(context as *mut KotlinEventCtx));
     }
 }

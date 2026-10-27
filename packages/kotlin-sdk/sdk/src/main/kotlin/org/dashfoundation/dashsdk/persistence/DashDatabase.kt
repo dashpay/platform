@@ -16,6 +16,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DataContractDao
 import org.dashfoundation.dashsdk.persistence.dao.DocumentDao
 import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
@@ -39,6 +40,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DocumentTypeEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.IndexEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
@@ -99,9 +101,87 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 7 (provider restore): adds transaction block position and an
  * explicit transaction↔typed-account involvement table for payload-only
  * provider transactions.
+ *
+ * Version 8 (durable repair signal, dashpay/platform#4060): adds the
+ * nullable `public_keys.derivationIdentityIndex` / `derivationKeyIndex`
+ * derivation-breadcrumb columns, so identity keys whose private half is
+ * missing or undecryptable can re-seed the pending-repair state after a
+ * process restart. Room is the durability substrate deliberately: the
+ * wallet-deletion cascade removes these rows, so pending entries die with
+ * their wallet automatically (a DataStore side-table would leak).
+ *
+ * Version 9 (DIP-13 invitations): adds the `invitations` table (mirror of
+ * the Swift `PersistentInvitation` model — push-persisted by the
+ * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
+ * column; the "Sent invitations" list reads it via a Room `Flow`).
+ *
+ * Version 10 (DPNS marketplace): enriches `dpns_names` with the stable
+ * document id, ownership/sale state, counterparty, document timestamps and
+ * marketplace reconciliation watermark. Defaults keep every legacy label an
+ * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (durable sweep holds): adds `txos.supersededByTxid`,
+ * `pending_inputs.isSweptTombstone`, `pending_inputs.winnerMinedHeight` and
+ * `wallets.lastAppliedChainLockHeight`, plus two `pending_inputs` indexes.
+ * A sweep's winner can beat a loser to an input whose funding TXO has not
+ * landed here yet, and until now the only record of that claim was the
+ * loser's own `pending_inputs` row, which cascades away with the loser it
+ * names — leaving the funding TXO's later arrival free to re-insert the
+ * outpoint as an ordinary unspent UTXO. `supersededByTxid` is the durable
+ * hold on a materialised coin (the SQLite store's `spent_in_txid`);
+ * `isSweptTombstone` marks the detached pending row that carries the same
+ * hold for a coin that has not materialised; `winnerMinedHeight` is the
+ * winner's own mined height stamped on that tombstone, the horizon the
+ * end-of-round collector compares against the chainlock finality boundary
+ * `min(chainlockHeight, syncedHeight)`; and `lastAppliedChainLockHeight`
+ * is the numeric chainlock height `onWalletChangesetChainLockHeight`
+ * delivers, the chainlock half of that boundary (the bincode chainlock
+ * blob is opaque here). The `spendingTxid` index serves the sweep's
+ * claimed-row lookup; the `(walletId, isSweptTombstone, winnerMinedHeight)`
+ * index covers the collector. All four columns are additive: every
+ * pre-migration row reads back as an ordinary, unstamped, non-tombstone
+ * entry, and a wallet with no recorded chainlock height has no boundary
+ * at all (nothing collects).
+ *
+ * Version 12 (identity key usage limits, protocol version 14): adds the
+ * nullable `public_keys.totalBudget` and `public_keys.expiresAt` columns,
+ * so a key registered with a lifetime budget or an expiry restores as the
+ * limited key it is instead of an unlimited one.
+ *
+ * Version 13 (contract group key bounds): adds the nullable
+ * `public_keys.contractBoundsKind` column. The id and document type name
+ * alone cannot tell a ContractGroup bound (kind 3) from a SingleContract
+ * bound (kind 1), so a group-bound AUTHENTICATION key used to restore as
+ * SingleContract on the group id. The persist callback now records the
+ * kind the native row carries; a NULL kind (legacy row) keeps the old
+ * inference on restore.
+ *
+ * Version 14 (once-per-identity token distribution, protocol version 14):
+ * adds the nullable `tokens.oncePerIdentityDistribution` column holding the
+ * contract's `oncePerIdentityDistribution` block as JSON, so the claim
+ * screen can offer the third distribution kind. NULL for every pre-existing
+ * row; the next contract materialization fills it in.
+ *
+ * Version 15 (durable DashPay backfill, dashpay/platform#4302): adds the
+ * nullable `wallets.dashPayBackfillFloor`, `wallets.dashPayBackfillRewoundFrom`
+ * and `wallets.dashPayBackfillCovered` columns — the record native writes
+ * through `onWalletChangesetDashPayBackfill` on the same round as the lowered
+ * `syncedHeight` it belongs with, and reads back on `loadWalletList`. The
+ * contact rescan used to guard against re-lowering the cursor in memory only,
+ * while the cursor it lowers is durable, so every fresh process rewound again
+ * and re-walked every filter from the earliest contact's core height. All
+ * three NULL (every pre-migration row) means no record: native rewinds once
+ * more, writes one, and never again for the contacts it covers. The same
+ * version adds the nullable `dashpay_contact_requests.externalAccountReference`
+ * column — `EstablishedContact::external_account_reference`, the marker that
+ * says which incoming `accountReference` the outbound sending account was
+ * built from. It was never persisted, so every cold start read it as absent,
+ * treated the account as rotated, tore it down and rebuilt it — and that
+ * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
+ * native rebuilds once, stamps it, and never again.
  */
 @Database(
-    version = 7,
+    version = 15,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -111,6 +191,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         TxoEntity::class,
         CoreAddressEntity::class,
         AssetLockEntity::class,
+        InvitationEntity::class,
         IdentityEntity::class,
         PublicKeyEntity::class,
         DpnsNameEntity::class,
@@ -148,6 +229,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun txoDao(): TxoDao
     abstract fun coreAddressDao(): CoreAddressDao
     abstract fun assetLockDao(): AssetLockDao
+    abstract fun invitationDao(): InvitationDao
     abstract fun identityDao(): IdentityDao
     abstract fun publicKeyDao(): PublicKeyDao
     abstract fun dpnsNameDao(): DpnsNameDao
@@ -450,10 +532,202 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v7 → v8: additive nullable derivation-breadcrumb columns on
+         * `public_keys` (dashpay/platform#4060 finding 5). NULL for every
+         * pre-existing row — correct, because a legacy row's breadcrumbs are
+         * unknown; the persist callback back-fills them on the next upsert of
+         * each key, after which the pending-repair reconstruction can see it.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationIdentityIndex` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationKeyIndex` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v8 → v9: add the DIP-13 `invitations` table. Purely additive. SQL
+         * mirrors the exported `schemas/.../9.json` `createSql` exactly
+         * (column order = entity field order).
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `invitations` (" +
+                        "`outPointHex` TEXT NOT NULL, " +
+                        "`rawOutPoint` BLOB NOT NULL, " +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`fundingIndexRaw` INTEGER NOT NULL, " +
+                        "`amountDuffs` INTEGER NOT NULL, " +
+                        "`expiryUnix` INTEGER NOT NULL, " +
+                        "`createdAtSecs` INTEGER NOT NULL, " +
+                        "`hasInviter` INTEGER NOT NULL, " +
+                        "`statusRaw` INTEGER NOT NULL, " +
+                        "`reclaimInFlight` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`outPointHex`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` " +
+                        "ON `invitations` (`walletId`)",
+                )
+            }
+        }
+
+        /** v9 → v10: additive DPNS marketplace state on legacy label rows. */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `documentId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `isOwned` " +
+                        "INTEGER NOT NULL DEFAULT 1",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `priceCredits` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `saleStatusRaw` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `counterpartyIdentityId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentCreatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentUpdatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentTransferredAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `marketplaceUpdatedAt` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dpns_names_documentId` " +
+                        "ON `dpns_names` (`documentId`)",
+                )
+            }
+        }
+
+        /**
+         * v10 → v11: the four additive sweep-hold columns and the two
+         * `pending_inputs` indexes — see the version-11 class doc above.
+         * `isSweptTombstone` is defaulted so every existing row reads as
+         * "not a tombstone"; the other three are nullable and need no
+         * default (pre-migration tombstones read back unstamped and are
+         * never collected; the chainlock height starts NULL, so no
+         * boundary exists until `onWalletChangesetChainLockHeight`
+         * records one). Column order = entity field order, and the index
+         * SQL is the exported schema's verbatim so Room's validation of a
+         * migrated database passes.
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `txos` ADD COLUMN `supersededByTxid` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `isSweptTombstone` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `winnerMinedHeight` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `wallets` ADD COLUMN `lastAppliedChainLockHeight` INTEGER",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pending_inputs_spendingTxid` " +
+                        "ON `pending_inputs` (`spendingTxid`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight` " +
+                        "ON `pending_inputs` (`walletId`, `isSweptTombstone`, `winnerMinedHeight`)",
+                )
+            }
+        }
+
+        /**
+         * v11 -> v12: identity key usage limits (protocol version 14). Two
+         * nullable columns on `public_keys`, `totalBudget` (credits the key may
+         * spend over its lifetime) and `expiresAt` (block time in ms from which
+         * it can no longer sign), so a limited key persisted from the
+         * identity-keys changeset restores as limited. Additive: every
+         * pre-migration row reads back as a key without limits, which is what
+         * every key registered before protocol version 14 is.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `totalBudget` INTEGER")
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `expiresAt` INTEGER")
+            }
+        }
+
+        /**
+         * v12 -> v13: additive nullable `public_keys.contractBoundsKind`, see
+         * the version-13 class doc above. NULL for every pre-existing row:
+         * the restore path infers a legacy row's kind as before, and the
+         * persist callback records the real kind on the next upsert of each
+         * key.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `contractBoundsKind` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v13 -> v14: additive nullable `tokens.oncePerIdentityDistribution`,
+         * see the version-14 class doc above. NULL for every pre-existing
+         * row; `TokenMaterializer` fills it on the next contract parse.
+         */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tokens` ADD COLUMN `oncePerIdentityDistribution` TEXT",
+                )
+            }
+        }
+
+        /**
+         * v14 -> v15: additive nullable `wallets.dashPayBackfillFloor`,
+         * `wallets.dashPayBackfillRewoundFrom`, `wallets.dashPayBackfillCovered`
+         * and `dashpay_contact_requests.externalAccountReference`, see the
+         * version-15 class doc above. NULL for every pre-existing row — no
+         * record on file and no marker, so the next sweep rebuilds the
+         * outbound account once, rescans once, and writes both.
+         */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillFloor` INTEGER")
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillRewoundFrom` INTEGER")
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillCovered` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` ADD COLUMN `externalAccountReference` INTEGER",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
          * `platform-wallet-ffi`.
+         *
+         * Room runs WAL with `synchronous=NORMAL`: a committed transaction
+         * survives process death, but a power loss can roll back the most
+         * recent commit. That is accepted for every persistence capability
+         * the handler attests (the same class of risk as iOS);
+         * `synchronous=FULL` was deliberately not adopted because it costs
+         * an fsync on every commit.
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)
@@ -464,6 +738,14 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .build()
 

@@ -306,7 +306,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v10.4.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v11.8.1 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
@@ -351,8 +351,10 @@ RUN --mount=type=secret,id=AWS \
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
     # Download and extract the cargo-binstall binary
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
-    rm ./cargo-binstall; \
+    # The archive already holds this cargo-binstall version, so install it directly. Letting it
+    # reinstall itself queries the GitHub API and, when that is rate limited, falls back to a
+    # source build that no longer compiles with the current Rust toolchain
+    mv ./cargo-binstall "${CARGO_HOME:-$HOME/.cargo}/bin/cargo-binstall"; \
     cargo binstall -V
 
 RUN --mount=type=secret,id=AWS \
@@ -401,6 +403,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -415,6 +419,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
@@ -522,6 +527,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -541,6 +548,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
@@ -690,6 +698,7 @@ COPY --parents \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
     packages/rs-drive-proof-verifier \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-trusted-context-provider \
     # Common
@@ -702,6 +711,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -844,6 +855,8 @@ COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packa
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
 COPY --from=build-dashmate-helper /platform/packages/document-history-contract packages/document-history-contract
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
+COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
+COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -947,6 +960,8 @@ COPY --parents \
     packages/token-history-contract \
     packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -962,6 +977,7 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \

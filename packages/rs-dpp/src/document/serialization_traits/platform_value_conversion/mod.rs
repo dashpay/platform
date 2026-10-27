@@ -159,6 +159,7 @@ mod tests {
         let owner_id = Identifier::new([2u8; 32]);
 
         let doc_v0 = DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties: std::collections::BTreeMap::new(),
@@ -173,6 +174,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         };
 
         let document: Document = doc_v0.into();

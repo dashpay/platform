@@ -46,6 +46,7 @@ export default class CoreStatusCommand extends ConfigBaseCommand {
       'Peer count': 'n/a',
       'P2P service': 'n/a',
       'P2P port': 'n/a',
+      'Onion service': 'n/a',
       'RPC service': 'n/a',
       'Block height': 'n/a',
       'Header height': 'n/a',
@@ -67,6 +68,8 @@ export default class CoreStatusCommand extends ConfigBaseCommand {
         peersCount,
         p2pService,
         p2pPortState,
+        torEnabled,
+        onionService,
         rpcService,
         blockHeight,
         remoteBlockHeight,
@@ -88,6 +91,11 @@ export default class CoreStatusCommand extends ConfigBaseCommand {
       plain['Peer count'] = peersCount || 'n/a';
       plain['P2P service'] = p2pService || 'n/a';
       plain['P2P port'] = colors.portState(p2pPortState)(p2pPortState) || 'n/a';
+      if (torEnabled) {
+        plain['Onion service'] = onionService || 'not published yet';
+      } else {
+        plain['Onion service'] = 'disabled';
+      }
       plain['RPC service'] = rpcService || 'n/a';
       plain['Block height'] = colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight) || 'n/a';
       plain['Header height'] = headerHeight || 'n/a';

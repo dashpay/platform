@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -32,6 +33,7 @@ where
         mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
@@ -92,6 +94,7 @@ where
                     block_info,
                     transaction,
                     None, // No address balance tracking for invalid state transitions
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
@@ -189,6 +192,7 @@ where
                 block_info,
                 transaction,
                 Some(&mut address_balances),
+                block_credit_mints,
                 platform_version,
                 previous_fee_versions,
             )

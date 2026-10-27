@@ -7,9 +7,10 @@ import android.util.Log
  * vtable, reached from Rust via the trampolines in
  * `rs-unified-sdk-jni/src/events.rs`.
  *
- * Every slot of the vtable is wired: the two ABI-simple slots
- * ([onWalletEvent] / [onError]) plus the platform-address and shielded
- * completion / progress slots. The completion callbacks fan the Rust-owned
+ * Every slot of the legacy vtable is wired, and the versioned extension
+ * carries DPNS marketplace completion: the two ABI-simple slots
+ * ([onWalletEvent] / [onError]) plus the platform-address, DPNS, and shielded
+ * completion / progress events. The completion callbacks fan the Rust-owned
  * `results` arrays out into one flat per-entry call, with a trailing
  * `…PassCompleted` boundary call carrying the pass's unix timestamp and
  * entry count. This mirrors `PlatformWalletManager.swift`'s
@@ -73,6 +74,26 @@ abstract class NativeWalletEventBridge {
      * @param walletCount number of per-wallet results that preceded this.
      */
     open fun onPlatformAddressSyncPassCompleted(syncUnixSeconds: Long, walletCount: Int) {
+    }
+
+    /**
+     * Versioned DPNS marketplace completion extension, once per wallet —
+     * descriptor `([BZIIIILjava/lang/String;)V`. Values are copied before
+     * the native callback returns, so no native ownership escapes here.
+     */
+    open fun onDpnsMarketplaceSyncCompleted(
+        walletId: ByteArray,
+        success: Boolean,
+        namesTracked: Int,
+        namesAdded: Int,
+        namesDeparted: Int,
+        pricesChanged: Int,
+        errorMessage: String?,
+    ) {
+    }
+
+    /** DPNS marketplace pass boundary — descriptor `(JI)V`. */
+    open fun onDpnsMarketplaceSyncPassCompleted(syncUnixSeconds: Long, walletCount: Int) {
     }
 
     /**

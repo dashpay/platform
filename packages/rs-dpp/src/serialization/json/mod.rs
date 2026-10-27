@@ -16,8 +16,10 @@
 //! These modules are used automatically by the `#[json_safe_fields]` attribute macro
 //! from `dpp-json-convertible-derive`. See that crate's README for the full system.
 
+#[cfg(feature = "json-conversion")]
 pub mod safe_fields;
 pub mod safe_integer;
 pub mod safe_integer_map;
 
+#[cfg(feature = "json-conversion")]
 pub use safe_fields::JsonSafeFields;

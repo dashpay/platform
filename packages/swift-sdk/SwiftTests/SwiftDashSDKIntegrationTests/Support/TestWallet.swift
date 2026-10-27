@@ -1,8 +1,13 @@
 import Foundation
 import SwiftDashSDK
 
-/// Wraps a `ManagedPlatformWallet` and a `ManagedCoreWallet`
-final class TestWalletWrapper {
+/// Wraps a `ManagedPlatformWallet` and a `ManagedCoreWallet`.
+///
+/// `@unchecked Sendable` on the same grounds as `IntegrationTestEnv`: the
+/// stored SDK handles are immutable `let`s and each wrapper is driven by one
+/// test task at a time, but it crosses the `makeTestWallet` async boundary,
+/// which strict-concurrency toolchains reject for non-Sendable results.
+final class TestWalletWrapper: @unchecked Sendable {
     private let core: ManagedCoreWallet
     private let wallet: ManagedPlatformWallet
 

@@ -1,14 +1,64 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
 use dash_network::ffi::FFINetwork;
-use jni::objects::JThrowable;
+use jni::objects::{JThrowable, JValue};
+use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use platform_wallet_ffi::error::{
-    platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
+    platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind, PlatformWalletFFIResult,
+    PlatformWalletFFIResultCode,
 };
+use rs_sdk_ffi::DashSDKConsensusErrorKind;
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
+
+/// The platform-wallet kind that shares each rs-sdk-ffi consensus kind's
+/// meaning. The match is exhaustive, so a family added to one FFI alone
+/// fails the build here.
+const fn wallet_consensus_kind(
+    kind: DashSDKConsensusErrorKind,
+) -> PlatformWalletFFIConsensusErrorKind {
+    match kind {
+        DashSDKConsensusErrorKind::ConsensusErrorKindNone => {
+            PlatformWalletFFIConsensusErrorKind::None
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindBasic => {
+            PlatformWalletFFIConsensusErrorKind::Basic
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindSignature => {
+            PlatformWalletFFIConsensusErrorKind::Signature
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindFee => {
+            PlatformWalletFFIConsensusErrorKind::Fee
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindState => {
+            PlatformWalletFFIConsensusErrorKind::State
+        }
+    }
+}
+
+const fn crosses_as_wallet_kind(kind: DashSDKConsensusErrorKind) -> bool {
+    kind as i32 == wallet_consensus_kind(kind) as i32
+}
+
+/// Compile-time drift guard for the consensus kind discriminant.
+///
+/// Both FFIs hand a consensus rejection's kind to
+/// [`throw_sdk_consensus_exception`] as its bare discriminant, and Kotlin's
+/// `ConsensusErrorKind.fromNative` decodes it with one table. So every
+/// `DashSDKConsensusErrorKind` must cross as the same number as the
+/// `PlatformWalletFFIConsensusErrorKind` of the same family; a drift is a
+/// build failure rather than a rejection Kotlin files under the wrong family.
+const _: () = assert!(
+    crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindNone)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindBasic)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindSignature)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindFee)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindState),
+    "rs-sdk-ffi's DashSDKConsensusErrorKind drifted from platform-wallet-ffi's \
+     PlatformWalletFFIConsensusErrorKind; Kotlin decodes both with one table"
+);
 
 /// Offset added to every `PlatformWalletFFIResultCode` before it is thrown
 /// as a `DashSDKException` code — see [`take_pwffi_error`].
@@ -44,14 +94,6 @@ pub fn net_from_ord(ord: i32) -> FFINetwork {
     }
 }
 
-/// Android's generic crash-recovery APIs must never authorize consumption of
-/// a bearer invitation voucher. That authority belongs exclusively to the
-/// separate invitation-reclaim flow, even if a caller bypasses the Kotlin
-/// wrapper and invokes JNI directly.
-pub(crate) fn generic_asset_lock_recovery_allowed(consume_invitation: bool) -> bool {
-    !consume_invitation
-}
-
 /// If `result` carries a non-`Success` code: throw `DashSDKException`,
 /// free its message, and return `true` (the caller bails with its
 /// default). On `Success` frees nothing (message is null) and returns
@@ -67,6 +109,18 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
     if result.code == PlatformWalletFFIResultCode::Success {
         return false;
     }
+    throw_pwffi_result(env, &result);
+    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
+    unsafe { platform_wallet_ffi_result_free(&mut result) };
+    true
+}
+
+/// Throw the `DashSDKException` for a non-`Success` `result`, leaving its
+/// message for the caller to free. The exception code is the result code
+/// shifted by [`PWFFI_CODE_OFFSET`]; a result that carries a consensus
+/// rejection (`consensus_code != 0`) hands its code and kind to the exception
+/// as well, so Kotlin can branch on them instead of on the message.
+pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
     let message = if result.message.is_null() {
         format!("platform-wallet error (code {})", result.code as i32)
     } else {
@@ -75,10 +129,18 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
             .to_string_lossy()
             .into_owned()
     };
-    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
-    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
-    unsafe { platform_wallet_ffi_result_free(&mut result) };
-    true
+    let code = result.code as i32 + PWFFI_CODE_OFFSET;
+    if result.consensus_code == 0 {
+        throw_sdk_exception(env, code, &message);
+    } else {
+        throw_sdk_consensus_exception(
+            env,
+            code,
+            &message,
+            result.consensus_code,
+            result.consensus_kind as jint,
+        );
+    }
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
@@ -92,6 +154,43 @@ pub const SDK_EXCEPTION_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DashSDKExc
 /// `RuntimeException` if the class or constructor lookup fails (e.g. the
 /// library is loaded outside the Kotlin SDK).
 pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
+    throw_sdk_exception_with(env, code, message, "(ILjava/lang/String;)V", &[]);
+}
+
+/// Throw `DashSDKException(code, message, consensusCode, consensusKind)` for
+/// a failure that is a consensus rejection. `consensus_kind` is the
+/// discriminant of either FFI's kind (`PlatformWalletFFIConsensusErrorKind`
+/// or rs-sdk-ffi's `DashSDKConsensusErrorKind`, held equal by the drift guard
+/// at the top of this module), which Kotlin's `ConsensusErrorKind.fromNative`
+/// decodes. Same `RuntimeException` fallback as [`throw_sdk_exception`].
+pub fn throw_sdk_consensus_exception(
+    env: &mut JNIEnv,
+    code: i32,
+    message: &str,
+    consensus_code: u32,
+    consensus_kind: jint,
+) {
+    // Consensus codes top out in the 40000s, far inside a `jint`; one that
+    // somehow is not goes out as `jint::MAX` rather than wrapping negative.
+    let consensus_code = jint::try_from(consensus_code).unwrap_or(jint::MAX);
+    throw_sdk_exception_with(
+        env,
+        code,
+        message,
+        "(ILjava/lang/String;II)V",
+        &[consensus_code, consensus_kind],
+    );
+}
+
+/// Construct `DashSDKException` through the constructor `signature` names,
+/// passing `code`, `message` and then `extra`, and throw it.
+fn throw_sdk_exception_with(
+    env: &mut JNIEnv,
+    code: i32,
+    message: &str,
+    signature: &str,
+    extra: &[jint],
+) {
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {
@@ -99,11 +198,9 @@ pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
     }
     let thrown = (|| -> jni::errors::Result<()> {
         let jmsg = env.new_string(message)?;
-        let obj = env.new_object(
-            SDK_EXCEPTION_CLASS,
-            "(ILjava/lang/String;)V",
-            &[code.into(), (&jmsg).into()],
-        )?;
+        let mut args: Vec<JValue> = vec![code.into(), (&jmsg).into()];
+        args.extend(extra.iter().map(|value| JValue::from(*value)));
+        let obj = env.new_object(SDK_EXCEPTION_CLASS, signature, &args)?;
         env.throw(JThrowable::from(obj))
     })();
     if thrown.is_err() {
@@ -134,14 +231,8 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::{generic_asset_lock_recovery_allowed, net_from_ord};
+    use super::net_from_ord;
     use dash_network::ffi::FFINetwork;
-
-    #[test]
-    fn generic_asset_lock_recovery_rejects_invitation_authority() {
-        assert!(generic_asset_lock_recovery_allowed(false));
-        assert!(!generic_asset_lock_recovery_allowed(true));
-    }
 
     #[test]
     fn net_from_ord_matches_kotlin_ffi_values() {

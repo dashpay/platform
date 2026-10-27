@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 
 describe('validateZeroSslCertificateFactory', () => {
   let config;
@@ -172,6 +173,26 @@ describe('validateZeroSslCertificateFactory', () => {
 
     expect(result.error).to.equal(ERRORS.CERTIFICATE_EXPIRES_SOON);
     expect(result.data.csr).to.equal('csr content');
+  });
+
+  // A certificate the provider has not issued yet carries no expiry date. Reporting it as
+  // expiring would put that missing date in front of the operator; it is unapproved, not expired.
+  it('should report a certificate without an expiry date as not validated', async function it() {
+    const certificate = new Certificate({
+      id: 'certificate-id',
+      common_name: '1.2.3.4',
+      status: 'pending_validation',
+      created: '2026-08-18 09:04:19',
+      expires: null,
+    });
+
+    getCertificate.resolves(certificate);
+
+    const result = await validateZeroSslCertificate(config, expirationDays);
+
+    expect(result.error).to.equal(ERRORS.CERTIFICATE_IS_NOT_VALIDATED);
+    expect(result.error).to.not.equal(ERRORS.CERTIFICATE_EXPIRES_SOON);
+    expect(result.data.isExpiresSoon).to.be.false();
   });
 
   it('should return data when certificate is valid and not expiring soon', async function it() {

@@ -3,6 +3,8 @@ use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
+#[cfg(feature = "core_key_wallet")]
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::prelude::AssetLockProof;
@@ -43,6 +45,23 @@ pub trait TopUpIdentity: Waitable {
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync;
+}
+
+/// Balance operations that also expose the committed proof metadata.
+#[async_trait::async_trait]
+pub trait TopUpIdentityWithMetadata: Waitable {
+    /// Returns the confirmed balance result and its proof metadata.
+    #[cfg(feature = "core_key_wallet")]
+    async fn top_up_identity_with_signer_with_metadata<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(u64, ResponseMetadata), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 }
@@ -89,6 +108,32 @@ impl TopUpIdentity for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
+        self.top_up_identity_with_signer_with_metadata(
+            sdk,
+            asset_lock_proof,
+            asset_lock_proof_path,
+            asset_lock_signer,
+            settings,
+        )
+        .await
+        .map(|(balance, _)| balance)
+    }
+}
+
+#[async_trait::async_trait]
+impl TopUpIdentityWithMetadata for Identity {
+    #[cfg(feature = "core_key_wallet")]
+    async fn top_up_identity_with_signer_with_metadata<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(u64, ResponseMetadata), Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync,
+    {
         let user_fee_increase = settings
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
@@ -103,12 +148,13 @@ impl TopUpIdentity for Identity {
         )
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let identity: PartialIdentity = state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
+        let (identity, metadata): (PartialIdentity, _) = state_transition
+            .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
             .await?;
 
         identity
             .balance
             .ok_or(Error::Generic("expected an identity balance".to_string()))
+            .map(|balance| (balance, metadata))
     }
 }

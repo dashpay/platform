@@ -159,6 +159,27 @@ describe('Block header consensus validation', () => {
     consensus.isValidBlockHeader(nextHeader, wrongHistory, 'mainnet')
       .should.equal(false);
   });
+
+  it('should accept fast-mined regtest headers when Core retargeting is disabled', () => {
+    const previousHeaders = [new Blockchain('regtest').genesis];
+
+    while (previousHeaders.length < 24) {
+      previousHeaders.push(utils.createBlock(previousHeaders.at(-1), 0x207fffff));
+    }
+
+    const nextHeader = utils.createBlock(previousHeaders.at(-1), 0x207fffff);
+
+    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'regtest')
+      .should.equal(true);
+  });
+
+  it('should reject a changed regtest target before the DGW history window', () => {
+    const { genesis } = new Blockchain('regtest');
+    const changedTargetHeader = utils.createBlock(genesis, 0x2070ffff);
+
+    consensus.isValidBlockHeader(changedTargetHeader, [genesis], 'regtest')
+      .should.equal(false);
+  });
 });
 
 describe('SPV-DASH (addHeaders) add many headers for testnet', () => {

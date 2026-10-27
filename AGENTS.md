@@ -78,9 +78,13 @@ Platform uses data contracts to define application data schemas:
 - Run linters: `yarn lint`
 
 ## Coding Style & Naming Conventions
-- Editor config: 2-space indent (4 for `*.rs`), LF, UTF‑8, final newline (`.editorconfig`).
+- Follow `.editorconfig`: 2-space indent by default; 4 spaces for `*.rs`,
+  Swift and Kotlin (`*.swift`, `*.kt`, `*.kts`), and
+  `packages/swift-sdk/scripts/*.py`, preserving the existing Python script style.
+  Use LF, UTF‑8, and a final newline.
 - JS/TS: ESLint (Airbnb/TypeScript rules via package configs). Use camelCase for variables/functions, PascalCase for classes; prefer kebab-case filenames within JS packages.
 - Rust: Follow rustfmt defaults; keep code clippy-clean. Modules `snake_case`, types `PascalCase`, constants `SCREAMING_SNAKE_CASE`.
+- Rust architecture rules live in The Dash Platform Book (`book/`). Read [book/src/contributing/coding-conventions.md](book/src/contributing/coding-conventions.md) before changing versioned behaviour, validation, errors, fees, or limits; it states each rule, why it exists, and links to the chapter with the mechanics. Key rules: new behaviour is a new `vN` selected only by the unreleased protocol version's tables, and a shipped `vN` is edited in place only when the edit provably cannot modify consensus there, with the reason in the PR description's "In-place changes to shipped generations" section; numbers go in `SystemLimits`, fees in named `FEE_VERSION*` schedules; `platform_version` is the last parameter; no `unwrap`/`expect` on block-execution paths (a panic halts the chain); imports at the top, no inline `crate::` paths; latest-generation tests use `PlatformVersion::latest()`.
 
 ## Testing Guidelines
 - Unit/integration tests live alongside each package (e.g., `packages/<name>/tests`). E2E lives in `packages/platform-test-suite`.
@@ -92,6 +96,12 @@ Platform uses data contracts to define application data schemas:
 - Conventional Commits for titles and commits: `<type>(scope): <description>` (e.g., `feat(sdk): add identity fetch`). Use `!` for breaking changes. Types are specified in `.github/workflows/pr.yml`.
 - Keep PRs focused, link issues, include tests, and fill the PR template (`.github/PULL_REQUEST_TEMPLATE.md`).
 - Branching: bugfixes and new features to the current `vX-dev` branch.
+
+## Specs are working artifacts — never commit them
+A design doc / spec / plan written to drive a change (the problem, chosen approach, alternatives rejected, failure modes, test plan) exists to guide the work, not to ship. It goes stale the moment the code lands.
+- Keep it in the working tree but **never stage or commit it**. Enforce this by discipline, not git plumbing: stage with explicit paths (`git add <file> …`), never a blind `git add -A`/`git add .`. Do NOT edit `.git/info/exclude`, add a `.gitignore` entry, or use any other git trick to hide it — just don't add it.
+- Delete it once the task ships. If a branch already committed one, `git rm --cached <path>` before merge; the file stays on disk for the life of the task.
+- Only commit documentation the project keeps long-term: user/developer guides, architecture references, runbooks, API docs. A fact worth keeping after merge goes in a code comment, a test name, the commit message, or the PR description — not a design doc.
 
 ## Agent-Specific Instructions
 
@@ -115,7 +125,9 @@ Quick build commands:
 ```bash
 # Build unified iOS framework (includes Core + Platform)
 cd packages/swift-sdk
-./build_ios.sh
+./build_ios.sh --target sim                  # release profile (the default)
+./build_ios.sh --target sim --profile dev    # local iteration ONLY — debug
+                                             # assertions abort the host app
 
 # Build SwiftExampleApp
 cd packages/swift-sdk

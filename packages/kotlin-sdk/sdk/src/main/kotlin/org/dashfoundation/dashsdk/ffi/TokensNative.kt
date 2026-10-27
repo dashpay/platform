@@ -177,7 +177,7 @@ internal object TokensNative {
         signerHandle: Long,
     )
 
-    /** Claim a distribution. [distributionType]: 0 = pre-programmed, 1 = perpetual. Single-signer. */
+    /** Claim a distribution. [distributionType]: 0 = pre-programmed, 1 = perpetual, 2 = once per identity. Single-signer. */
     external fun tokenClaim(
         walletHandle: Long,
         identityId: ByteArray,
