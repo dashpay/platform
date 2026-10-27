@@ -298,9 +298,8 @@ impl IdentityWallet {
                 &identity,
                 signer,
                 required_level,
-                SigningScope::DocumentType {
-                    contract_id: *contract_id,
-                    document_type_name,
+                SigningScope::DocumentCreate {
+                    document_type: document_type.as_ref(),
                 },
             )?
             .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {

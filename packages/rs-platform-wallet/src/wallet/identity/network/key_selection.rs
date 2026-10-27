@@ -8,6 +8,8 @@ use dpp::consensus::signature::{
     PublicKeyExpiredError, PublicKeyIsDisabledError, SignatureError,
 };
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::TokenContractPosition;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -42,12 +44,15 @@ pub const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
 pub const WALLET_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
 
 /// What a signature authorizes, as far as a key's contract bounds go.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SigningScope<'a> {
     /// A transition that is not a batch: identity update, credit transfer or withdrawal,
     /// contract create or update. A contract-bound AUTHENTICATION key cannot sign it.
     NonBatch,
-    /// A batch of `document_type_name` documents of `contract_id`.
+    /// A batch creating a `document_type` document. The key's bounds must cover the type and
+    /// every type the create may consume, as Platform checks.
+    DocumentCreate { document_type: DocumentTypeRef<'a> },
+    /// A batch acting on existing `document_type_name` documents of `contract_id`.
     DocumentType {
         contract_id: Identifier,
         document_type_name: &'a str,
@@ -80,17 +85,42 @@ impl SigningScope<'_> {
                 contract_id,
                 ContractBoundsScope::DocumentType(document_type_name),
             ),
+            SigningScope::DocumentCreate { ref document_type } => (
+                document_type.data_contract_id(),
+                ContractBoundsScope::DocumentType(document_type.name()),
+            ),
             SigningScope::Contract { contract_id } => (contract_id, ContractBoundsScope::Contract),
             SigningScope::Token {
                 contract_id,
                 position,
             } => (contract_id, ContractBoundsScope::Token(position)),
         };
-        match key.contract_bounds() {
-            Some(bounds) if key.purpose() == Purpose::AUTHENTICATION => {
-                bounds.check_scope(contract_id, bounds_scope)
-            }
-            _ => BatchedTransitionBoundsCheck::Allowed,
+        let Some(bounds) = key
+            .contract_bounds()
+            .filter(|_| key.purpose() == Purpose::AUTHENTICATION)
+        else {
+            return BatchedTransitionBoundsCheck::Allowed;
+        };
+        let check = bounds.check_scope(contract_id, bounds_scope);
+        let SigningScope::DocumentCreate { ref document_type } = *self else {
+            return check;
+        };
+        if check != BatchedTransitionBoundsCheck::Allowed {
+            return check;
+        }
+        // Drive's batch structure validation: a create deletes the documents it consumes with
+        // the key that signs it, so the bounds must allow each consumed type too.
+        let covers_consumed = document_type
+            .consumable_document_type_names()
+            .into_iter()
+            .all(|consumed| {
+                bounds.check_scope(contract_id, ContractBoundsScope::DocumentType(consumed))
+                    == BatchedTransitionBoundsCheck::Allowed
+            });
+        if covers_consumed {
+            BatchedTransitionBoundsCheck::Allowed
+        } else {
+            BatchedTransitionBoundsCheck::Denied
         }
     }
 }
@@ -1003,5 +1033,62 @@ pub(super) mod tests {
             signature_error(check(&expired_bound_here, SigningScope::NonBatch)),
             SignatureError::ContractBoundedKeyNonBatchError(_)
         ));
+    }
+
+    #[test]
+    fn should_require_a_create_key_to_cover_the_types_the_create_consumes() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("bundled DPNS contract");
+        let domain = dpns.document_type_for_name("domain").expect("domain");
+        assert!(domain.consumable_document_type_names().contains("preorder"));
+        let scope = SigningScope::DocumentCreate {
+            document_type: domain,
+        };
+        let bound_to_domain = bound_key(
+            1,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: dpns.id(),
+                document_type_name: "domain".to_string(),
+            }),
+        );
+        let bound_to_dpns = bound_key(
+            2,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContract { id: dpns.id() }),
+        );
+
+        assert_eq!(
+            scope.bounds_check(&bound_to_domain),
+            BatchedTransitionBoundsCheck::Denied
+        );
+        assert!(matches!(
+            signature_error(check(&bound_to_domain, scope)),
+            SignatureError::ContractBoundedKeyOutOfBoundsError(_)
+        ));
+        assert_eq!(
+            scope.bounds_check(&bound_to_dpns),
+            BatchedTransitionBoundsCheck::Allowed
+        );
+        check(&bound_to_dpns, scope).expect("a key bound to the whole contract signs the create");
+        let picked = usable_signing_key(
+            &identity(vec![bound_to_domain, bound_to_dpns]),
+            &KeyFilter(|_| true),
+            Purpose::AUTHENTICATION,
+            &LEVELS,
+            &TYPES,
+            scope,
+        )
+        .unwrap()
+        .map(|key| key.id());
+        assert_eq!(
+            picked,
+            Some(2),
+            "the key bound to the created type only is skipped"
+        );
     }
 }

@@ -629,7 +629,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map_err(dash_sdk::Error::from)?;
         let requirement = contact_request_requirement(&dashpay).map_err(dash_sdk::Error::from)?;
         let identity_public_key =
-            contact_request_signing_key(&sender_identity, signer, requirement)?
+            contact_request_signing_key(&sender_identity, signer, &dashpay, requirement)?
                 .cloned()
                 .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
                     identity_id: *sender_identity_id,
@@ -1244,21 +1244,24 @@ fn contact_request_requirement(dashpay: &DataContract) -> Result<SecurityLevel, 
         .security_level_requirement())
 }
 
-/// The key that signs an outgoing `contactRequest` document: an AUTHENTICATION ECDSA key
-/// meeting `requirement` whose bounds cover `contactRequest`. MASTER is rejected on document
-/// writes.
+/// The key that signs an outgoing `contactRequest` document of `dashpay`: an AUTHENTICATION
+/// ECDSA key meeting `requirement` whose bounds cover creating a `contactRequest`. MASTER is
+/// rejected on document writes.
 fn contact_request_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
+    dashpay: &DataContract,
     requirement: SecurityLevel,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    let contact_request = dashpay
+        .document_type_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)
+        .map_err(ProtocolError::from)?;
     document_signing_key(
         identity,
         signer,
         requirement,
-        SigningScope::DocumentType {
-            contract_id: SystemDataContract::Dashpay.id(),
-            document_type_name: CONTACT_REQUEST_DOCUMENT_TYPE,
+        SigningScope::DocumentCreate {
+            document_type: contact_request,
         },
     )
 }
@@ -6688,10 +6691,20 @@ mod contact_request_key_tests {
                 }),
             )
         };
+        let contract = load_system_data_contract(
+            SystemDataContract::Dashpay,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DashPay contract");
         let pick = |identity: &Identity| {
-            contact_request_signing_key(identity, &KeyFilter(|_| true), SecurityLevel::HIGH)
-                .unwrap()
-                .map(|key| key.id())
+            contact_request_signing_key(
+                identity,
+                &KeyFilter(|_| true),
+                &contract,
+                SecurityLevel::HIGH,
+            )
+            .unwrap()
+            .map(|key| key.id())
         };
         assert_eq!(
             pick(&identity(vec![
