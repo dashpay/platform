@@ -341,6 +341,12 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 /// any, the token market contract their `ask` documents are deleted from. From protocol version
 /// 15 the listings are destroyed with the balance, as what they hold sits in escrow, out of the
 /// balance's reach; earlier versions read none. The read is billed to `fee_result`.
+///
+/// A group destroy reads them at every signature, and the one that completes it destroys what is
+/// there then, as it does the balance: the amount the proposal recorded is not a bound. A frozen
+/// identity can only cancel a listing, which moves its escrow into that balance, so a cancel
+/// between the signatures can only grow the destroy, never shrink it; refusing a completion
+/// whose amount changed would let the frozen identity block every group destroy with one cancel.
 fn read_frozen_listings(
     drive: &Drive,
     token_id: Identifier,

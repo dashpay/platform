@@ -3509,6 +3509,7 @@ mod frozen {
     use super::*;
     use dpp::document::DocumentV0Getters;
     use dpp::fee::fee_result::FeeResult;
+    use dpp::state_transition::batch_transition::TokenDestroyFrozenFundsTransition;
     use drive::drive::RootTree;
     use drive::grovedb::query_result_type::{QueryResultElement, QueryResultType};
     use drive::grovedb::{PathQuery, Query, SizedQuery};
@@ -3991,6 +3992,184 @@ mod frozen {
         assert_eq!(market.escrow(newest), None);
         assert_eq!(market.supply(), BASE_SUPPLY - 10 * (limit + 1));
         market.assert_supply_balanced();
+    }
+
+    /// A market whose frozen funds only a group of the seller and a second identity destroys,
+    /// both signing (the seller still freezes alone), and that second identity.
+    fn market_destroyed_by_a_group() -> (Market, Party) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(70415);
+        let mut new_party = |platform: &mut TempPlatform<MockCoreRPCLike>| {
+            let (identity, signer, key) =
+                setup_identity(platform, rng.gen(), dash_to_credits!(1.0));
+            Party {
+                identity,
+                signer,
+                key,
+                nonce: 2,
+            }
+        };
+        let seller = new_party(&mut platform);
+        let buyer = new_party(&mut platform);
+        let second = new_party(&mut platform);
+        let members = [(seller.id(), 1), (second.id(), 1)].into();
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable_and_freezable(token_configuration);
+                token_configuration.set_destroy_frozen_funds_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members,
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        (
+            Market {
+                platform,
+                contract,
+                token_id,
+                seller,
+                buyer,
+            },
+            second,
+        )
+    }
+
+    /// A group destroy reads the frozen identity's listings again at the signature that
+    /// completes it, and destroys what the frozen identity holds then: the amount the proposal
+    /// recorded is not a bound. All a frozen identity can still do with a listing is cancel it,
+    /// which moves the escrow into the balance the completion destroys anyway, so a cancel
+    /// between the signatures only makes the destroy larger. Here the cancelled oldest listing
+    /// comes back through the balance, and the newest, past the limit at the proposal, is
+    /// destroyed too. Refusing a completion whose amount differs from the proposal's would let
+    /// the frozen identity block every group destroy with one cancel.
+    #[tokio::test]
+    async fn should_destroy_at_least_what_a_group_proposed_after_the_frozen_identity_cancels() {
+        let platform_version = PlatformVersion::latest();
+        let limit = platform_version
+            .system_limits
+            .max_frozen_listings_destroyed_per_transition as usize;
+        let (mut market, mut second) = market_destroyed_by_a_group();
+        // Listings of 10, 20, ... base units, one more than a destroy takes, and 100 in the balance
+        let amounts: Vec<u64> = (1..=limit as u64 + 1).map(|i| 10 * i).collect();
+        let given = amounts.iter().sum::<u64>() + 100;
+        market.give_buyer(given).await;
+        let mut listings = vec![];
+        for (time_ms, amount) in (1..).zip(&amounts) {
+            listings.push(market.buyer_lists(*amount, time_ms).await);
+        }
+        market.freeze_buyer().await;
+
+        // The seller proposes: the oldest `limit` listings and the balance, nothing destroyed yet
+        let proposed = 100 + amounts[..limit].iter().sum::<u64>();
+        let proposer_nonce = market.seller.take_nonce();
+        let propose = BatchTransition::new_token_destroy_frozen_funds_transition(
+            market.token_id,
+            market.seller.id(),
+            market.contract.id(),
+            0,
+            market.buyer.id(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &market.seller.key,
+            proposer_nonce,
+            0,
+            &market.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the proposal");
+        market.assert_executes(&propose, &at_time(1_000_000));
+        assert_eq!(market.supply(), BASE_SUPPLY);
+        assert_eq!(market.escrow(listings[0]), Some(10));
+
+        // The frozen identity cancels its oldest listing, whose escrow returns to its balance
+        let cancel = market.cancel(listings[0], true).await;
+        market.assert_executes(&cancel, &at_time(1_000_001));
+        assert_eq!(market.token_balance(market.buyer.id()), Some(110));
+
+        // The second member completes the destroy
+        let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+            market.token_id.as_bytes(),
+            market.seller.id().as_bytes(),
+            proposer_nonce,
+            market.buyer.id().as_bytes(),
+        );
+        let second_nonce = second.take_nonce();
+        let complete = BatchTransition::new_token_destroy_frozen_funds_transition(
+            market.token_id,
+            second.id(),
+            market.contract.id(),
+            0,
+            market.buyer.id(),
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &second.key,
+            second_nonce,
+            0,
+            &second.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the completion");
+        market.assert_executes(&complete, &at_time(1_000_002));
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(0));
+        for order_id in &listings[1..] {
+            assert_eq!(
+                market.escrow(*order_id),
+                None,
+                "every listing left is destroyed"
+            );
+            assert_eq!(market.listing(*order_id), None);
+        }
+        assert!(given > proposed, "the destroy grew with the cancel");
+        assert_eq!(market.supply(), BASE_SUPPLY - given);
+        market.assert_supply_balanced();
+        let records = market.history("destroyFrozenFunds");
+        assert_eq!(
+            records
+                .last()
+                .and_then(|record| record.properties().get("destroyedAmount"))
+                .and_then(|amount| amount.to_integer::<u64>().ok()),
+            Some(given),
+            "the record counts what the completion destroyed"
+        );
     }
 
     /// An offer holds credits, which are not the token issuer's to destroy: it stays, and the
