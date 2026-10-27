@@ -74,7 +74,7 @@ impl Drive {
 
     /// Verifies the producer's execution-proof layout using the caller's verifier rules.
     ///
-    /// `query_platform_version` selects whether the query includes an owner balance.
+    /// `query_platform_version` selects the document layout and whether the query includes an owner balance.
     /// All proof validation and decoding still use `platform_version`. The caller
     /// must authenticate the producer version together with the resulting root.
     ///
@@ -130,6 +130,7 @@ impl Drive {
                 block_info,
                 proof,
                 known_contracts_provider_fn,
+                query_platform_version,
                 platform_version,
             ),
             1 => Drive::verify_state_transition_was_executed_with_proof_v1(
@@ -137,6 +138,7 @@ impl Drive {
                 block_info,
                 proof,
                 known_contracts_provider_fn,
+                query_platform_version,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
