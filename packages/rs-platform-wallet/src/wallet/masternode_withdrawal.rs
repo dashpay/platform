@@ -956,10 +956,16 @@ mod tests {
             "an OWNER key cannot withdraw to a chosen address: {result:?}"
         );
 
+        // The mock answers only the identity fetch, so a key that passes the check fails at
+        // the next request, the nonce fetch.
         let result = withdraw(owner_key, None).await;
-        assert_eq!(
-            refusal(&result),
-            None,
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::InvalidIdentityData(message))
+                    if message.starts_with("masternode withdrawal failed")
+                        && message.contains("GetIdentityNonce")
+            ),
             "a CRITICAL ECDSA_HASH160 OWNER key passes and the withdrawal goes on: {result:?}"
         );
     }

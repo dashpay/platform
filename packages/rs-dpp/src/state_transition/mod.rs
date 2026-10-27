@@ -3032,7 +3032,8 @@ mod tests {
 
     #[cfg(feature = "state-transition-signing")]
     #[test]
-    fn should_agree_with_the_pre_sign_rule_on_keys_that_may_sign_a_non_batch_transition() {
+    fn should_refuse_only_a_contract_bound_authentication_key_for_a_non_batch_transition() {
+        use crate::consensus::signature::ContractBoundedKeyNonBatchError;
         use crate::identity::contract_bounds::ContractBounds;
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use strum::IntoEnumIterator;
@@ -3060,11 +3061,20 @@ mod tests {
                     ..Default::default()
                 }
                 .into();
+                let expected = purpose != Purpose::AUTHENTICATION || contract_bounds.is_none();
                 assert_eq!(
                     key.can_sign_non_batch(),
-                    transfer.verify_identity_key_bounds(&key).is_ok(),
+                    expected,
                     "{purpose:?} {contract_bounds:?}"
                 );
+                match transfer.verify_identity_key_bounds(&key) {
+                    Ok(()) => assert!(expected, "{purpose:?} {contract_bounds:?}"),
+                    Err(ProtocolError::ConsensusError(error)) => {
+                        assert!(!expected, "{purpose:?} {contract_bounds:?}");
+                        assert_eq!(*error, ContractBoundedKeyNonBatchError::new(7).into());
+                    }
+                    Err(other) => panic!("{purpose:?} {contract_bounds:?}: {other:?}"),
+                }
             }
         }
     }
