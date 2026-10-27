@@ -323,7 +323,7 @@ impl DocumentTypeInSerializationFormatV0 {
         // The levels named after a typed array fan the document out over its elements, as the
         // parse stamped them when the type was stored
         if !indexed_arrays.is_empty() {
-            index_structure.stamp_indexed_arrays(&indexed_arrays);
+            stamp_stored_indexed_arrays(&mut index_structure, &indexed_arrays);
         }
 
         // A stored form without a validation schema keeps its documents refused, as the
@@ -427,6 +427,19 @@ fn stamped_indexed_arrays(index_structure: &IndexLevel) -> BTreeMap<String, u16>
     let mut stamped = BTreeMap::new();
     collect(index_structure, &mut stamped);
     stamped
+}
+
+/// Stamps every level of `index_structure` keyed by one of `indexed_arrays` with its stored
+/// `maxItems`, at any depth, as generation 0 reads them back. Generation 0's own walk, apart
+/// from the parser's (`IndexLevel::stamp_indexed_arrays`), so that a change to how the parser
+/// stamps a fresh index structure never changes what generation 0 bytes read back as.
+fn stamp_stored_indexed_arrays(level: &mut IndexLevel, indexed_arrays: &BTreeMap<String, u16>) {
+    for (key, sub_level) in level.sub_levels_mut().iter_mut() {
+        if let Some(max_items) = indexed_arrays.get(key) {
+            sub_level.set_indexed_array_max_items(Some(*max_items));
+        }
+        stamp_stored_indexed_arrays(sub_level, indexed_arrays);
+    }
 }
 
 /// The typed validation schema to store with `document_type`: what it was read back with from

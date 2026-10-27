@@ -3,8 +3,8 @@
 //! signer wrote it, in format version 0 or 1, so the contract transitions refuse the stored format
 //! whatever reads them, at every protocol version: bincode and serde (JSON, platform values,
 //! JavaScript objects) both read their contract as a [`TransitionContractFormat`], which refuses
-//! the stored format at its tag, before any of it is read, as software without the format
-//! refuses it.
+//! the stored format at its tag, as software without the format refuses it, so none of its
+//! compiled types is built.
 
 #[cfg(feature = "serde-conversion")]
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;

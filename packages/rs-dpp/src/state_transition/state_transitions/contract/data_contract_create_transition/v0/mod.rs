@@ -32,9 +32,9 @@ use crate::version::PlatformVersion;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 /// Its decoding refuses a contract in format version 2, the stored format, which only state
-/// holds, at the format's tag, before any of the contract is read: bincode through a private copy
-/// of the struct, serde through the contract field's deserializer; both read the contract as a
-/// `TransitionContractFormat`.
+/// holds, at the format's tag, so none of its compiled types is built: bincode through a private
+/// copy of the struct, serde through the contract field's deserializer; both read the contract as
+/// a `TransitionContractFormat`, which says what each reads before the tag.
 #[derive(Debug, Clone, Encode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
