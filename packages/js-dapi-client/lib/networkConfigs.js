@@ -9,9 +9,9 @@ module.exports = {
       'seed-1.pshenmic.dev:1443',
     ],
     network: 'testnet',
-    // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
-    // that breaks test suite and application logic. Temporary solution is to hardcode
-    // reliable DCG testnet masternodes to connect. Should be removed when PoSe is introduced.
+    // Snapshot of testnet evonodes that were enabled and passed the version check.
+    // Regenerate it when it goes stale: if none of these is in the masternode list,
+    // default discovery fails with NoAvailableAddressesError.
     // Generate list with:
     //  curl https://quorums.testnet.networks.dash.org/masternodes | jq 'select(.success) | .data | map(select(.status=="ENABLED" and .versionCheck=="success") | .address | sub(":[0-9]+$"; ":1443")) | sort_by( split(":")[0] | split(".") | map(tonumber) )' // eslint-disable-line max-len
     dapiAddressesWhiteList: [
