@@ -107,7 +107,6 @@ mod tests {
                 ask::properties::PRICE,
                 ask::properties::AMOUNT,
                 ask::properties::REMAINING,
-                ask::properties::MIN_FILL,
             ],
             ask::properties::REMAINING,
         );
@@ -118,7 +117,6 @@ mod tests {
                 bid::properties::PRICE,
                 bid::properties::AMOUNT,
                 bid::properties::REMAINING,
-                bid::properties::MIN_FILL,
                 bid::properties::ESCROW,
             ],
             bid::properties::ESCROW,

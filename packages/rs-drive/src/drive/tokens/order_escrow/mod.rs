@@ -1065,7 +1065,6 @@ mod tests {
                     ("price".to_string(), Value::I64(100)),
                     ("amount".to_string(), Value::I64(remaining)),
                     ("remaining".to_string(), Value::I64(remaining)),
-                    ("minFill".to_string(), Value::I64(1)),
                     ("decimals".to_string(), Value::I64(decimals)),
                 ]),
                 revision: Some(1),

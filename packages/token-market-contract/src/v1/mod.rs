@@ -11,7 +11,6 @@ pub mod document_types {
             pub const PRICE: &str = "price";
             pub const AMOUNT: &str = "amount";
             pub const REMAINING: &str = "remaining";
-            pub const MIN_FILL: &str = "minFill";
             pub const DECIMALS: &str = "decimals";
         }
 
@@ -32,7 +31,6 @@ pub mod document_types {
             pub const PRICE: &str = "price";
             pub const AMOUNT: &str = "amount";
             pub const REMAINING: &str = "remaining";
-            pub const MIN_FILL: &str = "minFill";
             pub const ESCROW: &str = "escrow";
             pub const DECIMALS: &str = "decimals";
         }
