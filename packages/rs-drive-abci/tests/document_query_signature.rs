@@ -125,10 +125,12 @@ fn verify(
     .map_err(Box::new)
 }
 
-/// Answers are verified at the version that signed them.
+/// Answers are verified at the version that signed them, at every version from 13 through
+/// the latest.
 #[test]
 fn should_verify_a_signed_document_answer_at_its_signed_version() {
-    for producer in [previous(), latest()] {
+    for version in 13..=latest().protocol_version {
+        let producer = PlatformVersion::get(version).expect("known protocol version");
         let (contract, document, response) = signed_answer(producer);
         let documents = verify(&contract, response, producer)
             .expect("an answer verifies at the version that signed it")

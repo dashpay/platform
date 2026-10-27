@@ -467,11 +467,14 @@ fn should_refuse_document_answers_signed_below_the_verifier_version() {
     }
 }
 
+/// An answer signed at any version from 13 through the latest is verified at that version.
 #[test]
 fn should_verify_document_answers_at_the_version_that_signed_them() {
-    for verifier in VERIFIERS {
-        assert_reaches_proof_verification(verifier, previous().protocol_version, previous());
-        assert_reaches_proof_verification(verifier, latest().protocol_version, latest());
+    for version in 13..=latest().protocol_version {
+        let platform_version = PlatformVersion::get(version).expect("known protocol version");
+        for verifier in VERIFIERS {
+            assert_reaches_proof_verification(verifier, version, platform_version);
+        }
     }
 }
 

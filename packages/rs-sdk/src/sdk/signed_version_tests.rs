@@ -728,7 +728,9 @@ fn document_outcome_vectors(
 async fn should_verify_signed_document_outcome_layouts_without_lowering_security_or_pins() {
     let latest = PlatformVersion::latest().protocol_version;
     for pinned in [false, true] {
-        for (stored, producer) in [(latest, 13), (latest, 14), (13, 14)] {
+        for (stored, producer) in
+            (13..=latest).flat_map(|stored| [13, 14].map(|producer| (stored, producer)))
+        {
             let provider = DocumentOutcomeProvider::new(producer);
             let builder = SdkBuilder::new_mock()
                 .with_network(Network::Testnet)

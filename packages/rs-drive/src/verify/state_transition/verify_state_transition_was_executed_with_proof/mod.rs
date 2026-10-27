@@ -118,8 +118,8 @@ impl Drive {
             // producer's `prove_state_transition` generation, so either one verifies a
             // proof from any producer whose prover generation this build knows; an
             // unknown prover generation is refused. Protocol versions 1 to 13 select
-            // verifier and prover generation 0, and protocol version 14 selects 1 for
-            // both, so a proof checked at the version that made it runs the same body
+            // verifier and prover generation 0, and protocol versions from 14 select 1
+            // for both, so a proof checked at the version that made it runs the same body
             // with the layout that version's verifier generation named.
             0 | 1 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
