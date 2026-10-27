@@ -35,6 +35,7 @@ use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::utils::generate_random_identifier_struct;
@@ -2734,9 +2735,7 @@ fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
         }
     }
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
     let (envelope, _): (GroveDBProof, _) =
         bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
 
@@ -3108,9 +3107,7 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
     use grovedb::{Element, MerkProofDecoder, MerkProofNode, MerkProofOp};
     use std::collections::BTreeMap;
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
     let (envelope, _): (GroveDBProof, _) =
         bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
 
