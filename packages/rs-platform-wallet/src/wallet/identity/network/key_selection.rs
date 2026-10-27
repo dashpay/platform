@@ -33,6 +33,10 @@ pub(crate) const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
     KeyType::ECDSA_HASH160,
 ];
 
+/// The key types the wallet picks its own signing keys from. A key the caller chose is checked
+/// against [`PLATFORM_SIGNING_KEY_TYPES`] instead.
+pub(crate) const WALLET_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+
 /// What a signature authorizes, as far as a key's contract bounds go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningScope<'a> {
@@ -123,10 +127,10 @@ pub fn usable_signing_key<'a>(
 /// applies, so an explicit choice is refused before anything is built or signed.
 ///
 /// Each refusal is the typed error Platform itself returns for it: a purpose outside
-/// `purposes`, a security level outside `security_levels`, a key type outside `key_types`, a disabled key, an expired
-/// key, or contract bounds that do not cover `scope`. A key bound to a contract group is
-/// accepted: only Platform can read the group's memberships. A key `signer` cannot sign with
-/// is refused with the signer-unavailable error.
+/// `purposes`, a security level outside `security_levels`, a key type outside `key_types`, a
+/// disabled key, an expired key, or contract bounds that do not cover `scope`. A key bound to
+/// a contract group is accepted: only Platform can read the group's memberships. A key
+/// `signer` cannot sign with is refused with the signer-unavailable error.
 pub fn check_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,

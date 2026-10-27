@@ -14,13 +14,14 @@
 
 use super::super::key_selection::{
     check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+    WALLET_SIGNING_KEY_TYPES,
 };
 use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -30,9 +31,6 @@ use crate::wallet::identity::network::IdentityWallet;
 /// The security levels [`token_signing_key`] accepts: consensus takes only CRITICAL for a
 /// batch with a token transition.
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
-
-/// The key types [`token_signing_key`] picks from.
-const TOKEN_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
 
 /// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
 /// ECDSA key whose bounds cover the whole contract, since token operations are contract-wide.
@@ -46,7 +44,7 @@ fn token_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &TOKEN_SIGNING_LEVELS,
-        &TOKEN_SIGNING_KEY_TYPES,
+        &WALLET_SIGNING_KEY_TYPES,
         SigningScope::Contract {
             contract_id: token_contract_id,
         },
@@ -118,7 +116,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
-                key_types: TOKEN_SIGNING_KEY_TYPES.to_vec(),
+                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a token transition of contract {token_contract_id}"),
             })?
             .clone();
@@ -174,6 +172,7 @@ mod signing_tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
     use dpp::ProtocolError;

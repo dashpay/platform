@@ -26,9 +26,8 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
-use super::signing_key::{
-    contract_signing_key, CONTRACT_SIGNING_LEVELS, IDENTITY_SIGNING_KEY_TYPES,
-};
+use super::key_selection::WALLET_SIGNING_KEY_TYPES;
+use super::signing_key::{contract_signing_key, CONTRACT_SIGNING_LEVELS};
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
@@ -169,7 +168,7 @@ impl IdentityWallet {
                     identity_id: *owner_identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels: CONTRACT_SIGNING_LEVELS.to_vec(),
-                    key_types: IDENTITY_SIGNING_KEY_TYPES.to_vec(),
+                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-create state transition".to_string(),
                 })?
                 .clone()
@@ -383,7 +382,7 @@ impl IdentityWallet {
                     identity_id: *owner_identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels: CONTRACT_SIGNING_LEVELS.to_vec(),
-                    key_types: IDENTITY_SIGNING_KEY_TYPES.to_vec(),
+                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-update state transition".to_string(),
                 })?
                 .clone()

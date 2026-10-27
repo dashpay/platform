@@ -29,6 +29,7 @@
 
 use super::key_selection::{
     check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+    WALLET_SIGNING_KEY_TYPES,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -46,7 +47,7 @@ use dpp::document::DocumentV0Setters;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -102,9 +103,6 @@ where
     }
 }
 
-/// The key types [`document_signing_key`] picks from.
-pub(super) const DOCUMENT_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
-
 /// The key that signs a document batch in `scope` whose document type requires
 /// `requirement`: an AUTHENTICATION, ECDSA_SECP256K1 key at a level consensus accepts.
 pub(super) fn document_signing_key<'a>(
@@ -118,7 +116,7 @@ pub(super) fn document_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &SecurityLevel::accepted_for_requirement(requirement),
-        &DOCUMENT_SIGNING_KEY_TYPES,
+        &WALLET_SIGNING_KEY_TYPES,
         scope,
     )
 }
@@ -309,7 +307,7 @@ impl IdentityWallet {
                 identity_id: *owner_identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: SecurityLevel::accepted_for_requirement(required_level),
-                key_types: DOCUMENT_SIGNING_KEY_TYPES.to_vec(),
+                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a {document_type_name} document transition"),
             })?
             .clone()
@@ -1048,6 +1046,7 @@ mod tests {
         IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
     };
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
 
     const CONTRACT: [u8; 32] = [0xDA; 32];
 
