@@ -163,8 +163,9 @@ fn usable_signing_key_at<'a>(
 ///
 /// Each refusal is the consensus signature error Platform itself returns for it, checked in
 /// Drive's order: a key type outside `key_types`, a purpose outside `purposes`, a security
-/// level outside `security_levels`, a disabled key; then an expired key, or contract bounds
-/// that do not cover `scope`. A key bound to
+/// level outside `security_levels`, a disabled key (identity-signed validation); then contract
+/// bounds that do not cover `scope` (structure validation); then an expired key (fee
+/// validation). A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
 /// `signer` cannot sign with is refused with the signer-unavailable error. A key with an
 /// expiry is refused with [`dash_sdk::Error::Config`] when the system clock reads before the
@@ -230,20 +231,6 @@ fn check_signing_key_at(
             PublicKeyIsDisabledError::new(key.id()),
         )));
     }
-    if let Some(expires_at) = key.expires_at() {
-        let Some(now) = now else {
-            return Err(dash_sdk::Error::Config(format!(
-                "the system clock reads before the Unix epoch, so whether key {} has expired \
-                 cannot be told",
-                key.id()
-            )));
-        };
-        if key.is_expired_at(now) {
-            return Err(signature_refusal(SignatureError::PublicKeyExpiredError(
-                PublicKeyExpiredError::new(key.id(), expires_at, now),
-            )));
-        }
-    }
     match scope.bounds_check(key) {
         BatchedTransitionBoundsCheck::Allowed
         | BatchedTransitionBoundsCheck::RequiresContractGroupMembership { .. } => {}
@@ -260,6 +247,20 @@ fn check_signing_key_at(
                     ContractBoundedKeyOutOfBoundsError::new(key.id()),
                 ),
             ));
+        }
+    }
+    if let Some(expires_at) = key.expires_at() {
+        let Some(now) = now else {
+            return Err(dash_sdk::Error::Config(format!(
+                "the system clock reads before the Unix epoch, so whether key {} has expired \
+                 cannot be told",
+                key.id()
+            )));
+        };
+        if key.is_expired_at(now) {
+            return Err(signature_refusal(SignatureError::PublicKeyExpiredError(
+                PublicKeyExpiredError::new(key.id(), expires_at, now),
+            )));
         }
     }
     require_available(key, signer).map(|_| ())
@@ -981,5 +982,26 @@ pub(super) mod tests {
             ),
             "{refusal:?}"
         );
+    }
+
+    #[test]
+    fn should_report_contract_bounds_before_expiry_as_drive_does() {
+        let expired_elsewhere = bound_elsewhere(1).with_limits(None, Some(1));
+        assert!(matches!(
+            signature_error(check(&expired_elsewhere, document_scope())),
+            SignatureError::ContractBoundedKeyOutOfBoundsError(_)
+        ));
+        let expired_bound_here = bound_key(
+            2,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(CONTRACT),
+            }),
+        )
+        .with_limits(None, Some(1));
+        assert!(matches!(
+            signature_error(check(&expired_bound_here, SigningScope::NonBatch)),
+            SignatureError::ContractBoundedKeyNonBatchError(_)
+        ));
     }
 }
