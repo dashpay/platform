@@ -137,6 +137,7 @@ pub(super) fn credit_signing_key<'a>(
 
 #[cfg(test)]
 pub(super) mod tests {
+    use super::super::key_selection::tests::refused_purposes;
     use super::*;
     use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
@@ -496,20 +497,14 @@ pub(super) mod tests {
             ),
             "Platform refuses a disabled signing key"
         );
-        assert!(
-            matches!(
-                explicit(3, false),
-                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
-                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER]
-            ),
+        assert_eq!(
+            explicit(3, false).as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER]),
             "a credit transfer takes only a TRANSFER key"
         );
-        assert!(
-            matches!(
-                explicit(4, true),
-                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
-                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER, Purpose::OWNER]
-            ),
+        assert_eq!(
+            explicit(4, true).as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER, Purpose::OWNER]),
             "a withdrawal names both purposes it takes"
         );
         assert!(
@@ -597,12 +592,9 @@ pub(super) mod tests {
                 None,
             )
             .await;
-        assert!(
-            matches!(
-                explicit,
-                Err(dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error)))
-                    if error.allowed_key_purposes() == &vec![Purpose::TRANSFER]
-            ),
+        assert_eq!(
+            explicit.as_ref().err().and_then(refused_purposes),
+            Some(vec![Purpose::TRANSFER]),
             "Platform refuses an OWNER key for a withdrawal to a chosen address: {explicit:?}"
         );
     }

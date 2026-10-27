@@ -3,8 +3,9 @@
 
 use dpp::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use dpp::consensus::signature::{
-    ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError, PublicKeyExpiredError,
-    PublicKeyIsDisabledError, SignatureError,
+    ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
+    InvalidSignaturePublicKeyPurposeError, PublicKeyExpiredError, PublicKeyIsDisabledError,
+    SignatureError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::TokenContractPosition;
@@ -17,9 +18,7 @@ use dpp::identity::identity_public_key::contract_bounds::{
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
-use dpp::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, WrongPublicKeyPurposeError,
-};
+use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
@@ -199,13 +198,11 @@ fn check_signing_key_at(
     now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     if !purposes.contains(&key.purpose()) {
-        return Err(
-            ProtocolError::WrongPublicKeyPurposeError(WrongPublicKeyPurposeError::new(
-                key.purpose(),
-                purposes.to_vec(),
-            ))
-            .into(),
-        );
+        return Err(signature_refusal(
+            SignatureError::InvalidSignaturePublicKeyPurposeError(
+                InvalidSignaturePublicKeyPurposeError::new(key.purpose(), purposes.to_vec()),
+            ),
+        ));
     }
     if !security_levels.contains(&key.security_level()) {
         return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
@@ -672,6 +669,20 @@ pub(super) mod tests {
         }
     }
 
+    /// The purposes `error` names when it is Platform's purpose refusal.
+    pub(crate) fn refused_purposes(error: &dash_sdk::Error) -> Option<Vec<Purpose>> {
+        match error {
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(error)) => match error.as_ref()
+            {
+                ConsensusError::SignatureError(
+                    SignatureError::InvalidSignaturePublicKeyPurposeError(error),
+                ) => Some(error.allowed_key_purposes().clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn signature_error(result: Result<(), dash_sdk::Error>) -> SignatureError {
         match result {
             Err(dash_sdk::Error::Protocol(ProtocolError::ConsensusError(error))) => match *error {
@@ -702,12 +713,13 @@ pub(super) mod tests {
     fn should_refuse_an_explicit_key_with_the_error_platform_returns() {
         let mut wrong_purpose = key(1, SecurityLevel::HIGH);
         wrong_purpose.set_purpose(Purpose::TRANSFER);
-        assert!(matches!(
-            check(&wrong_purpose, document_scope()),
-            Err(dash_sdk::Error::Protocol(
-                ProtocolError::WrongPublicKeyPurposeError(_)
-            ))
-        ));
+        assert_eq!(
+            check(&wrong_purpose, document_scope())
+                .as_ref()
+                .err()
+                .and_then(refused_purposes),
+            Some(vec![Purpose::AUTHENTICATION])
+        );
         assert!(matches!(
             check(&key(1, SecurityLevel::MASTER), document_scope()),
             Err(dash_sdk::Error::Protocol(

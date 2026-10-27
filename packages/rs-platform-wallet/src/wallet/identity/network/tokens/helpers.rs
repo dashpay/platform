@@ -166,7 +166,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 #[cfg(test)]
 mod signing_tests {
     use super::*;
-    use crate::wallet::identity::network::key_selection::tests::{bound_key, key};
+    use crate::wallet::identity::network::key_selection::tests::{
+        bound_key, key, refused_purposes,
+    };
     use crate::wallet::identity::network::signing_key::tests::{
         assert_no_usable_key, identity as identity_with_keys, lock_checking_signer,
         wallet_with_identity, wallet_with_signing_keys, KeyFilter,
@@ -282,12 +284,9 @@ mod signing_tests {
             .await
             .err()
             .expect("the key must be refused");
-        assert!(
-            matches!(
-                burn,
-                dash_sdk::Error::Protocol(ProtocolError::WrongPublicKeyPurposeError(ref error))
-                    if error.allowed_key_purposes() == &vec![Purpose::AUTHENTICATION]
-            ),
+        assert_eq!(
+            refused_purposes(&burn),
+            Some(vec![Purpose::AUTHENTICATION]),
             "only a lone transfer or claim takes a TRANSFER key: {burn:?}"
         );
     }
