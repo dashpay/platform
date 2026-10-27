@@ -44,24 +44,27 @@ impl SigningScope<'_> {
     /// What `key`'s contract bounds say about signing in this scope: `Allowed`, `Denied`, or
     /// `RequiresContractGroupMembership` for a group-bound key, which only Platform can answer.
     /// Bounds limit only AUTHENTICATION keys, as in consensus, and a contract-bound
-    /// AUTHENTICATION key is `Denied` outside a batch.
+    /// AUTHENTICATION key is `Denied` outside a batch ([`IdentityPublicKey::can_sign_non_batch`]).
     pub fn bounds_check(&self, key: &IdentityPublicKey) -> BatchedTransitionBoundsCheck {
-        let bounds = match key.contract_bounds() {
-            Some(bounds) if key.purpose() == Purpose::AUTHENTICATION => bounds,
-            _ => return BatchedTransitionBoundsCheck::Allowed,
-        };
-        match *self {
-            SigningScope::NonBatch => BatchedTransitionBoundsCheck::Denied,
+        let (contract_id, bounds_scope) = match *self {
+            SigningScope::NonBatch if key.can_sign_non_batch() => {
+                return BatchedTransitionBoundsCheck::Allowed
+            }
+            SigningScope::NonBatch => return BatchedTransitionBoundsCheck::Denied,
             SigningScope::DocumentType {
                 contract_id,
                 document_type_name,
-            } => bounds.check_scope(
+            } => (
                 contract_id,
                 ContractBoundsScope::DocumentType(document_type_name),
             ),
-            SigningScope::Contract { contract_id } => {
-                bounds.check_scope(contract_id, ContractBoundsScope::Contract)
+            SigningScope::Contract { contract_id } => (contract_id, ContractBoundsScope::Contract),
+        };
+        match key.contract_bounds() {
+            Some(bounds) if key.purpose() == Purpose::AUTHENTICATION => {
+                bounds.check_scope(contract_id, bounds_scope)
             }
+            _ => BatchedTransitionBoundsCheck::Allowed,
         }
     }
 }
@@ -701,5 +704,44 @@ pub(super) mod tests {
             whole_contract().bounds_check(&group_bound),
             RequiresContractGroupMembership { contract_id, .. } if contract_id == contract
         ));
+    }
+
+    #[test]
+    fn should_deny_a_non_batch_signature_exactly_when_dpp_says_the_key_cannot_sign_one() {
+        let purposes = [
+            Purpose::AUTHENTICATION,
+            Purpose::ENCRYPTION,
+            Purpose::DECRYPTION,
+            Purpose::TRANSFER,
+            Purpose::SYSTEM,
+            Purpose::VOTING,
+            Purpose::OWNER,
+        ];
+        let contract_id = Identifier::from(CONTRACT);
+        let bounds = [
+            None,
+            Some(ContractBounds::SingleContract { id: contract_id }),
+            Some(ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name: DOCUMENT_TYPE.to_string(),
+            }),
+            Some(ContractBounds::ContractGroup { id: contract_id }),
+        ];
+        for purpose in purposes {
+            for contract_bounds in &bounds {
+                let mut key = bound_key(1, SecurityLevel::HIGH, contract_bounds.clone());
+                key.set_purpose(purpose);
+                let expected = if key.can_sign_non_batch() {
+                    BatchedTransitionBoundsCheck::Allowed
+                } else {
+                    BatchedTransitionBoundsCheck::Denied
+                };
+                assert_eq!(
+                    SigningScope::NonBatch.bounds_check(&key),
+                    expected,
+                    "{purpose:?} {contract_bounds:?}"
+                );
+            }
+        }
     }
 }
