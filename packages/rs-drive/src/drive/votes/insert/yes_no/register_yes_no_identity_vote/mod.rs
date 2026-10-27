@@ -41,7 +41,7 @@ impl Drive {
             .yes_no
             .register_yes_no_identity_vote
         {
-            0 => self.register_yes_no_identity_vote_v0(
+            Some(0) => self.register_yes_no_identity_vote_v0(
                 voter_pro_tx_hash,
                 strength,
                 vote,
@@ -49,10 +49,14 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_yes_no_identity_vote".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "register_yes_no_identity_vote".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -83,17 +87,21 @@ impl Drive {
             .yes_no
             .register_yes_no_identity_vote
         {
-            0 => self.register_yes_no_identity_vote_operations_v0(
+            Some(0) => self.register_yes_no_identity_vote_operations_v0(
                 voter_pro_tx_hash,
                 strength,
                 vote,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_yes_no_identity_vote_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "register_yes_no_identity_vote_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

@@ -147,5 +147,22 @@ describe('Vote', () => {
 
       vote.free();
     });
+
+    it('should refuse a resource vote on a yes/no poll', () => {
+      const yesNoPoll = wasm.VotePoll.fromJSON({
+        $type: 'yesNoVotePoll',
+        ...yesNoVoteJSON.votePoll,
+      });
+
+      expect(() => new wasm.Vote(yesNoPoll, wasm.ResourceVoteChoice.Abstain())).to.throw();
+
+      const vote = new wasm.Vote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+      expect(() => {
+        vote.poll = yesNoPoll;
+      }).to.throw();
+
+      vote.free();
+      yesNoPoll.free();
+    });
   });
 });

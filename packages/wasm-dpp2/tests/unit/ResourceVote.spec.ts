@@ -107,4 +107,25 @@ describe('ResourceVote', () => {
       vote.free();
     });
   });
+
+  it('should refuse a yes/no poll', () => {
+    const yesNoPoll = wasm.VotePoll.fromJSON({
+      $type: 'yesNoVotePoll',
+      resourcePath: ['wcHBwQ=='],
+      supermajorityNumerator: 2,
+      supermajorityDenominator: 3,
+      minimumVotingPower: { $type: 'absolute', votingPower: 400 },
+    });
+    const choice = wasm.ResourceVoteChoice.Abstain();
+
+    expect(() => new wasm.ResourceVote(yesNoPoll, choice)).to.throw();
+
+    const vote = new wasm.ResourceVote(createPoll(), choice);
+    expect(() => {
+      vote.poll = yesNoPoll;
+    }).to.throw();
+
+    vote.free();
+    yesNoPoll.free();
+  });
 });

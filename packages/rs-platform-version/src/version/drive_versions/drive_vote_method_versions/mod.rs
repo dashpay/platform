@@ -17,20 +17,19 @@ pub struct DriveVoteMethodVersions {
     pub yes_no: DriveVoteYesNoMethodVersions,
 }
 
-/// The methods of the yes/no poll kind. All of them are new in protocol version 15 and
-/// unreachable before it: opening a poll is not active before 15, and a vote naming a yes/no
-/// poll does not decode before 15.
+/// The methods of the yes/no poll kind. All of them are new in protocol version 15 and `None`
+/// (not active) in every earlier table: opening a poll is not active before 15, and a vote
+/// naming a yes/no poll does not decode before 15.
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteYesNoMethodVersions {
-    /// `None` before protocol version 15, where no yes/no poll may be opened.
     pub open_yes_no_vote_poll: OptionalFeatureVersion,
-    pub register_yes_no_identity_vote: FeatureVersion,
-    pub insert_stored_info_for_yes_no_vote_poll: FeatureVersion,
-    pub fetch_yes_no_vote_poll_stored_info: FeatureVersion,
-    pub fetch_identity_yes_no_vote: FeatureVersion,
-    pub fetch_identities_voting_in_yes_no_vote_poll: FeatureVersion,
-    pub remove_yes_no_vote_poll_votes_operations: FeatureVersion,
-    pub remove_yes_no_vote_references_given_by_identity: FeatureVersion,
+    pub register_yes_no_identity_vote: OptionalFeatureVersion,
+    pub insert_stored_info_for_yes_no_vote_poll: OptionalFeatureVersion,
+    pub fetch_yes_no_vote_poll_stored_info: OptionalFeatureVersion,
+    pub fetch_identity_yes_no_vote: OptionalFeatureVersion,
+    pub fetch_identities_voting_in_yes_no_vote_poll: OptionalFeatureVersion,
+    pub remove_yes_no_vote_poll_votes_operations: OptionalFeatureVersion,
+    pub remove_yes_no_vote_references_given_by_identity: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

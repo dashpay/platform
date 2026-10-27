@@ -38,17 +38,21 @@ impl Drive {
             .yes_no
             .fetch_identity_yes_no_vote
         {
-            0 => self.fetch_identity_yes_no_vote_v0(
+            Some(0) => self.fetch_identity_yes_no_vote_v0(
                 masternode_pro_tx_hash,
                 vote_poll_id,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_yes_no_vote".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_identity_yes_no_vote".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

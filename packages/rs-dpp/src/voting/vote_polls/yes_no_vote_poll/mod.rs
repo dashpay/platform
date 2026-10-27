@@ -74,9 +74,10 @@ pub enum YesNoMinimumVotingPower {
 
 impl YesNoMinimumVotingPower {
     /// The minimum as a voting power, given the total voting power of the masternode list when
-    /// the poll closes. A fraction with a zero denominator (refused when the poll opens) needs
-    /// more than any poll can gather.
-    pub fn resolve(&self, total_voting_power: VotingPower) -> VotingPower {
+    /// the poll closes, as `YesNoVotePoll::required_voting_power` version 0 resolves it. A
+    /// fraction with a zero denominator (refused when the poll opens) needs more than any poll
+    /// can gather.
+    fn resolve_v0(&self, total_voting_power: VotingPower) -> VotingPower {
         match *self {
             YesNoMinimumVotingPower::Absolute { voting_power } => voting_power,
             YesNoMinimumVotingPower::FractionOfTotal {
@@ -201,13 +202,38 @@ impl fmt::Display for YesNoVotePoll {
 }
 
 impl YesNoVotePoll {
-    /// Refuses parameters no poll can be opened with: an empty or oversized resource path (the
-    /// poll rides in every vote, whose wire size is bounded), a zero denominator, a zero
-    /// numerator (any single yes would pass against every no), a numerator that is not below
-    /// the denominator (yes could never exceed the whole of yes plus no), and a minimum above
-    /// its cap (a voting power, or a share of the total with a zero denominator or above the
-    /// allowed percentage).
+    /// Refuses parameters no poll can be opened with, by the rules the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_parameters`).
+    ///
+    /// # Parameters
+    /// - `platform_version`: the platform version, whose system limits bound the parameters.
+    ///
+    /// # Returns
+    /// `Ok(())` for parameters a poll can run with, or the error refusing them.
     pub fn validate_parameters(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match platform_version
+            .dpp
+            .voting_versions
+            .yes_no_vote_poll_parameters
+        {
+            0 => self.validate_parameters_v0(platform_version),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePoll::validate_parameters".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Version 0 refuses an empty or oversized resource path (the poll rides in every vote,
+    /// whose wire size is bounded), a zero denominator, a zero numerator (any single yes would
+    /// pass against every no), a numerator that is not below the denominator (yes could never
+    /// exceed the whole of yes plus no), and a minimum above its cap (a voting power, or a share
+    /// of the total with a zero denominator or above the allowed percentage).
+    fn validate_parameters_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -289,14 +315,75 @@ impl YesNoVotePoll {
     }
 
     /// The least yes plus no voting power the poll needs, given the total voting power of the
-    /// masternode list in the block that closes it.
-    pub fn required_voting_power(&self, total_voting_power: VotingPower) -> VotingPower {
-        self.minimum_voting_power.resolve(total_voting_power)
+    /// masternode list in the block that closes it, by the rule the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_decision`).
+    ///
+    /// # Parameters
+    /// - `total_voting_power`: the masternode list's total voting power in the closing block.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The required voting power.
+    pub fn required_voting_power(
+        &self,
+        total_voting_power: VotingPower,
+        platform_version: &PlatformVersion,
+    ) -> Result<VotingPower, ProtocolError> {
+        match platform_version
+            .dpp
+            .voting_versions
+            .yes_no_vote_poll_decision
+        {
+            0 => Ok(self.required_voting_power_v0(total_voting_power)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePoll::required_voting_power".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
     /// Whether the poll passes with these final tallies, given the total voting power of the
-    /// masternode list in the block that closes it. Abstaining power plays no part.
+    /// masternode list in the block that closes it, by the rule the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_decision`). Abstaining power plays no part.
+    ///
+    /// # Parameters
+    /// - `yes_voting_power`: the yes voting power cast.
+    /// - `no_voting_power`: the no voting power cast.
+    /// - `total_voting_power`: the masternode list's total voting power in the closing block.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// Whether the poll passes.
     pub fn passes(
+        &self,
+        yes_voting_power: VotingPower,
+        no_voting_power: VotingPower,
+        total_voting_power: VotingPower,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, ProtocolError> {
+        match platform_version
+            .dpp
+            .voting_versions
+            .yes_no_vote_poll_decision
+        {
+            0 => Ok(self.passes_v0(yes_voting_power, no_voting_power, total_voting_power)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePoll::passes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Version 0: the minimum resolved against the total, rounded as the poll asks.
+    fn required_voting_power_v0(&self, total_voting_power: VotingPower) -> VotingPower {
+        self.minimum_voting_power.resolve_v0(total_voting_power)
+    }
+
+    /// Version 0: yes plus no must reach the required voting power, and yes must be strictly
+    /// more than the supermajority share of yes plus no.
+    fn passes_v0(
         &self,
         yes_voting_power: VotingPower,
         no_voting_power: VotingPower,
@@ -304,7 +391,7 @@ impl YesNoVotePoll {
     ) -> bool {
         let yes = yes_voting_power as u64;
         let cast = yes + no_voting_power as u64;
-        if cast < self.required_voting_power(total_voting_power) as u64 {
+        if cast < self.required_voting_power_v0(total_voting_power) as u64 {
             return false;
         }
         yes * self.supermajority_denominator as u64 > cast * self.supermajority_numerator as u64
@@ -353,18 +440,18 @@ mod tests {
             ..poll()
         };
         // 300 cast: two thirds is 200, so 201 passes and 200 does not.
-        assert!(poll.passes(201, 99, 0));
-        assert!(!poll.passes(200, 100, 0));
+        assert!(poll.passes_v0(201, 99, 0));
+        assert!(!poll.passes_v0(200, 100, 0));
         // 301 cast: two thirds is 200.67, so 201 passes and 200 does not.
-        assert!(poll.passes(201, 100, 0));
-        assert!(!poll.passes(200, 101, 0));
+        assert!(poll.passes_v0(201, 100, 0));
+        assert!(!poll.passes_v0(200, 101, 0));
     }
 
     #[test]
     fn should_fail_below_the_minimum_voting_power_even_when_unanimous() {
         let poll = poll();
-        assert!(!poll.passes(399, 0, 0));
-        assert!(poll.passes(400, 0, 0));
+        assert!(!poll.passes_v0(399, 0, 0));
+        assert!(poll.passes_v0(400, 0, 0));
     }
 
     #[test]
@@ -374,30 +461,30 @@ mod tests {
             denominator: 3,
             rounding,
         };
-        assert_eq!(third(VotingPowerRounding::Down).resolve(10), 3);
-        assert_eq!(third(VotingPowerRounding::Up).resolve(10), 4);
+        assert_eq!(third(VotingPowerRounding::Down).resolve_v0(10), 3);
+        assert_eq!(third(VotingPowerRounding::Up).resolve_v0(10), 4);
         // An exact share is the same either way.
-        assert_eq!(third(VotingPowerRounding::Down).resolve(9), 3);
-        assert_eq!(third(VotingPowerRounding::Up).resolve(9), 3);
-        assert_eq!(third(VotingPowerRounding::Up).resolve(0), 0);
+        assert_eq!(third(VotingPowerRounding::Down).resolve_v0(9), 3);
+        assert_eq!(third(VotingPowerRounding::Up).resolve_v0(9), 3);
+        assert_eq!(third(VotingPowerRounding::Up).resolve_v0(0), 0);
         // Rounded down plus one, and rounded up minus one (never below zero).
-        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(10), 4);
-        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(9), 4);
-        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve(0), 1);
-        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(10), 3);
-        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(9), 2);
-        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve(0), 0);
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve_v0(10), 4);
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve_v0(9), 4);
+        assert_eq!(third(VotingPowerRounding::DownPlusOne).resolve_v0(0), 1);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve_v0(10), 3);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve_v0(9), 2);
+        assert_eq!(third(VotingPowerRounding::UpMinusOne).resolve_v0(0), 0);
         // Half rounded down plus one is a strict majority.
         let majority = YesNoMinimumVotingPower::FractionOfTotal {
             numerator: 1,
             denominator: 2,
             rounding: VotingPowerRounding::DownPlusOne,
         };
-        assert_eq!(majority.resolve(10), 6);
-        assert_eq!(majority.resolve(9), 5);
-        assert_eq!(majority.resolve(u32::MAX), u32::MAX / 2 + 1);
+        assert_eq!(majority.resolve_v0(10), 6);
+        assert_eq!(majority.resolve_v0(9), 5);
+        assert_eq!(majority.resolve_v0(u32::MAX), u32::MAX / 2 + 1);
         assert_eq!(
-            YesNoMinimumVotingPower::Absolute { voting_power: 400 }.resolve(10),
+            YesNoMinimumVotingPower::Absolute { voting_power: 400 }.resolve_v0(10),
             400
         );
         // No overflow on the largest total.
@@ -406,7 +493,7 @@ mod tests {
             denominator: 2,
             rounding: VotingPowerRounding::Up,
         };
-        assert_eq!(half.resolve(u32::MAX), u32::MAX / 2 + 1);
+        assert_eq!(half.resolve_v0(u32::MAX), u32::MAX / 2 + 1);
     }
 
     #[test]
@@ -421,11 +508,11 @@ mod tests {
             ..poll()
         };
         // A total of 3,801 needs 381 cast.
-        assert_eq!(poll.required_voting_power(3_801), 381);
-        assert!(!poll.passes(380, 0, 3_801));
-        assert!(poll.passes(381, 0, 3_801));
+        assert_eq!(poll.required_voting_power_v0(3_801), 381);
+        assert!(!poll.passes_v0(380, 0, 3_801));
+        assert!(poll.passes_v0(381, 0, 3_801));
         // The same tally fails once the list has grown.
-        assert!(!poll.passes(381, 0, 3_811));
+        assert!(!poll.passes_v0(381, 0, 3_811));
     }
 
     #[test]
@@ -484,8 +571,8 @@ mod tests {
             supermajority_denominator: 255,
             ..poll()
         };
-        assert!(poll.passes(u32::MAX, 0, 0));
-        assert!(!poll.passes(u32::MAX, u32::MAX, 0));
+        assert!(poll.passes_v0(u32::MAX, 0, 0));
+        assert!(!poll.passes_v0(u32::MAX, u32::MAX, 0));
     }
 
     #[test]

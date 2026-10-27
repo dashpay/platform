@@ -170,7 +170,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `transition_to_version_15` create. Masternode vote `transform_into_action`
 ///    1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
 ///    `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
-///    (`Drive::open_yes_no_vote_poll`, `open_yes_no_vote_poll` `Some(0)`) is active
+///    (`Drive::open_yes_no_vote_poll`; every `yes_no` drive method is `Some(0)`) is active
 ///    from this version, for an end date at most `max_yes_no_vote_poll_duration_ms`
 ///    (four weeks, a `SystemLimits` field read only by the opener) after the
 ///    opening block, and its end date entry goes through
@@ -180,7 +180,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    refused for want of a poll.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, open_yes_no_vote_poll Some(0) makes opening a yes/no poll active and add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags (note 8)
+    drive: DRIVE_VERSION_V10, // changed: vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method Some(0) makes yes/no polls active and add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags (note 8)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock

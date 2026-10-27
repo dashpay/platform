@@ -137,14 +137,20 @@ mod tests {
         vote_end_date_queries_tree_path, vote_root_path, ACTIVE_POLLS_TREE_KEY,
         IDENTITY_VOTES_TREE_KEY,
     };
+    use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::common::encode::encode_u64;
     use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_yes_no_vote_poll as poll;
     use crate::util::test_helpers::vote_poll_end_dates;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identifier::Identifier;
     use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+    use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use dpp::voting::vote_polls::VotePoll;
     use grovedb::batch::KeyInfoPath;
@@ -235,6 +241,94 @@ mod tests {
                 platform_version,
             )
             .expect_err("expected protocol version 14 to refuse opening a yes/no poll");
+    }
+
+    #[test]
+    fn should_report_every_yes_no_method_not_active_before_protocol_version_15() {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let vote_poll = poll();
+        let poll_id = vote_poll.unique_id().expect("id");
+        let not_active = |result: Result<(), Error>, method: &str| {
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::VersionNotActive { .. }))
+                ),
+                "expected {method} to be not active at protocol version 14, got {result:?}"
+            );
+        };
+        not_active(
+            drive
+                .register_yes_no_identity_vote_operations(
+                    [1; 32],
+                    1,
+                    ResolvedYesNoVote {
+                        vote_poll: vote_poll.clone(),
+                        vote_choice: YesNoAbstainVoteChoice::Yes,
+                        previous_vote_choice_to_remove: None,
+                    },
+                    None,
+                    platform_version,
+                )
+                .map(|_| ()),
+            "register_yes_no_identity_vote",
+        );
+        not_active(
+            YesNoVotePollStoredInfo::new(BlockInfo::default(), PlatformVersion::latest())
+                .map_err(|error| Error::Protocol(Box::new(error)))
+                .and_then(|stored_info| {
+                    drive.insert_stored_info_for_yes_no_vote_poll_operations(
+                        &vote_poll,
+                        stored_info,
+                        platform_version,
+                    )
+                })
+                .map(|_| ()),
+            "insert_stored_info_for_yes_no_vote_poll",
+        );
+        not_active(
+            drive
+                .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
+                .map(|_| ()),
+            "fetch_yes_no_vote_poll_stored_info",
+        );
+        not_active(
+            drive
+                .fetch_identity_yes_no_vote(
+                    Identifier::new([1; 32]),
+                    poll_id,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .map(|_| ()),
+            "fetch_identity_yes_no_vote",
+        );
+        not_active(
+            drive
+                .fetch_identities_voting_in_yes_no_vote_poll(&vote_poll, None, platform_version)
+                .map(|_| ()),
+            "fetch_identities_voting_in_yes_no_vote_poll",
+        );
+        not_active(
+            drive.remove_yes_no_vote_poll_votes_operations(
+                &[poll_id],
+                &mut vec![],
+                platform_version,
+            ),
+            "remove_yes_no_vote_poll_votes_operations",
+        );
+        not_active(
+            drive.remove_yes_no_vote_references_given_by_identity_operations(
+                &Identifier::new([1; 32]),
+                &[&poll_id],
+                &mut vec![],
+                None,
+                platform_version,
+            ),
+            "remove_yes_no_vote_references_given_by_identity",
+        );
     }
 
     #[test]

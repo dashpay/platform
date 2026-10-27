@@ -32,15 +32,19 @@ impl Drive {
             .yes_no
             .fetch_identities_voting_in_yes_no_vote_poll
         {
-            0 => self.fetch_identities_voting_in_yes_no_vote_poll_v0(
+            Some(0) => self.fetch_identities_voting_in_yes_no_vote_poll_v0(
                 vote_poll,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identities_voting_in_yes_no_vote_poll".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_identities_voting_in_yes_no_vote_poll".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

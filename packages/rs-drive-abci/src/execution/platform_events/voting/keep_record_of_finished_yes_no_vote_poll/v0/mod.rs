@@ -26,12 +26,14 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollResult, Error> {
-        let required_voting_power = vote_poll.required_voting_power(total_voting_power);
+        let required_voting_power =
+            vote_poll.required_voting_power(total_voting_power, platform_version)?;
         let passed = vote_poll.passes(
             tally.yes_voting_power,
             tally.no_voting_power,
             total_voting_power,
-        );
+            platform_version,
+        )?;
         let result = stored_info.finalize_vote_poll(
             tally.yes_voting_power,
             tally.no_voting_power,

@@ -93,11 +93,13 @@ impl VoteWasm {
         #[wasm_bindgen(js_name = "votePoll")] vote_poll: &VotePollWasm,
         #[wasm_bindgen(js_name = "resourceVoteChoice")]
         resource_vote_choice: &ResourceVoteChoiceWasm,
-    ) -> Self {
-        VoteWasm(Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: vote_poll.clone().into(),
-            resource_vote_choice: resource_vote_choice.clone().into(),
-        })))
+    ) -> WasmDppResult<Self> {
+        Ok(VoteWasm(Vote::ResourceVote(ResourceVote::V0(
+            ResourceVoteV0::try_new(
+                vote_poll.clone().into(),
+                resource_vote_choice.clone().into(),
+            )?,
+        ))))
     }
 
     #[wasm_bindgen(getter = poll)]
@@ -138,10 +140,9 @@ impl VoteWasm {
     #[wasm_bindgen(setter = poll)]
     pub fn set_poll(&mut self, poll: &VotePollWasm) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
-            Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-                vote_poll: poll.clone().into(),
-                resource_vote_choice: vote.resource_vote_choice(),
-            })),
+            Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(
+                ResourceVoteV0::try_new(poll.clone().into(), vote.resource_vote_choice())?,
+            )),
             Vote::YesNoVote(vote) => {
                 let VotePoll::YesNoVotePoll(vote_poll) = poll.clone().into() else {
                     return Err(WasmDppError::invalid_argument(

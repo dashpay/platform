@@ -31,15 +31,19 @@ impl Drive {
             .yes_no
             .remove_yes_no_vote_poll_votes_operations
         {
-            0 => self.remove_yes_no_vote_poll_votes_operations_v0(
+            Some(0) => self.remove_yes_no_vote_poll_votes_operations_v0(
                 vote_poll_ids,
                 batch_operations,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_yes_no_vote_poll_votes_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "remove_yes_no_vote_poll_votes_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

@@ -11,8 +11,8 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 ///   contested resource votes, which v1 still hands to it).
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
 ///   that left the list.
-/// * `yes_no.open_yes_no_vote_poll` is `Some(0)`: yes/no polls can be opened from this version
-///   (`None` in every earlier table).
+/// * every `yes_no` method is `Some(0)`: yes/no polls can be opened and voted on from this
+///   version (`None`, not active, in every earlier table).
 /// * `contested_resource_insert.add_vote_poll_end_date_query_operations` 1 adds only the entry
 ///   when the batch already queues an insert of the end date's tree with other storage flags (a
 ///   contest and a yes/no poll opening sharing an end date), where 0 queued the tree twice.
@@ -32,7 +32,13 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
     },
     yes_no: DriveVoteYesNoMethodVersions {
         open_yes_no_vote_poll: Some(0),
-        ..DRIVE_VOTE_METHOD_VERSIONS_V3.yes_no
+        register_yes_no_identity_vote: Some(0),
+        insert_stored_info_for_yes_no_vote_poll: Some(0),
+        fetch_yes_no_vote_poll_stored_info: Some(0),
+        fetch_identity_yes_no_vote: Some(0),
+        fetch_identities_voting_in_yes_no_vote_poll: Some(0),
+        remove_yes_no_vote_poll_votes_operations: Some(0),
+        remove_yes_no_vote_references_given_by_identity: Some(0),
     },
     ..DRIVE_VOTE_METHOD_VERSIONS_V3
 };

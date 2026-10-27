@@ -1394,19 +1394,15 @@ async fn run_a_contest_and_strip_yes_no_polls(protocol_version: u32) {
         )
         .await
         .expect_err("expected the vote to be stripped");
-        // Protocol version 14 decodes with `decode_raw_state_transitions` 1, which reports a
-        // transition not active yet as an unpaid consensus error; 13 reports it as an internal
-        // error. Both strip the vote without charging.
-        if protocol_version >= 14 {
-            assert_matches!(
-                result,
-                UnpaidConsensusError(ConsensusError::BasicError(
-                    BasicError::StateTransitionNotActiveError(_)
-                ))
-            );
-        } else {
-            assert_matches!(result, InternalError(message) if message.contains("is not active"));
-        }
+        // Both decoding generations (`decode_raw_state_transitions` 0 at 13, 1 at 14) report a
+        // transition not active yet as an unpaid consensus error, which strips the vote without
+        // charging.
+        assert_matches!(
+            result,
+            UnpaidConsensusError(ConsensusError::BasicError(
+                BasicError::StateTransitionNotActiveError(_)
+            ))
+        );
     }
 
     // Nonce 1 is still free: the stripped votes consumed nothing.
