@@ -486,8 +486,8 @@ pub enum StaleNodeError {
     /// A document query answer is not verified with the rules of another protocol version than
     /// the one that signed it. The SDK may be set ahead of its network, where every node answers
     /// this way, so the node is not banned: the request moves to another node. A request whose
-    /// every attempt ends with this error fails with [`Error::Config`] instead (wrapped in
-    /// [`Error::NoAvailableAddressesToRetry`] when no node is left to ask).
+    /// every attempt ends with this error fails with [`Error::Config`] instead, also when no
+    /// node is left to ask.
     #[error("received protocol version {received_protocol_version} is below the SDK's protocol version {expected_protocol_version}; try another server")]
     ProtocolVersion {
         /// Protocol version the SDK verifies the query with
