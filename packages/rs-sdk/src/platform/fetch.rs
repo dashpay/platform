@@ -19,6 +19,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
@@ -186,6 +187,10 @@ where
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
+        check_before_sending::<<Self as Fetch>::Query, Self>(
+            &owned_rich,
+            settings.protocol_version,
+        )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
         let required_protocol_version = wire.needs_protocol_version();
@@ -293,6 +298,22 @@ where
     {
         Self::fetch(sdk, id).await
     }
+}
+
+/// Refuse, before it is sent, a request that `O` cannot be verified from
+/// ([`FromProof::check_request`]), at the `platform_version` it was encoded with.
+///
+/// The refusal is the caller's mistake, not a node's, so it is a non-retryable
+/// [`Error::Config`] rather than the retried [`Error::Proof`] the verifier would
+/// return for the same request once a node had answered it.
+pub(super) fn check_before_sending<R, O: FromProof<R>>(
+    request: &O::Request,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    O::check_request(request, platform_version).map_err(|error| match error {
+        drive_proof_verifier::Error::RequestError { error } => Error::Config(error),
+        error => Error::Config(error.to_string()),
+    })
 }
 
 impl Fetch for Identity {

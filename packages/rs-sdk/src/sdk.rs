@@ -49,6 +49,8 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
 #[cfg(all(test, feature = "mocks"))]
+mod document_query_shape_tests;
+#[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;
 mod protocol_gate;
 #[cfg(all(test, feature = "mocks"))]
