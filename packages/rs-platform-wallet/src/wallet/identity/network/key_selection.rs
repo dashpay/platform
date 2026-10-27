@@ -965,4 +965,19 @@ pub(super) mod tests {
             BatchedTransitionBoundsCheck::Denied
         );
     }
+
+    #[test]
+    fn should_report_a_wrong_key_type_before_a_wrong_purpose_as_drive_does() {
+        let mut both_wrong = key(1, SecurityLevel::HIGH);
+        both_wrong.set_purpose(Purpose::TRANSFER);
+        both_wrong.set_key_type(KeyType::ECDSA_HASH160);
+        let refusal = check(&both_wrong, document_scope());
+        assert!(
+            matches!(
+                refusal.as_ref().err().and_then(signature_refusal_of),
+                Some(SignatureError::InvalidIdentityPublicKeyTypeError(_))
+            ),
+            "{refusal:?}"
+        );
+    }
 }
