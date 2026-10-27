@@ -14,6 +14,7 @@ mod serialization {
     pub use dpp::serialization::PlatformDeserializableTrusted;
 }
 use dpp::ProtocolError;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 #[derive(
     bincode::Encode, bincode::Decode, platform_serialization_derive::PlatformDeserializeTrusted,
@@ -27,11 +28,8 @@ struct LocalFixture(Vec<u8>);
 fn should_allow_trusted_only_fixtures_without_untrusted_traits() {
     use dpp::serialization::PlatformDeserializableTrusted;
 
-    let bytes = bincode::encode_to_vec(
-        LocalFixture(vec![1, 2, 3]),
-        config::standard().with_big_endian(),
-    )
-    .unwrap();
+    let bytes =
+        bincode::encode_to_vec(LocalFixture(vec![1, 2, 3]), PLATFORM_BINCODE_CONFIG).unwrap();
     assert_eq!(
         LocalFixture::deserialize_from_bytes_trusted(&bytes)
             .unwrap()
@@ -42,7 +40,7 @@ fn should_allow_trusted_only_fixtures_without_untrusted_traits() {
 
 #[test]
 fn should_reject_missing_script_in_unlimited_state_transition_decoder() {
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     // IdentityCreditWithdrawal V0, through the first allocating field.
     let mut bytes =
         bincode::encode_to_vec((5u32, 0u32, [0u8; 32], 1_000u64, 1u32, 0u32), config).unwrap();
@@ -56,7 +54,7 @@ fn should_decode_binary_scripts_with_owned_and_borrowed_untrusted_apis() {
     // Include embedded NULs and cross the old custom borrowed decoder's chunk
     // size. Both untrusted APIs must preserve the length-prefixed wire format.
     let script = CoreScript::from_bytes(vec![0; 1_025]);
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let bytes = bincode::encode_to_vec(&script, config).unwrap();
     let ordinary = bincode::decode_from_slice::<CoreScript, _>(&bytes, config).unwrap();
     let guarded = bincode::decode_from_slice_untrusted::<CoreScript, _>(&bytes, config).unwrap();
@@ -96,7 +94,7 @@ fn should_preserve_asset_lock_serde_wire_format_and_reject_missing_payloads() {
         core_chain_locked_height: 42,
         out_point: dpp::dashcore::OutPoint::null(),
     });
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let bytes = bincode::encode_to_vec(&proof, config).unwrap();
     let ordinary = bincode::decode_from_slice::<AssetLockProof, _>(&bytes, config).unwrap();
     let guarded =
@@ -120,7 +118,7 @@ fn should_preserve_foreign_txid_serde_encoding_in_consensus_errors() {
         Txid::from_byte_array([1; 32]),
         Txid::from_byte_array([2; 32]),
     );
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let bytes = bincode::encode_to_vec(&value, config).unwrap();
     let decoded =
         IdentityAssetLockProofLockedTransactionMismatchError::deserialize_from_bytes_untrusted(
@@ -142,7 +140,7 @@ fn should_preserve_foreign_txid_serde_encoding_in_consensus_errors() {
 fn should_report_consumed_bytes_and_refuse_a_suffix() {
     use dpp::serialization::PlatformDeserializableTrusted;
 
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let mut bytes = bincode::encode_to_vec(LocalFixture(vec![1, 2, 3]), config).unwrap();
     let value_len = bytes.len();
     bytes.extend([9, 9]);
@@ -186,7 +184,7 @@ fn should_apply_the_types_own_budget_to_the_exact_untrusted_decoder() {
         disabled_at: None,
     }
     .into();
-    let bytes = bincode::encode_to_vec(&key, config::standard().with_big_endian()).unwrap();
+    let bytes = bincode::encode_to_vec(&key, PLATFORM_BINCODE_CONFIG).unwrap();
 
     assert!(matches!(
         IdentityPublicKey::deserialize_from_bytes_untrusted_exact(&bytes),

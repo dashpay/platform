@@ -63,6 +63,15 @@ impl<T> HandleStorage<T> {
         self.items.write().remove(&handle)
     }
 
+    /// Test probe: whether a fresh shared read of the registry would be
+    /// refused right now. With a reader holding the registry, that is the
+    /// case exactly while a writer is queued behind it (parking_lot prefers
+    /// the queued writer and parks every new reader).
+    #[cfg(test)]
+    pub(crate) fn try_read_refused(&self) -> bool {
+        self.items.try_read().is_none()
+    }
+
     pub fn with_item<F, R>(&self, handle: Handle, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,

@@ -503,15 +503,21 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                             start_at: None,
                             order_ascending: true,
                         };
-                        let (root, votes): (_, BTreeMap<Identifier, ResourceVote>) = query
-                            .verify_identity_votes_given_proof(
+                        let (root, votes) = query
+                            .verify_identity_votes_given_proof::<BTreeMap<_, _>>(
                                 &proof.grovedb_proof,
                                 lookup.as_ref(),
                                 version,
                             )
                             .expect("original identity votes proof");
                         assert_eq!(root, stored_root);
-                        assert_eq!(votes, expected_vote_page);
+                        assert_eq!(
+                            votes,
+                            expected_vote_page
+                                .into_iter()
+                                .map(|(id, vote)| (id, (vote, 1)))
+                                .collect()
+                        );
                     }
                 }
             }

@@ -107,6 +107,8 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
     public static let dashpayPayments: UInt64 = 1 << 12
+    /// Durable operation UUIDs, including consumed asset-lock tombstones.
+    public static let assetLockOperationIds: UInt64 = 1 << 13
 
     public let version: UInt32
     public let bits: UInt64
@@ -160,15 +162,18 @@ public struct PlatformWalletShutdownMetrics: Sendable {
     }
 }
 
-/// Native entry points used by the production teardown orchestration.
+/// Native entry points used by the production teardown orchestration, plus
+/// the SPV start that shares the SPV lifecycle queue with the SPV stop.
 ///
 /// Keeping the functions injectable as a group lets tests exercise the real
 /// ordering, timing, result mapping, and logging in
-/// [`PlatformWalletManager.performNativeTeardown`] without calling Rust. The
-/// unchecked conformance is intentional: these closures are immutable C-entry
-/// wrappers, and the whole value is copied onto the dedicated destroy queue.
+/// [`PlatformWalletManager.performNativeTeardown`] and the async SPV
+/// lifecycle overloads without calling Rust. The unchecked conformance is
+/// intentional: these closures are immutable C-entry wrappers, and the whole
+/// value is copied onto the dedicated destroy queue.
 struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
     typealias Call = @Sendable (Handle) -> PlatformWalletFFIResult
+    typealias StartCall = @Sendable (Handle, PlatformSpvStartConfig) -> PlatformWalletFFIResult
 
     let spvStop: Call
     let platformAddressSyncStop: Call
@@ -176,6 +181,28 @@ struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
     let dashPaySyncStop: Call
     let dpnsSyncStop: Call
     let destroy: Call
+    /// The blocking native SPV start behind the async
+    /// [`PlatformWalletManager.startSpv(config:)`]. Defaults to the real
+    /// marshalling wrapper so the teardown-only test tables need no change.
+    let spvStart: StartCall
+
+    init(
+        spvStop: @escaping Call,
+        platformAddressSyncStop: @escaping Call,
+        shieldedSyncStop: @escaping Call,
+        dashPaySyncStop: @escaping Call,
+        dpnsSyncStop: @escaping Call,
+        destroy: @escaping Call,
+        spvStart: @escaping StartCall = PlatformWalletManager.startSpvNative
+    ) {
+        self.spvStop = spvStop
+        self.platformAddressSyncStop = platformAddressSyncStop
+        self.shieldedSyncStop = shieldedSyncStop
+        self.dashPaySyncStop = dashPaySyncStop
+        self.dpnsSyncStop = dpnsSyncStop
+        self.destroy = destroy
+        self.spvStart = spvStart
+    }
 
     static let live = PlatformWalletNativeTeardownCalls(
         spvStop: platform_wallet_manager_spv_stop,
@@ -183,7 +210,8 @@ struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
         shieldedSyncStop: platform_wallet_manager_shielded_sync_stop,
         dashPaySyncStop: platform_wallet_manager_dashpay_sync_stop,
         dpnsSyncStop: platform_wallet_manager_dpns_sync_stop,
-        destroy: platform_wallet_manager_destroy
+        destroy: platform_wallet_manager_destroy,
+        spvStart: PlatformWalletManager.startSpvNative
     )
 }
 
@@ -785,18 +813,23 @@ public class PlatformWalletManager: ObservableObject {
         qos: .userInitiated
     )
 
-    /// Runs the blocking native stop behind the async [`stopSpv()`]. The
-    /// Rust stop waits for the SPV run loop to finish its current sync tick
-    /// and drain its tasks — up to 15 s for the client stop and 15 s for the
-    /// run-loop join plus a 2 s abort grace, about 32 s in all, after any SPV
-    /// broadcast still waiting for acceptance — so it must park a plain GCD
-    /// thread: never the main thread, and never
-    /// a Swift Concurrency cooperative-pool thread. Per-manager, not
-    /// [`destroyQueue`]: a slow SPV stop must not hold up other managers'
-    /// creates, loads and teardowns on that process-wide queue. Internal so
-    /// the SPV extension can dispatch to it.
-    let spvStopQueue = DispatchQueue(
-        label: "org.dash.platform-wallet.spv-stop",
+    /// Runs the blocking native SPV start and stop behind the async
+    /// [`startSpv(config:)`] and [`stopSpv()`]. Both park for a long time:
+    /// the Rust start opens the SPV disk store, which can run a one-time
+    /// storage migration taking many seconds; the Rust stop waits for the SPV
+    /// run loop to finish its current sync tick and drain its tasks — up to
+    /// 15 s for the client stop and 15 s for the run-loop join plus a 2 s
+    /// abort grace, about 32 s in all, after any SPV broadcast still waiting
+    /// for acceptance. So both must park a plain GCD thread: never the main
+    /// thread, and never a Swift Concurrency cooperative-pool thread. One
+    /// serial queue for both so this manager's async start and stop never
+    /// overlap: an async stop issued during a slow start simply runs after
+    /// it, and stops the client that start brought up.
+    /// Per-manager, not [`destroyQueue`]: a slow SPV start or stop must not
+    /// hold up other managers' creates, loads and teardowns on that
+    /// process-wide queue. Internal so the SPV extension can dispatch to it.
+    let spvLifecycleQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.spv-lifecycle",
         qos: .userInitiated
     )
 
@@ -804,6 +837,13 @@ public class PlatformWalletManager: ObservableObject {
     /// [`startSpv(config:)`] refuses to start while one is in flight.
     /// Internal so the SPV extension can maintain it.
     var spvStopsInFlight = 0
+
+    /// Async SPV starts between admission and completion. A second
+    /// [`startSpv(config:)`], the blocking [`stopSpv()`] and
+    /// [`clearSpvStorage()`] are refused while one is in flight; the async
+    /// [`stopSpv()`] queues behind it on [`spvLifecycleQueue`]. Internal so
+    /// the SPV extension can maintain it.
+    var spvStartsInFlight = 0
 
     /// Async shielded-sync stops between admission and completion. While one
     /// is in flight the shielded progress events are dropped, a completion is
@@ -2377,13 +2417,20 @@ public class PlatformWalletManager: ObservableObject {
     /// session. Rust's `resume_asset_lock` gives the SPV transport a
     /// bounded chance to come up before it broadcasts. Gating here
     /// would delay the locks that need no broadcast at all, and a gate
-    /// that waited on the same thread pool the host needs to *reach*
-    /// `startSpv` would delay the transport it is waiting for.
+    /// that waited on the same thread pool the host needs to *reach* the
+    /// async `startSpv(config:)` would delay the transport it is waiting
+    /// for.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
             let walletId = wallet.walletId
-            let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            let locks: [PlatformWalletPersistenceHandler.AssetLockEntrySnapshot]
+            do {
+                locks = try persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            } catch {
+                self.lastError = error
+                continue
+            }
             let pending = locks.filter { $0.statusRaw < 2 }
             if pending.isEmpty { continue }
 

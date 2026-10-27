@@ -9,9 +9,9 @@ use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
+use secp256k1::SecretKey;
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -78,7 +78,7 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
     key_type: KeyType,
     data: &BinaryData,
     private_key_bytes: &[u8; 32],
-    network: Network,
+    _network: Network,
 ) -> Result<bool, ProtocolError> {
     match key_type {
         KeyType::ECDSA_SECP256K1 => {
@@ -86,9 +86,9 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
-            let private_key = dashcore::PrivateKey::new(secret_key, network);
+            let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
 
-            Ok(private_key.public_key().to_bytes() == data.as_slice())
+            Ok(public_key.serialize().as_slice() == data.as_slice())
         }
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
@@ -112,12 +112,9 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
-            let private_key = dashcore::PrivateKey::new(secret_key, network);
+            let public_key = secp256k1::PublicKey::from_secret_key(&secret_key);
 
-            Ok(
-                ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).as_slice()
-                    == data.as_slice(),
-            )
+            Ok(ripemd160_sha256(public_key.serialize().as_slice()).as_slice() == data.as_slice())
         }
         KeyType::EDDSA_25519_HASH160 => {
             #[cfg(feature = "ed25519-dalek")]
