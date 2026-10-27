@@ -237,11 +237,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///     the change in the offer's running total rounded down out of the escrow); a
 ///     `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
-///     same `is_allowed` gate. An offer's terms are checked as a listing's are; it signs the
-///     decimals its price is at, is refused unless they are the token's
-///     (`TokenOrderDecimalsMismatchError`, with the batch `advanced_structure`, as a listing's), and records them: its
-///     escrow and every sale into it are priced at them. Their
-///     validations and converters are 0 in every table.
+///     same `is_allowed` gate. An offer's terms are checked as a listing's are, and like a
+///     listing it names no decimals: it records the token's decimals when it is placed (note 8),
+///     its escrow is worked out at them (an offer worth more than an order holds bumps the nonce
+///     with `InvalidTokenOrderValueError` 10465), and every sale into it is priced at them; a
+///     sale reads the token's minimum fill as the token has it then. Their validations and
+///     converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 9)

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::token::InvalidTokenOrderValueError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_place_bid_transition::v0::TokenPlaceBidTransitionV0;
@@ -13,7 +16,6 @@ use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::v0::TokenPlaceBidTransitionActionV0;
@@ -23,13 +25,13 @@ use crate::state_transition_action::batch::BatchedTransitionAction;
 impl TokenPlaceBidTransitionActionV0 {
     /// Converts a borrowed `TokenPlaceBidTransitionV0` into an action. The offer's order id
     /// follows from the token, the buyer and the nonce, and its escrow is what it is worth at the
-    /// token's decimals, rounded up (the transition's structure refuses an offer worth more than
-    /// an order holds); one naming a token its contract
-    /// does not define with `ContractHasNoTokensError` or `InvalidTokenPositionError`. The offer
-    /// signs the decimals its price is at, which this conversion takes as given: the batch's
-    /// advanced-structure validation refuses them with `TokenOrderDecimalsMismatchError` unless
-    /// they are the token's. The order records them, and they price every sale into it. The
-    /// buyer's credits are checked with the batch's fees, which count the escrow as a purchase.
+    /// token's decimals as the token has them now, rounded up; the order records those decimals
+    /// (the token market contract declares them `generatedFrom` `sys.tokens.decimals` of the
+    /// order's token), and they price every sale into it. An offer worth more than an order holds
+    /// bumps the nonce with `InvalidTokenOrderValueError`, and one naming a token its contract
+    /// does not define with `ContractHasNoTokensError` or `InvalidTokenPositionError`. The token's
+    /// other rules (tradeable, the minimum fill) are checked with the batch's advanced structure,
+    /// and the buyer's credits with the batch's fees, which count the escrow as a purchase.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_place_bid_transition_with_contract_lookup(
         drive: &Drive,
@@ -52,8 +54,6 @@ impl TokenPlaceBidTransitionActionV0 {
             base,
             amount,
             price,
-            decimals,
-            min_fill,
         } = value;
 
         let mut drive_operations = vec![];
@@ -97,17 +97,15 @@ impl TokenPlaceBidTransitionActionV0 {
         if let Err(error) = base_action.token_configuration_or_position_error() {
             return bump(vec![error], fee_result);
         }
-        // The offer's escrow is what it is worth at the decimals it was signed at. The batch's
-        // advanced structure refuses the offer unless they are the token's
-        // (`TokenOrderDecimalsMismatchError`), as it does a listing's, before anything executes.
-        let decimals = *decimals;
-        // The transition's structure validation refuses an offer worth more than an order holds
-        // (`InvalidTokenOrderValueError`), so this is worked out for one that fits.
-        let escrow = TokenOrder::order_value(*amount, *price, decimals).ok_or(Error::Drive(
-            DriveError::CorruptedCodeExecution(
-                "an offer that passed structure validation is worth what an order holds",
-            ),
-        ))?;
+        // The offer is priced, and its escrow worked out, at the token's decimals as the token
+        // has them now, for its life
+        let decimals = base_action.token_configuration()?.conventions().decimals();
+        let Some(escrow) = TokenOrder::order_value(*amount, *price, decimals) else {
+            return bump(
+                vec![InvalidTokenOrderValueError::new(*amount, *price, decimals).into()],
+                fee_result,
+            );
+        };
 
         let (order_id, order_id_fee) = derive_order_id(
             drive,
@@ -127,7 +125,6 @@ impl TokenPlaceBidTransitionActionV0 {
             price: *price,
             amount: *amount,
             remaining: *amount,
-            min_fill: *min_fill,
             escrow,
             decimals,
         }
@@ -140,7 +137,6 @@ impl TokenPlaceBidTransitionActionV0 {
                     order_id,
                     amount: *amount,
                     price: *price,
-                    min_fill: *min_fill,
                     decimals,
                     escrow,
                     order_document,

@@ -364,7 +364,7 @@ mod tests {
     /// paid, so it follows from what is filled alone.
     #[test]
     fn should_know_what_an_offer_holds_after_its_fills() {
-        let mut offer = order(TokenOrderSide::Bid, 1001, 1001, 1);
+        let mut offer = order(TokenOrderSide::Bid, 1001, 1001);
         offer.escrow = TokenOrder::order_value(1001, 333, 2).expect("expected a value");
         assert_eq!(offer.escrow_after_fills(), Some(offer.escrow));
         while offer.remaining > 0 {
@@ -375,7 +375,7 @@ mod tests {
         }
         assert_eq!(offer.escrow, 1, "the dust the buyer gets back");
         assert_eq!(
-            order(TokenOrderSide::Ask, 10, 10, 1).escrow_after_fills(),
+            order(TokenOrderSide::Ask, 10, 10).escrow_after_fills(),
             None
         );
     }

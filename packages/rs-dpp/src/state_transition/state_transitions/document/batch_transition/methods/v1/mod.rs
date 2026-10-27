@@ -636,8 +636,6 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         token_contract_position: u16,
         amount: TokenAmount,
         price: Credits,
-        decimals: u8,
-        min_fill: TokenAmount,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

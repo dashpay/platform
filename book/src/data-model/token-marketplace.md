@@ -194,12 +194,13 @@ an offer.
 
 | Transition | Fields | Effect |
 |---|---|---|
-| `TokenPlaceBid` | `amount`, `price`, `decimals`, `minFill` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
+| `TokenPlaceBid` | `amount`, `price` | Moves what the offer is worth from the buyer's credits into escrow and records a `bid` |
 | `TokenFillBid` | `orderId`, `minAmount`, `maxAmount`, `minTotalReceived` | Moves part or all of the amount still wanted from the seller to the buyer, and its price from the escrow to the seller |
 
 An offer holds what it is worth, its amount at its price rounded up, and its `escrow` property
 says what is left. Like a listing it records the token's decimals when it is placed, and its
-escrow and every sale into it are worked out at them. Each sale is paid the change in the offer's running total rounded down, so the
+escrow and every sale into it are worked out at them: what an offer commits depends on the
+token's decimals when it executes, which the transition does not name. Each sale is paid the change in the offer's running total rounded down, so the
 payments never add up past the escrow; when the offer closes, by a sale that takes everything
 still wanted or by a cancel, whatever is left goes back to the buyer:
 
@@ -214,9 +215,9 @@ as it does for a listing, and a sale is refused when it would be paid less than
 
 | Rule | Refused with |
 |---|---|
-| The terms of a listing (amount, price, minimum fill, value), and a sale's fill range | The listing's basic errors (10458, 10462, 10463, 10465), unpaid |
+| The amount and price of a listing, and a sale's fill range | The listing's basic errors (10458, 10462, 10463), unpaid |
 | The contract defines the token | `ContractHasNoTokensError`, `InvalidTokenPositionError` |
-| An offer's `decimals` are the token's | `TokenOrderDecimalsMismatchError` (40758), in check_tx too |
+| The amount at least the token's `minFill`, and what the offer is worth at the token's decimals at most `i64::MAX` credits | `InvalidTokenOrderFillRangeError` (10463), `InvalidTokenOrderValueError` (10465), in check_tx too |
 | The token is tradeable (to place or sell into) | `TokenNotTradeableError` (40750), in check_tx too |
 | A seller does not sell into their own offer | `TokenOrderSelfFillError` (40756) |
 | The seller holds the amount the sale takes | `IdentityDoesNotHaveEnoughTokenBalanceError` |

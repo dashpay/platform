@@ -1457,15 +1457,16 @@ impl Drive {
                                 };
                                 let order =
                                     TokenOrder::from_document(&document, TokenOrderSide::Bid)?;
+                                // The decimals are the token's when the offer was placed, which
+                                // the platform recorded and the proof holds; the escrow is
+                                // checked at them.
                                 if order.token_id != token_id
                                     || order.maker_id != owner_id
                                     || order.price != token_place_bid_transition.price()
-                                    || order.decimals != token_place_bid_transition.decimals()
                                     || order.amount != token_place_bid_transition.amount()
                                     || order.remaining == 0
                                     || order.remaining > order.amount
                                     || Some(order.escrow) != order.escrow_after_fills()
-                                    || order.min_fill != token_place_bid_transition.min_fill()
                                 {
                                     return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
                                         "proof of the offer {} does not hold the terms of state transition (token place bid)",

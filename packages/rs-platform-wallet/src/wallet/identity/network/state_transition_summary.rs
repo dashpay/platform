@@ -622,10 +622,7 @@ fn summarize_token_transition(
         // The decimals are the token's, not the transition's, so the credits it commits are not
         // known from the transition alone.
         TokenTransition::PlaceBid(t) => {
-            lines.push(budget.write(format_args!(
-                "price: {} credits per whole token",
-                t.price()
-            ))?);
+            lines.push(budget.write(format_args!("price: {} credits per whole token", t.price()))?);
             lines.push(budget.write(format_args!(
                 "escrow: the price of the tokens at the token's decimals"
             ))?);

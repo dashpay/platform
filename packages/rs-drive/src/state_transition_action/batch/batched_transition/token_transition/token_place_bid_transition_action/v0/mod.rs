@@ -19,11 +19,9 @@ pub struct TokenPlaceBidTransitionActionV0 {
     pub amount: TokenAmount,
     /// The credits offered per whole token
     pub price: Credits,
-    /// The smallest fill the buyer accepts unless it takes everything still wanted
-    pub min_fill: TokenAmount,
-    /// The token's decimals the offer was signed at, which its price is at and its order
-    /// records; the batch's advanced-structure validation refuses them unless they are the
-    /// token's (`TokenOrderDecimalsMismatchError`)
+    /// The token's decimals when the offer is placed, which its price and its escrow are at and
+    /// its order records (what the token market contract's `generatedFrom`,
+    /// `sys.tokens.decimals`, generates)
     pub decimals: u8,
     /// What the offer is worth, rounded up: the credits it moves from the buyer's balance into
     /// escrow
@@ -51,10 +49,7 @@ pub trait TokenPlaceBidTransitionActionAccessorsV0 {
     /// The credits offered per whole token
     fn price(&self) -> Credits;
 
-    /// The smallest fill the buyer accepts
-    fn min_fill(&self) -> TokenAmount;
-
-    /// The token's decimals the offer was signed at
+    /// The token's decimals when the offer is placed
     fn decimals(&self) -> u8;
 
     /// The credits the offer holds in escrow
@@ -101,10 +96,6 @@ impl TokenPlaceBidTransitionActionAccessorsV0 for TokenPlaceBidTransitionActionV
 
     fn price(&self) -> Credits {
         self.price
-    }
-
-    fn min_fill(&self) -> TokenAmount {
-        self.min_fill
     }
 
     fn decimals(&self) -> u8 {
