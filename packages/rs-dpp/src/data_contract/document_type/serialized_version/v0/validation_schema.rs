@@ -31,6 +31,8 @@ use std::sync::Arc;
 /// `ValidationSchema`, and the builder generation that built it.
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub(super) struct StoredValidationSchema {
+    /// The builder generation, a `FeatureVersion`, spelled as the integer it is today: the
+    /// stored form is frozen, so its layout must not follow a change to that alias.
     generation: u16,
     root: StoredSchemaNode,
     nodes: Vec<StoredSchemaNode>,
