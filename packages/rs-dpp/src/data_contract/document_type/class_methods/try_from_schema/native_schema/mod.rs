@@ -92,12 +92,13 @@ pub(super) fn check_document_type_schema(
 }
 
 /// Requires the type whose expanded schema is `schema`, with the contract's expanded
-/// `$defs`, to have a typed validation schema, refusing one it does not represent.
+/// `$defs`, to have a typed validation schema, refusing one it does not represent. Returns the
+/// native validator built of it, which the type keeps.
 pub(super) fn check_validation_schema(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     platform_version: &PlatformVersion,
-) -> Result<(), ProtocolError> {
+) -> Result<DocumentSchemaValidator, ProtocolError> {
     let root = DocumentType::enrich_with_base_schema(
         schema.clone(),
         schema_defs.map(|defs| Value::from(defs.clone())),
@@ -105,15 +106,12 @@ pub(super) fn check_validation_schema(
     )?;
     // Document validation refuses the documents of a type whose validator does not build, a
     // cycle of references that consumes nothing included: registration refuses the type
-    DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(
-        |error| match error {
-            ProtocolError::DataContractError(refusal) => {
-                consensus_or_protocol_data_contract_error(refusal)
-            }
-            error => error,
-        },
-    )?;
-    Ok(())
+    DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(|error| match error {
+        ProtocolError::DataContractError(refusal) => {
+            consensus_or_protocol_data_contract_error(refusal)
+        }
+        error => error,
+    })
 }
 
 /// A check of one value of a document schema, knowing where the value is.

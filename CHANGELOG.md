@@ -75,6 +75,18 @@
   `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
   `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
   Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+- **dpp (Rust API migration):** `DataContractInSerializationFormat` gains `V2`, the
+  stored contract format: format version 1 (its `base`) plus the compiled document
+  types (`DocumentTypeInSerializationFormat`), which only state holds and no state
+  transition carries. Exhaustive matches need a `V2` arm; `into_schema_form()` reads
+  it as its format version 1. `DataContractInSerializationFormat::document_schemas_mut`
+  returns a `Result` and refuses format version 2. `DPPContractVersions` gains
+  `contract_storage_serialization_version`, the format Drive writes to state, and
+  `contract_storage_document_type_version`, the generation of each compiled document
+  type; every protocol version still selects format 0 or 1, so nothing stored
+  changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
+  (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
+  [#5578](https://github.com/dashpay/platform/pull/5578).
 
 ## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
 

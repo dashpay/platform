@@ -89,8 +89,9 @@ impl CreatedDataContract {
     ) -> Result<Self, ProtocolError> {
         let (data_contract_in_serialization_format, identity_nonce) =
             created_data_contract_in_serialization_format.data_contract_and_identity_nonce_owned();
+        // A contract about to be registered is read from its schemas, whatever its format
         let data_contract = DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            data_contract_in_serialization_format.into_schema_form(),
             full_validation,
             &mut vec![],
             platform_version,

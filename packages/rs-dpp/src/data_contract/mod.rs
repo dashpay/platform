@@ -169,8 +169,31 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     }
 }
 
+impl DataContract {
+    /// The contract's bytes as a node stores them at `platform_version`
+    /// (`contract_storage_serialization_version`): through protocol version 14 the bytes
+    /// [`PlatformSerializableWithPlatformVersion::serialize_to_bytes_with_platform_version`]
+    /// gives, or format version 2, the compiled form, which only state holds. Every other
+    /// serialization, of a state transition, a query response or a client, keeps
+    /// `contract_serialization_version`.
+    pub fn serialize_to_storage_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self,
+                platform_version,
+            )?;
+        bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+        })
+    }
+}
+
 /// Decodes the stored serialization format with the ordinary decoder: bytes
-/// this node wrote itself (Drive state, wallet storage).
+/// this node wrote itself (Drive state, wallet storage). A contract in the stored
+/// format is read back from its compiled document types.
 fn decode_serialization_format_trusted<C: Config>(
     data: &[u8],
     config: C,
@@ -181,7 +204,10 @@ fn decode_serialization_format_trusted<C: Config>(
 }
 
 /// Decodes the serialization format with the untrusted decoder: bytes from a
-/// peer, a client, a proof or a host caller.
+/// peer, a client, a proof or a host caller. The untrusted entry points never take a
+/// contract in the stored format at its compiled types, which nothing vouches for
+/// ([`untrusted_form`]). Proof verification, whose bytes the proof authenticates, reads
+/// them with `DataContract::try_from_platform_versioned`.
 fn decode_serialization_format_untrusted<C: Config>(
     data: &[u8],
     config: C,
@@ -189,6 +215,20 @@ fn decode_serialization_format_untrusted<C: Config>(
 ) -> Result<(DataContractInSerializationFormat, usize), ProtocolError> {
     bincode::borrow_decode_from_slice_untrusted(data, config)
         .map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", what, e)))
+}
+
+/// The format an untrusted entry point reads `format` as: a contract in the stored format
+/// from its schemas ([`DataContractInSerializationFormat::into_schema_form`]), or, fully
+/// validated, from its schemas with its compiled types checked against what they compile to.
+fn untrusted_form(
+    format: DataContractInSerializationFormat,
+    full_validation: bool,
+) -> DataContractInSerializationFormat {
+    if full_validation {
+        format
+    } else {
+        format.into_schema_form()
+    }
 }
 
 fn no_limit_config() -> Configuration<BigEndian, Varint, NoLimit> {
@@ -232,7 +272,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntruste
         let (data_contract_in_serialization_format, _) =
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            untrusted_form(data_contract_in_serialization_format, full_validation),
             full_validation,
             &mut vec![],
             platform_version,
@@ -276,7 +316,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted for DataC
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         Ok((
             DataContract::try_from_platform_versioned(
-                data_contract_in_serialization_format,
+                untrusted_form(data_contract_in_serialization_format, full_validation),
                 full_validation,
                 &mut vec![],
                 platform_version,
