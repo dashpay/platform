@@ -114,27 +114,6 @@ impl YesNoVotePollStoredInfo {
         }
     }
 
-    /// Rewrites the stored info in the version the platform version wants stored.
-    pub fn update_to_latest_version(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<YesNoVotePollStoredInfo, ProtocolError> {
-        match platform_version
-            .dpp
-            .voting_versions
-            .yes_no_vote_poll_stored_info_version
-        {
-            0 => match self {
-                YesNoVotePollStoredInfo::V0(_) => Ok(self),
-            },
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "YesNoVotePollStoredInfo::update_to_latest_version".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
     /// Closes a started poll with its final tallies. `passed` is the poll's own verdict on
     /// them; the stored info records it without judging.
     pub fn finalize_vote_poll(

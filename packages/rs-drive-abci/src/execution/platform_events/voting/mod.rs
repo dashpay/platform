@@ -17,8 +17,12 @@ mod tally_votes_for_yes_no_vote_poll;
 /// as for contested polls. The strength of each yes/no vote and the masternode list total that a
 /// share minimum is measured against both come from here, so they always use the same weights.
 /// The contested vote strength of masternode vote `transform_into_action` v0 (protocol versions
-/// 1 to 14, and every contested vote at 15) keeps its own copy of these weights, so changing
-/// them here cannot change a shipped contest.
+/// 1 to 14, and every contested vote at 15) keeps its own copy of these weights.
+///
+/// Protocol version 15 reads these weights for every yes/no vote (`transform_into_action` v1)
+/// and for the masternode list total a share minimum is judged against
+/// (`check_for_ended_vote_polls` v1), so once it ships they must not change: other weights for a
+/// later version go in a new helper that version selects.
 pub(in crate::execution) fn masternode_vote_strength(node_type: &MasternodeType) -> u8 {
     match node_type {
         MasternodeType::Regular => 1,

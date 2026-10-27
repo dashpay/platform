@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::platform_events::voting::clean_up_after_yes_no_vote_polls_end::FinishedYesNoVotePoll;
 use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
@@ -20,6 +21,8 @@ use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
+use drive::error::drive::DriveError;
+use drive::error::Error as DriveCrateError;
 use drive::grovedb::TransactionArg;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive::util::common::encode::encode_u64;
@@ -85,32 +88,31 @@ where
         // keep the loop below as it was. Reached from protocol version 15 only: at 14, which
         // also selects this generation, no yes/no poll is in the end date index, since opening
         // one (`Drive::open_yes_no_vote_poll`) is not active before 15, and the contested polls
-        // are the polls the index returned, in the same order. The yes/no polls this block
-        // closes keep their voters for the clean-up; the end date entries of yes/no polls an
-        // earlier entry already closed are only removed.
-        let mut finished_yes_no_vote_polls: Vec<(YesNoVotePoll, TimestampMillis, Vec<Identifier>)> =
-            vec![];
-        let mut leftover_yes_no_end_date_entries: Vec<(Identifier, TimestampMillis)> = vec![];
+        // are the polls the index returned, in the same order. Every due yes/no entry goes from
+        // the index; the polls this block closes also keep their voters for the clean-up, and a
+        // poll an earlier entry already closed has nothing more to clean.
+        let mut yes_no_end_date_entries: Vec<(Identifier, TimestampMillis)> = vec![];
+        let mut finished_yes_no_vote_polls: Vec<FinishedYesNoVotePoll> = vec![];
         let mut contested_vote_polls_by_timestamp: BTreeMap<TimestampMillis, Vec<VotePoll>> =
             BTreeMap::new();
         for (end_date, vote_polls) in vote_polls_by_timestamp {
             for vote_poll in vote_polls {
                 match vote_poll {
                     VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
-                        match self.finish_yes_no_vote_poll(
+                        let poll_id = yes_no_vote_poll.unique_id()?;
+                        yes_no_end_date_entries.push((poll_id, end_date));
+                        if let Some(voters) = self.finish_yes_no_vote_poll(
                             block_platform_state,
                             block_info,
                             &yes_no_vote_poll,
                             transaction,
                             platform_version,
                         )? {
-                            Some(voters) => finished_yes_no_vote_polls.push((
-                                yes_no_vote_poll,
-                                end_date,
+                            finished_yes_no_vote_polls.push(FinishedYesNoVotePoll {
+                                poll_id,
+                                prefunded_balance_id: yes_no_vote_poll.specialized_balance_id()?,
                                 voters,
-                            )),
-                            None => leftover_yes_no_end_date_entries
-                                .push((yes_no_vote_poll.unique_id()?, end_date)),
+                            });
                         }
                     }
                     contested_vote_poll => contested_vote_polls_by_timestamp
@@ -275,11 +277,11 @@ where
 
         // Then the yes/no polls, in a batch of their own: its read of a shared end date sees
         // what the contested clean-up left there.
-        if !finished_yes_no_vote_polls.is_empty() || !leftover_yes_no_end_date_entries.is_empty() {
+        if !yes_no_end_date_entries.is_empty() {
             self.clean_up_after_yes_no_vote_polls_end(
                 block_info,
+                &yes_no_end_date_entries,
                 &finished_yes_no_vote_polls,
-                &leftover_yes_no_end_date_entries,
                 transaction,
                 platform_version,
             )?;
@@ -294,7 +296,8 @@ where
     ///
     /// Returns `None` for a poll that is already finished: one listed under two end dates
     /// (two openings that could not see each other) closes at the first, and its later entry
-    /// is only removed.
+    /// is only removed. A due poll with no stored info is corrupted state: an opening writes it
+    /// with the end date entry.
     fn finish_yes_no_vote_poll(
         &self,
         block_platform_state: &PlatformState,
@@ -303,15 +306,19 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<Identifier>>, Error> {
-        let tally =
+        let mut tally =
             self.tally_votes_for_yes_no_vote_poll(vote_poll, transaction, platform_version)?;
-        if tally
-            .stored_info
-            .as_ref()
-            .is_some_and(|stored_info| stored_info.result().is_some())
-        {
-            return Ok(None);
-        }
+        let stored_info = match tally.stored_info.take() {
+            Some(stored_info) if stored_info.result().is_some() => return Ok(None),
+            Some(stored_info) => stored_info,
+            None => {
+                return Err(Error::Drive(DriveCrateError::Drive(
+                    DriveError::CorruptedDriveState(
+                        "an ended yes/no vote poll must have a record in the state".to_string(),
+                    ),
+                )))
+            }
+        };
         // A minimum given as a share of the total is measured against the masternode list of
         // the closing block, each masternode weighed as its vote is. A fixed minimum reads no
         // total.
@@ -330,6 +337,7 @@ where
         let result = self.keep_record_of_finished_yes_no_vote_poll(
             block_info,
             vote_poll,
+            stored_info,
             &tally,
             total_voting_power,
             transaction,

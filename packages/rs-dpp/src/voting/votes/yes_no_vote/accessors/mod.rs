@@ -12,12 +12,6 @@ impl YesNoVoteGettersV0 for YesNoVote {
         }
     }
 
-    fn vote_poll_owned(self) -> YesNoVotePoll {
-        match self {
-            YesNoVote::V0(v0) => v0.vote_poll,
-        }
-    }
-
     fn vote_choice(&self) -> YesNoAbstainVoteChoice {
         match self {
             YesNoVote::V0(v0) => v0.vote_choice,

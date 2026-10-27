@@ -6,27 +6,38 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use drive::grovedb::TransactionArg;
 
 mod v0;
+
+/// A yes/no poll the block closed, as its clean-up needs it.
+pub(in crate::execution) struct FinishedYesNoVotePoll {
+    /// The poll's id, which keys its vote trees and its voters' entries in the identity votes
+    /// index.
+    pub poll_id: Identifier,
+    /// The id of the prefunded balance its votes were paid from
+    /// (`YesNoVotePoll::specialized_balance_id`).
+    pub prefunded_balance_id: Identifier,
+    /// The masternodes that voted in it.
+    pub voters: Vec<Identifier>,
+}
 
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Cleans up after yes/no polls that ended, each given with its end date and its voters:
-    /// their entries in the end date index, their vote trees, the voters' entries in the
-    /// identity votes index, and what is left of the prefunded balance that paid for the votes,
-    /// which goes to the processing pool. The stored info stays as the record of the decision.
+    /// Cleans up after yes/no polls that ended: their entries in the end date index, the vote
+    /// trees of the polls this block closed, their voters' entries in the identity votes index,
+    /// and what is left of the prefunded balances that paid for the votes, which goes to the
+    /// processing pool. The stored info stays as the record of the decision.
     ///
-    /// `leftover_end_date_entries` are the end date entries, by poll id, of polls an earlier
-    /// entry already closed: only the entries go.
+    /// `end_date_entries` lists every due yes/no entry, including those of polls an earlier
+    /// entry already closed, of which only the entry goes.
     ///
     /// # Parameters
     /// - `block_info`: the block that closes the polls, whose epoch gets what is left of their funds.
-    /// - `vote_polls`: the polls that ended, each with its end date and its voters.
-    /// - `leftover_end_date_entries`: the end date entries, by poll id, of polls an earlier entry already closed.
+    /// - `end_date_entries`: the due yes/no entries of the end date index, by poll id.
+    /// - `finished_vote_polls`: the polls this block closed.
     /// - `transaction`: the transaction to read and write in.
     /// - `platform_version`: the platform version.
     ///
@@ -35,8 +46,8 @@ where
     pub(in crate::execution) fn clean_up_after_yes_no_vote_polls_end(
         &self,
         block_info: &BlockInfo,
-        vote_polls: &[(YesNoVotePoll, TimestampMillis, Vec<Identifier>)],
-        leftover_end_date_entries: &[(Identifier, TimestampMillis)],
+        end_date_entries: &[(Identifier, TimestampMillis)],
+        finished_vote_polls: &[FinishedYesNoVotePoll],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -48,8 +59,8 @@ where
         {
             0 => self.clean_up_after_yes_no_vote_polls_end_v0(
                 block_info,
-                vote_polls,
-                leftover_end_date_entries,
+                end_date_entries,
+                finished_vote_polls,
                 transaction,
                 platform_version,
             ),

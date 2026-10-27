@@ -445,8 +445,8 @@ fn decision_identity_votes() -> StructureNode {
         )
         .kind(ElementKind::Tree)
         .describe(
-            "One masternode's yes/no votes. Stays once its \
-             votes are gone, like its contested counterpart.",
+            "One masternode's yes/no votes. Stays when its polls \
+             close, and is dropped when the masternode leaves the list.",
         )
         .child(
             StructureNode::dynamic(

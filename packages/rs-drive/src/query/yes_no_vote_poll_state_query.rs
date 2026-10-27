@@ -1,5 +1,3 @@
-#[cfg(feature = "server")]
-use crate::drive::votes::paths::vote_decisions_active_polls_tree_path;
 use crate::drive::votes::paths::{YesNoVotePollPaths, YES_NO_VOTE_POLL_STORED_INFO_KEY};
 use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 #[cfg(feature = "server")]
@@ -8,9 +6,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
-use crate::query::Query;
 #[cfg(feature = "server")]
-use crate::util::grove_operations::DirectQueryType;
+use crate::query::GroveError;
+use crate::query::Query;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
@@ -35,17 +33,6 @@ pub struct YesNoVotePollState {
     /// The abstaining voting power cast so far. Zero once the poll is finished and its votes
     /// removed.
     pub abstain_voting_power: VotingPower,
-}
-
-impl YesNoVotePollState {
-    /// The voting power cast for a choice.
-    pub fn voting_power(&self, vote_choice: YesNoAbstainVoteChoice) -> VotingPower {
-        match vote_choice {
-            YesNoAbstainVoteChoice::Yes => self.yes_voting_power,
-            YesNoAbstainVoteChoice::No => self.no_voting_power,
-            YesNoAbstainVoteChoice::Abstain => self.abstain_voting_power,
-        }
-    }
 }
 
 /// The query for the state of a yes/no vote poll: its stored info item and its three vote sum
@@ -151,31 +138,29 @@ impl YesNoVotePollStateDriveQuery {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollState, Error> {
-        // A poll that was never opened has no tree; the proof path reports the same as an
-        // empty state, so does this one.
-        let poll_id = self.vote_poll.unique_id()?;
-        let exists = drive.grove_has_raw(
-            (&vote_decisions_active_polls_tree_path()).into(),
-            poll_id.as_bytes(),
-            DirectQueryType::StatefulDirectQuery,
+        // A poll that was never opened has no tree (a chain without the decisions trees has no
+        // parent either); the proof path reports the same as an empty state, so does this one.
+        let path_query = self.construct_path_query()?;
+        let key_elements = match drive.grove_get_raw_path_query(
+            &path_query,
             transaction,
+            QueryResultType::QueryKeyElementPairResultType,
             drive_operations,
             &platform_version.drive,
-        )?;
-        if !exists {
-            return Ok(YesNoVotePollState::default());
-        }
-        let path_query = self.construct_path_query()?;
-        let key_elements = drive
-            .grove_get_raw_path_query(
-                &path_query,
-                transaction,
-                QueryResultType::QueryKeyElementPairResultType,
-                drive_operations,
-                &platform_version.drive,
-            )?
-            .0
-            .to_key_elements();
+        ) {
+            Ok((query_result_elements, _)) => query_result_elements.to_key_elements(),
+            Err(Error::GroveDB(error))
+                if matches!(
+                    error.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                return Ok(YesNoVotePollState::default());
+            }
+            Err(error) => return Err(error),
+        };
         Self::state_from_key_elements(key_elements)
     }
 }

@@ -158,15 +158,15 @@ impl VotePollWasm {
     }
 
     /// The kind of poll: `contestedDocumentResourceVotePoll` or `yesNoVotePoll`, the `$type`
-    /// tag the poll's serde writes, so it always matches `toJSON()`.
+    /// tag `toJSON()` writes (the specs check they agree).
     #[wasm_bindgen(getter = "kind")]
-    pub fn kind(&self) -> WasmDppResult<String> {
-        serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-            .get("$type")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| WasmDppError::serialization("a vote poll without a $type".to_string()))
+    pub fn kind(&self) -> String {
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                "contestedDocumentResourceVotePoll".to_string()
+            }
+            VotePoll::YesNoVotePoll(_) => "yesNoVotePoll".to_string(),
+        }
     }
 
     #[wasm_bindgen(getter = "contractId")]

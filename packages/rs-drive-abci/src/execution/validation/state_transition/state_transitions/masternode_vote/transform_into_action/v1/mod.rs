@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::execution::validation::state_transition::state_transitions::masternode_vote::transform_into_action::v0::{
-    previous_vote_to_replace, voting_masternode,
+    previous_vote_to_replace_v0, voting_masternode_v0,
     MasternodeVoteStateTransitionTransformIntoActionValidationV0,
 };
 use crate::platform_types::platform::PlatformRef;
@@ -37,7 +37,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 
 impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for MasternodeVoteTransition {
     /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll, with the rule
-    /// of a resource vote ([`previous_vote_to_replace`]): the same answer cannot be given twice,
+    /// of a resource vote ([`previous_vote_to_replace_v0`]): the same answer cannot be given twice,
     /// and a masternode may vote on a poll at most `votes_allowed_per_masternode` times, its
     /// first vote included. A resource vote on a contested poll transforms through version 0,
     /// unchanged.
@@ -82,7 +82,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
                 &mut vec![],
                 platform_version,
             )?;
-            match previous_vote_to_replace(
+            match previous_vote_to_replace_v0(
                 self.pro_tx_hash(),
                 maybe_existing_vote_choice,
                 &yes_no_vote.vote_choice(),
@@ -94,15 +94,18 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
             }
         }
 
-        let masternode = match voting_masternode(platform, self.pro_tx_hash()) {
+        let masternode = match voting_masternode_v0(platform, self.pro_tx_hash()) {
             Ok(masternode) => masternode,
             Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
         };
 
         // A yes/no vote needs nothing from the state to be resolved; the previous answer found
         // above rides with it.
-        let mut resolved_vote = ResolvedYesNoVote::from_vote(yes_no_vote);
-        resolved_vote.previous_vote_choice_to_remove = previous_vote_choice_to_remove;
+        let resolved_vote = ResolvedYesNoVote {
+            vote_poll: yes_no_vote.vote_poll().clone(),
+            vote_choice: yes_no_vote.vote_choice(),
+            previous_vote_choice_to_remove,
+        };
         let action = MasternodeVoteTransitionActionV0 {
             pro_tx_hash: self.pro_tx_hash(),
             voter_identity_id: self.voter_identity_id(),

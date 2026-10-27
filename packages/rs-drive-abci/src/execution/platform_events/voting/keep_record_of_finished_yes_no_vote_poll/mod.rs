@@ -4,7 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollResult;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
+    YesNoVotePollResult, YesNoVotePollStoredInfo,
+};
 use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
 use drive::grovedb::TransactionArg;
 use drive::query::yes_no_vote_poll_state_query::YesNoVotePollState;
@@ -22,17 +24,20 @@ where
     /// # Parameters
     /// - `block_info`: the block that closes the poll.
     /// - `vote_poll`: the poll that ended.
-    /// - `tally`: its tallies and stored info.
+    /// - `stored_info`: its stored info, started and not yet finished.
+    /// - `tally`: its tallies.
     /// - `total_voting_power`: the masternode list's total voting power in the closing block, 0 for a fixed minimum.
     /// - `transaction`: the transaction to read and write in.
     /// - `platform_version`: the platform version.
     ///
     /// # Returns
     /// The poll's result, as recorded.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn keep_record_of_finished_yes_no_vote_poll(
         &self,
         block_info: &BlockInfo,
         vote_poll: &YesNoVotePoll,
+        stored_info: YesNoVotePollStoredInfo,
         tally: &YesNoVotePollState,
         total_voting_power: VotingPower,
         transaction: TransactionArg,
@@ -47,6 +52,7 @@ where
             0 => self.keep_record_of_finished_yes_no_vote_poll_v0(
                 block_info,
                 vote_poll,
+                stored_info,
                 tally,
                 total_voting_power,
                 transaction,

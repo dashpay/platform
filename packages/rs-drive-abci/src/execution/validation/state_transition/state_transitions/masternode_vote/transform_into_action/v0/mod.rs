@@ -60,7 +60,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
                                     &mut vec![],
                                     platform_version,
                                 )?;
-                            match previous_vote_to_replace(
+                            match previous_vote_to_replace_v0(
                                 self.pro_tx_hash(),
                                 maybe_existing_resource_vote_choice,
                                 &resource_vote.resource_vote_choice(),
@@ -94,7 +94,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
             }
         }
 
-        let masternode = match voting_masternode(platform, self.pro_tx_hash()) {
+        let masternode = match voting_masternode_v0(platform, self.pro_tx_hash()) {
             Ok(masternode) => masternode,
             Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
         };
@@ -125,8 +125,10 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV0 for Masternode
 ///
 /// Moved here unchanged from `transform_into_action_v0` (in place: the same checks, in the same
 /// order, with the same errors at every protocol version that selects it), so version 1 applies
-/// the rule to yes/no votes too.
-pub(super) fn previous_vote_to_replace<Choice: PartialEq>(
+/// the rule to yes/no votes too. Shipped with protocol version 1 (version 0 runs it for every
+/// contested vote up to 14), so it must not change: a different rule for a later version is a
+/// new helper.
+pub(super) fn previous_vote_to_replace_v0<Choice: PartialEq>(
     pro_tx_hash: Identifier,
     existing_vote: Option<(Choice, PreviousVoteCount)>,
     new_vote_choice: &Choice,
@@ -170,8 +172,9 @@ pub(super) fn previous_vote_to_replace<Choice: PartialEq>(
 
 /// The voting masternode in the block's masternode list, or the error refusing a vote from one
 /// that is not in it. Moved here unchanged from `transform_into_action_v0` (in place, as
-/// [`previous_vote_to_replace`]) for version 1.
-pub(super) fn voting_masternode<'a, C>(
+/// [`previous_vote_to_replace_v0`]) for version 1. Shipped with protocol version 1, so it must
+/// not change.
+pub(super) fn voting_masternode_v0<'a, C>(
     platform: &PlatformRef<'a, C>,
     pro_tx_hash: Identifier,
 ) -> Result<&'a MasternodeListItem, ConsensusError> {

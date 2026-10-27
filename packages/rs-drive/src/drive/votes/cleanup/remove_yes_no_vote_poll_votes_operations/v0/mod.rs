@@ -6,7 +6,6 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::TreeType;
 
 impl Drive {
@@ -21,16 +20,11 @@ impl Drive {
             for vote_choice in YesNoAbstainVoteChoice::ALL {
                 // Each choice's sum tree holds only the votes, one sum item per voter, and a
                 // finished poll is never opened again, so the tree is dropped whole without
-                // reading or deleting its votes one by one (GroveDB's flat drop, which the
-                // grove version of protocol version 15 accepts in a batch).
-                batch_operations.push(LowLevelDriveOperation::GroveOperation(
-                    QualifiedGroveDbOp::delete_tree_op(
-                        poll_path.clone(),
-                        vec![vote_choice.to_tree_key()],
-                        TreeType::SumTree,
-                        SubelementsDeletionBehavior::DropFlat,
-                    )
-                    .dont_check_for_backwards_references(),
+                // reading or deleting its votes one by one.
+                batch_operations.push(LowLevelDriveOperation::for_known_path_key_drop_flat_tree(
+                    poll_path.clone(),
+                    vec![vote_choice.to_tree_key()],
+                    TreeType::SumTree,
                 ));
             }
         }

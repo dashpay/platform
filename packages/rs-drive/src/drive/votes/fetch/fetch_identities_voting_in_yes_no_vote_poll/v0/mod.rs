@@ -49,7 +49,7 @@ impl Drive {
             .to_keys()
             .into_iter()
             .map(|voter| voter.try_into())
-            .collect::<Result<Vec<Identifier>, dpp::platform_value::Error>>()?;
+            .collect::<Result<Vec<Identifier>, _>>()?;
         Ok(voters)
     }
 }

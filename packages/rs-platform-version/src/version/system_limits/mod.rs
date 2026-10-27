@@ -251,6 +251,10 @@ pub struct SystemLimits {
     /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
     /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 15).
     pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
+    /// The longest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: four weeks, the longest election window a contract may declare. Read by
+    /// `Drive::open_yes_no_vote_poll` (protocol version 15).
+    pub max_yes_no_vote_poll_duration_ms: u64,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never

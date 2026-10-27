@@ -1,6 +1,7 @@
 //! Votes on yes/no vote polls: the poll's life from opening to the record of its decision.
 
 use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::platform_events::voting::masternode_vote_strength;
 use crate::execution::validation::state_transition::state_transitions::tests::{
     process_test_state_transition, processing_credits, setup_masternode_voting_identity,
     take_down_masternode_identities,
@@ -546,10 +547,7 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         platform_state
             .full_masternode_list()
             .values()
-            .map(|masternode| match masternode.node_type {
-                MasternodeType::Evo => 4,
-                MasternodeType::Regular => 1,
-            })
+            .map(|masternode| u32::from(masternode_vote_strength(&masternode.node_type)))
             .sum()
     };
     assert_eq!(
@@ -959,7 +957,12 @@ async fn should_move_a_changed_vote_and_cap_the_changes() {
         let state = poll_state(&platform, &vote_poll, platform_version);
         for choice in choices {
             let expected = if choice == *vote_choice { 4 } else { 0 };
-            assert_eq!(state.voting_power(choice), expected, "vote {}", vote_number);
+            let voting_power = match choice {
+                YesNoAbstainVoteChoice::Yes => state.yes_voting_power,
+                YesNoAbstainVoteChoice::No => state.no_voting_power,
+                YesNoAbstainVoteChoice::Abstain => state.abstain_voting_power,
+            };
+            assert_eq!(voting_power, expected, "vote {}", vote_number);
         }
         assert_eq!(
             identity_vote(&platform, pro_tx_hash, vote_poll_id, platform_version),

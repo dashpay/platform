@@ -1,7 +1,6 @@
 use crate::drive::votes::PreviousVoteCount;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
-use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
 
@@ -17,17 +16,6 @@ pub struct ResolvedYesNoVote {
     /// The masternode's previous answer to this poll and how many times it had voted, when it
     /// changes its vote. `None` for a first vote, and whenever validation was skipped.
     pub previous_vote_choice_to_remove: Option<(YesNoAbstainVoteChoice, PreviousVoteCount)>,
-}
-
-impl ResolvedYesNoVote {
-    /// The vote as it came in, with no previous answer attached.
-    pub fn from_vote(vote: &YesNoVote) -> Self {
-        ResolvedYesNoVote {
-            vote_poll: vote.vote_poll().clone(),
-            vote_choice: vote.vote_choice(),
-            previous_vote_choice_to_remove: None,
-        }
-    }
 }
 
 impl From<ResolvedYesNoVote> for YesNoVote {

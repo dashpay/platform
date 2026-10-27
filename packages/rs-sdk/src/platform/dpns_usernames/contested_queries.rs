@@ -460,17 +460,19 @@ impl Sdk {
                 break;
             };
             let polls_in_page: usize = result.0.iter().map(|(_, polls)| polls.len()).sum();
+            let single_end_date = result.0.len() == 1;
             record_dpns_contests(&mut name_to_end_time, dpns_contract_id, result);
 
-            if current_start_time == Some((last_ts, true)) && polls_in_page >= query_limit as usize
-            {
+            if single_end_date && polls_in_page >= query_limit as usize {
                 // This end date alone filled the page, so the limit may have cut it, and a
-                // proved query cannot continue within one end date: read it again at the
-                // largest limit, or refuse rather than leave contests out.
+                // proved query cannot continue within one end date: read it again from that end
+                // date at the largest limit (nothing before it in range held a poll), or refuse
+                // rather than leave contests out.
                 if query_limit >= DEFAULT_QUERY_LIMIT {
                     return Err(too_many_vote_polls_at_end_date(last_ts));
                 }
                 query_limit = DEFAULT_QUERY_LIMIT;
+                current_start_time = Some((last_ts, true));
                 continue;
             }
 

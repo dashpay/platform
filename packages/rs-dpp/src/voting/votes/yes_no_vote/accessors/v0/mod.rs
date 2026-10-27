@@ -6,9 +6,6 @@ pub trait YesNoVoteGettersV0 {
     /// The poll answered.
     fn vote_poll(&self) -> &YesNoVotePoll;
 
-    /// The poll answered, owned.
-    fn vote_poll_owned(self) -> YesNoVotePoll;
-
     /// The answer.
     fn vote_choice(&self) -> YesNoAbstainVoteChoice;
 }

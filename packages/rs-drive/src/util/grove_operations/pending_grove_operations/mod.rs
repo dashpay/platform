@@ -9,8 +9,7 @@
 //! batch for every delete.
 
 use crate::fees::op::LowLevelDriveOperation;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::QualifiedGroveDbOp;
 #[cfg(test)]
 use std::cell::Cell;
 
@@ -40,17 +39,6 @@ pub(crate) fn pending_grove_operations(
             | LowLevelDriveOperation::EphemeralGroveOperation(grovedb_op, _) => Some(grovedb_op),
             _ => None,
         })
-}
-
-/// Whether `drive_operations` already queue a grove operation, of any kind, on `key` under
-/// `path`.
-pub(crate) fn grove_operation_queued(
-    drive_operations: &[LowLevelDriveOperation],
-    path: &KeyInfoPath,
-    key: &KeyInfo,
-) -> bool {
-    pending_grove_operations(drive_operations)
-        .any(|operation| operation.path == *path && operation.key.as_ref() == Some(key))
 }
 
 #[cfg(test)]

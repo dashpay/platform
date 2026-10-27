@@ -12,8 +12,8 @@ use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use dpp::dashcore::Network;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
-use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::{MaybeTree, TransactionArg, TreeType};
+use std::collections::BTreeSet;
 
 impl Drive {
     /// Version 1 (protocol version 15) removes the contested resource votes of the removed
@@ -55,12 +55,15 @@ impl Drive {
         }
 
         let mut deletion_batch = vec![];
-        for (identifier_bytes, votes_to_remove) in self.identity_vote_entries_of_identities_v0(
+        let identity_vote_entries = self.identity_vote_entries_of_identities_v0(
             vote_decisions_identity_votes_tree_path_vec(),
             identity_ids_as_byte_arrays.clone(),
             transaction,
             platform_version,
-        )? {
+        )?;
+        let identities_with_entries: BTreeSet<Vec<u8>> =
+            identity_vote_entries.keys().cloned().collect();
+        for (identifier_bytes, votes_to_remove) in identity_vote_entries {
             for (vote_poll_id, vote_to_remove) in votes_to_remove {
                 let storage_form =
                     YesNoVoteReferenceStorageForm::deserialize(&vote_to_remove.into_item_bytes()?)?;
@@ -84,27 +87,25 @@ impl Drive {
 
         // Then each removed masternode's tree in the identity votes index, emptied or not: the
         // close of a poll removes the poll's entries but keeps the tree, which no one else
-        // removes. It holds only items, so it is dropped flat with them (GroveDB's flat drop,
-        // which the grove version of protocol version 15 accepts in a batch).
+        // removes. It holds only items, so it is dropped flat with them. A masternode with
+        // entries has its tree; one without is read, since the close of its last poll leaves
+        // its tree empty.
         let identity_votes_path = vote_decisions_identity_votes_tree_path_vec();
         for identifier_bytes in identity_ids_as_byte_arrays {
-            let has_identity_votes_tree = self.grove_has_raw(
-                identity_votes_path.as_slice().into(),
-                identifier_bytes.as_slice(),
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
+            let has_identity_votes_tree = identities_with_entries.contains(&identifier_bytes)
+                || self.grove_has_raw(
+                    identity_votes_path.as_slice().into(),
+                    identifier_bytes.as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?;
             if has_identity_votes_tree {
-                deletion_batch.push(LowLevelDriveOperation::GroveOperation(
-                    QualifiedGroveDbOp::delete_tree_op(
-                        identity_votes_path.clone(),
-                        identifier_bytes,
-                        TreeType::NormalTree,
-                        SubelementsDeletionBehavior::DropFlat,
-                    )
-                    .dont_check_for_backwards_references(),
+                deletion_batch.push(LowLevelDriveOperation::for_known_path_key_drop_flat_tree(
+                    identity_votes_path.clone(),
+                    identifier_bytes,
+                    TreeType::NormalTree,
                 ));
             }
         }

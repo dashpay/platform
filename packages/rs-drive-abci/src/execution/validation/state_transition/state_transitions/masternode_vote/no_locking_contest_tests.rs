@@ -9,6 +9,7 @@ use crate::execution::validation::state_transition::state_transitions::tests::{
     get_vote_states, perform_vote, perform_votes_multi, serialized_dpns_name_vote,
     setup_identity, setup_masternode_voting_identity,
 };
+use super::end_date_cleanup_tests::end_of_block_test_versions;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -745,20 +746,9 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
 /// Both then end in the one block at the end of their vote window.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
-    keep_a_shared_join_window_end_date_until_its_last_contest_moves(PlatformVersion::latest())
-        .await;
-}
-
-/// Protocol version 14 runs the same end of block generations on this path as 15 today
-/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
-/// 14, so a later change to 15's tables cannot leave 14 untested.
-#[tokio::test]
-async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves_at_protocol_version_14(
-) {
-    keep_a_shared_join_window_end_date_until_its_last_contest_moves(
-        PlatformVersion::get(14).expect("expected protocol version 14"),
-    )
-    .await;
+    for platform_version in end_of_block_test_versions() {
+        keep_a_shared_join_window_end_date_until_its_last_contest_moves(platform_version).await;
+    }
 }
 
 async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
@@ -860,18 +850,9 @@ async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
 /// block; the block removes them first and ends the contest behind them.
 #[tokio::test]
 async fn should_end_a_contest_behind_end_dates_left_empty() {
-    end_a_contest_behind_end_dates_left_empty(PlatformVersion::latest()).await;
-}
-
-/// Protocol version 14 runs the same end of block generations on this path as 15 today
-/// (`check_for_ended_vote_polls` v1, `clean_up_after_vote_polls_end` v0); this run pins them to
-/// 14, so a later change to 15's tables cannot leave 14 untested.
-#[tokio::test]
-async fn should_end_a_contest_behind_end_dates_left_empty_at_protocol_version_14() {
-    end_a_contest_behind_end_dates_left_empty(
-        PlatformVersion::get(14).expect("expected protocol version 14"),
-    )
-    .await;
+    for platform_version in end_of_block_test_versions() {
+        end_a_contest_behind_end_dates_left_empty(platform_version).await;
+    }
 }
 
 async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static PlatformVersion) {

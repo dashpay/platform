@@ -5153,7 +5153,7 @@
                     "since": 15,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                    "description": "One masternode's yes/no votes. Stays once its votes are gone, like its contested counterpart.",
+                    "description": "One masternode's yes/no votes. Stays when its polls close, and is dropped when the masternode leaves the list.",
                     "children": [
                       {
                         "id": "votes.decisions.identity_votes.voter.vote",

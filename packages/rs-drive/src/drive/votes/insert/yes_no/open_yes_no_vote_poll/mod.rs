@@ -17,8 +17,8 @@ impl Drive {
     /// `specialized_balance_id`.
     ///
     /// Refuses parameters no poll can run with, an end date that is not after the opening block
-    /// (or past `i64::MAX`), and a poll that already exists. Not active before protocol version
-    /// 15.
+    /// or is further from it than `max_yes_no_vote_poll_duration_ms`, and a poll that already
+    /// exists. Not active before protocol version 15.
     ///
     /// # Parameters
     /// - `vote_poll`: the poll to open.
@@ -67,12 +67,13 @@ impl Drive {
     ///
     /// Operations already queued in the same batch, earlier openings and contests included,
     /// go in `previous_batch_operations`, with `batch_operations` fresh, as for document
-    /// operations: that is how an opening refuses a poll the batch already opens and queues a
-    /// tree the batch already holds once. A contest that shares the poll's end date must come
-    /// before the opening: the contested end date insert skips only an identical insert, so a
-    /// contest after it would queue the end date's tree again. Two openings converted with no
-    /// view of each other can list one poll under two end dates; it then closes at the first and
-    /// its later entry is only removed.
+    /// operations: that is how an opening refuses a poll the batch already opens, queues a tree
+    /// the batch already holds once (an end date's tree a contest queued keeps its contender's
+    /// storage flags) and cancels a queued deletion of its end date's tree (a contest leaving its
+    /// join-window end date). Converted without them, an opening sees none of this: a deletion
+    /// of its end date's tree queued earlier in the batch then fails the batch, as it would for
+    /// a contest, and two openings with no view of each other can list one poll under two end
+    /// dates; it then closes at the first and its later entry is only removed.
     ///
     /// They are stateful and have no estimated-costs path: a poll opens as a system action,
     /// outside any fee estimate. A caller that runs them inside a fee estimate must first give
@@ -132,11 +133,12 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::votes::paths::{
-        vote_decisions_tree_path, vote_end_date_queries_tree_path, ACTIVE_POLLS_TREE_KEY,
+        vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_decisions_tree_path,
+        vote_end_date_queries_tree_path, vote_root_path, ACTIVE_POLLS_TREE_KEY,
         IDENTITY_VOTES_TREE_KEY,
     };
     use crate::util::common::encode::encode_u64;
-    use crate::util::grove_operations::DirectQueryType;
+    use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_yes_no_vote_poll as poll;
     use crate::util::test_helpers::vote_poll_end_dates;
@@ -145,6 +147,8 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use dpp::voting::vote_polls::VotePoll;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::MaybeTree;
 
     #[test]
     fn should_refuse_to_open_a_poll_a_batch_already_opens() {
@@ -241,15 +245,38 @@ mod tests {
             time_ms: 1_000,
             ..Default::default()
         };
-        // The last two would sort before every block time in the end date index.
-        for end_date in [999, 1_000, i64::MAX as u64 + 1, u64::MAX] {
+        let max_duration = platform_version
+            .system_limits
+            .max_yes_no_vote_poll_duration_ms;
+        // One that runs too long is refused too; the last two would also sort before every
+        // block time in the end date index.
+        for end_date in [
+            999,
+            1_000,
+            1_000 + max_duration + 1,
+            i64::MAX as u64 + 1,
+            u64::MAX,
+        ] {
             drive
                 .open_yes_no_vote_poll(&poll(), end_date, &block_info, None, platform_version)
-                .expect_err("expected a poll that ends at once to be refused");
+                .expect_err("expected a poll that ends at once or too late to be refused");
         }
         drive
             .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
             .expect("expected a poll ending after the opening block to open");
+        let mut longest_poll = poll();
+        longest_poll
+            .resource_path
+            .push(BinaryData::new(b"longest".to_vec()));
+        drive
+            .open_yes_no_vote_poll(
+                &longest_poll,
+                1_000 + max_duration,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected a poll running exactly the longest duration to open");
     }
 
     #[test]
@@ -370,5 +397,146 @@ mod tests {
             .unwrap()
             .expect("expected the end date's tree");
         assert!(end_date_tree.get_flags().is_some());
+    }
+
+    #[test]
+    fn should_cancel_a_queued_deletion_of_the_end_date_tree_when_opening_a_poll() {
+        // A contest whose join-window entry is the only one at its end date, in state. A second
+        // contender moving the contest off that end date queues the entry's deletion and, with
+        // it, the deletion of the emptied end date tree; a poll opened later in the batch at that
+        // end date must keep the tree.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contested_poll = VotePoll::ContestedDocumentResourceVotePoll(
+            ContestedDocumentResourceVotePoll::default(),
+        );
+        let mut contest_operations = vec![];
+        drive
+            .add_vote_poll_end_date_query_operations(
+                Some([7; 32]),
+                contested_poll.clone(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                &mut None,
+                &mut contest_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected the contest's end date entry");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                contest_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the contest's end date entry to apply");
+
+        let mut batch_operations = vec![];
+        drive
+            .batch_delete_up_tree_while_empty(
+                KeyInfoPath::from_known_owned_path(
+                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(1_000),
+                ),
+                contested_poll.unique_id().expect("id").as_slice(),
+                Some(vote_root_path().len() as u16),
+                BatchDeleteUpTreeApplyType::StatefulBatchDelete {
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                },
+                None,
+                &None,
+                &mut batch_operations,
+                &platform_version.drive,
+            )
+            .expect("expected the contest's entry and end date tree to be queued for deletion");
+        let mut opening_operations = vec![];
+        drive
+            .open_yes_no_vote_poll_operations(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                &mut Some(&mut batch_operations),
+                &mut opening_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        batch_operations.append(&mut opening_operations);
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+
+        let end_dates = vote_poll_end_dates(&drive, platform_version);
+        assert_eq!(
+            end_dates[&1_000],
+            [poll().unique_id().expect("id")].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn should_queue_the_end_date_tree_once_when_a_contest_follows_an_opening() {
+        // The opening queues the end date's tree without storage flags, the contest after it
+        // would queue it with its contender's: the contest adds only its entry. The test drive
+        // verifies batch consistency, which refuses a tree queued twice.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contested_poll = VotePoll::ContestedDocumentResourceVotePoll(
+            ContestedDocumentResourceVotePoll::default(),
+        );
+        let mut batch_operations = vec![];
+        drive
+            .open_yes_no_vote_poll_operations(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                &mut batch_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        let mut contest_operations = vec![];
+        drive
+            .add_vote_poll_end_date_query_operations(
+                Some([7; 32]),
+                contested_poll.clone(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                &mut Some(&mut batch_operations),
+                &mut contest_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected the contest's end date entry");
+        batch_operations.append(&mut contest_operations);
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+
+        let end_dates = vote_poll_end_dates(&drive, platform_version);
+        assert_eq!(
+            end_dates[&1_000],
+            [
+                contested_poll.unique_id().expect("id"),
+                poll().unique_id().expect("id")
+            ]
+            .into_iter()
+            .collect()
+        );
     }
 }

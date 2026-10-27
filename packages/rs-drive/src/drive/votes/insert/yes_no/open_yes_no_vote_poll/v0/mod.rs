@@ -1,28 +1,22 @@
 use crate::drive::votes::paths::{
-    vote_contested_resource_end_date_queries_at_time_tree_path_vec,
-    vote_decisions_active_polls_tree_path_vec, vote_decisions_tree_path_vec,
-    vote_end_date_queries_tree_path_vec, YesNoVotePollPaths, VOTE_DECISIONS_SUBTREE_KEYS,
+    vote_decisions_active_polls_tree_path_vec, vote_decisions_tree_path_vec, YesNoVotePollPaths,
+    VOTE_DECISIONS_SUBTREE_KEYS,
 };
 use crate::drive::votes::YesNoAbstainVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::common::encode::encode_u64;
-use crate::util::grove_operations::pending_grove_operations::grove_operation_queued;
-use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyInfo};
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::{DriveKeyInfo, PathKeyInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::ProtocolError;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn open_yes_no_vote_poll_v0(
@@ -65,16 +59,24 @@ impl Drive {
     ) -> Result<(), Error> {
         vote_poll.validate_parameters(platform_version)?;
         // A poll that ends in the block that opens it, or earlier, would close at the end of
-        // this block with no vote cast. So would one ending after `i64::MAX`: the end date index
-        // keys an end date with its top bit flipped (`encode_u64`), which sorts such an end date
+        // this block with no vote cast. One that runs longer than the system limit would hold
+        // its fund and trees for as long. The limit also keeps the end date below `i64::MAX`,
+        // past which the end date index (which flips its top bit, `encode_u64`) would sort it
         // before every block time.
-        if end_date <= block_info.time_ms || end_date > i64::MAX as TimestampMillis {
+        let max_duration = platform_version
+            .system_limits
+            .max_yes_no_vote_poll_duration_ms;
+        if end_date <= block_info.time_ms
+            || end_date - block_info.time_ms > max_duration
+            || end_date > i64::MAX as TimestampMillis
+        {
             return Err(Error::Protocol(Box::new(ProtocolError::VoteError(
                 format!(
-                    "yes/no vote poll {} must end after the block that opens it (at {}) and at \
-                     most at {}, not at {}",
+                    "yes/no vote poll {} must end after the block that opens it (at {}), at \
+                     most {} ms later and at most at {}, not at {}",
                     vote_poll,
                     block_info.time_ms,
+                    max_duration,
                     i64::MAX,
                     end_date
                 ),
@@ -146,49 +148,22 @@ impl Drive {
             )?;
         }
 
-        // The end date index closes the poll when its time comes: the end date's tree, then the
-        // poll's entry under it, the entry `add_vote_poll_end_date_query_operations` writes for
-        // a contest. Nobody is refunded for what an opening adds: the poll is a system action,
-        // so it carries no storage flags. A contest among the previous operations may already
-        // queue the end date's tree with its contender's storage flags; the tree keeps them and
-        // this opening adds only its entry, where the empty-tree insert, which skips only an
-        // identical insert, would queue the tree a second time.
-        let end_date_tree_path = vote_end_date_queries_tree_path_vec();
-        let end_date_key = encode_u64(end_date);
-        let end_date_tree_queued = previous_batch_operations
-            .as_deref()
-            .is_some_and(|previous| {
-                grove_operation_queued(
-                    previous,
-                    &KeyInfoPath::from_known_owned_path(end_date_tree_path.clone()),
-                    &KeyInfo::KnownKey(end_date_key.clone()),
-                )
-            });
-        if !end_date_tree_queued {
-            self.batch_insert_empty_tree_if_not_exists(
-                PathKeyInfo::PathKey::<0>((end_date_tree_path, end_date_key)),
-                TreeType::NormalTree,
-                None,
-                BatchInsertTreeApplyType::StatefulBatchInsertTree,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                &platform_version.drive,
-            )?;
-        }
-        self.batch_insert_if_not_exists(
-            PathKeyElementInfo::PathKeyRefElement::<0>((
-                vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date),
-                poll_id.as_bytes(),
-                Element::Item(
-                    VotePoll::YesNoVotePoll(vote_poll.clone()).serialize_to_bytes()?,
-                    None,
-                ),
-            )),
-            BatchInsertApplyType::StatefulBatchInsert,
-            transaction,
+        // The end date index closes the poll when its time comes: the entry a contest gets, under
+        // the end date's tree. Nobody is refunded for what an opening adds: the poll is a system
+        // action, so it carries no storage flags. A contest among the previous operations may
+        // already queue the end date's tree with its contender's flags, which the tree keeps, or
+        // queue its deletion (a contest leaving its join-window end date), which the insert
+        // cancels.
+        self.add_vote_poll_end_date_query_operations(
+            None,
+            VotePoll::YesNoVotePoll(vote_poll.clone()),
+            end_date,
+            block_info,
+            &mut None,
+            previous_batch_operations,
             batch_operations,
-            &platform_version.drive,
+            transaction,
+            platform_version,
         )?;
         Ok(())
     }

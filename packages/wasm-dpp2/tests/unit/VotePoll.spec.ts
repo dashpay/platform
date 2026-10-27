@@ -23,6 +23,7 @@ describe('VotePoll', () => {
       const json = poll.toJSON();
 
       expect(json.$type).to.equal('contestedDocumentResourceVotePoll');
+      expect(poll.kind).to.equal(json.$type);
       expect(json.contractId).to.equal(testContractId);
       expect(json.documentTypeName).to.equal('domain');
       expect(json.indexName).to.equal('parentNameAndLabel');
@@ -183,6 +184,7 @@ describe('VotePoll', () => {
       const poll = wasm.VotePoll.fromJSON(yesNoPollJSON);
 
       expect(poll.kind).to.equal('yesNoVotePoll');
+      expect(poll.kind).to.equal(poll.toJSON().$type);
       expect(() => poll.contractId).to.throw();
       expect(() => poll.documentTypeName).to.throw();
       expect(() => poll.indexName).to.throw();

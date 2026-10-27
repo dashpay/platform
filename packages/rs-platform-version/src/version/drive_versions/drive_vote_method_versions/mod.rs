@@ -78,5 +78,7 @@ pub struct DriveVoteInsertMethodVersions {
 pub struct DriveVoteContestedResourceInsertMethodVersions {
     pub register_contested_resource_identity_vote: FeatureVersion,
     pub insert_stored_info_for_contested_resource_vote_poll: FeatureVersion,
+    /// Adds a poll to the end date index. Version 1 (protocol version 15) adds only the entry
+    /// when the batch already queues the end date's tree with other storage flags.
     pub add_vote_poll_end_date_query_operations: FeatureVersion,
 }
