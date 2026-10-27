@@ -22,7 +22,7 @@ use dpp::state_transition::errors::{
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
-use crate::util::now_ms;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The key types Platform verifies an identity signature by (Drive's
 /// `validate_state_transition_identity_signed`). A key the caller chose is checked against
@@ -91,7 +91,8 @@ impl SigningScope<'_> {
 /// preferred over any key with limits, whatever their security levels: a key with a budget or
 /// an expiry is an application key, taken only when no unlimited key qualifies. Within each
 /// group keys go in key-id order. A disabled key is skipped, and so is a key whose expiry has
-/// passed the wall clock (the block time trails it by seconds at most). What is left of a
+/// passed the wall clock (the block time trails it by seconds at most), or any key with an
+/// expiry when the system clock reads before the Unix epoch. What is left of a
 /// budget is not known offline; a spent key is refused by Platform.
 ///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
@@ -104,13 +105,34 @@ pub fn usable_signing_key<'a>(
     key_types: &[KeyType],
     scope: SigningScope<'_>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    let now = now_ms();
+    usable_signing_key_at(
+        identity,
+        signer,
+        purpose,
+        security_levels,
+        key_types,
+        scope,
+        wall_clock_ms(),
+    )
+}
+
+/// [`usable_signing_key`] at wall-clock time `now`, in milliseconds since the Unix epoch;
+/// `None` when the clock cannot be read.
+fn usable_signing_key_at<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    purpose: Purpose,
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+    scope: SigningScope<'_>,
+    now: Option<u64>,
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == purpose
             && security_levels.contains(&key.security_level())
             && key_types.contains(&key.key_type())
             && !key.is_disabled()
-            && !key.is_expired_at(now)
+            && !expired_or_unknown(key, now)
             && scope.bounds_check(key) == BatchedTransitionBoundsCheck::Allowed
     };
     let keys = identity.public_keys();
@@ -130,7 +152,9 @@ pub fn usable_signing_key<'a>(
 /// `purposes`, a security level outside `security_levels`, a key type outside `key_types`, a
 /// disabled key, an expired key, or contract bounds that do not cover `scope`. A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
-/// `signer` cannot sign with is refused with the signer-unavailable error.
+/// `signer` cannot sign with is refused with the signer-unavailable error. A key with an
+/// expiry is refused with [`dash_sdk::Error::Config`] when the system clock reads before the
+/// Unix epoch, since its expiry cannot be checked.
 pub fn check_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
@@ -138,6 +162,28 @@ pub fn check_signing_key(
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
     scope: SigningScope<'_>,
+) -> Result<(), dash_sdk::Error> {
+    check_signing_key_at(
+        key,
+        signer,
+        purposes,
+        security_levels,
+        key_types,
+        scope,
+        wall_clock_ms(),
+    )
+}
+
+/// [`check_signing_key`] at wall-clock time `now`, in milliseconds since the Unix epoch;
+/// `None` when the clock cannot be read.
+fn check_signing_key_at(
+    key: &IdentityPublicKey,
+    signer: &impl Signer<IdentityPublicKey>,
+    purposes: &[Purpose],
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+    scope: SigningScope<'_>,
+    now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     if !purposes.contains(&key.purpose()) {
         return Err(
@@ -168,11 +214,19 @@ pub fn check_signing_key(
             ProtocolError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(key.id())).into(),
         );
     }
-    let now = now_ms();
-    if let Some(expires_at) = key.expires_at().filter(|_| key.is_expired_at(now)) {
-        return Err(signature_refusal(SignatureError::PublicKeyExpiredError(
-            PublicKeyExpiredError::new(key.id(), expires_at, now),
-        )));
+    if let Some(expires_at) = key.expires_at() {
+        let Some(now) = now else {
+            return Err(dash_sdk::Error::Config(format!(
+                "the system clock reads before the Unix epoch, so whether key {} has expired \
+                 cannot be told",
+                key.id()
+            )));
+        };
+        if key.is_expired_at(now) {
+            return Err(signature_refusal(SignatureError::PublicKeyExpiredError(
+                PublicKeyExpiredError::new(key.id(), expires_at, now),
+            )));
+        }
     }
     match scope.bounds_check(key) {
         BatchedTransitionBoundsCheck::Allowed
@@ -193,6 +247,24 @@ pub fn check_signing_key(
         }
     }
     require_available(key, signer).map(|_| ())
+}
+
+/// Whether `key` cannot be shown unexpired at `now`: its expiry has passed, or it has one and
+/// the clock could not be read. A key without an expiry never expires.
+fn expired_or_unknown(key: &IdentityPublicKey, now: Option<u64>) -> bool {
+    match (key.expires_at(), now) {
+        (None, _) => false,
+        (Some(_), None) => true,
+        (Some(_), Some(now)) => key.is_expired_at(now),
+    }
+}
+
+/// Milliseconds since the Unix epoch, or `None` when the system clock reads before it.
+fn wall_clock_ms() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_millis() as u64)
 }
 
 fn signature_refusal(error: SignatureError) -> dash_sdk::Error {
@@ -228,6 +300,7 @@ pub(super) mod tests {
     use super::super::signing_key::tests::{available, KeyFilter};
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use crate::util::now_ms;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -752,5 +825,48 @@ pub(super) mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn should_not_trust_an_expiry_without_a_valid_clock() {
+        let far_future = now_ms() + 1_000_000;
+        let expiring = key(1, SecurityLevel::HIGH).with_limits(None, Some(far_future));
+        let pick_without_clock = |identity: &Identity| {
+            usable_signing_key_at(
+                identity,
+                &KeyFilter(|_| true),
+                Purpose::AUTHENTICATION,
+                &LEVELS,
+                &TYPES,
+                document_scope(),
+                None,
+            )
+            .unwrap()
+            .map(|key| key.id())
+        };
+        assert_eq!(
+            pick_without_clock(&identity(vec![expiring.clone()])),
+            None,
+            "without a clock an expiry cannot be told from a passed one"
+        );
+        let budget_only = key(2, SecurityLevel::HIGH).with_limits(Some(1_000), None);
+        assert_eq!(
+            pick_without_clock(&identity(vec![expiring.clone(), budget_only])),
+            Some(2),
+            "a key without an expiry does not need the clock"
+        );
+        let refusal = check_signing_key_at(
+            &expiring,
+            &KeyFilter(|_| true),
+            &[Purpose::AUTHENTICATION],
+            &LEVELS,
+            &TYPES,
+            document_scope(),
+            None,
+        );
+        assert!(
+            matches!(refusal, Err(dash_sdk::Error::Config(_))),
+            "an explicit key with an expiry is refused without a clock: {refusal:?}"
+        );
     }
 }
