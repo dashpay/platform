@@ -7,8 +7,9 @@ use dashcore::{BlockHash, OutPoint, Txid};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
+use crate::changeset::PersistenceError;
 use crate::error::PlatformWalletError;
-use crate::wallet::persister::TransientMissTally;
+use crate::wallet::persister::{TransientMissTally, WalletPersister};
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::AssetLockStatus;
@@ -261,9 +262,9 @@ pub(super) fn record_or_persister(
 /// store is no reason to fail the upgrade. Any other failure is returned.
 pub(super) fn record_or_persister_tolerating_transient(
     in_memory: Option<TransactionRecord>,
-    persister: &crate::wallet::persister::WalletPersister,
+    persister: &WalletPersister,
     txid: &Txid,
-) -> Result<Option<TransactionRecord>, crate::changeset::PersistenceError> {
+) -> Result<Option<TransactionRecord>, PersistenceError> {
     if let Some(record) = in_memory {
         return Ok(Some(record));
     }

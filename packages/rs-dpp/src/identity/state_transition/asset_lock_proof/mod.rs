@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use bincode::{Decode, DecodeUntrusted, Encode};
 
 pub use instant::*;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_value::Value;
 #[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
@@ -216,17 +217,14 @@ impl TryFrom<u64> for AssetLockProofType {
 // TODO: Versioning
 impl AssetLockProof {
     /// The bytes this proof takes inside a serialized state transition: its
-    /// bincode encoding under the configuration `#[platform_serialize]` uses
-    /// for `StateTransition` (standard, big-endian). A transition encodes the
+    /// bincode encoding under [`PLATFORM_BINCODE_CONFIG`], the configuration
+    /// `#[platform_serialize]` uses for `StateTransition`. A transition encodes the
     /// proof in place as one of its fields, so two transitions that differ
     /// only in their proof differ in length by exactly the difference of these
     /// values.
     pub fn serialized_len_in_state_transition(&self) -> Result<usize, ProtocolError> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
         let mut writer = bincode::enc::write::SizeWriter::default();
-        bincode::encode_into_writer(self, &mut writer, config)
+        bincode::encode_into_writer(self, &mut writer, PLATFORM_BINCODE_CONFIG)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
         Ok(writer.bytes_written)
     }
