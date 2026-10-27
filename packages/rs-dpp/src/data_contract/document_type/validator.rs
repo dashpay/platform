@@ -25,8 +25,16 @@ use std::sync::{Arc, OnceLock};
 /// A document type read back from its stored, compiled form also holds what it was stored with
 /// to check its documents ([`LoadedValidationSchema`]). That one is data, not a cache: `Clone`
 /// keeps it, so its documents keep being checked as the version that stored it checks them.
-/// `PartialEq` and `Debug` leave it out, as the stored form is compiled from the schema the
-/// document type holds.
+/// `PartialEq` and `Debug` leave it out: equality compares what a document type declares, not
+/// how its documents are checked. A type read back from state equals the type parsed from the
+/// same schema even where the two check documents differently, the read-back one with the
+/// builder generation of the version that stored it, or refusing its documents where that
+/// version built no validation schema. Drive relies on it: rebuilding a system contract's
+/// document types (`Drive::apply_contract_rebuilding_document_types`) leaves a type whose
+/// stored form equals the new one as it is, so running it again over its own result deletes
+/// nothing; if a type read back from compiled storage never equaled a parsed one, every run
+/// would delete its documents again. To compare how two types check their documents, compare
+/// their `loaded_validation_schema()` as well.
 pub struct StatelessJsonSchemaLazyValidator(
     JsonSchemaValidator,
     #[cfg(feature = "validation-schema")] [NativeValidatorSlot; 1],
@@ -117,8 +125,10 @@ impl Deref for StatelessJsonSchemaLazyValidator {
     }
 }
 
+/// Always equal: the validators are caches built from the document type's schema, and the
+/// stored validation schema is left out so equality compares what a document type declares
+/// (see [`StatelessJsonSchemaLazyValidator`]).
 impl PartialEq for StatelessJsonSchemaLazyValidator {
-    // We assume that validator is stateless and initialized by the schema from DocumentType
     fn eq(&self, _other: &Self) -> bool {
         true
     }
