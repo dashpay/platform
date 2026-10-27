@@ -37,8 +37,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, dash_sdk::Error>
     {
-        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
         use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
+
+        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
 
         let mut builder = TokenDirectPurchaseTransitionBuilder::new(
             data_contract,

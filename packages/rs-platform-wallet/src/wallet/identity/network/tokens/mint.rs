@@ -40,8 +40,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
-        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
         use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
+
+        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
 
         // Contracts with `minting_allow_choosing_destination = false`
         // reject any mint where `issued_to_identity_id.is_some()` at

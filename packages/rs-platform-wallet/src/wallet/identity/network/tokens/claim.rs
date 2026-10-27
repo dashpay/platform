@@ -29,13 +29,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::ClaimResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
+
         check_token_signing_key(
             signing_key,
             signer,
             &data_contract,
             &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
         )?;
-        use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
 
         let mut builder = TokenClaimTransitionBuilder::new(
             data_contract,

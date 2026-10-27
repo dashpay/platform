@@ -32,8 +32,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, dash_sdk::Error> {
-        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
         use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
+
+        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
 
         let mut builder = TokenConfigUpdateTransitionBuilder::new(
             data_contract,

@@ -717,15 +717,11 @@ pub(super) mod tests {
 
     #[test]
     fn should_deny_a_non_batch_signature_exactly_when_dpp_says_the_key_cannot_sign_one() {
-        let purposes = [
-            Purpose::AUTHENTICATION,
-            Purpose::ENCRYPTION,
-            Purpose::DECRYPTION,
-            Purpose::TRANSFER,
-            Purpose::SYSTEM,
-            Purpose::VOTING,
-            Purpose::OWNER,
-        ];
+        // Every purpose dpp decodes, so a purpose added later is covered too.
+        let purposes: Vec<Purpose> = (0..=u8::MAX)
+            .filter_map(|byte| Purpose::try_from(byte).ok())
+            .collect();
+        assert!(purposes.len() >= 7, "{purposes:?}");
         let contract_id = Identifier::from(CONTRACT);
         let bounds = [
             None,
@@ -736,7 +732,7 @@ pub(super) mod tests {
             }),
             Some(ContractBounds::ContractGroup { id: contract_id }),
         ];
-        for purpose in purposes {
+        for &purpose in &purposes {
             for contract_bounds in &bounds {
                 let mut key = bound_key(1, SecurityLevel::HIGH, contract_bounds.clone());
                 key.set_purpose(purpose);

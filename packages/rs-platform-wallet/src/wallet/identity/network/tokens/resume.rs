@@ -30,8 +30,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error>
     {
-        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
         use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
+
+        check_token_signing_key(signing_key, signer, &data_contract, &TOKEN_SIGNING_PURPOSES)?;
 
         let mut builder = TokenEmergencyActionTransitionBuilder::resume(
             data_contract,
