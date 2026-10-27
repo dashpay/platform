@@ -27,7 +27,9 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
-use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
+use super::key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -119,7 +121,8 @@ pub(super) fn document_signing_key<'a>(
 }
 
 /// Check a key the caller chose to sign a document batch in `scope` whose document type
-/// requires `requirement`, by the rules [`document_signing_key`] applies.
+/// requires `requirement`, by the rules [`document_signing_key`] applies, except that any key
+/// type Platform verifies is accepted.
 pub(super) fn check_document_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
@@ -131,7 +134,7 @@ pub(super) fn check_document_signing_key(
         signer,
         &[Purpose::AUTHENTICATION],
         &SecurityLevel::accepted_for_requirement(requirement),
-        &[KeyType::ECDSA_SECP256K1],
+        &PLATFORM_SIGNING_KEY_TYPES,
         scope,
     )
 }
@@ -1037,7 +1040,9 @@ mod tests {
 
     use super::super::key_selection::tests::{bound_key, identity, key};
     use super::super::signing_key::tests::KeyFilter;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::{
+        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+    };
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 
     const CONTRACT: [u8; 32] = [0xDA; 32];
@@ -1112,6 +1117,17 @@ mod tests {
         assert!(
             check(&key(1, SecurityLevel::HIGH).with_limits(None, Some(1))).is_err(),
             "the key has expired"
+        );
+        for key_type in [KeyType::ECDSA_HASH160, KeyType::BLS12_381] {
+            let mut explicit = key(1, SecurityLevel::HIGH);
+            explicit.set_key_type(key_type);
+            check(&explicit).expect("Platform verifies a signature by this key type");
+        }
+        let mut eddsa = key(1, SecurityLevel::HIGH);
+        eddsa.set_key_type(KeyType::EDDSA_25519_HASH160);
+        assert!(
+            check(&eddsa).is_err(),
+            "Platform cannot verify an identity signature by this key type"
         );
     }
 }

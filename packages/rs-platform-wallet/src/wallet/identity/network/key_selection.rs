@@ -24,6 +24,15 @@ use dpp::ProtocolError;
 use super::signing_key::{first_available, require_available};
 use crate::util::now_ms;
 
+/// The key types Platform verifies an identity signature by (Drive's
+/// `validate_state_transition_identity_signed`). A key the caller chose is checked against
+/// these, not against the narrower set the wallet picks its own keys from.
+pub(crate) const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
+    KeyType::ECDSA_SECP256K1,
+    KeyType::BLS12_381,
+    KeyType::ECDSA_HASH160,
+];
+
 /// What a signature authorizes, as far as a key's contract bounds go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigningScope<'a> {

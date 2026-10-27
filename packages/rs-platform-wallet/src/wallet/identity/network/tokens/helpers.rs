@@ -12,7 +12,9 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
+use super::super::key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+};
 use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -29,7 +31,7 @@ use crate::wallet::identity::network::IdentityWallet;
 /// batch with a token transition.
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
-/// The key types [`token_signing_key`] accepts.
+/// The key types [`token_signing_key`] picks from.
 const TOKEN_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
 
 /// The key that signs a token operation of `token_contract_id`: a CRITICAL AUTHENTICATION
@@ -60,8 +62,9 @@ pub(super) const LONE_TOKEN_TRANSFER_SIGNING_PURPOSES: [Purpose; 2] =
     [Purpose::AUTHENTICATION, Purpose::TRANSFER];
 
 /// Check a key the caller chose to sign a token operation of `data_contract`, with one of
-/// `purposes`, by the rules [`token_signing_key`] applies, so a key Platform would refuse fails
-/// before any request. Contract bounds limit only an AUTHENTICATION key.
+/// `purposes`, by the rules [`token_signing_key`] applies except that any key type Platform
+/// verifies is accepted, so a key Platform would refuse fails before any request. Contract
+/// bounds limit only an AUTHENTICATION key.
 pub(super) fn check_token_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
@@ -73,7 +76,7 @@ pub(super) fn check_token_signing_key(
         signer,
         purposes,
         &TOKEN_SIGNING_LEVELS,
-        &TOKEN_SIGNING_KEY_TYPES,
+        &PLATFORM_SIGNING_KEY_TYPES,
         SigningScope::Contract {
             contract_id: data_contract.id(),
         },
@@ -280,6 +283,33 @@ mod signing_tests {
                     if error.allowed_key_purposes() == &vec![Purpose::AUTHENTICATION]
             ),
             "only a lone transfer or claim takes a TRANSFER key: {burn:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_accept_an_explicit_token_key_of_any_type_platform_verifies() {
+        let wallet = wallet_with_signing_keys().await;
+        let mut hash160 = key(1, SecurityLevel::CRITICAL);
+        hash160.set_key_type(KeyType::ECDSA_HASH160);
+        let burn = wallet
+            .identity()
+            .token_burn_with_signer(
+                some_contract(),
+                0,
+                Identifier::from([1; 32]),
+                1,
+                &hash160,
+                &KeyFilter(|_| true),
+                None,
+                None,
+                None,
+            )
+            .await
+            .err()
+            .expect("the mock SDK has no answers");
+        assert!(
+            matches!(burn, dash_sdk::Error::DapiClientError(_)),
+            "Platform verifies an ECDSA_HASH160 signature, so the request goes out: {burn:?}"
         );
     }
 

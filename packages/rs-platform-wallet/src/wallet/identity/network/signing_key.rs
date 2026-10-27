@@ -1,6 +1,8 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
-use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
+use super::key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -100,7 +102,7 @@ pub(super) fn credit_signing_key<'a>(
             signer,
             &purposes,
             &SecurityLevel::full_range(),
-            &KeyType::all_key_types(),
+            &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         )?;
         return Ok(key);
@@ -429,9 +431,14 @@ pub(super) mod tests {
         owner.set_purpose(Purpose::OWNER);
         let mut authentication = owner.clone();
         identity.add_public_key(owner);
+        let mut script_hash = authentication.clone();
         authentication.set_id(4);
         authentication.set_purpose(Purpose::AUTHENTICATION);
         identity.add_public_key(authentication);
+        script_hash.set_id(5);
+        script_hash.set_purpose(Purpose::TRANSFER);
+        script_hash.set_key_type(KeyType::BIP13_SCRIPT_HASH);
+        identity.add_public_key(script_hash);
         identity
             .public_keys_mut()
             .get_mut(&1)
@@ -470,6 +477,15 @@ pub(super) mod tests {
                     if error.allowed_key_purposes() == &vec![Purpose::TRANSFER, Purpose::OWNER]
             ),
             "a withdrawal names both purposes it takes"
+        );
+        assert!(
+            matches!(
+                explicit(5, false),
+                Err(dash_sdk::Error::Protocol(
+                    ProtocolError::InvalidIdentityPublicKeyTypeError(_)
+                ))
+            ),
+            "Platform cannot verify an identity signature by a script hash"
         );
         assert_eq!(explicit(3, true).unwrap(), 3, "a withdrawal may take OWNER");
         assert_eq!(explicit(2, false).unwrap(), 2);

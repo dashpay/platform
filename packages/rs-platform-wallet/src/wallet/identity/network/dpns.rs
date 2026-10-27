@@ -618,6 +618,8 @@ mod signing_key_tests {
         use super::super::signing_key::tests::wallet_with_signing_keys;
         use dpp::consensus::signature::SignatureError;
         use dpp::consensus::ConsensusError;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        use dpp::identity::KeyType;
 
         let wallet = wallet_with_signing_keys().await;
         let bound_to_domain = bound_key(
@@ -661,6 +663,13 @@ mod signing_key_tests {
                 )
             ),
             "MASTER is refused on document writes: {error:?}"
+        );
+        let mut hash160 = key(2, SecurityLevel::HIGH);
+        hash160.set_key_type(KeyType::ECDSA_HASH160);
+        let error = register(hash160).await.unwrap_err();
+        assert!(
+            matches!(error, dash_sdk::Error::DapiClientError(_)),
+            "Platform verifies an ECDSA_HASH160 signature, so the request goes out: {error:?}"
         );
     }
 }
