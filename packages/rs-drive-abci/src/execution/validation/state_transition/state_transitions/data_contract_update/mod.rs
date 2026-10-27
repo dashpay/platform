@@ -3,6 +3,7 @@ mod basic_structure;
 mod contract_structure_error_tests;
 mod identity_contract_nonce;
 mod state;
+mod transform_into_action;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
@@ -28,6 +29,7 @@ use crate::execution::validation::state_transition::processor::basic_structure::
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::transform_into_action::v1::DataContractUpdateStateTransitionTransformIntoActionV1;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -73,7 +75,7 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
         >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
+        _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -85,16 +87,20 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0(
-                platform,
                 block_info,
                 validation_mode,
                 execution_context,
-                tx,
+                platform_version,
+            ),
+            1 => self.transform_into_action_v1(
+                block_info,
+                validation_mode,
+                execution_context,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

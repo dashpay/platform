@@ -182,7 +182,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    decoder that reads format version 2 to verify it. A contract compiled takes at most
 ///    `max_compiled_contract_size` (1 MiB): registration and update refuse a contract over
 ///    it, and a token configuration update one it would take over it
-///    (`DataContractCompiledMaxSizeExceededError`, 10282).
+///    (`DataContractCompiledMaxSizeExceededError`, 10282). check_tx and recheck, which run
+///    no state validation, hold a contract update to it through
+///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
+///    time fields at their widest: a bound on what a block measures.
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
@@ -191,7 +194,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
