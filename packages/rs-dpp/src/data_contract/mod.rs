@@ -226,6 +226,26 @@ impl DataContract {
         Ok(SimpleConsensusValidationResult::new())
     }
 
+    /// [`Self::validate_compiled_size`] as an error: a contract over the cap refused with its
+    /// [`DataContractCompiledMaxSizeExceededError`] as a `ProtocolError::ConsensusError`, as a
+    /// contract parse refuses one, for the callers that turn parse errors into the
+    /// transition's refusal.
+    #[cfg(feature = "validation")]
+    pub fn ensure_compiled_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match self
+            .validate_compiled_size(platform_version)?
+            .errors
+            .into_iter()
+            .next()
+        {
+            Some(error) => Err(ProtocolError::ConsensusError(Box::new(error))),
+            None => Ok(()),
+        }
+    }
+
     /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
     /// format state transitions carry (`contract_serialization_version`), the bytes the
     /// protocol caps. Stored compiled, a contract holds those bytes' fields as its base, so

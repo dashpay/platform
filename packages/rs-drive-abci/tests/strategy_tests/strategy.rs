@@ -455,14 +455,9 @@ impl NetworkStrategy {
         let operations_to_execute = self.strategy.operations.clone();
         for op in operations_to_execute.iter() {
             if let OperationType::Document(doc_op) = &op.op_type {
-                let serialize = doc_op
-                    .contract
-                    .serialize_to_storage_bytes(platform_version)
-                    .expect("expected to serialize");
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &doc_op.contract,
-                        serialize,
                         BlockInfo::default(),
                         true,
                         Some(Cow::Owned(SingleEpoch(0))),

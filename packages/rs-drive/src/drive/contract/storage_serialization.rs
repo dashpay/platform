@@ -47,6 +47,25 @@ pub(crate) fn serialize_contract_for_storage(
     Ok(stored)
 }
 
+/// The size a fee estimate reads a stored contract at, as an estimate cannot read it:
+/// `estimated_contract_max_serialized_size` where contracts are stored in the format
+/// transitions carry, and `max_compiled_contract_size`, the most a contract stored compiled
+/// takes, where they are stored compiled.
+pub(crate) fn estimated_stored_contract_size(platform_version: &PlatformVersion) -> u32 {
+    if platform_version
+        .dpp
+        .contract_versions
+        .contract_storage_serialization_version
+        >= 2
+    {
+        platform_version.system_limits.max_compiled_contract_size
+    } else {
+        platform_version
+            .system_limits
+            .estimated_contract_max_serialized_size as u32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::paths::contract_root_path;

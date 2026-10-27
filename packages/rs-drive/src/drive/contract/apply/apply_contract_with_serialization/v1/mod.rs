@@ -1,3 +1,4 @@
+use crate::drive::contract::estimated_stored_contract_size;
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 
 use crate::drive::Drive;
@@ -116,13 +117,9 @@ impl Drive {
         } else {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                // we can ignore flags as this is just an approximation
-                // and it's doubtful that contracts will always be inserted at max size
-                query_target: QueryTargetValue(
-                    platform_version
-                        .system_limits
-                        .estimated_contract_max_serialized_size as u32,
-                ),
+                // we can ignore flags as this is just an approximation; a contract stored
+                // compiled is read at the most it can take
+                query_target: QueryTargetValue(estimated_stored_contract_size(platform_version)),
             }
         };
 

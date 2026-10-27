@@ -485,6 +485,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_operations = vec![];
 
+        let full_validation =
+            validation_mode.should_fully_validate_contract_on_transform_into_action();
         let result = validate_document_schemas_depth_for_check_tx(
             self.data_contract(),
             validation_mode,
@@ -494,10 +496,22 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             DataContractUpdateTransitionAction::try_from_borrowed_transition(
                 self,
                 block_info,
-                validation_mode.should_fully_validate_contract_on_transform_into_action(),
+                full_validation,
                 &mut validation_operations,
                 platform_version,
             )
+        })
+        .and_then(|action| {
+            // Full validation holds a contract stored compiled to its size cap; without it, as
+            // check_tx parses, hold it here, so check_tx refuses it as a block does rather than
+            // failing to estimate its storage. Edited in place: through protocol version 14,
+            // which stores no contract compiled, this refuses and compiles nothing
+            if !full_validation {
+                action
+                    .data_contract_ref()
+                    .ensure_compiled_size(platform_version)?;
+            }
+            Ok(action)
         });
 
         execution_context.add_dpp_operations(validation_operations);

@@ -420,6 +420,8 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         // The transformation of the state transition into the state transition action will transform
         // The contract in serialized form into it's execution form
+        let full_validation =
+            validation_mode.should_fully_validate_contract_on_transform_into_action();
         let result = validate_document_schemas_depth_for_check_tx(
             self.data_contract(),
             validation_mode,
@@ -429,10 +431,22 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             DataContractCreateTransitionAction::try_from_borrowed_transition(
                 self,
                 block_info,
-                validation_mode.should_fully_validate_contract_on_transform_into_action(),
+                full_validation,
                 &mut validation_operations,
                 platform_version,
             )
+        })
+        .and_then(|action| {
+            // Full validation holds a contract stored compiled to its size cap; without it, as
+            // check_tx parses, hold it here, so check_tx refuses it as a block does rather than
+            // failing to estimate its storage. Edited in place: through protocol version 14,
+            // which stores no contract compiled, this refuses and compiles nothing
+            if !full_validation {
+                action
+                    .data_contract_ref()
+                    .ensure_compiled_size(platform_version)?;
+            }
+            Ok(action)
         });
 
         execution_context.add_dpp_operations(validation_operations);
@@ -982,6 +996,57 @@ mod tests {
 
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        /// A contract compiled over its cap is the transition's error in check_tx, which parses
+        /// without full validation, as in a block: a lowered cap stands for a contract over it.
+        #[test]
+        fn should_refuse_in_check_tx_a_contract_compiled_over_the_cap() {
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version.system_limits.max_compiled_contract_size = 100;
+            let identity_nonce = IdentityNonce::default();
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+            let identity_id = data_contract.owner_id();
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract
+                    .try_into_platform_versioned(&platform_version)
+                    .expect("failed to convert data contract"),
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            for validation_mode in [ValidationMode::CheckTx, ValidationMode::Validator] {
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        &platform_version,
+                    )
+                    .expect("failed to create execution context");
+                let result = transition
+                    .transform_into_action_v0::<MockCoreRPCLike>(
+                        &BlockInfo::default(),
+                        validation_mode,
+                        &mut execution_context,
+                        &platform_version,
+                    )
+                    .expect("failed to transform the transition");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    )] if error.max_compiled_size() == 100,
+                    "{validation_mode:?}"
+                );
+                assert_matches!(
+                    result.data,
+                    Some(StateTransitionAction::BumpIdentityNonceAction(action)) if action.identity_id() == identity_id
+                );
+            }
         }
 
         #[test]

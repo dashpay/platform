@@ -47,8 +47,13 @@ impl Drive {
     ///
     /// This function returns an error if the contract application or fee calculation fails, or if
     /// the provided drive version does not match any known versions.
+    ///
+    /// Crate-private: the bytes are trusted to be what [`serialize_contract_for_storage`]
+    /// gives for `contract`, so only Drive's own writers, which make them with it, pass them.
+    ///
+    /// [`serialize_contract_for_storage`]: crate::drive::contract::serialize_contract_for_storage
     #[allow(clippy::too_many_arguments)]
-    pub fn apply_contract_with_serialization(
+    pub(crate) fn apply_contract_with_serialization(
         &self,
         contract: &DataContract,
         contract_serialization: Vec<u8>,

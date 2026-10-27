@@ -632,14 +632,7 @@ impl DataContract {
         // format transitions carry, and where this refuses nothing.
         #[cfg(feature = "validation")]
         if full_validation {
-            if let Some(error) = contract
-                .validate_compiled_size(platform_version)?
-                .errors
-                .into_iter()
-                .next()
-            {
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
+            contract.ensure_compiled_size(platform_version)?;
         }
         Ok(contract)
     }
