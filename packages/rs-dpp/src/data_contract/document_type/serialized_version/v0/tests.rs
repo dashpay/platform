@@ -7,6 +7,7 @@ use crate::data_contract::document_type::property_constraints::PropertyConstrain
 use crate::data_contract::document_type::{ContestedIndexFieldMatch, Index, LazyRegex};
 use crate::tests::fixtures::get_dpns_data_contract_fixture;
 use bincode::error::DecodeError;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::version::PlatformVersion;
 
 /// `present` under `depth` negations.
@@ -20,7 +21,7 @@ fn negated(depth: usize) -> PropertyConstraint {
 
 /// `rule` stored, encoded, and decoded with the untrusted decoder, as from a proof.
 fn round_trip(rule: &PropertyConstraint) -> Result<PropertyConstraint, DecodeError> {
-    let config = bincode::config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let bytes = bincode::encode_to_vec(StoredRule::from(rule), config)
         .expect("expected the rule to encode");
     bincode::borrow_decode_from_slice_untrusted::<StoredRule, _>(&bytes, config)

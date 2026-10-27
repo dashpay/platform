@@ -14,6 +14,7 @@ use crate::serialization::JsonSafeFields;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_value::string_encoding::{decode, encode, Encoding};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -64,16 +65,14 @@ impl DocumentTypeInSerializationFormat {
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        bincode::encode_to_vec(self, bincode::config::standard().with_big_endian())
+        bincode::encode_to_vec(self, PLATFORM_BINCODE_CONFIG)
             .map_err(|e| ProtocolError::PlatformSerializationError(e.to_string()))
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let (format, read) = bincode::borrow_decode_from_slice_untrusted(
-            bytes,
-            bincode::config::standard().with_big_endian(),
-        )
-        .map_err(|e| ProtocolError::PlatformDeserializationError(e.to_string()))?;
+        let (format, read) =
+            bincode::borrow_decode_from_slice_untrusted(bytes, PLATFORM_BINCODE_CONFIG)
+                .map_err(|e| ProtocolError::PlatformDeserializationError(e.to_string()))?;
         if read != bytes.len() {
             return Err(ProtocolError::PlatformDeserializationError(
                 "bytes left over after a stored document type".to_string(),

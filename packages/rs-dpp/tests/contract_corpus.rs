@@ -9,6 +9,7 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::DataContract;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
@@ -165,12 +166,11 @@ fn should_read_back_every_corpus_contract_from_its_compiled_stored_form() {
 
         // As Drive reads it; as a client reads it from a proof, which authenticates its
         // compiled types; and as the untrusted decoders read it, from its schemas
-        let (stored_format, _) =
-            dpp::bincode::decode_from_slice::<DataContractInSerializationFormat, _>(
-                &stored,
-                dpp::bincode::config::standard().with_big_endian(),
-            )
-            .unwrap_or_else(|error| panic!("{origin} stored form does not decode: {error}"));
+        let (stored_format, _) = dpp::bincode::decode_from_slice::<
+            DataContractInSerializationFormat,
+            _,
+        >(&stored, PLATFORM_BINCODE_CONFIG)
+        .unwrap_or_else(|error| panic!("{origin} stored form does not decode: {error}"));
         let read_backs = [
             DataContract::versioned_deserialize_trusted(&stored, false, platform_version),
             DataContract::try_from_platform_versioned(

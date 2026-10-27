@@ -7,6 +7,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::tests::fixtures::get_data_contract_fixture;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 use std::sync::OnceLock;
@@ -162,7 +163,7 @@ fn should_read_an_untrusted_stored_form_from_its_schemas_alone() {
     format.document_types.insert(names[0].clone(), second);
     format.document_types.insert(names[1].clone(), first);
     let format = DataContractInSerializationFormat::V2(format);
-    let config = bincode::config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let bytes =
         bincode::encode_to_vec(&format, config).expect("expected the stored form to encode");
     let latest = PlatformVersion::latest();
