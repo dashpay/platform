@@ -139,6 +139,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         account_registrations,
         provider_key_account_registrations,
         account_address_pools,
+        account_pool_resets,
         pending_contact_crypto_added,
         pending_contact_crypto_cleared,
         invitations,
@@ -197,7 +198,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     if !account_registrations.is_empty() || !provider_key_account_registrations.is_empty() {
         out.push(Domain::AccountRegistrations);
     }
-    if !account_address_pools.is_empty() {
+    if !account_address_pools.is_empty() || !account_pool_resets.is_empty() {
         out.push(Domain::CoreAddressPool);
     }
     if !pending_contact_crypto_added.is_empty() || !pending_contact_crypto_cleared.is_empty() {

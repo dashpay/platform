@@ -126,6 +126,7 @@ impl PlatformWalletInfo {
             account_registrations: _,
             provider_key_account_registrations: _,
             account_address_pools: _,
+            account_pool_resets: _,
             // The deferred contact-crypto queue is persistence-only here too:
             // the in-memory queue is mutated directly at the enqueue (sweep)
             // and drain (signer-present) sites, and restored at load via the

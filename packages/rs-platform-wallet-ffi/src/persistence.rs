@@ -6185,6 +6185,9 @@ fn build_wallet_start_state(
         unused_asset_locks,
         unconfirmed_outgoing_txs,
         dashpay_backfill,
+        // This host keeps no outbound account digests: each outbound account
+        // is confirmed by decrypting after a launch.
+        outbound_account_digests: BTreeMap::new(),
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -9401,6 +9404,7 @@ mod tests {
                     friend_identity_id: contact.to_buffer(),
                 },
                 account_xpub: xpub,
+                encrypted_xpub_digest: None,
             }],
             contacts: Some(contacts),
             ..PlatformWalletChangeSet::default()

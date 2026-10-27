@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::hashes::{sha256, Hash};
 use dashcore::Txid;
 
 use dash_sdk::platform::address_sync::AddressFunds;
@@ -1863,6 +1864,22 @@ pub struct AccountRegistrationEntry {
     pub account_type: AccountType,
     /// Bincode-encoded extended public key for this account.
     pub account_xpub: ExtendedPubKey,
+    /// For a `DashpayExternalAccount`: the SHA-256 of the contact request's
+    /// `encrypted_public_key` the xpub was decrypted from, `None` for every
+    /// other account. It rides the row that holds the xpub, so a backend can
+    /// never keep one without the other, and a load compares it with the
+    /// contact's live request to tell whether the account is current without
+    /// decrypting anything. See [`encrypted_xpub_digest`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub encrypted_xpub_digest: Option<[u8; 32]>,
+}
+
+/// The digest an outbound `DashpayExternalAccount` records of the contact
+/// request it was built from: SHA-256 over the request's
+/// `encrypted_public_key`. A request that re-encrypts the same xpub gets a new
+/// digest, which costs one decrypt-and-keep, never a wrong account.
+pub fn encrypted_xpub_digest(encrypted_public_key: &[u8]) -> [u8; 32] {
+    sha256::Hash::hash(encrypted_public_key).to_byte_array()
 }
 
 /// Non-secp256k1 extended public key carried by a
@@ -2251,6 +2268,15 @@ pub struct PlatformWalletChangeSet {
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Accounts whose stored address-pool rows a backend drops before it
+    /// applies this round's [`Self::account_address_pools`]: an account that
+    /// is registered again under another xpub derives other addresses at the
+    /// same pool indices, and rows of the old xpub must not survive beside
+    /// them. Each account appears once. On merge, a later reset also drops
+    /// the earlier round's pool snapshots of that account, so the merged
+    /// round applies the same rows the two rounds would in sequence.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub account_pool_resets: Vec<AccountType>,
     /// Deferred contact-crypto ops enqueued by the seedless background sweep
     /// (key material unavailable). Append-only delta; apply inserts into the
     /// persisted queue, deduped by [`PendingContactCryptoKey`]. Secret-free.
@@ -2400,6 +2426,13 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.account_registrations);
         self.provider_key_account_registrations
             .extend(other.provider_key_account_registrations);
+        for reset in other.account_pool_resets {
+            self.account_address_pools
+                .retain(|entry| entry.account_type != reset);
+            if !self.account_pool_resets.contains(&reset) {
+                self.account_pool_resets.push(reset);
+            }
+        }
         self.account_address_pools
             .extend(other.account_address_pools);
         // Deferred contact-crypto queue: append-only add/clear deltas; the
@@ -2432,6 +2465,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()
+            && self.account_pool_resets.is_empty()
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
         core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
@@ -2507,6 +2541,78 @@ mod serde_compat_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn contact_account(friend: u8) -> AccountType {
+        AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1; 32],
+            friend_identity_id: [friend; 32],
+        }
+    }
+
+    fn pool_of(account_type: AccountType) -> AccountAddressPoolEntry {
+        AccountAddressPoolEntry {
+            account_type,
+            pool_type: AddressPoolType::Absent,
+            addresses: Vec::new(),
+        }
+    }
+
+    /// A merged round applies what the two rounds would in sequence: a later
+    /// reset drops the earlier round's snapshots of that account, not
+    /// another account's and not its own round's, and is listed once.
+    #[test]
+    fn should_drop_earlier_pool_snapshots_of_an_account_a_later_round_resets() {
+        let (replaced, other) = (contact_account(2), contact_account(3));
+        let mut merged = PlatformWalletChangeSet {
+            account_address_pools: vec![pool_of(replaced), pool_of(other)],
+            account_pool_resets: vec![replaced],
+            ..Default::default()
+        };
+        merged.merge(PlatformWalletChangeSet {
+            account_address_pools: vec![pool_of(replaced)],
+            account_pool_resets: vec![replaced],
+            ..Default::default()
+        });
+
+        assert_eq!(merged.account_pool_resets, vec![replaced]);
+        assert_eq!(
+            merged
+                .account_address_pools
+                .iter()
+                .map(|entry| entry.account_type)
+                .collect::<Vec<_>>(),
+            vec![other, replaced],
+            "the earlier snapshot of the reset account is gone, the later one stays"
+        );
+    }
+
+    /// The new pool a replacement stores after its reset survives a merge
+    /// with the reset's earlier round.
+    #[test]
+    fn should_keep_pool_snapshots_that_follow_an_earlier_reset() {
+        let replaced = contact_account(2);
+        let mut merged = PlatformWalletChangeSet {
+            account_pool_resets: vec![replaced],
+            ..Default::default()
+        };
+        merged.merge(PlatformWalletChangeSet {
+            account_address_pools: vec![pool_of(replaced)],
+            ..Default::default()
+        });
+
+        assert_eq!(merged.account_pool_resets, vec![replaced]);
+        assert_eq!(merged.account_address_pools.len(), 1);
+    }
+
+    #[test]
+    fn should_not_count_a_round_that_only_resets_a_pool_as_empty() {
+        let round = PlatformWalletChangeSet {
+            account_pool_resets: vec![contact_account(2)],
+            ..Default::default()
+        };
+        assert!(!round.is_empty());
+    }
 
     fn identity_entry_with_contested(id: Identifier, labels: &[&str]) -> IdentityEntry {
         IdentityEntry {

@@ -57,6 +57,7 @@ fn platform_address_balance_negative_on_disk_errors_on_load() {
             key_class: 0,
         },
         account_xpub: test_xpub(),
+        encrypted_xpub_digest: None,
     }];
     persister.store(w, cs).expect("store account registration");
     PlatformWalletPersistence::flush(&persister, w).expect("flush account registration");

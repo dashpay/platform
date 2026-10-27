@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use rusqlite::{params, Connection, Transaction};
+use serde::{Deserialize, Serialize};
 
 use platform_wallet::changeset::{
     AccountRegistrationEntry, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
@@ -20,7 +21,40 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 
 // PUBLIC material only: the account-registration xpub manifest reaching
 // the `account_xpub_bytes` blob column.
-impl_persistable_blob!(AccountRegistrationEntry);
+impl_persistable_blob!(AccountRegistrationWire);
+
+/// The `account_xpub_bytes` payload of an ordinary account row.
+///
+/// Its fields keep the historical `AccountRegistrationEntry` order and serde
+/// encodings, so every row written before the entry grew a digest decodes
+/// byte-identically. The digest an outbound DashPay account records lives in
+/// the separate nullable `encrypted_xpub_digest` column, so adding it never
+/// changes this published bincode layout.
+#[derive(Serialize, Deserialize)]
+pub struct AccountRegistrationWire {
+    account_type: AccountType,
+    account_xpub: ExtendedPubKey,
+}
+
+impl From<&AccountRegistrationEntry> for AccountRegistrationWire {
+    fn from(entry: &AccountRegistrationEntry) -> Self {
+        Self {
+            account_type: entry.account_type,
+            account_xpub: entry.account_xpub,
+        }
+    }
+}
+
+impl AccountRegistrationWire {
+    /// The entry this payload stores, with the digest read from its column.
+    pub fn into_entry(self, encrypted_xpub_digest: Option<[u8; 32]>) -> AccountRegistrationEntry {
+        AccountRegistrationEntry {
+            account_type: self.account_type,
+            account_xpub: self.account_xpub,
+            encrypted_xpub_digest,
+        }
+    }
+}
 
 // PUBLIC material only: the provider account's own-curve extended PUBLIC key
 // (BLS operator / EdDSA platform node) reaching the same blob column. The type
@@ -66,7 +100,7 @@ fn decode_platform_payment_row(
         "account_registrations.key_class",
         typed_key_class,
     )?;
-    let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
+    let entry = blob::decode::<AccountRegistrationWire>(xpub_bytes)?.into_entry(None);
     // Callers select `WHERE account_type = 'platform_payment'`, so the decoded
     // blob must agree: a PlatformPayment account at the same index AND key_class.
     // key_class is a real discriminator — two PlatformPayment accounts can share
@@ -186,7 +220,11 @@ pub fn apply_registrations(
             &mut stmt,
             wallet_id,
             &entry.account_type,
-            blob::encode(entry)?,
+            blob::encode(&AccountRegistrationWire::from(entry))?,
+            entry
+                .encrypted_xpub_digest
+                .as_ref()
+                .map(<[u8; 32]>::as_slice),
         )?;
     }
     Ok(())
@@ -215,17 +253,18 @@ fn is_provider_key_material(account_type: &AccountType) -> bool {
 /// Upsert for an ordinary secp256k1 `account_registrations` row.
 const UPSERT_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
         (wallet_id, account_type, account_index, key_class, \
-         user_identity_id, friend_identity_id, account_xpub_bytes) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         user_identity_id, friend_identity_id, account_xpub_bytes, encrypted_xpub_digest) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
      ON CONFLICT(wallet_id, account_type, account_index, key_class, \
          user_identity_id, friend_identity_id) DO UPDATE SET \
-        account_xpub_bytes = excluded.account_xpub_bytes";
+        account_xpub_bytes = excluded.account_xpub_bytes, \
+        encrypted_xpub_digest = excluded.encrypted_xpub_digest";
 
 /// Insert a provider key-material account without overwriting persisted bytes.
 const UPSERT_PROVIDER_ACCOUNT_SQL: &str = "INSERT INTO account_registrations \
         (wallet_id, account_type, account_index, key_class, \
-         user_identity_id, friend_identity_id, account_xpub_bytes) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         user_identity_id, friend_identity_id, account_xpub_bytes, encrypted_xpub_digest) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
      ON CONFLICT(wallet_id, account_type, account_index, key_class, \
          user_identity_id, friend_identity_id) DO NOTHING";
 
@@ -236,6 +275,7 @@ fn upsert_account_row(
     wallet_id: &WalletId,
     account_type: &AccountType,
     payload: Vec<u8>,
+    encrypted_xpub_digest: Option<&[u8]>,
 ) -> Result<(), WalletStorageError> {
     let (user_identity_id, friend_identity_id) = account_dashpay_ids(account_type);
     stmt.execute(params![
@@ -246,6 +286,7 @@ fn upsert_account_row(
         &user_identity_id[..],
         &friend_identity_id[..],
         payload,
+        encrypted_xpub_digest,
     ])?;
     Ok(())
 }
@@ -325,7 +366,13 @@ pub fn apply_provider_registrations(
     // material from being overwritten.
     let mut account_stmt = tx.prepare_cached(UPSERT_PROVIDER_ACCOUNT_SQL)?;
     for (entry, _, payload) in encoded {
-        upsert_account_row(&mut account_stmt, wallet_id, &entry.account_type, payload)?;
+        upsert_account_row(
+            &mut account_stmt,
+            wallet_id,
+            &entry.account_type,
+            payload,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -500,7 +547,8 @@ fn load_ecdsa_state(
         "SELECT account_type, account_index, key_class, \
                 length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id, \
-                length(account_xpub_bytes), account_xpub_bytes FROM account_registrations \
+                length(account_xpub_bytes), account_xpub_bytes, encrypted_xpub_digest \
+         FROM account_registrations \
          WHERE wallet_id = ?1 \
            AND account_type NOT IN ('provider_operator', 'provider_platform') \
          ORDER BY account_type, account_index, key_class, user_identity_id, friend_identity_id",
@@ -530,7 +578,11 @@ fn load_ecdsa_state(
         let typed_friend: Vec<u8> = row.get(6)?; // friend_identity_id BLOB
         blob::check_size(row.get::<_, i64>(7)?)?;
         let payload: Vec<u8> = row.get(8)?; // account_xpub_bytes BLOB
-        let entry = blob::decode::<AccountRegistrationEntry>(&payload)?;
+                                            // encrypted_xpub_digest BLOB, 32 bytes by the column's CHECK
+        let digest = row
+            .get::<_, Option<Vec<u8>>>(9)?
+            .and_then(|digest| <[u8; 32]>::try_from(digest).ok());
+        let entry = blob::decode::<AccountRegistrationWire>(&payload)?.into_entry(digest);
         // Cross-check every typed PK column vs the decoded blob so a
         // corruption that passes `PRAGMA integrity_check` is still caught
         // here rather than feeding a wrong account to the oracle.
@@ -862,8 +914,9 @@ mod tests {
                 key_class: 0,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
-        let blob = blob::encode(&entry).unwrap();
+        let blob = blob::encode(&AccountRegistrationWire::from(&entry)).unwrap();
 
         // Insert with a deliberately wrong `account_type` column label so
         // the typed column and the blob disagree.
@@ -903,8 +956,9 @@ mod tests {
                 key_class: 0,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
-        let blob = blob::encode(&entry).unwrap();
+        let blob = blob::encode(&AccountRegistrationWire::from(&entry)).unwrap();
 
         // Column says account_index = 1 but blob says 0 — deliberate mismatch.
         conn.execute(
@@ -945,8 +999,9 @@ mod tests {
                 key_class: 0,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
-        let blob = blob::encode(&entry).unwrap();
+        let blob = blob::encode(&AccountRegistrationWire::from(&entry)).unwrap();
         // ... but the typed key_class column says 1 — a mismatch on the very
         // column that keeps distinct key classes from colliding.
         conn.execute(
@@ -994,8 +1049,9 @@ mod tests {
                 key_class: 0,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
-        let blob = blob::encode(&entry).unwrap();
+        let blob = blob::encode(&AccountRegistrationWire::from(&entry)).unwrap();
         conn.execute(
             "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, account_xpub_bytes) \
@@ -1033,6 +1089,7 @@ mod tests {
                 key_class,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
         {
             let tx = conn.transaction().unwrap();
@@ -1073,6 +1130,7 @@ mod tests {
                 friend_identity_id: friend,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
         {
             let tx = conn.transaction().unwrap();
@@ -1114,6 +1172,7 @@ mod tests {
                 key_class: 1,
             },
             account_xpub: test_xpub(),
+            encrypted_xpub_digest: None,
         };
         for _ in 0..2 {
             let tx = conn.transaction().unwrap();

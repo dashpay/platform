@@ -8,11 +8,20 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
+use crate::changeset::{
+    account_address_pool_entries, encrypted_xpub_digest, AccountRegistrationEntry,
+    ContactChangeSet, PlatformWalletChangeSet, SentContactRequestKey,
+};
 use crate::error::PlatformWalletError;
+use crate::manager::pool_derives_from;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+use key_wallet::account::account_collection::DashpayAccountKey;
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+use super::contact_requests::outbound_account_is_current;
 
 /// Build the persistence round for a newly registered DashPay account
 /// (`DashpayReceivingFunds` / `DashpayExternalAccount`): the
@@ -22,22 +31,54 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// vanishes on relaunch, so its persisted UTXOs are dropped at the next
 /// load (`load: ... dropped_no_account`) and received-payment history
 /// can't be rebuilt.
+///
+/// An outbound account carries the digest of the request it was decrypted
+/// from. One that replaces a registered account (`replaces`) also resets the
+/// account's stored pool first: a contact that rotated its xpub keys the same
+/// account, and the previous xpub's rows at the same indices must not survive
+/// beside the new ones.
 fn dashpay_account_registration_changeset(
     account_type: AccountType,
-    account_xpub: key_wallet::bip32::ExtendedPubKey,
-    managed: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    account_xpub: ExtendedPubKey,
+    encrypted_xpub_digest: Option<[u8; 32]>,
+    replaces: bool,
+    managed: &ManagedCoreFundsAccount,
 ) -> PlatformWalletChangeSet {
     PlatformWalletChangeSet {
         account_registrations: vec![AccountRegistrationEntry {
             account_type,
             account_xpub,
+            encrypted_xpub_digest,
         }],
-        account_address_pools: crate::changeset::account_address_pool_entries(
+        account_address_pools: account_address_pool_entries(
             account_type,
             managed.managed_account_type().address_pools(),
         ),
+        account_pool_resets: if replaces {
+            vec![account_type]
+        } else {
+            Vec::new()
+        },
         ..Default::default()
     }
+}
+
+/// The contact round that stores `bound`, the established contact with the
+/// marker of the account registered beside it.
+fn bound_contact_changeset(
+    our_identity_id: &Identifier,
+    contact_identity_id: &Identifier,
+    bound: &EstablishedContact,
+) -> ContactChangeSet {
+    let mut contacts = ContactChangeSet::default();
+    contacts.established.insert(
+        SentContactRequestKey {
+            owner_id: *our_identity_id,
+            recipient_id: *contact_identity_id,
+        },
+        bound.clone(),
+    );
+    contacts
 }
 
 /// Why a [`register_external_contact_account`] attempt failed, classified
@@ -69,23 +110,24 @@ pub enum RegisterExternalError {
 /// Outcome of a successful [`register_external_contact_account`] call.
 ///
 /// The distinction matters to the rotation self-heal: only a [`Built`]
-/// outcome proves the account was (re)constructed from the payload the
-/// caller holds, so only [`Built`] may stamp the contact's
-/// `external_account_reference` marker. An [`AlreadyExisted`] row is keyed
-/// on `(index, user, friend)` — independent of `account_reference` — and
-/// may predate a rotation (stale xpub); stamping it as current would stop
-/// `external_account_needs_rebuild` from ever tearing it down.
+/// outcome proves the account derives from the payload the caller holds, so
+/// only [`Built`] may stamp the contact's `external_account_reference`
+/// marker. [`AlreadyExisted`] is returned for a registered account that is
+/// not known to need a rebuild — its marker names the contact's live request,
+/// or the contact is not established or its channel is broken — so it has
+/// nothing to stamp.
 ///
 /// [`Built`]: ExternalAccountRegistration::Built
 /// [`AlreadyExisted`]: ExternalAccountRegistration::AlreadyExisted
 /// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalAccountRegistration {
-    /// The account was decrypted and (re)built from the supplied encrypted
-    /// xpub by this call.
+    /// The supplied encrypted xpub was decrypted by this call, and the
+    /// account was built from it — or, already registered with the same
+    /// xpub and pools that derive from it, kept as it is.
     Built,
-    /// An account row already existed for the `(index, user, friend)` key;
-    /// nothing was decrypted or replaced.
+    /// The account was registered and not known to need a rebuild (see the
+    /// type docs); nothing was decrypted or replaced.
     AlreadyExisted,
     /// The contact's live incoming request no longer carries the supplied
     /// encrypted xpub — a rotation landed after the caller read it. Nothing
@@ -220,6 +262,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .store(dashpay_account_registration_changeset(
                 account_type,
                 account_xpub,
+                None,
+                false,
                 &managed,
             ))
             .map_err(|e| {
@@ -410,15 +454,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// tell a real (re)build from an already-existed no-op — only the former
     /// may stamp the rotation self-heal marker (see the enum docs).
     ///
-    /// The absence check, the durable write and the in-memory inserts run
+    /// The currency check, the durable write and the in-memory inserts run
     /// under ONE wallet-manager write guard, so registrations of the same
-    /// account are serialized: a registration that decrypted a payload and
-    /// then lost the race to another one finds the account present and
-    /// returns [`ExternalAccountRegistration::AlreadyExisted`], instead of
-    /// overwriting the newer account's durable xpub and pool. Under the same
-    /// guard the payload is checked against the contact's LIVE incoming
-    /// request, and a stale one returns
-    /// [`ExternalAccountRegistration::Superseded`] without writing anything.
+    /// account are serialized. Under that guard the payload is checked
+    /// against the contact's LIVE incoming request, and a stale one returns
+    /// [`ExternalAccountRegistration::Superseded`] without writing anything,
+    /// so a registration that lost the race to a newer payload never
+    /// overwrites the newer account's durable xpub and pool.
+    ///
+    /// A registered account whose marker does not name the live request — a
+    /// rotation, or a host that restored the account without its marker — is
+    /// kept when the payload decrypts to the xpub it was built from and its
+    /// pools derive from that xpub, so the addresses it handed out stay used;
+    /// otherwise it is replaced by an account with fresh pools.
     /// When the contact is established and the backend's rounds are inline
     /// and atomic, the account and the contact's outbound-account marker are
     /// written in the same store round, so the durable marker always names
@@ -436,7 +484,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let account_index: u32 = 0;
         let contact_identity_id = contact_identity.id();
 
-        // --- 1. Early-exit if the external account already exists. ---
+        // --- 1. Early-exit if the external account is already current. ---
         {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -444,18 +492,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )))
             })?;
-            use key_wallet::account::account_collection::DashpayAccountKey;
             let key = DashpayAccountKey {
                 index: account_index,
                 user_identity_id: our_identity_id.to_buffer(),
                 friend_identity_id: contact_identity_id.to_buffer(),
             };
-            if info
-                .core_wallet
-                .accounts
-                .dashpay_external_accounts
-                .contains_key(&key)
-            {
+            if outbound_account_is_current(
+                info,
+                &key,
+                established_contact(info, our_identity_id, &contact_identity_id),
+            ) {
                 return Ok(ExternalAccountRegistration::AlreadyExisted);
             }
         }
@@ -553,6 +599,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         #[cfg(test)]
         registration_rendezvous::wait(&contact_identity_id).await;
+        // A payment stores the outbound pool snapshot it took after releasing
+        // the wallet-manager guard, under the payment gate. Replacing the
+        // account under the same gate keeps that store from landing after the
+        // reset that drops the pool it was taken from.
+        let _payment_guard = self.persister.lock_contact_payments().await;
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -565,17 +616,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Re-check under the guard that serializes registrations: the early
         // check above ran under a read guard that was released for the
         // decrypt, and another registration may have built the account since.
-        let key = key_wallet::account::account_collection::DashpayAccountKey {
+        let key = DashpayAccountKey {
             index: account_index,
             user_identity_id: our_identity_id.to_buffer(),
             friend_identity_id: contact_identity_id.to_buffer(),
         };
-        if info
-            .core_wallet
-            .accounts
-            .dashpay_external_accounts
-            .contains_key(&key)
-        {
+        if outbound_account_is_current(
+            info,
+            &key,
+            established_contact(info, our_identity_id, &contact_identity_id),
+        ) {
             return Ok(ExternalAccountRegistration::AlreadyExisted);
         }
 
@@ -614,28 +664,105 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             Some(_) | None => None,
         };
 
+        // A registered account the payload decrypts to again is kept, with
+        // the addresses it handed out and everything it watched. Only the key
+        // and chain code derive the addresses, so a restored xpub's network or
+        // depth need not match the decrypted one; pools restored beside
+        // another xpub's registration do not count as the same account.
+        let digest = encrypted_xpub_digest(contact_encrypted_xpub);
+        let kept_xpub = wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&key)
+            .map(|registered| registered.account_xpub)
+            .filter(|registered| {
+                registered.public_key == contact_xpub.public_key
+                    && registered.chain_code == contact_xpub.chain_code
+            })
+            .filter(|_| {
+                info.core_wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get(&key)
+                    .is_some_and(|managed| {
+                        managed
+                            .managed_account_type()
+                            .address_pools()
+                            .iter()
+                            .all(|pool| pool_derives_from(pool, &account))
+                    })
+            });
+        if let Some(kept_xpub) = kept_xpub {
+            // The row is written again with the live request's digest, so a
+            // relaunch knows the account is current without decrypting. Its
+            // pool is left as stored.
+            self.persister
+                .store(PlatformWalletChangeSet {
+                    account_registrations: vec![AccountRegistrationEntry {
+                        account_type,
+                        account_xpub: kept_xpub,
+                        encrypted_xpub_digest: Some(digest),
+                    }],
+                    contacts: bound_contact.as_ref().map(|bound| {
+                        bound_contact_changeset(our_identity_id, &contact_identity_id, bound)
+                    }),
+                    ..Default::default()
+                })
+                .map_err(|e| {
+                    Transient(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to persist the kept external contact account: {e}"
+                    )))
+                })?;
+            mark_built_from_live_request(info, our_identity_id, &contact_identity_id);
+            tracing::info!(
+                our_identity = %our_identity_id,
+                contact = %contact_identity_id,
+                "Kept the registered DashpayExternalAccount: the contact's live request \
+                 carries the xpub it was built from"
+            );
+            return Ok(ExternalAccountRegistration::Built);
+        }
+
         // Persist the registration BEFORE the in-memory inserts (same
         // rationale as `register_contact_account`): without this round
         // the account vanishes on relaunch and `send_payment` loses its
         // xpub + derived-address state until the next sweep rebuilds it.
-        let mut changeset =
-            dashpay_account_registration_changeset(account_type, contact_xpub, &managed);
-        if let Some(bound) = &bound_contact {
-            let mut contacts = crate::changeset::ContactChangeSet::default();
-            contacts.established.insert(
-                crate::changeset::SentContactRequestKey {
-                    owner_id: *our_identity_id,
-                    recipient_id: contact_identity_id,
-                },
-                bound.clone(),
-            );
-            changeset.contacts = Some(contacts);
-        }
+        let replaces = wallet.accounts.dashpay_external_accounts.contains_key(&key)
+            || info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key);
+        let mut changeset = dashpay_account_registration_changeset(
+            account_type,
+            contact_xpub,
+            Some(digest),
+            replaces,
+            &managed,
+        );
+        changeset.contacts = bound_contact
+            .as_ref()
+            .map(|bound| bound_contact_changeset(our_identity_id, &contact_identity_id, bound));
         self.persister.store(changeset).map_err(|e| {
             Transient(PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to persist external contact account registration: {e}"
             )))
         })?;
+
+        // A registered account that is not kept above was built from another
+        // xpub, or holds pools that do not derive from it: it is replaced.
+        wallet.accounts.dashpay_external_accounts.remove(&key);
+        info.core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .remove(&key);
+        // The sent-payment sweep stamped the replaced account's digest; the
+        // new one has addresses that sweep never matched.
+        if let Some(managed) = info.identity_manager.managed_identity_mut(our_identity_id) {
+            managed
+                .dashpay_sent_payment_reconcile_swept_table_mut()
+                .remove(&contact_identity_id);
+        }
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
@@ -659,15 +786,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        if let Some(bound) = bound_contact {
-            if let Some(contact) = info
-                .identity_manager
-                .managed_identity_mut(our_identity_id)
-                .and_then(|managed| managed.established_contact_mut(&contact_identity_id))
-            {
-                contact.external_account_reference = bound.external_account_reference;
-            }
-        }
+        mark_built_from_live_request(info, our_identity_id, &contact_identity_id);
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -676,6 +795,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         Ok(ExternalAccountRegistration::Built)
+    }
+}
+
+/// `contact_identity_id`'s established contact under `our_identity_id`.
+fn established_contact<'a>(
+    info: &'a PlatformWalletInfo,
+    our_identity_id: &Identifier,
+    contact_identity_id: &Identifier,
+) -> Option<&'a EstablishedContact> {
+    info.identity_manager
+        .managed_identity(our_identity_id)?
+        .established_contact(contact_identity_id)
+}
+
+/// Record that the outbound account now derives from the contact's live
+/// request: clear an observed rotation and stamp the in-memory marker. A
+/// registration round that bound the marker on disk carries the same value;
+/// elsewhere the digest the round stored beside the xpub vouches for it after
+/// a relaunch.
+fn mark_built_from_live_request(
+    info: &mut PlatformWalletInfo,
+    our_identity_id: &Identifier,
+    contact_identity_id: &Identifier,
+) {
+    let Some(managed) = info.identity_manager.managed_identity_mut(our_identity_id) else {
+        return;
+    };
+    managed.clear_outbound_rekey(contact_identity_id);
+    if let Some(contact) = managed.established_contact_mut(contact_identity_id) {
+        contact.external_account_reference = Some(contact.incoming_request.account_reference);
     }
 }
 

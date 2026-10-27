@@ -28,6 +28,7 @@ fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
         .map(|account| AccountRegistrationEntry {
             account_type: account.account_type,
             account_xpub: account.account_xpub,
+            encrypted_xpub_digest: None,
         })
         .collect()
 }

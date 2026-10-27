@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 
 use key_wallet_manager::WalletManager;
 
+use super::contact_requests::outbound_account_is_current;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -1358,12 +1359,47 @@ fn reserve_contact_payment_address(
         .get_wallet_info_mut(&wallet_id)
         .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
 
-    // Derive the next unused address from the external account's address pool.
+    // A payment derives only from an outbound account known to be built from
+    // the contact's live request (`outbound_account_is_current`, which keeps
+    // a rebuild queued for every account it rejects). One the contact rotated
+    // away from may no longer be watched, and one restored without proof of
+    // the request it was built from is confirmed by the drain the payment ran
+    // first; until then nothing is derived from it. A broken channel is never
+    // rebuilt until the contact sends a new request, so an account it holds is
+    // confirmed only by its marker, and the refusal says so rather than
+    // inviting a retry. A contact with no account at all fails below.
     let key = DashpayAccountKey {
         index: account_index,
         user_identity_id: from_identity_id.to_buffer(),
         friend_identity_id: to_contact_id.to_buffer(),
     };
+    let contact = info
+        .identity_manager
+        .managed_identity(from_identity_id)
+        .and_then(|managed| managed.established_contact(to_contact_id));
+    if info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .contains_key(&key)
+        && !outbound_account_is_current(info, &key, contact)
+    {
+        if contact.is_some_and(|contact| contact.payment_channel_broken) {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "The DashpayExternalAccount for contact {} was built from a request the \
+                 contact rotated away from, and the rotated request is unusable; payments \
+                 resume once the contact sends a new one",
+                to_contact_id
+            )));
+        }
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "The DashpayExternalAccount for contact {} awaits a rebuild from the contact's \
+             live request; retry once it has been rebuilt",
+            to_contact_id
+        )));
+    }
+
+    // Derive the next unused address from the external account's address pool.
     let external_account = info
         .core_wallet
         .accounts
@@ -1447,6 +1483,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: crate::wallet::identity::network::contact_requests::ContactCryptoProvider + Sync,
     {
+        self.queue_outbound_rebuild(from_identity_id, to_contact_id)
+            .await;
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
         let _payment_guard = self.persister.lock_contact_payments().await;
@@ -1562,6 +1600,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // to. A payment through a wrong-seed provider cannot succeed anyway,
         // so the refusal fails the send with the typed `SeedMismatch` instead
         // of being allowed to write first and fail second.
+        self.queue_outbound_rebuild(from_identity_id, to_contact_id)
+            .await;
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
         let _payment_guard = self.persister.lock_contact_payments().await;
@@ -2018,12 +2058,17 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
+    use crate::broadcaster::SpvBroadcaster;
+    use crate::changeset::encrypted_xpub_digest;
     use crate::changeset::{
         ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
         PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::network::contacts::ExternalAccountRegistration;
+    use crate::wallet::identity::network::dashpay_view::DashPayView;
+    use crate::wallet::identity::{ContactRequest, EstablishedContact, IdentityWallet};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletManager;
@@ -3508,6 +3553,7 @@ mod tests {
             crate::wallet::identity::ManagedIdentity,
         >,
         backfill: crate::changeset::DashPayBackfillRecord,
+        outbound_account_digests: BTreeMap<DashpayAccountKey, Vec<u8>>,
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
     }
 
@@ -3555,6 +3601,7 @@ mod tests {
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: self.backfill.clone(),
+                    outbound_account_digests: self.outbound_account_digests.clone(),
                 },
             );
             Ok(ClientStartState {
@@ -3586,6 +3633,15 @@ mod tests {
             .expect("owner identity")
             .clone();
         identity.dashpay_rescan_triggered_mut().clear();
+        let contacts: Vec<Identifier> = identity
+            .dashpay()
+            .established_contacts()
+            .keys()
+            .copied()
+            .collect();
+        for contact in contacts {
+            identity.clear_outbound_rekey(&contact);
+        }
         let mut identities = std::collections::BTreeMap::new();
         identities.insert(0, identity);
         ReloadPersister {
@@ -3593,6 +3649,7 @@ mod tests {
             managed,
             identities,
             backfill: backfill.unwrap_or_else(|| info.dashpay_backfill.clone()),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         }
     }
@@ -4175,7 +4232,7 @@ mod tests {
                 let established = managed.dashpay().established_contacts()[contact].clone();
                 assert_eq!(established.external_account_reference, Some(7));
                 assert!(
-                    !external_account_needs_rebuild(&established, true),
+                    !external_account_needs_rebuild(&established),
                     "a restored marker must not read as a rotation"
                 );
             }
@@ -4212,8 +4269,7 @@ mod tests {
                 .unwrap()
                 .apply_established_contact(stripped);
             assert!(external_account_needs_rebuild(
-                &bare.identities[&0].dashpay().established_contacts()[contact],
-                true
+                &bare.identities[&0].dashpay().established_contacts()[contact]
             ));
         }
         let (restarted, _, _) = reload(bare).await;
@@ -4403,8 +4459,7 @@ mod tests {
             let managed = info.identity_manager.managed_identity(&owner).unwrap();
             for contact in &contacts {
                 assert!(!external_account_needs_rebuild(
-                    &managed.dashpay().established_contacts()[contact],
-                    true
+                    &managed.dashpay().established_contacts()[contact]
                 ));
             }
             assert!(
@@ -4561,6 +4616,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill,
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -4804,6 +4860,7 @@ mod tests {
                 managed: managed.clone(),
                 identities,
                 backfill: record,
+                outbound_account_digests: BTreeMap::new(),
                 stores: Mutex::default(),
             })
             .await;
@@ -4938,6 +4995,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: host_record,
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -5006,6 +5064,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: Default::default(),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -5637,6 +5696,790 @@ mod tests {
         assert_eq!(established.external_account_reference, Some(8));
     }
 
+    /// A host that restores the outbound account without its marker (neither
+    /// the SQLite backend nor the Swift host keeps it) leaves the account
+    /// registered and queued for a rebuild: it keeps watching and keeps the
+    /// addresses it handed out, and pays once the rebuild confirms it — which
+    /// keeps it when the contact's live request decrypts to the same xpub. A
+    /// rotation this process observed refuses payments until the rebuild
+    /// replaces the account; pools that derive from another xpub are replaced
+    /// too.
+    #[tokio::test]
+    async fn should_keep_the_outbound_account_and_its_pool_when_a_rebuild_finds_the_same_xpub() {
+        use key_wallet::account::AccountType;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        // The SQLite backend: no atomic rounds, so no durable marker.
+        *persister.non_atomic.lock().unwrap() = true;
+        let owner = Identifier::from([0xAC; 32]);
+        let contact = Identifier::from([0x05; 32]);
+        let shared_key = [0x55u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let rotated = encrypted_contact_xpub(&owner, &Identifier::from([0x06; 32]), &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let establish = |reference: u32, payload: Vec<u8>| {
+            let iw = iw.clone();
+            let persister = Arc::clone(&persister);
+            async move {
+                let p = WalletPersister::new(wallet_id, persister as _);
+                let mut wm = iw.wallet_manager.write().await;
+                let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+                if info.identity_manager.managed_identity(&owner).is_none() {
+                    info.identity_manager
+                        .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                        .expect("add owner");
+                }
+                let managed = info
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("managed");
+                let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+                let incoming =
+                    ContactRequest::new(contact, owner, 0, 0, reference, payload, 100, 0);
+                managed.apply_established_contact(EstablishedContact::new(
+                    contact, outgoing, incoming,
+                ));
+            }
+        };
+        let register = |payload: Vec<u8>| {
+            let iw = iw.clone();
+            async move {
+                let registration = iw
+                    .dashpay()
+                    .register_external_contact_account(
+                        &owner,
+                        &bare_identity(contact.to_buffer()),
+                        &payload,
+                        zeroize::Zeroizing::new(shared_key),
+                    )
+                    .await
+                    .expect("register");
+                if registration == ExternalAccountRegistration::Built {
+                    iw.dashpay()
+                        .note_external_account_registered(&owner, &contact, &payload)
+                        .await;
+                }
+                registration
+            }
+        };
+        let mark_used = |index: u32| {
+            let iw = iw.clone();
+            async move {
+                let mut wm = iw.wallet_manager.write().await;
+                let account = wm
+                    .get_wallet_info_mut(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(&key)
+                    .expect("external account");
+                let paid = account.managed_account_type().address_pools()[0]
+                    .address_at_index(index)
+                    .expect("derived");
+                assert!(account.mark_address_used(&paid));
+            }
+        };
+        let used = || {
+            let iw = iw.clone();
+            async move {
+                let wm = iw.wallet_manager.read().await;
+                let mut used: Vec<u32> = wm
+                    .get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .accounts
+                    .dashpay_external_accounts[&key]
+                    .managed_account_type()
+                    .address_pools()[0]
+                    .used_indices
+                    .iter()
+                    .copied()
+                    .collect();
+                used.sort_unstable();
+                used
+            }
+        };
+        let restore_without_marker = || {
+            let iw = iw.clone();
+            async move {
+                let mut wm = iw.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("managed")
+                    .established_contact_mut(&contact)
+                    .expect("established")
+                    .external_account_reference = None;
+            }
+        };
+        let queued = || {
+            let iw = iw.clone();
+            async move {
+                let wm = iw.wallet_manager.read().await;
+                DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
+                    wm.get_wallet_info(&wallet_id).expect("info"),
+                    &owner,
+                )
+                // The only contact of this identity.
+                .len()
+                    == 1
+            }
+        };
+        let reserve = || {
+            let iw = iw.clone();
+            async move {
+                let mut wm = iw.wallet_manager.write().await;
+                super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact)
+                    .map(|(address, _)| address)
+            }
+        };
+        let address_at = |index: u32| {
+            let iw = iw.clone();
+            async move {
+                let wm = iw.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .accounts
+                    .dashpay_external_accounts[&key]
+                    .managed_account_type()
+                    .address_pools()[0]
+                    .address_at_index(index)
+                    .expect("derived")
+            }
+        };
+
+        establish(7, payload.clone()).await;
+        assert_eq!(
+            register(payload.clone()).await,
+            ExternalAccountRegistration::Built
+        );
+        assert!(
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, cs)| cs.account_pool_resets.is_empty()),
+            "a first registration has no stored pool to reset"
+        );
+        mark_used(0).await;
+
+        // Restored without the marker: still registered with its pool and
+        // queued; nothing is paid from it until it is confirmed.
+        restore_without_marker().await;
+        assert!(queued().await, "the account is queued for a rebuild");
+        // A payment before any sweep queues the rebuild for its own drain.
+        assert_eq!(iw.dashpay().pending_contact_crypto_count().await, 0);
+        iw.dashpay().queue_outbound_rebuild(&owner, &contact).await;
+        let queued_ops = iw.dashpay().pending_contact_crypto_count().await;
+        assert!(queued_ops > 0, "the payment path queues the rebuild");
+        iw.dashpay().queue_outbound_rebuild(&owner, &contact).await;
+        assert_eq!(
+            iw.dashpay().pending_contact_crypto_count().await,
+            queued_ops,
+            "queueing is idempotent"
+        );
+        assert!(
+            reserve().await.is_err(),
+            "an account not confirmed from the live request pays nothing"
+        );
+
+        // The same xpub keeps the account; the marker makes it current.
+        persister.stores.lock().unwrap().clear();
+        assert_eq!(
+            register(payload.clone()).await,
+            ExternalAccountRegistration::Built
+        );
+        assert_eq!(used().await, vec![0], "the same xpub keeps the pool");
+        assert!(
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, cs)| cs.account_address_pools.is_empty()),
+            "keeping the account rewrites no pool"
+        );
+        assert!(!queued().await, "nothing is left to rebuild");
+        let account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let registrations = || {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|(_, cs)| cs.account_registrations.clone())
+                .filter(|entry| entry.account_type == account_type)
+                .collect::<Vec<_>>()
+        };
+        let resets = || {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|(_, cs)| cs.account_pool_resets.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            registrations()
+                .iter()
+                .map(|entry| entry.encrypted_xpub_digest)
+                .collect::<Vec<_>>(),
+            vec![Some(encrypted_xpub_digest(&payload))],
+            "keeping the account stores its row with the live request's digest"
+        );
+        assert!(resets().is_empty(), "and resets no pool");
+        let paid = reserve().await.expect("a confirmed account pays");
+        assert_ne!(
+            paid,
+            address_at(0).await,
+            "the paid address is not handed out again"
+        );
+        assert_eq!(used().await, vec![0, 1]);
+
+        // An observed rotation to another xpub refuses payments until the
+        // rebuild replaces the account with fresh pools.
+        let original_xpub = iw
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet(&wallet_id)
+            .expect("wallet")
+            .accounts
+            .dashpay_external_accounts[&key]
+            .account_xpub;
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let rekeyed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_rotated_incoming_request(
+                    ContactRequest::new(contact, owner, 0, 0, 8, rotated.clone(), 200, 0),
+                    &p,
+                )
+                .expect("rotate");
+            assert!(rekeyed);
+        }
+        assert!(queued().await, "the rotated account is queued");
+        assert!(
+            reserve().await.is_err(),
+            "no payment derives from an account the contact rotated away from"
+        );
+        persister.stores.lock().unwrap().clear();
+        assert_eq!(
+            register(rotated.clone()).await,
+            ExternalAccountRegistration::Built
+        );
+        assert!(used().await.is_empty(), "a rotated xpub starts fresh pools");
+        assert_eq!(
+            registrations()
+                .iter()
+                .map(|entry| entry.encrypted_xpub_digest)
+                .collect::<Vec<_>>(),
+            vec![Some(encrypted_xpub_digest(&rotated))],
+            "the replacement records the rotated request's digest"
+        );
+        assert_eq!(
+            resets(),
+            vec![account_type],
+            "and drops the stored pool of the xpub it replaces"
+        );
+        reserve().await.expect("the rebuilt account pays");
+        assert_ne!(
+            iw.wallet_manager
+                .read()
+                .await
+                .get_wallet(&wallet_id)
+                .expect("wallet")
+                .accounts
+                .dashpay_external_accounts[&key]
+                .account_xpub,
+            original_xpub
+        );
+
+        // Pools that do not derive from the registered xpub are replaced,
+        // even when the live request decrypts to that xpub.
+        assert_eq!(
+            used().await,
+            vec![0],
+            "the rebuilt account paid from index 0"
+        );
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_mut_and_info_mut(&wallet_id)
+                .expect("wallet")
+                .0
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&key)
+                .expect("account")
+                .account_xpub = original_xpub;
+        }
+        establish(9, payload.clone()).await;
+        restore_without_marker().await;
+        assert_eq!(register(payload).await, ExternalAccountRegistration::Built);
+        assert!(used().await.is_empty(), "foreign pools are replaced");
+    }
+
+    /// The digest the outbound account's row carries tells a relaunched
+    /// process what the in-memory rotation record could not survive: an
+    /// account built from the contact's live request is current and pays
+    /// without a rebuild; one built from a request the contact rotated away
+    /// from refuses payments until it is rebuilt, and so does one whose digest
+    /// proves nothing — absent, malformed, unreadable, or beside pools the
+    /// account does not derive — until the drain confirms or replaces it.
+    #[tokio::test]
+    async fn should_know_after_a_relaunch_whether_the_outbound_account_predates_a_rotation() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAD; 32]);
+        let contact = Identifier::from([0x15; 32]);
+        let shared_key = [0x56u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let rotated = encrypted_contact_xpub(&owner, &Identifier::from([0x16; 32]), &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(
+                    contact,
+                    ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    ContactRequest::new(contact, owner, 0, 0, 7, payload.clone(), 100, 0),
+                ));
+        }
+        assert_eq!(
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    &payload,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register"),
+            ExternalAccountRegistration::Built
+        );
+        let built_from = encrypted_xpub_digest(&payload);
+
+        // Relaunch on a host that hands back `digest` and no marker; with
+        // `foreign_pool`, also a pool row the account's xpub does not derive.
+        let relaunch_with = |digest: Option<Vec<u8>>, foreign_pool: bool| {
+            let manager = Arc::clone(&manager);
+            async move {
+                let mut snapshot = reload_snapshot(&manager, wallet_id, owner, 0, None).await;
+                for identity in snapshot.identities.values_mut() {
+                    if let Some(established) = identity.established_contact_mut(&contact) {
+                        established.external_account_reference = None;
+                    }
+                }
+                if foreign_pool {
+                    let pool = snapshot
+                        .managed
+                        .accounts
+                        .dashpay_external_accounts
+                        .get_mut(&key)
+                        .expect("restored account")
+                        .managed_account_type_mut()
+                        .address_pools_mut()
+                        .into_iter()
+                        .next()
+                        .expect("a pool");
+                    let info = pool.addresses.get_mut(&0).expect("index 0");
+                    info.script_pubkey = dashcore::ScriptBuf::from_bytes(vec![0x6a]);
+                }
+                snapshot.outbound_account_digests = digest.into_iter().map(|d| (key, d)).collect();
+                let (restarted, _, _) = reload(snapshot).await;
+                let mut wm = restarted.wallet_manager.write().await;
+                let queued = !DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
+                    wm.get_wallet_info(&wallet_id).expect("info"),
+                    &owner,
+                )
+                .is_empty();
+                let paid =
+                    super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact)
+                        .is_ok();
+                (queued, paid)
+            }
+        };
+        let relaunch = |digest: Option<Vec<u8>>| relaunch_with(digest, false);
+
+        assert_eq!(
+            relaunch(Some(built_from.to_vec())).await,
+            (false, true),
+            "built from the live request: current, pays, nothing to rebuild"
+        );
+        assert_eq!(
+            relaunch_with(Some(built_from.to_vec()), true).await,
+            (true, false),
+            "the live request's digest beside a pool the xpub does not derive: refused \
+             until rebuilt"
+        );
+        assert_eq!(
+            relaunch(None).await,
+            (true, false),
+            "no digest: queued, and refused until the drain confirms it"
+        );
+        assert_eq!(
+            relaunch(Some(built_from[..31].to_vec())).await,
+            (true, false),
+            "a digest of the wrong length proves nothing"
+        );
+        assert_eq!(
+            relaunch(Some(Vec::new())).await,
+            (true, false),
+            "nor does one the host could not read"
+        );
+
+        // The contact rotates; the process ends before the rebuild.
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            assert!(wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_rotated_incoming_request(
+                    ContactRequest::new(contact, owner, 0, 0, 8, rotated, 200, 0),
+                    &p,
+                )
+                .expect("rotate"));
+        }
+        assert_eq!(
+            relaunch(Some(built_from.to_vec())).await,
+            (true, false),
+            "built from a request the contact rotated away from: refused until rebuilt"
+        );
+    }
+
+    /// Set up `owner` with `contact` established on `payload` (reference 7)
+    /// and its outbound account built from it.
+    async fn outbound_account_built_from(
+        iw: &IdentityWallet,
+        persister: &Arc<RecordingPersister>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        contact: Identifier,
+        payload: &[u8],
+        shared_key: [u8; 32],
+    ) {
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(
+                    contact,
+                    ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    ContactRequest::new(contact, owner, 0, 0, 7, payload.to_vec(), 100, 0),
+                ));
+        }
+        assert_eq!(
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    payload,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register"),
+            ExternalAccountRegistration::Built
+        );
+    }
+
+    /// A payment stores the outbound pool snapshot it took after releasing the
+    /// wallet-manager guard, under the payment gate. A replacement waits for
+    /// that gate, so the snapshot of the old account can never land after the
+    /// reset that drops its pool.
+    #[tokio::test]
+    async fn should_hold_an_outbound_replacement_while_a_payment_holds_the_gate() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAE; 32]);
+        let contact = Identifier::from([0x25; 32]);
+        let shared_key = [0x57u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let rotated = encrypted_contact_xpub(&owner, &Identifier::from([0x26; 32]), &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        outbound_account_built_from(
+            iw, &persister, wallet_id, owner, contact, &payload, shared_key,
+        )
+        .await;
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            assert!(wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_rotated_incoming_request(
+                    ContactRequest::new(contact, owner, 0, 0, 8, rotated.clone(), 200, 0),
+                    &p,
+                )
+                .expect("rotate"));
+        }
+        let replace = || {
+            let iw = iw.clone();
+            let rotated = rotated.clone();
+            async move {
+                iw.dashpay()
+                    .register_external_contact_account(
+                        &owner,
+                        &bare_identity(contact.to_buffer()),
+                        &rotated,
+                        zeroize::Zeroizing::new(shared_key),
+                    )
+                    .await
+            }
+        };
+
+        let payment = iw.persister.lock_contact_payments().await;
+        persister.stores.lock().unwrap().clear();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(200), replace())
+                .await
+                .is_err(),
+            "the replacement waits while a payment holds the gate"
+        );
+        assert!(
+            persister.stores.lock().unwrap().is_empty(),
+            "and writes nothing meanwhile"
+        );
+        drop(payment);
+        assert_eq!(
+            replace().await.expect("register"),
+            ExternalAccountRegistration::Built
+        );
+    }
+
+    /// On a host that keeps the marker on the contact row, keeping the
+    /// account binds the live request's marker in the same round as the
+    /// account's digest, so a relaunch trusts both.
+    #[tokio::test]
+    async fn should_bind_the_marker_beside_the_digest_when_a_marker_keeping_host_keeps_the_account()
+    {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAF; 32]);
+        let contact = Identifier::from([0x35; 32]);
+        let shared_key = [0x58u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        outbound_account_built_from(
+            iw, &persister, wallet_id, owner, contact, &payload, shared_key,
+        )
+        .await;
+        // Restored without the marker in memory, as a launch that distrusted it.
+        iw.wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .established_contact_mut(&contact)
+            .expect("established")
+            .external_account_reference = None;
+
+        persister.stores.lock().unwrap().clear();
+        assert_eq!(
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    &payload,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register"),
+            ExternalAccountRegistration::Built
+        );
+
+        let stores = persister.stores.lock().unwrap();
+        assert_eq!(stores.len(), 1, "one round");
+        let (_, round) = &stores[0];
+        assert_eq!(
+            round.account_registrations[0].encrypted_xpub_digest,
+            Some(encrypted_xpub_digest(&payload))
+        );
+        assert!(round.account_address_pools.is_empty() && round.account_pool_resets.is_empty());
+        let bound = round
+            .contacts
+            .as_ref()
+            .expect("the marker rides the same round")
+            .established
+            .values()
+            .next()
+            .expect("the contact");
+        assert_eq!(bound.external_account_reference, Some(7));
+    }
+
+    /// A rotation whose rebuild found the request unusable leaves the channel
+    /// broken; the refusal says payments wait for a new request, not a retry.
+    #[tokio::test]
+    async fn should_refuse_a_rotated_contact_on_a_broken_channel_until_a_new_request() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xB0; 32]);
+        let contact = Identifier::from([0x45; 32]);
+        let shared_key = [0x59u8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        outbound_account_built_from(
+            iw, &persister, wallet_id, owner, contact, &payload, shared_key,
+        )
+        .await;
+        let refusal = |broken: bool| {
+            let iw = iw.clone();
+            async move {
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("managed");
+                managed.mark_outbound_rekeyed(&contact);
+                managed
+                    .established_contact_mut(&contact)
+                    .expect("established")
+                    .payment_channel_broken = broken;
+                match super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact) {
+                    Err(PlatformWalletError::InvalidIdentityData(message)) => message,
+                    other => panic!("expected a refusal, got {other:?}"),
+                }
+            }
+        };
+
+        assert!(refusal(false)
+            .await
+            .contains("retry once it has been rebuilt"));
+        // After a relaunch nothing records the rotation, but an account a
+        // broken channel holds without a marker for the live request is no
+        // more confirmed.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            managed.clear_outbound_rekey(&contact);
+            let established = managed
+                .established_contact_mut(&contact)
+                .expect("established");
+            established.payment_channel_broken = true;
+            established.external_account_reference = None;
+            assert!(
+                super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact)
+                    .is_err_and(|e| e
+                        .to_string()
+                        .contains("resume once the contact sends a new one"))
+            );
+        }
+        let broken = refusal(true).await;
+        assert!(broken.contains("resume once the contact sends a new one"));
+        assert!(
+            broken.contains("DashpayExternalAccount"),
+            "hosts map refusals naming the account to a not-ready channel"
+        );
+    }
+
+    /// Every outbound account a payment refuses has a rebuild queued: a
+    /// pending rotation queues it even when its marker already names the live
+    /// request. A contact with no outbound account at all is told so, not
+    /// that a rebuild is pending.
+    #[tokio::test]
+    async fn should_queue_every_outbound_account_a_payment_refuses() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xB1; 32]);
+        let contact = Identifier::from([0x55; 32]);
+        let unbuilt = Identifier::from([0x56; 32]);
+        let shared_key = [0x5Au8; 32];
+        let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        outbound_account_built_from(
+            iw, &persister, wallet_id, owner, contact, &payload, shared_key,
+        )
+        .await;
+
+        let mut wm = iw.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed");
+        managed.mark_outbound_rekeyed(&contact);
+        let mut broken = EstablishedContact::new(
+            unbuilt,
+            ContactRequest::new(owner, unbuilt, 0, 0, 0, vec![0u8; 96], 100, 0),
+            ContactRequest::new(unbuilt, owner, 0, 0, 3, vec![0u8; 96], 100, 0),
+        );
+        broken.payment_channel_broken = true;
+        managed.apply_established_contact(broken);
+
+        assert!(
+            super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &contact).is_err()
+        );
+        assert!(
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(
+                wm.get_wallet_info(&wallet_id).expect("info"),
+                &owner,
+            )
+            .len()
+                == 1,
+            "the refused account is queued for its rebuild (the broken channel is not)"
+        );
+        assert!(
+            super::reserve_contact_payment_address(&mut wm, wallet_id, &owner, &unbuilt)
+                .is_err_and(|e| e.to_string().contains("No DashpayExternalAccount found")),
+            "a contact without an outbound account is told it has none"
+        );
+    }
+
     /// Outbound registrations of one account are serialized: the durable
     /// write runs under the wallet-manager write guard, so nothing else can
     /// take the manager while it is held, and a competing registration that
@@ -5856,7 +6699,7 @@ mod tests {
             .clone();
         assert_eq!(established.external_account_reference, Some(7));
         assert!(
-            external_account_needs_rebuild(&established, true),
+            external_account_needs_rebuild(&established),
             "the stale marker keeps the repair armed"
         );
     }
@@ -5971,7 +6814,7 @@ mod tests {
             Some(7),
             "the late completion must not stamp request 8"
         );
-        assert!(external_account_needs_rebuild(&after, true));
+        assert!(external_account_needs_rebuild(&after));
         let stamped = persister
             .stores
             .lock()
@@ -5997,7 +6840,7 @@ mod tests {
                 .clone()
         };
         assert_eq!(restored.external_account_reference, Some(7));
-        assert!(external_account_needs_rebuild(&restored, true));
+        assert!(external_account_needs_rebuild(&restored));
 
         // While the bound marker is current, completion still heals the
         // broken flag.
@@ -6151,7 +6994,7 @@ mod tests {
                 restarted.external_account_reference, None,
                 "buffered: {buffered}"
             );
-            assert!(external_account_needs_rebuild(&restarted, true));
+            assert!(external_account_needs_rebuild(&restarted));
         }
     }
 
@@ -6251,7 +7094,7 @@ mod tests {
                 "rotated: {rotated}"
             );
             assert_eq!(
-                external_account_needs_rebuild(&established, true),
+                external_account_needs_rebuild(&established),
                 rotated,
                 "only a pool the current xpub does not derive is rebuilt"
             );
@@ -6637,6 +7480,7 @@ mod tests {
             managed,
             identities: std::collections::BTreeMap::new(),
             backfill: Default::default(),
+            outbound_account_digests: BTreeMap::new(),
             stores: Mutex::default(),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -11231,6 +12075,16 @@ mod tests {
                     &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
                 )
                 .expect("add owner");
+            // The contact paid is established with no outbound account yet:
+            // the payment itself must queue its build for the drain.
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident")
+                .apply_established_contact(EstablishedContact::new(
+                    pay_contact,
+                    ContactRequest::new(owner, pay_contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    ContactRequest::new(pay_contact, owner, 0, 0, 7, vec![0u8; 96], 100, 0),
+                ));
             // A RegisterReceiving op the provider-only drain can complete.
             info.identity_manager
                 .managed_identity_mut(&owner)
@@ -11299,6 +12153,17 @@ mod tests {
                 .iter()
                 .any(|e| e.contact_id == queued_contact),
             "the drained RegisterReceiving entry must be cleared from the queue"
+        );
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: owner.to_buffer(),
+                    friend_identity_id: pay_contact.to_buffer(),
+                }),
+            "the payment queues the paid contact's account builds before its drain"
         );
     }
 

@@ -6,6 +6,7 @@ use crate::common;
 
 use common::fresh_persister;
 use platform_wallet_storage::sqlite::migrations as mig;
+use platform_wallet_storage::sqlite::schema::accounts::AccountRegistrationWire;
 
 /// every embedded migration corresponds to a file in `migrations/`.
 #[test]
@@ -752,8 +753,10 @@ fn tc049_legacy_standard_row_with_bip32_blob_still_loads() {
             standard_account_type: StandardAccountType::BIP32Account,
         },
         account_xpub: xpub,
+        encrypted_xpub_digest: None,
     };
-    let entry_blob = blob::encode(&entry).expect("encode registration");
+    let entry_blob =
+        blob::encode(&AccountRegistrationWire::from(&entry)).expect("encode registration");
 
     {
         let mut conn = rusqlite::Connection::open(&path).expect("open db");
@@ -837,8 +840,9 @@ fn tc050_legacy_standard_row_is_reconciled_by_the_reader_not_the_writer() {
             standard_account_type: StandardAccountType::BIP44Account,
         },
         account_xpub: xpub,
+        encrypted_xpub_digest: None,
     };
-    let entry_blob = blob::encode(&entry).unwrap();
+    let entry_blob = blob::encode(&AccountRegistrationWire::from(&entry)).unwrap();
 
     {
         let mut conn = rusqlite::Connection::open(&path).unwrap();

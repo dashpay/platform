@@ -11,6 +11,7 @@ use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::{OutPoint, Transaction};
+use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 
@@ -68,4 +69,12 @@ pub struct ClientWalletStartState {
     /// rescan sweep then behaves exactly as before and writes one. See
     /// [`DashPayBackfillRecord`].
     pub dashpay_backfill: DashPayBackfillRecord,
+    /// The digest each restored `DashpayExternalAccount` row carries of the
+    /// contact request it was built from
+    /// ([`AccountRegistrationEntry::encrypted_xpub_digest`](crate::changeset::AccountRegistrationEntry::encrypted_xpub_digest)),
+    /// as the backend stored it. The bytes are handed over unchecked; the
+    /// load validates them. An account without an entry was stored without
+    /// one (by an older writer, or by a host that does not keep it), and its
+    /// first contact sweep verifies it by decrypting.
+    pub outbound_account_digests: BTreeMap<DashpayAccountKey, Vec<u8>>,
 }

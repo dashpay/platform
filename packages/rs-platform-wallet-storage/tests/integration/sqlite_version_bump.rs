@@ -193,6 +193,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             cs.account_registrations = vec![AccountRegistrationEntry {
                 account_type: std_account(),
                 account_xpub: test_xpub(),
+                encrypted_xpub_digest: None,
             }];
             // Provider key-material accounts share this domain — both halves
             // land in `account_registrations` rows (dashpay/platform#4113).

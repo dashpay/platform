@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    encrypted_xpub_digest, ClientStartState, ClientWalletStartState, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -14,6 +16,7 @@ use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use dpp::prelude::Identifier;
+use key_wallet::account::account_collection::DashpayAccountKey;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -147,6 +150,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
                 dashpay_backfill,
+                outbound_account_digests,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -288,6 +292,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                          restored markers are not trusted"
                     );
                 }
+            }
+            // The digest an external account row carries names the contact
+            // request its xpub was decrypted from, on every backend, so it
+            // decides what the marker handling above could not: an account
+            // built from the live request is current, and one built from an
+            // earlier request has a rotation pending, which refuses payments
+            // to the contact until the account is rebuilt.
+            let (current, awaiting_rebuild) = apply_outbound_account_digests(
+                &wallet,
+                &mut platform_info,
+                &outbound_account_digests,
+            );
+            if current + awaiting_rebuild > 0 {
+                tracing::info!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    current,
+                    awaiting_rebuild,
+                    "load: DashPay external accounts checked against their contacts' live requests"
+                );
             }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
@@ -898,6 +921,7 @@ mod idempotent_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
                     dashpay_backfill: Default::default(),
+                    outbound_account_digests: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -965,6 +989,7 @@ mod idempotent_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    outbound_account_digests: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -1005,6 +1030,7 @@ mod idempotent_load_tests {
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
                 dashpay_backfill: Default::default(),
+                outbound_account_digests: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1523,6 +1549,65 @@ fn distrust_markers_of_foreign_external_pools(
     cleared
 }
 
+/// Compare each restored DashPay external account's digest with its
+/// contact's live request. An account whose digest names the live request and
+/// whose pools all derive from it is current: its in-memory marker is
+/// stamped, so neither the contact sweep nor a payment waits for a rebuild.
+/// Any other digest — another request's, one beside pools the account does not
+/// derive, one of the wrong length, or one the host could not read (handed
+/// over empty) — proves nothing about the account, so its marker is cleared
+/// and a pending rotation recorded: payments to the contact are refused until
+/// the account is rebuilt or confirmed. A relationship that is no longer
+/// established or registered is ignored. Returns how many accounts were found
+/// current and how many await a rebuild.
+fn apply_outbound_account_digests(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+    digests: &BTreeMap<DashpayAccountKey, Vec<u8>>,
+) -> (usize, usize) {
+    let mut current = 0;
+    let mut pending = 0;
+    for (key, stored) in digests {
+        let (Some(account), Some(managed_account)) = (
+            wallet.accounts.dashpay_external_accounts.get(key),
+            info.core_wallet.accounts.dashpay_external_accounts.get(key),
+        ) else {
+            continue;
+        };
+        let contact_id = Identifier::from(key.friend_identity_id);
+        let Some(managed) = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from(key.user_identity_id))
+        else {
+            continue;
+        };
+        let Some(contact) = managed.established_contact_mut(&contact_id) else {
+            continue;
+        };
+        let live_reference = contact.incoming_request.account_reference;
+        let names_live_request = <[u8; 32]>::try_from(stored.as_slice()).is_ok_and(|stored| {
+            encrypted_xpub_digest(&contact.incoming_request.encrypted_public_key) == stored
+        });
+        // A marker that survived the restored-marker checks above already
+        // vouches for these pools, so they are derived again only without it.
+        let pools_derive = contact.external_account_reference == Some(live_reference)
+            || managed_account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .all(|pool| pool_derives_from(pool, account));
+        if names_live_request && pools_derive {
+            contact.external_account_reference = Some(live_reference);
+            current += 1;
+        } else {
+            contact.external_account_reference = None;
+            managed.mark_outbound_rekeyed(&contact_id);
+            pending += 1;
+        }
+    }
+    (current, pending)
+}
+
 #[cfg(test)]
 thread_local! {
     /// How many restored pools [`pool_derives_from`] validated on this
@@ -1571,7 +1656,7 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 /// and pays to, so an address encoded for another network still matches its
 /// key. A failed derivation counts as a mismatch, and a hardened pool never
 /// matches: its children cannot be derived from a public key.
-fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+pub(crate) fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
     #[cfg(test)]
     POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
     if pool.pool_type == AddressPoolType::AbsentHardened {
