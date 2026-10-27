@@ -1,3 +1,22 @@
+### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes (#5561)
+
+### Bug Fixes
+
+* **drive-abci:** answer queries for features not active yet with INVALID_ARGUMENT ([#5557](https://github.com/dashpay/platform/issues/5557))
+* **sdk:** check document query shapes before sending them ([#5558](https://github.com/dashpay/platform/issues/5558))
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes ([#5561](https://github.com/dashpay/platform/issues/5561))
+* **sdk:** retry document queries answered by nodes on an older protocol version ([#5560](https://github.com/dashpay/platform/issues/5560))
+
+
+### Tests
+
+* **sdk:** run operation-proof tests in CI and select the verifier generation from the verifier ([#5559](https://github.com/dashpay/platform/issues/5559))
+
 ## [5.0.0](https://github.com/dashpay/platform/compare/v5.0.0-rc.8...v5.0.0) (2026-10-26)
 
 
