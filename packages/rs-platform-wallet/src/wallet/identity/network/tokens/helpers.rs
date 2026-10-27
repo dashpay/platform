@@ -167,7 +167,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 mod signing_tests {
     use super::*;
     use crate::wallet::identity::network::key_selection::tests::{
-        bound_key, key, refused_purposes,
+        bound_key, key, refused_purposes, signature_refusal_of,
     };
     use crate::wallet::identity::network::signing_key::tests::{
         assert_no_usable_key, identity as identity_with_keys, lock_checking_signer,
@@ -262,10 +262,10 @@ mod signing_tests {
             .expect("the key must be refused");
         assert!(
             matches!(
-                transfer,
-                dash_sdk::Error::Protocol(
-                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
-                )
+                signature_refusal_of(&transfer),
+                Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    _
+                ))
             ),
             "a TRANSFER key signs a batch only at CRITICAL: {transfer:?}"
         );
@@ -347,10 +347,10 @@ mod signing_tests {
         let error = burn(key(1, SecurityLevel::HIGH)).await;
         assert!(
             matches!(
-                error,
-                dash_sdk::Error::Protocol(
-                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
-                )
+                signature_refusal_of(&error),
+                Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    _
+                ))
             ),
             "a token transition takes only a CRITICAL key: {error:?}"
         );

@@ -140,11 +140,12 @@ pub(super) fn credit_signing_key<'a>(
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::super::key_selection::tests::refused_purposes;
+    use super::super::key_selection::tests::{refused_purposes, signature_refusal_of};
     use super::*;
     use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
+    use dpp::consensus::signature::SignatureError;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -329,9 +330,9 @@ pub(super) mod tests {
                 credit_signing_key(&identity, identity.public_keys().get(&id), &signer, true);
             assert!(
                 matches!(
-                    refusal,
-                    Err(dash_sdk::Error::Protocol(
-                        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+                    refusal.as_ref().err().and_then(signature_refusal_of),
+                    Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                        _
                     ))
                 ),
                 "credit transitions take only a CRITICAL key: {refusal:?}"
@@ -531,10 +532,11 @@ pub(super) mod tests {
         };
         assert!(
             matches!(
-                explicit(1, true),
-                Err(dash_sdk::Error::Protocol(
-                    ProtocolError::PublicKeyIsDisabledError(_)
-                ))
+                explicit(1, true)
+                    .as_ref()
+                    .err()
+                    .and_then(signature_refusal_of),
+                Some(SignatureError::PublicKeyIsDisabledError(_))
             ),
             "Platform refuses a disabled signing key"
         );
@@ -550,10 +552,11 @@ pub(super) mod tests {
         );
         assert!(
             matches!(
-                explicit(5, false),
-                Err(dash_sdk::Error::Protocol(
-                    ProtocolError::InvalidIdentityPublicKeyTypeError(_)
-                ))
+                explicit(5, false)
+                    .as_ref()
+                    .err()
+                    .and_then(signature_refusal_of),
+                Some(SignatureError::InvalidIdentityPublicKeyTypeError(_))
             ),
             "Platform cannot verify an identity signature by a script hash"
         );

@@ -636,6 +636,7 @@ mod signing_key_tests {
 
     #[tokio::test]
     async fn should_refuse_an_explicit_registration_key_before_any_network_call() {
+        use super::super::key_selection::tests::signature_refusal_of;
         use super::super::signing_key::tests::wallet_with_signing_keys;
         use dpp::consensus::signature::SignatureError;
         use dpp::consensus::ConsensusError;
@@ -678,10 +679,10 @@ mod signing_key_tests {
         let error = register(key(0, SecurityLevel::MASTER)).await.unwrap_err();
         assert!(
             matches!(
-                error,
-                dash_sdk::Error::Protocol(
-                    ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
-                )
+                signature_refusal_of(&error),
+                Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    _
+                ))
             ),
             "MASTER is refused on document writes: {error:?}"
         );

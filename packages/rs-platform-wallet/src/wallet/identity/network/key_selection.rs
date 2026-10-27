@@ -4,8 +4,8 @@
 use dpp::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use dpp::consensus::signature::{
     ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
-    InvalidSignaturePublicKeyPurposeError, PublicKeyExpiredError, PublicKeyIsDisabledError,
-    SignatureError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyPurposeError,
+    PublicKeyExpiredError, PublicKeyIsDisabledError, SignatureError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::TokenContractPosition;
@@ -18,7 +18,6 @@ use dpp::identity::identity_public_key::contract_bounds::{
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
-use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
@@ -160,9 +159,10 @@ fn usable_signing_key_at<'a>(
 /// Check a key the caller chose to sign in `scope` against the rules [`usable_signing_key`]
 /// applies, so an explicit choice is refused before anything is built or signed.
 ///
-/// Each refusal is the typed error Platform itself returns for it: a purpose outside
-/// `purposes`, a security level outside `security_levels`, a key type outside `key_types`, a
-/// disabled key, an expired key, or contract bounds that do not cover `scope`. A key bound to
+/// Each refusal is the consensus signature error Platform itself returns for it, checked in
+/// Drive's order: a key type outside `key_types`, a purpose outside `purposes`, a security
+/// level outside `security_levels`, a disabled key; then an expired key, or contract bounds
+/// that do not cover `scope`. A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
 /// `signer` cannot sign with is refused with the signer-unavailable error. A key with an
 /// expiry is refused with [`dash_sdk::Error::Config`] when the system clock reads before the
@@ -197,6 +197,15 @@ fn check_signing_key_at(
     scope: SigningScope<'_>,
     now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
+    // Drive's identity-signed validation checks in this order: key type, purpose, security
+    // level, disabled.
+    if !key_types.contains(&key.key_type()) {
+        return Err(signature_refusal(
+            SignatureError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+            ),
+        ));
+    }
     if !purposes.contains(&key.purpose()) {
         return Err(signature_refusal(
             SignatureError::InvalidSignaturePublicKeyPurposeError(
@@ -205,24 +214,19 @@ fn check_signing_key_at(
         ));
     }
     if !security_levels.contains(&key.security_level()) {
-        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
-            InvalidSignaturePublicKeySecurityLevelError::new(
-                key.security_level(),
-                security_levels.to_vec(),
+        return Err(signature_refusal(
+            SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    key.security_level(),
+                    security_levels.to_vec(),
+                ),
             ),
-        )
-        .into());
-    }
-    if !key_types.contains(&key.key_type()) {
-        return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-            InvalidIdentityPublicKeyTypeError::new(key.key_type()),
-        )
-        .into());
+        ));
     }
     if key.is_disabled() {
-        return Err(
-            ProtocolError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(key.id())).into(),
-        );
+        return Err(signature_refusal(SignatureError::PublicKeyIsDisabledError(
+            PublicKeyIsDisabledError::new(key.id()),
+        )));
     }
     if let Some(expires_at) = key.expires_at() {
         let Some(now) = now else {
@@ -669,6 +673,18 @@ pub(super) mod tests {
         }
     }
 
+    /// The consensus signature error `error` carries, if it is one.
+    pub(crate) fn signature_refusal_of(error: &dash_sdk::Error) -> Option<&SignatureError> {
+        match error {
+            dash_sdk::Error::Protocol(ProtocolError::ConsensusError(error)) => match error.as_ref()
+            {
+                ConsensusError::SignatureError(error) => Some(error),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// The purposes `error` names when it is Platform's purpose refusal.
     pub(crate) fn refused_purposes(error: &dash_sdk::Error) -> Option<Vec<Purpose>> {
         match error {
@@ -721,26 +737,31 @@ pub(super) mod tests {
             Some(vec![Purpose::AUTHENTICATION])
         );
         assert!(matches!(
-            check(&key(1, SecurityLevel::MASTER), document_scope()),
-            Err(dash_sdk::Error::Protocol(
-                ProtocolError::InvalidSignaturePublicKeySecurityLevelError(_)
+            check(&key(1, SecurityLevel::MASTER), document_scope())
+                .as_ref()
+                .err()
+                .and_then(signature_refusal_of),
+            Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                _
             ))
         ));
         let mut hash160 = key(1, SecurityLevel::HIGH);
         hash160.set_key_type(KeyType::ECDSA_HASH160);
         assert!(matches!(
-            check(&hash160, document_scope()),
-            Err(dash_sdk::Error::Protocol(
-                ProtocolError::InvalidIdentityPublicKeyTypeError(_)
-            ))
+            check(&hash160, document_scope())
+                .as_ref()
+                .err()
+                .and_then(signature_refusal_of),
+            Some(SignatureError::InvalidIdentityPublicKeyTypeError(_))
         ));
         let mut disabled = key(1, SecurityLevel::HIGH);
         disabled.set_disabled_at(5);
         assert!(matches!(
-            check(&disabled, document_scope()),
-            Err(dash_sdk::Error::Protocol(
-                ProtocolError::PublicKeyIsDisabledError(_)
-            ))
+            check(&disabled, document_scope())
+                .as_ref()
+                .err()
+                .and_then(signature_refusal_of),
+            Some(SignatureError::PublicKeyIsDisabledError(_))
         ));
         let expired = key(1, SecurityLevel::HIGH).with_limits(None, Some(1));
         assert!(matches!(
