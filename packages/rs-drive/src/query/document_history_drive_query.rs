@@ -158,8 +158,7 @@ impl DocumentHistoryDriveQuery {
         }
     }
 
-    /// The path query of the page's entries in the layout the protocol
-    /// version stores.
+    /// The page and its lifecycle in the layout the protocol version stores.
     pub fn construct_path_query(
         &self,
         platform_version: &PlatformVersion,
@@ -183,7 +182,7 @@ impl DocumentHistoryDriveQuery {
                     platform_version,
                 )
             }
-            1 => Drive::fetch_document_history_drive_query_v1(self),
+            1 => self.merged_path_query(platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentHistoryDriveQuery::construct_path_query".to_string(),
                 known_versions: vec![0, 1],
@@ -214,22 +213,85 @@ impl DocumentHistoryDriveQuery {
         }
     }
 
-    /// Queries the pointer, lifecycle reservation, and raw history tree separately.
-    pub fn metadata_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
-        self.validate()?;
-        let queries = [0, 1, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
-            let mut path =
-                contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
-            path.push(vec![branch]);
-            let mut query = Query::new();
-            query.insert_key(self.document_id.to_vec());
-            PathQuery::new(path, SizedQuery::new(query, None, None))
-        });
-        let mut merged = PathQuery::merge(queries.iter().collect(), &version.drive.grove_version)?;
-        // One exact key per branch. The finite limit lets the verifier map
-        // every queried key to a proven element or a proven absence.
-        merged.query.limit = Some(queries.len() as u16);
-        Ok(merged)
+    fn merged_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
+        let page = Drive::fetch_document_history_drive_query_v1(self)?;
+        let mut leaf = page.query.query;
+        leaf.limit = page.query.limit;
+        leaf.offset = page.query.offset;
+        let mut queries = [0, 1]
+            .map(|branch| {
+                let mut path =
+                    contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+                path.push(vec![branch]);
+                let mut query = Query::new();
+                query.insert_key(self.document_id.to_vec());
+                PathQuery::new(path, SizedQuery::new(query, None, None))
+            })
+            .to_vec();
+        let mut path = contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+        path.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
+        let mut history = Query::new_single_key(self.document_id.to_vec());
+        history.add_parent_tree_on_subquery = true;
+        history.set_subquery(leaf);
+        queries.push(PathQuery::new_unsized(path, history));
+        // Only the page leaf is limited. Exact siblings and their selecting
+        // ancestors must stay unlimited so omission authenticates absence.
+        Ok(PathQuery::merge(
+            queries.iter().collect(),
+            &version.drive.grove_version,
+        )?)
+    }
+
+    pub(crate) fn decode_result(
+        &self,
+        rows: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
+        document_type: DocumentTypeRef,
+        version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let mut entry_path =
+            contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+        entry_path.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
+        entry_path.push(self.document_id.to_vec());
+        let mut metadata = vec![];
+        let mut entries = vec![];
+        for (path, key, element) in rows {
+            if path == entry_path {
+                entries.push((
+                    key,
+                    element.ok_or_else(|| corrupt("history entry contains an absent element"))?,
+                ));
+            } else {
+                metadata.push((path, key, element));
+            }
+        }
+        let lifecycle = self.lifecycle(metadata, document_type, version)?;
+        let limit = if matches!(self.filter, DocumentHistoryFilter::Revision(_)) {
+            1
+        } else {
+            self.limit.unwrap_or(MAX_DOCUMENT_HISTORY_FETCH_LIMIT)
+        } as u64;
+        let maximum = lifecycle.remaining_revisions.min(limit);
+        if let DocumentHistoryFilter::Revision(revision)
+        | DocumentHistoryFilter::StartAtRevision(revision) = self.filter
+        {
+            if entries.len() as u64
+                != lifecycle
+                    .remaining_revisions
+                    .saturating_sub(revision - 1)
+                    .min(limit)
+            {
+                return Err(corrupt(
+                    "history page length disagrees with its revision count",
+                ));
+            }
+        } else if entries.len() as u64 > maximum {
+            return Err(corrupt("history page exceeds its limit or revision count"));
+        }
+        let entries = self.decode_entries(entries, document_type, version)?;
+        Ok(DocumentHistoryDriveQueryExecutionResult {
+            entries,
+            lifecycle: Some(lifecycle),
+        })
     }
 
     pub(crate) fn lifecycle(
@@ -237,7 +299,7 @@ impl DocumentHistoryDriveQuery {
         metadata: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
-    ) -> Result<(DocumentHistoryLifecycle, bool), Error> {
+    ) -> Result<DocumentHistoryLifecycle, Error> {
         let mut primary =
             contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
         primary.push(vec![0]);
@@ -247,9 +309,8 @@ impl DocumentHistoryDriveQuery {
         let mut latest_revision = None;
         let mut count = None;
         for (path, key, element) in metadata {
-            let Some(element) = element else {
-                continue;
-            };
+            let element =
+                element.ok_or_else(|| corrupt("history metadata contains an absent element"))?;
             if key != self.document_id {
                 return Err(corrupt("history metadata key does not match the document"));
             }
@@ -299,17 +360,14 @@ impl DocumentHistoryDriveQuery {
                 "retained history contains a revision gap; use time pagination",
             ));
         }
-        Ok((
-            DocumentHistoryLifecycle {
-                state: if active {
-                    DocumentHistoryState::Active
-                } else {
-                    DocumentHistoryState::Absent
-                },
-                remaining_revisions: count.unwrap_or_default(),
+        Ok(DocumentHistoryLifecycle {
+            state: if active {
+                DocumentHistoryState::Active
+            } else {
+                DocumentHistoryState::Absent
             },
-            count.is_some(),
-        ))
+            remaining_revisions: count.unwrap_or_default(),
+        })
     }
 
     pub(crate) fn decode_entries(
@@ -397,6 +455,10 @@ impl DocumentHistoryDriveQuery {
         Drive::verify_document_history(self, proof, document_type, platform_version)
     }
 }
+
+#[cfg(test)]
+#[path = "document_history_drive_query_tests.rs"]
+mod decode_tests;
 
 #[cfg(test)]
 mod tests {

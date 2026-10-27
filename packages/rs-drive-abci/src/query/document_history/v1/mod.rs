@@ -97,7 +97,7 @@ impl<C> Platform<C> {
                 }
                 Err(error) => return Err(error.into()),
             };
-            // One signature authenticates the shared root of both GroveDB proofs.
+            // The signature authenticates the history proof root.
             let proof = self
                 .response_proof_v0(platform_state, proof, GroveDBToUse::Current)?
                 .1;

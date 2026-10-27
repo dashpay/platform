@@ -406,7 +406,6 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     use crate::query::document_history_drive_query::{
         DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
-    use crate::verify::document::DocumentHistoryProof;
     let mut history_query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
@@ -461,39 +460,20 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     let committed_page = drive
         .fetch_document_history(&history_query, document_type, None, new)
         .unwrap();
-    let proof = DocumentHistoryProof::from_bytes(
-        &drive
-            .prove_document_history(&history_query, document_type, None, new)
-            .unwrap(),
-    )
-    .unwrap();
+    let proof = drive
+        .prove_document_history(&history_query, document_type, None, new)
+        .unwrap();
     assert_eq!(committed_page, page);
     assert_eq!(
-        Drive::verify_document_history(
-            &history_query,
-            &proof.to_bytes().unwrap(),
-            document_type,
-            new,
-        )
-        .unwrap()
-        .1,
+        Drive::verify_document_history(&history_query, &proof, document_type, new,)
+            .unwrap()
+            .1,
         page
     );
-    let mut legacy_entries = proof.clone();
-    legacy_entries.entries_proof = Some(
-        crate::util::test_helpers::history_proof::downgrade_history_count(
-            proof.entries_proof.as_ref().unwrap(),
-            None,
-            new,
-        ),
-    );
-    let error = Drive::verify_document_history(
-        &history_query,
-        &legacy_entries.to_bytes().unwrap(),
-        document_type,
-        new,
-    )
-    .expect_err("entries require a GroveDB v1 envelope");
+    let legacy_entries =
+        crate::util::test_helpers::history_proof::downgrade_history_count(&proof, None, new);
+    let error = Drive::verify_document_history(&history_query, &legacy_entries, document_type, new)
+        .expect_err("entries require a GroveDB v1 envelope");
     assert!(matches!(
         error,
         Error::Proof(
@@ -507,54 +487,23 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         history_query.filter = filter;
         let fetched = drive.fetch_document_history(&history_query, document_type, None, new);
         let proved = drive.prove_document_history(&history_query, document_type, None, new);
-        let dishonest = DocumentHistoryProof {
-            entries_proof: Some(
-                drive
-                    .grove_get_proved_path_query(
-                        &history_query.construct_path_query(new).unwrap(),
-                        None,
-                        &mut vec![],
-                        &new.drive,
-                    )
-                    .unwrap(),
-            ),
-            metadata_proof: proof.metadata_proof.clone(),
-        };
-        let verified = Drive::verify_document_history(
-            &history_query,
-            &dishonest.to_bytes().unwrap(),
-            document_type,
+        let dishonest = drive
+            .grove_get_proved_path_query(
+                &history_query.construct_path_query(new).unwrap(),
+                None,
+                &mut vec![],
+                &new.drive,
+            )
+            .unwrap();
+        let verified =
+            Drive::verify_document_history(&history_query, &dishonest, document_type, new);
+        let downgraded = crate::util::test_helpers::history_proof::downgrade_history_count(
+            &dishonest,
+            Some(3),
             new,
         );
-        let mut downgraded = dishonest.clone();
-        downgraded.metadata_proof =
-            crate::util::test_helpers::history_proof::downgrade_history_count(
-                &proof.metadata_proof,
-                Some(3),
-                new,
-            );
-        let (legacy_root, _) = grovedb::GroveDb::verify_query_with_options(
-            &downgraded.metadata_proof,
-            &history_query.metadata_path_query(new).unwrap(),
-            grovedb::VerifyOptions {
-                absence_proofs_for_non_existing_searched_keys: false,
-                verify_proof_succinctness: true,
-                include_empty_trees_in_result: true,
-            },
-            &new.drive.grove_version,
-        )
-        .unwrap();
-        assert_eq!(
-            legacy_root, root_migrated,
-            "legacy terminal counts do not change the committed root"
-        );
-        let error = Drive::verify_document_history(
-            &history_query,
-            &downgraded.to_bytes().unwrap(),
-            document_type,
-            new,
-        )
-        .expect_err("document history rejects legacy metadata envelopes");
+        let error = Drive::verify_document_history(&history_query, &downgraded, document_type, new)
+            .expect_err("document history rejects legacy metadata envelopes");
         assert!(matches!(
             error,
             Error::Proof(

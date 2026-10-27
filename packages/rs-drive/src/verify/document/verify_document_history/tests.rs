@@ -1,4 +1,3 @@
-use super::DocumentHistoryProof;
 use crate::drive::document::paths::{
     contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
 };
@@ -24,41 +23,517 @@ use dpp::version::PlatformVersion;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
 
 /// Fetches and proves a page at a protocol version that stores the history
-/// tree, returning the two GroveDB proofs for tampering.
+/// tree, returning the ordinary GroveDB proof for tampering.
 fn prove(
     drive: &Drive,
     query: &DocumentHistoryDriveQuery,
     document_type: DocumentTypeRef,
     version: &PlatformVersion,
-) -> (
-    DocumentHistoryDriveQueryExecutionResult,
-    DocumentHistoryProof,
-) {
+) -> (DocumentHistoryDriveQueryExecutionResult, Vec<u8>) {
     let page = drive
         .fetch_document_history(query, document_type, None, version)
         .unwrap();
-    let proof = DocumentHistoryProof::from_bytes(
-        &drive
-            .prove_document_history(query, document_type, None, version)
-            .unwrap(),
-    )
-    .unwrap();
+    let proof = drive
+        .prove_document_history(query, document_type, None, version)
+        .unwrap();
     (page, proof)
 }
 
 fn verify(
     query: &DocumentHistoryDriveQuery,
-    proof: &DocumentHistoryProof,
+    proof: &[u8],
     document_type: DocumentTypeRef,
     version: &PlatformVersion,
 ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
-    Drive::verify_document_history(query, &proof.to_bytes()?, document_type, version)
+    Drive::verify_document_history(query, proof, document_type, version)
 }
 
 fn lifecycle(page: &DocumentHistoryDriveQueryExecutionResult) -> &DocumentHistoryLifecycle {
     page.lifecycle
         .as_ref()
         .expect("pages of the history tree carry a lifecycle")
+}
+
+#[test]
+fn should_serve_history_as_one_grovedb_proof_with_trusted_read_parity() {
+    let version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+        false,
+        version,
+    )
+    .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let mut document = json_document_to_document(
+        "tests/supporting_files/contract/dashpay/profile0.json",
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    for revision in 1..=3 {
+        document.set_revision(Some(revision));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(2000),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+    }
+    let root = drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .unwrap()
+        .unwrap();
+    let mut failures = vec![];
+    for document_id in [document.id().to_buffer(), [255; 32]] {
+        for filter in [
+            DocumentHistoryFilter::StartAtTime(2000),
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 1,
+            },
+            DocumentHistoryFilter::StartAtRevision(2),
+            DocumentHistoryFilter::Revision(2),
+            DocumentHistoryFilter::Revision(4),
+            DocumentHistoryFilter::Revision(65536),
+        ] {
+            let query = DocumentHistoryDriveQuery {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "profile".into(),
+                document_id,
+                filter,
+                limit: None,
+            };
+            let fetched = query
+                .execute_no_proof(&drive, document_type, None, version)
+                .unwrap();
+            let proof = query
+                .execute_with_proof(&drive, document_type, None, version)
+                .unwrap();
+            println!(
+                "single proof sample {:?}, absent={}: {} bytes",
+                query.filter,
+                document_id == [255; 32],
+                proof.len()
+            );
+            match grovedb::GroveDb::verify_query_raw(
+                &proof,
+                &query.construct_path_query(version).unwrap(),
+                &version.drive.grove_version,
+            ) {
+                Ok((proved_root, rows)) => {
+                    assert_eq!(proved_root, root);
+                    assert_eq!(
+                        rows.len(),
+                        fetched.entries.len() + usize::from(document_id != [255; 32]) * 2
+                    );
+                    assert_eq!(
+                        query
+                            .verify_document_history_proof(&proof, document_type, version)
+                            .unwrap(),
+                        (root, fetched)
+                    );
+                }
+                Err(error) => failures.push(format!(
+                    "{:?}, absent={}: {error}",
+                    query.filter,
+                    document_id == [255; 32]
+                )),
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "history must be one ordinary GroveDB proof: {failures:#?}"
+    );
+}
+
+#[test]
+fn should_leave_exact_history_reads_unlimited_in_the_merged_query() {
+    fn check(query: &Query, page_limits: &mut usize) {
+        let children: Vec<_> = query
+            .default_subquery_branch
+            .subquery
+            .iter()
+            .chain(
+                query
+                    .conditional_subquery_branches
+                    .iter()
+                    .flat_map(|branches| branches.values())
+                    .filter_map(|branch| branch.subquery.as_ref()),
+            )
+            .collect();
+        assert!(query.left_to_right);
+        if children.is_empty()
+            && query
+                .items
+                .iter()
+                .any(|item| !matches!(item, grovedb::QueryItem::Key(_)))
+        {
+            assert!(query.limit.is_some(), "only the history page is limited");
+            *page_limits += 1;
+        } else {
+            assert_eq!(query.offset, None, "only the page may skip results");
+            assert_eq!(
+                query.limit, None,
+                "exact selections and enclosing nodes must prove absence without truncation"
+            );
+        }
+        for child in children {
+            check(child, page_limits);
+        }
+    }
+    let query = DocumentHistoryDriveQuery {
+        contract_id: [1; 32],
+        document_type_name: "profile".into(),
+        document_id: [2; 32],
+        filter: DocumentHistoryFilter::StartAtRevision(7),
+        limit: Some(2),
+    };
+    let merged = query
+        .construct_path_query(PlatformVersion::latest())
+        .unwrap();
+    assert_eq!(
+        merged.path,
+        contract_document_type_path_vec(&query.contract_id, &query.document_type_name)
+    );
+    assert_eq!(
+        merged.query.limit, None,
+        "a global limit could omit an exact sibling"
+    );
+    assert_eq!(merged.query.offset, None);
+    let history = merged
+        .query
+        .query
+        .conditional_subquery_branches
+        .as_ref()
+        .unwrap()
+        .get(&grovedb::QueryItem::Key(vec![DOCUMENT_HISTORY_TREE_KEY]))
+        .unwrap()
+        .subquery
+        .as_ref()
+        .unwrap();
+    assert!(history.add_parent_tree_on_subquery);
+    let mut page_limits = 0;
+    check(&merged.query.query, &mut page_limits);
+    assert_eq!(page_limits, 1);
+}
+
+#[test]
+fn should_serve_both_history_pointer_types_as_one_grovedb_proof() {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::document_factory::DocumentFactory;
+    use dpp::platform_value::platform_value;
+
+    let version = PlatformVersion::latest();
+    for summable in [true, false] {
+        let drive = setup_drive_with_initial_state_structure(Some(version));
+        let mut schema = platform_value!({
+            "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
+            "properties": {"amount": {"type": "integer", "minimum": 0, "maximum": 100, "position": 0}},
+            "required": ["amount"], "additionalProperties": false
+        });
+        if summable {
+            schema
+                .insert("documentsSummable".into(), "amount".into())
+                .unwrap();
+        }
+        let contract = DataContractFactory::new(version.protocol_version)
+            .unwrap()
+            .create_with_value_config(
+                [7; 32].into(),
+                0,
+                platform_value!({"note": schema}),
+                None,
+                None,
+            )
+            .unwrap()
+            .data_contract_owned();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        let document_type = contract.document_type_for_name("note").unwrap();
+        let mut document = DocumentFactory::new(version.protocol_version)
+            .unwrap()
+            .create_document(
+                &contract,
+                [7; 32].into(),
+                "note".into(),
+                platform_value!({"amount": 5}),
+            )
+            .unwrap();
+        for revision in 1..=3 {
+            document.set_revision(Some(revision));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .unwrap();
+        }
+        let mut primary = contract_document_type_path_vec(contract.id().as_bytes(), "note");
+        primary.push(vec![0]);
+        let pointer = drive
+            .grove
+            .get_raw(
+                primary.as_slice().into(),
+                document.id().as_bytes(),
+                None,
+                &version.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            (summable, pointer),
+            (false, Element::Reference(..)) | (true, Element::ReferenceWithSumItem(..))
+        ));
+        let current_bytes = document
+            .serialize(document_type, &contract, version)
+            .unwrap();
+        let root = drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+        for filter in [
+            DocumentHistoryFilter::StartAtTime(0),
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 1,
+            },
+            DocumentHistoryFilter::StartAtRevision(2),
+            DocumentHistoryFilter::Revision(2),
+        ] {
+            let query = DocumentHistoryDriveQuery {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "note".into(),
+                document_id: document.id().to_buffer(),
+                filter,
+                limit: Some(1),
+            };
+            let page = query
+                .execute_no_proof(&drive, document_type, None, version)
+                .unwrap();
+            let proof = query
+                .execute_with_proof(&drive, document_type, None, version)
+                .unwrap();
+            let (proved_root, _) = grovedb::GroveDb::verify_query_raw(
+                &proof,
+                &query.construct_path_query(version).unwrap(),
+                &version.drive.grove_version,
+            )
+            .expect("history uses one ordinary GroveDB proof");
+            assert_eq!(proved_root, root);
+            assert_eq!(
+                query
+                    .verify_document_history_proof(&proof, document_type, version)
+                    .unwrap(),
+                (root, page)
+            );
+            // These pages exclude the current revision, so these bytes belong
+            // only to the resolved primary reference in the proof.
+            let matches: Vec<_> = proof
+                .windows(current_bytes.len())
+                .enumerate()
+                .filter_map(|(position, bytes)| (bytes == current_bytes).then_some(position))
+                .collect();
+            assert_eq!(matches.len(), 1);
+            let mut changed = proof.clone();
+            changed[matches[0] + current_bytes.len() - 1] ^= 1;
+            let result = query.verify_document_history_proof(&changed, document_type, version);
+            assert!(
+                result.is_err() || result.unwrap().0 != root,
+                "changed reference target bytes must never authenticate under the trusted root"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
+    use dpp::dashcore::hashes::{sha256, Hash};
+    use grovedb_version::version::v4::GROVE_V4;
+
+    for selected in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+        // Historical bytes pin replay compatibility independently of agreement
+        // between the current GroveDB engines.
+        let (expected_root, expected_proof) = if selected.protocol_version == 14 {
+            (
+                "7dbeb13c417200f86e7f29d5f0967d62c222ae6f4abaf6d83a79adfc6ec732c1",
+                "b5b70531d251fcc2dfb134f35dd34ad7599e8fcbb22aed4ea9e3e7e9f73e6cae",
+            )
+        } else {
+            (
+                "7ea3acea864c917efe5c201b7be554ebbb105d3c065ae85684c93f355223db31",
+                "5a2bf14e60db3fb2b1deef28a8a9f94da1e0cbaab961ff958ad8bd0b15a01512",
+            )
+        };
+        let mut reference = selected.clone();
+        reference.drive.grove_version = GROVE_V4;
+        let mut observations = vec![];
+        for version in [&reference, selected] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            let contract = json_document_to_contract(
+                "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+                false,
+                version,
+            )
+            .unwrap();
+            let contract_fee = drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            let document_type = contract.document_type_for_name("profile").unwrap();
+            let document = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/profile0.json",
+                Some([8; 32].into()),
+                document_type,
+                version,
+            )
+            .unwrap();
+            let document_fee = drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .unwrap();
+            let mut primary = contract_document_type_path_vec(contract.id().as_bytes(), "profile");
+            primary.push(vec![0]);
+            let document_query = PathQuery::new_single_key(primary.clone(), document.id().to_vec());
+            let absent_query = PathQuery::new_single_key(primary, vec![255; 32]);
+            let query = PathQuery::merge(
+                vec![&document_query, &absent_query],
+                &version.drive.grove_version,
+            )
+            .unwrap();
+            let reference_query =
+                PathQuery::merge(vec![&document_query, &absent_query], &GROVE_V4).unwrap();
+            assert_eq!(query, reference_query);
+            let encode = |query: &PathQuery| {
+                bincode::encode_to_vec(query, bincode::config::standard().with_big_endian())
+                    .unwrap()
+            };
+            assert_eq!(encode(&query), encode(&reference_query));
+            let (rows, skipped) = drive
+                .grove_get_raw_path_query(
+                    &query,
+                    None,
+                    grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .unwrap();
+            assert_eq!(skipped, 0);
+            assert_eq!(rows.len(), 1);
+            let proof = drive
+                .grove_get_proved_path_query(&query, None, &mut vec![], &version.drive)
+                .unwrap();
+            let (root, _) =
+                grovedb::GroveDb::verify_query_raw(&proof, &query, &version.drive.grove_version)
+                    .unwrap();
+            assert_eq!(
+                grovedb::GroveDb::verify_query_raw(&proof, &reference_query, &GROVE_V4)
+                    .unwrap()
+                    .0,
+                root,
+                "released Grove V4 verifier must accept offset-free V5 proofs"
+            );
+            assert_eq!(
+                root,
+                drive
+                    .grove
+                    .root_hash(None, &version.drive.grove_version)
+                    .unwrap()
+                    .unwrap()
+            );
+            assert_eq!(hex::encode(root), expected_root);
+            assert_eq!(sha256::Hash::hash(&proof).to_string(), expected_proof);
+            assert_eq!(
+                (contract_fee.storage_fee, contract_fee.processing_fee),
+                (110_781_000, 1_773_200)
+            );
+            assert_eq!(
+                (document_fee.storage_fee, document_fee.processing_fee),
+                (35_235_000, 901_140)
+            );
+            println!("non-history PV{}: root={}, proof_sha256={}, contract_fee={contract_fee:?}, document_fee={document_fee:?}", version.protocol_version, hex::encode(root), sha256::Hash::hash(&proof));
+            let mut reads = vec![];
+            for grove_version in [&GROVE_V4, &version.drive.grove_version] {
+                // A range of document types descends into each primary tree.
+                // Branch-local limits already used by ordinary queries must
+                // keep both read results and metered work across the upgrade.
+                let mut types = Query::new_range_full();
+                let mut primary = Query::new_single_key(vec![0]);
+                let mut page = Query::new_range_full();
+                page.limit = Some(1);
+                primary.set_subquery(page);
+                types.set_subquery(primary);
+                let mut path = contract_document_type_path_vec(contract.id().as_bytes(), "profile");
+                path.pop();
+                let nested = PathQuery::new_unsized(path, types);
+                let read = drive.grove.query_raw(
+                    &nested,
+                    false,
+                    true,
+                    true,
+                    grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType,
+                    None,
+                    grove_version,
+                );
+                reads.push((read.value.unwrap(), read.cost));
+            }
+            assert_eq!(
+                reads[0], reads[1],
+                "nested local-limit reads must preserve metered work"
+            );
+            observations.push((root, proof, contract_fee, document_fee));
+        }
+        assert_eq!(
+            observations[0], observations[1],
+            "protocol {} roots, proofs and fees must stay equal to Grove V4",
+            selected.protocol_version
+        );
+    }
 }
 
 #[test]
@@ -119,7 +594,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Active);
         seen.extend(page.entries.iter().map(|entry| entry.revision));
         let mut missing_proof = proof.clone();
-        missing_proof.entries_proof = None;
+        missing_proof.truncate(proof.len() / 2);
         assert!(verify(&query, &missing_proof, document_type, version).is_err());
         let Some(last) = page.entries.last() else {
             break;
@@ -186,11 +661,15 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             None,
         )
         .unwrap();
-    let (_, mut mixed_proof) = prove(&drive, &query, document_type, version);
-    mixed_proof.metadata_proof = old_proof.metadata_proof;
-    assert!(
-        verify(&query, &mixed_proof, document_type, version).is_err(),
-        "proofs from different states must not combine"
+    let (_, new_proof) = prove(&drive, &query, document_type, version);
+    assert_ne!(
+        verify(&query, &old_proof, document_type, version)
+            .unwrap()
+            .0,
+        verify(&query, &new_proof, document_type, version)
+            .unwrap()
+            .0,
+        "proofs authenticate their own state root"
     );
     let bytes = document
         .serialize(document_type, &contract, version)
@@ -207,7 +686,6 @@ fn should_authenticate_history_pages_metadata_and_absence() {
     query.document_id = [255; 32];
     query.filter = DocumentHistoryFilter::Revision(2);
     let (page, proof) = prove(&drive, &query, document_type, version);
-    assert!(proof.entries_proof.is_none());
     let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
     assert_eq!(page, verified);
     assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Absent);
@@ -233,15 +711,10 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         .unwrap();
     query.filter = DocumentHistoryFilter::StartAtTime(0);
     let (page, proof) = prove(&drive, &query, document_type, version);
-    assert!(
-        proof.entries_proof.is_some(),
-        "an empty but present tree still needs an entries proof"
-    );
     let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
     assert_eq!(page, verified);
-    let mut missing = proof;
-    missing.entries_proof = None;
-    assert!(verify(&query, &missing, document_type, version).is_err());
+    assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Absent);
+    assert_eq!(lifecycle(&verified).remaining_revisions, 0);
 }
 
 #[test]
@@ -318,7 +791,29 @@ fn should_address_every_revision_whose_offset_fits_the_grovedb_offset() {
             let path_query = query
                 .construct_path_query(PlatformVersion::get(15).unwrap())
                 .expect("revision addressable through a u16 offset");
-            assert_eq!(path_query.query.offset, Some(offset));
+            fn leaf_offset(query: &Query) -> Option<u16> {
+                query
+                    .offset
+                    .or_else(|| {
+                        query
+                            .default_subquery_branch
+                            .subquery
+                            .as_ref()
+                            .and_then(|q| leaf_offset(q))
+                    })
+                    .or_else(|| {
+                        query
+                            .conditional_subquery_branches
+                            .as_ref()
+                            .and_then(|branches| {
+                                branches.values().find_map(|branch| {
+                                    branch.subquery.as_ref().and_then(|q| leaf_offset(q))
+                                })
+                            })
+                    })
+            }
+            assert_eq!(path_query.query.offset, None);
+            assert_eq!(leaf_offset(&path_query.query.query), Some(offset));
         }
     }
     for filter in [
@@ -662,7 +1157,7 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
 }
 
 #[test]
-fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
+fn should_reject_history_proofs_that_omit_a_queried_branch() {
     let version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(None);
     let contract = json_document_to_contract(
@@ -732,47 +1227,12 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
         let mut narrowed =
             PathQuery::merge(branches.iter().collect(), &version.drive.grove_version).unwrap();
         narrowed.query.limit = Some(2);
-        let metadata_proof = drive
+        let forged = drive
             .grove_get_proved_path_query(&narrowed, None, &mut vec![], &version.drive)
             .unwrap();
-        let forged = DocumentHistoryProof {
-            entries_proof: None,
-            metadata_proof,
-        };
         assert!(
             verify(&query, &forged, document_type, version).is_err(),
             "a metadata proof that omits branch {omitted} verified as an authenticated absence"
         );
     }
-}
-
-#[test]
-fn should_round_trip_the_proof_envelope_with_and_without_an_entries_proof() {
-    for entries_proof in [Some(vec![1u8, 2, 3]), None, Some(vec![])] {
-        let proof = DocumentHistoryProof {
-            metadata_proof: vec![9u8; 5],
-            entries_proof,
-        };
-        assert_eq!(
-            DocumentHistoryProof::from_bytes(&proof.to_bytes().unwrap()).unwrap(),
-            proof
-        );
-    }
-}
-
-/// A proof is produced only by a node, so bytes that are not exactly one
-/// envelope are not the proof this code believes it is reading.
-#[test]
-fn should_reject_truncated_and_padded_proof_envelopes() {
-    let bytes = DocumentHistoryProof {
-        metadata_proof: vec![9u8; 5],
-        entries_proof: Some(vec![1u8, 2, 3]),
-    }
-    .to_bytes()
-    .unwrap();
-    assert!(DocumentHistoryProof::from_bytes(&bytes[..bytes.len() - 1]).is_err());
-    let mut padded = bytes.clone();
-    padded.push(0);
-    assert!(DocumentHistoryProof::from_bytes(&padded).is_err());
-    assert!(DocumentHistoryProof::from_bytes(&[]).is_err());
 }

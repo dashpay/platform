@@ -7361,12 +7361,8 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 : G
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History *history;
 
 /**
- * One proof object. Its grovedb_proof carries two GroveDB proofs in a
- * small versioned envelope, because they answer two queries GroveDB
- * cannot merge: the offset-paginated proof over the document's history
- * tree and the exact-key absence proof over the current pointer, the
- * lifecycle record and the history tree's count. Both commit to the
- * same root hash, signed once.
+ * One GroveDB proof authenticates the offset-paginated history page,
+ * current pointer, lifecycle reservation, and retained revision count.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 

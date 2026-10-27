@@ -9,78 +9,14 @@ use dpp::document::Document;
 use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
-use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
 };
 use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
-use bincode::{Decode, DecodeUntrusted, Encode};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
-
-/// Standalone decode budget for the two-proof envelope. It only needs to sit
-/// far above any realistic proof while bounding hostile allocations before
-/// GroveDB verification runs.
-const MAX_DOCUMENT_HISTORY_PROOF_DECODE_BYTES: usize = 16 * 1024 * 1024;
-
-/// Proof envelope of a history page in the per-type history tree.
-///
-/// It carries two GroveDB proofs that answer queries GroveDB cannot merge:
-/// the exact-key absence-proof read of the current pointer and the history
-/// tree's count, and the offset-paginated read of the history tree itself.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
-pub struct DocumentHistoryProof {
-    /// Proves the current pointer and the raw history count-tree element.
-    pub metadata_proof: Vec<u8>,
-    /// Omitted only if metadata proves that the history tree is absent.
-    pub entries_proof: Option<Vec<u8>>,
-}
-
-impl DocumentHistoryProof {
-    /// Encodes the envelope as the proof bytes carried on the wire.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
-        bincode::encode_to_vec(
-            self,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .map_err(|e| {
-            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                "cannot encode document history proof: {e}"
-            ))))
-        })
-    }
-
-    /// Decodes wire proof bytes, requiring the whole input to be consumed: a
-    /// proof is produced only by a node, so anything else is not the proof
-    /// this code believes it is reading.
-    pub fn from_bytes(proof: &[u8]) -> Result<Self, Error> {
-        if proof.len() > MAX_DOCUMENT_HISTORY_PROOF_DECODE_BYTES {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "document history proof exceeds the decoding limit".to_string(),
-            )));
-        }
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<MAX_DOCUMENT_HISTORY_PROOF_DECODE_BYTES>();
-        let (envelope, consumed): (Self, usize) =
-            bincode::decode_from_slice_untrusted(proof, config).map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode document history proof: {e}"
-                )))
-            })?;
-        if consumed != proof.len() {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "document history proof contains trailing bytes".to_string(),
-            )));
-        }
-        Ok(envelope)
-    }
-}
 
 impl Drive {
     /// Verifies timestamp-keyed history with an exclusive time bound and an optional offset.

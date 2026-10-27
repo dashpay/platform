@@ -51,7 +51,8 @@ From protocol version 15, the query accepts version 1 only. It requires exactly
 one filter: inclusive `start_at_ms`, exclusive `start_after` with both time and
 revision, inclusive `start_at_revision`, or exact `revision`. Unproved responses
 carry entries with time, revision and document bytes, plus lifecycle metadata;
-proved responses carry one signed proof object containing both GroveDB proofs.
+proved responses carry one signed proof object containing one GroveDB proof of
+the page and lifecycle.
 The Rust SDK and its WASM/JavaScript bindings send version 1 and require proofs.
 On an updated node running protocol version 14 this returns the standard
 unsupported-query-version error; the SDK does not fall back to version 0.

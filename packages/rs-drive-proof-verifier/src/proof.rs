@@ -1540,16 +1540,14 @@ fn verify_document_history_response_v1(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    // Drive checks the envelope floor on both GroveDB proofs; this layer
-    // authenticates their shared root against the quorum signature.
     let (root, history) = Drive::verify_document_history(
         &query,
-        &proof.grovedb_proof,
+        supported_grovedb_proof_bytes(proof)?,
         document_type,
         platform_version,
     )
     .map_drive_error(proof, metadata)?;
-    verify_tenderdash_signature(proof, metadata, &root, provider)?;
+    verify_tenderdash_proof(proof, metadata, &root, provider)?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,

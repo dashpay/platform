@@ -1,7 +1,7 @@
 use super::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
 use super::{DriveVerifyDocumentMethodVersions, DriveVerifyMethodVersions};
 
-/// Verification of composite document history and its independent metadata proof,
+/// Verification of document history and lifecycle in one GroveDB proof,
 /// and the cursor lookup of a proved page in the protocol 15 keep-history layout.
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V4: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
     document: DriveVerifyDocumentMethodVersions {

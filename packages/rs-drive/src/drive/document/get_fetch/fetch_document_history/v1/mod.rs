@@ -1,3 +1,4 @@
+use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
@@ -18,37 +19,28 @@ impl Drive {
         transaction: TransactionArg,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
-        self.fetch_document_history_with_presence_v1(query, document_type, transaction, version)
-            .map(|(history, _)| history)
-    }
-
-    /// Fetches the page and reports whether the history tree exists, which
-    /// decides whether a proof of the page carries an entries proof.
-    pub(crate) fn fetch_document_history_with_presence_v1(
-        &self,
-        query: &DocumentHistoryDriveQuery,
-        document_type: DocumentTypeRef,
-        transaction: TransactionArg,
-        version: &PlatformVersion,
-    ) -> Result<(DocumentHistoryDriveQueryExecutionResult, bool), Error> {
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
         }
-        let entries_query = query.construct_path_query(version)?;
-        let metadata_query = query.metadata_path_query(version)?;
-        let (metadata, _) = self.grove_get_raw_path_query(
-            &metadata_query,
+        let path_query = query.construct_path_query(version)?;
+        let (rows, _) = self.grove_get_raw_path_query(
+            &path_query,
             transaction,
             grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType,
             &mut vec![],
             &version.drive,
         )?;
-        let mut metadata = metadata.to_path_key_elements();
-        for (path, key, element) in &mut metadata {
-            if matches!(
-                element,
-                Element::Reference(..) | Element::ReferenceWithSumItem(..)
-            ) {
+        let mut rows = rows.to_path_key_elements();
+        let mut primary =
+            contract_document_type_path_vec(&query.contract_id, &query.document_type_name);
+        primary.push(vec![0]);
+        for (path, key, element) in &mut rows {
+            if *path == primary
+                && matches!(
+                    element,
+                    Element::Reference(..) | Element::ReferenceWithSumItem(..)
+                )
+            {
                 *element = self
                     .grove
                     .get::<Vec<u8>, _>(
@@ -60,32 +52,12 @@ impl Drive {
                     .value?;
             }
         }
-        let (lifecycle, present) = query.lifecycle(
-            metadata
-                .into_iter()
+        query.decode_result(
+            rows.into_iter()
                 .map(|(path, key, element)| (path, key, Some(element)))
                 .collect(),
             document_type,
             version,
-        )?;
-        let entries = if present {
-            let (entries, _) = self.grove_get_raw_path_query(
-                &entries_query,
-                transaction,
-                grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
-                &mut vec![],
-                &version.drive,
-            )?;
-            query.decode_entries(entries.to_key_elements(), document_type, version)?
-        } else {
-            vec![]
-        };
-        Ok((
-            DocumentHistoryDriveQueryExecutionResult {
-                entries,
-                lifecycle: Some(lifecycle),
-            },
-            present,
-        ))
+        )
     }
 }

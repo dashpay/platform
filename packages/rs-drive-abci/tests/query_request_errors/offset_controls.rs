@@ -482,7 +482,7 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                             document_type,
                             version,
                         )
-                        .expect("composite history proof");
+                        .expect("history page and lifecycle proof");
                         (
                             root,
                             history
