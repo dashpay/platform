@@ -16,7 +16,7 @@ use grovedb_commitment_tree::{
 use rusqlite::Connection;
 use tokio::sync::RwLock;
 
-use super::{serialize_note, sync_notes_across};
+use super::{serialize_note, sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::manager::shielded_sync::{ShieldedSyncManager, WalletShieldedOutcome};
@@ -75,7 +75,7 @@ async fn sdk_with_notes(notes: Vec<ShieldedEncryptedNote>) -> Arc<Sdk> {
                 .shielded_queries
                 .max_query_chunks,
         );
-    for chunk in 0..16 {
+    for chunk in 0..MAX_CONCURRENT_CHUNK_FETCHES as u64 {
         sdk.mock()
             .expect_fetch(
                 ShieldedEncryptedNotesQuery {
