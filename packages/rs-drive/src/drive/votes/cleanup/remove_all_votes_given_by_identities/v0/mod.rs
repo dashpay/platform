@@ -16,7 +16,8 @@ use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -34,26 +35,12 @@ impl Drive {
 
         let vote_path = vote_contested_resource_identity_votes_tree_path_vec();
 
-        let mut query = Query::new_with_direction(true);
-
-        query.insert_keys(identity_ids_as_byte_arrays);
-
-        let subquery = Query::new_single_query_item(QueryItem::RangeFull(RangeFull));
-
-        query.set_subquery(subquery);
-
-        let path_query = PathQuery::new(vote_path.clone(), SizedQuery::new(query, None, None));
-
-        let votes_to_remove_by_identity_id = self
-            .grove_get_raw_path_query(
-                &path_query,
-                transaction,
-                QueryPathKeyElementTrioResultType,
-                &mut vec![],
-                &platform_version.drive,
-            )?
-            .0
-            .to_last_path_to_key_elements_btree_map();
+        let votes_to_remove_by_identity_id = self.identity_vote_entries_of_identities_v0(
+            vote_path,
+            identity_ids_as_byte_arrays,
+            transaction,
+            platform_version,
+        )?;
 
         // Then we take each votes and go looking for it (to remove it)
 
@@ -142,6 +129,40 @@ impl Drive {
         }
 
         Ok(())
+    }
+
+    /// The entries of these identities in the identity votes index at `vote_path`, by identity
+    /// then vote poll id. The query of `remove_all_votes_given_by_identities_v0`, moved here
+    /// unchanged (in place: the same read at every protocol version that selects it) so v1
+    /// reads the yes/no identity votes index, which differs only in its path, the same way.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn identity_vote_entries_of_identities_v0(
+        &self,
+        vote_path: Vec<Vec<u8>>,
+        identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Element>>, Error> {
+        let mut query = Query::new_with_direction(true);
+
+        query.insert_keys(identity_ids_as_byte_arrays);
+
+        let subquery = Query::new_single_query_item(QueryItem::RangeFull(RangeFull));
+
+        query.set_subquery(subquery);
+
+        let path_query = PathQuery::new(vote_path, SizedQuery::new(query, None, None));
+
+        Ok(self
+            .grove_get_raw_path_query(
+                &path_query,
+                transaction,
+                QueryPathKeyElementTrioResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )?
+            .0
+            .to_last_path_to_key_elements_btree_map())
     }
 }
 
@@ -291,8 +312,9 @@ mod tests {
 
     #[test]
     fn mainnet_evo1_below_32329_commits_vote_deletion_outside_block_transaction() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        // v0 is the generation protocol version 14 and earlier select; 15 selects v1.
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         seed_vote(&drive, platform_version);
 
         let transaction = drive.grove.start_transaction();
@@ -317,8 +339,9 @@ mod tests {
 
     #[test]
     fn mainnet_evo1_at_32329_keeps_vote_deletion_inside_block_transaction() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        // v0 is the generation protocol version 14 and earlier select; 15 selects v1.
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         seed_vote(&drive, platform_version);
 
         let transaction = drive.grove.start_transaction();

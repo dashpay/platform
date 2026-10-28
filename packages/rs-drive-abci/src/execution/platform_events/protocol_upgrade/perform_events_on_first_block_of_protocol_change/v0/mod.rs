@@ -327,6 +327,11 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    // Unreachable: this runs once, on the block entering protocol version 8,
+                    // and yes/no polls exist from 15. The arm only keeps the match exhaustive.
+                    VotePoll::YesNoVotePoll(yes_no) => yes_no
+                        .specialized_balance_id(platform_version)
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;
@@ -910,7 +915,7 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger.
+    /// trigger, and create the vote decisions trees that yes/no polls live in.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -929,6 +934,14 @@ impl<C> Platform<C> {
             transaction,
             platform_version,
         )?;
+
+        // Vote decisions trees: the active yes/no polls and the identity votes index of the
+        // decisions branch. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4, behind a `>= 15` check on the chain's initial
+        // protocol version, so both node populations build the decisions Merk from the same
+        // sequence of inserts.
+        self.drive
+            .insert_vote_decisions_trees(Some(transaction), platform_version)?;
 
         Ok(())
     }
@@ -2508,6 +2521,74 @@ mod tests {
             "the prefunded balances subtree differs between a chain born at version 14 and one \
              upgraded to it:\n{}",
             diffs.join("\n"),
+        );
+    }
+
+    /// The only way a running network gets the vote decisions trees is this upgrade hook.
+    /// They are absent at 14 and present after the transition, and the votes subtree is then
+    /// byte-identical to the one of a chain born at 15, so both node populations build the
+    /// same Merk when the first yes/no poll opens.
+    #[test]
+    fn should_create_the_vote_decisions_trees_on_transition_to_version_15() {
+        use drive::drive::votes::paths::{
+            vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+
+        let decisions_tree_exists = |key: char, transaction: &Transaction| {
+            upgraded
+                .drive
+                .grove_has_raw(
+                    (&vote_decisions_tree_path()).into(),
+                    &[key as u8],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the decisions tree")
+        };
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                !decisions_tree_exists(key, &transaction),
+                "protocol version 14 has no decisions {key} tree"
+            );
+        }
+
+        upgraded
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                decisions_tree_exists(key, &transaction),
+                "the decisions {key} tree must exist after the transition"
+            );
+        }
+
+        let diffs = collect_subtree_diffs(
+            &born_at_15,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Votes as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the votes subtree differs between a chain born at version 15 and one upgraded to \
+             it:\n{}",
+            diffs.join("\n")
         );
     }
 
