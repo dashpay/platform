@@ -20,7 +20,6 @@ use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
-use dash_sdk::platform::transition::update_identity::ensure_keys_can_be_disabled;
 use dash_sdk::platform::transition::update_identity_key_limits::{
     raised_key_limits, UpdateIdentityKeyLimits,
 };
@@ -586,10 +585,10 @@ impl WasmSdk {
     ///
     /// This method handles the complete update flow:
     /// 1. Validates the master key for signing
-    /// 2. Refuses to disable the last valid authentication key of a security level
-    ///    (DIP-11); keys added in the same update count
-    /// 3. Builds and signs the identity update transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 2. Builds and signs the identity update transition; the builder refuses, before
+    ///    signing, to disable the last valid authentication key of a security level
+    ///    (DIP-11), counting keys added in the same update
+    /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Update options including identity, keys to add/disable, and signer
     /// @returns Promise that resolves when the update is complete
@@ -675,9 +674,6 @@ impl WasmSdk {
 
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
-
-        // DIP-11, before the nonce is spent or anything is signed.
-        ensure_keys_can_be_disabled(&identity, &keys_to_add, &keys_to_disable)?;
 
         // Get identity nonce
         let identity_nonce = self

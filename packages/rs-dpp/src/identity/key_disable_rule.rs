@@ -1,20 +1,25 @@
 //! The DIP-11 rule on disabling an identity's authentication keys.
 //!
 //! DIP-11: "Keys can only be disabled if another valid key is enabled in the same security
-//! level. This can happen atomically in the same state transition." Consensus enforces this for
-//! MASTER keys only, so for every other level the client is the only enforcer. Every client path
-//! that builds an identity update calls [`ensure_keys_can_be_disabled`] before building or
-//! signing anything; [`check_keys_can_be_disabled`] is the same rule at a given time, for an
-//! interface that wants to offer only the keys it may disable.
+//! level. This can happen atomically in the same state transition."
+//!
+//! **This is signing-side policy, not consensus.** Drive enforces it for MASTER keys only and
+//! accepts an identity update that disables the last key of any other level, so this module
+//! never produces a `ConsensusError` and nothing on a block-execution path calls it. Clients
+//! enforce it: `IdentityUpdateTransition::try_from_identity_with_signer` (the
+//! `state-transition-signing` builder) refuses such an update before signing anything, and an
+//! interface with a clock can call [`check_keys_can_be_disabled`] to offer only the keys it may
+//! disable.
 
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel, TimestampMillis};
+use crate::identity::accessors::IdentityGettersV0;
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use crate::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
+use crate::prelude::TimestampMillis;
 
-use crate::Error;
-
-/// An identity update would disable the last valid authentication key of a security level.
+/// An identity update would disable the last valid authentication key of a security level,
+/// which DIP-11 forbids. Signing-side policy, not a consensus error: Platform would accept the
+/// update for every level but MASTER.
 ///
 /// A security level is a minimum: a key of a stronger level stands in for it, except MASTER,
 /// which signs identity updates only. So a CRITICAL key keeps a HIGH key disableable, a MASTER
@@ -33,17 +38,24 @@ pub struct LastAuthenticationKeyError {
 
 /// Whether an identity update that adds `add_public_keys` and disables `disable_public_keys`
 /// keeps a valid authentication key at the security level of every authentication key it
-/// disables, at the time `now_ms` (Unix milliseconds).
+/// disables.
 ///
-/// A valid key is enabled and not expired at `now_ms`, whatever its key type: `ECDSA_HASH160`
-/// keys, which identities created by older Dash Evo Tool versions carry, count. The keys the
-/// identity keeps count, and so do the keys the same update adds. Ids the identity does not hold
-/// are not judged here: Platform refuses them.
+/// A valid key is an enabled authentication key that has not expired, whatever its key type:
+/// `ECDSA_HASH160` keys, which identities created by older Dash Evo Tool versions carry, count.
+/// The keys the identity keeps count, and so do the keys the same update adds.
+///
+/// `now_ms` is the caller's current time in Unix milliseconds. dpp reads no clock, so `None`
+/// judges conservatively: a key with any `expires_at` does not count as remaining, which is
+/// stricter than DIP-11 and therefore still compliant. With `Some(now)`, a key counts until
+/// `now` reaches its `expires_at`.
+///
+/// Ids the identity does not hold, and keys of other purposes, are not judged here: Platform
+/// refuses unknown ids, and DIP-11 speaks of authentication keys.
 pub fn check_keys_can_be_disabled(
     identity: &Identity,
     add_public_keys: &[IdentityPublicKey],
     disable_public_keys: &[KeyID],
-    now_ms: TimestampMillis,
+    now_ms: Option<TimestampMillis>,
 ) -> Result<(), LastAuthenticationKeyError> {
     let remaining_valid_keys = || {
         identity
@@ -54,7 +66,7 @@ pub fn check_keys_can_be_disabled(
             .filter(|key| {
                 key.purpose() == Purpose::AUTHENTICATION
                     && key.disabled_at().is_none()
-                    && !key.is_expired_at(now_ms)
+                    && is_unexpired(key, now_ms)
             })
     };
     for key_id in disable_public_keys {
@@ -77,15 +89,12 @@ pub fn check_keys_can_be_disabled(
     Ok(())
 }
 
-/// [`check_keys_can_be_disabled`] at the current wall-clock time, as
-/// [`Error::LastAuthenticationKey`]. Call it before building or signing an identity update.
-pub fn ensure_keys_can_be_disabled(
-    identity: &Identity,
-    add_public_keys: &[IdentityPublicKey],
-    disable_public_keys: &[KeyID],
-) -> Result<(), Error> {
-    check_keys_can_be_disabled(identity, add_public_keys, disable_public_keys, now_ms()?)?;
-    Ok(())
+/// Whether `key` is unexpired at `now_ms`; without a time, only a key with no expiry is.
+fn is_unexpired(key: &IdentityPublicKey, now_ms: Option<TimestampMillis>) -> bool {
+    match now_ms {
+        Some(now_ms) => !key.is_expired_at(now_ms),
+        None => key.expires_at().is_none(),
+    }
 }
 
 /// Whether a key at `candidate` satisfies a requirement for `required`: the same level, or a
@@ -96,51 +105,53 @@ fn stands_in_for(candidate: SecurityLevel, required: SecurityLevel) -> bool {
         || (candidate != SecurityLevel::MASTER && candidate.stronger_security_than(required))
 }
 
-/// The current wall-clock time in Unix milliseconds, on native targets and in the browser.
-fn now_ms() -> Result<TimestampMillis, Error> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_millis() as TimestampMillis)
-            .map_err(|e| Error::Generic(format!("system time is before the Unix epoch: {e}")))
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        Ok(js_sys::Date::now() as TimestampMillis)
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::v0::IdentityV0;
-    use dpp::identity::KeyType;
-    use dpp::platform_value::{BinaryData, Identifier};
+    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::v0::IdentityV0;
+    use crate::identity::KeyType;
+    use platform_value::{BinaryData, Identifier};
     use std::collections::BTreeMap;
 
     const NOW_MS: TimestampMillis = 1_800_000_000_000;
 
-    fn key(id: KeyID, purpose: Purpose, security_level: SecurityLevel) -> IdentityPublicKey {
+    pub(crate) fn key(
+        id: KeyID,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        key_type: KeyType,
+    ) -> IdentityPublicKey {
+        let data = match key_type {
+            KeyType::ECDSA_HASH160 => vec![id as u8; 20],
+            _ => vec![id as u8; 33],
+        };
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id,
             purpose,
             security_level,
             contract_bounds: None,
-            key_type: KeyType::ECDSA_SECP256K1,
+            key_type,
             read_only: false,
-            data: BinaryData::new(vec![id as u8; 33]),
+            data: BinaryData::new(data),
             disabled_at: None,
         })
     }
 
-    fn authentication_key(id: KeyID, security_level: SecurityLevel) -> IdentityPublicKey {
-        key(id, Purpose::AUTHENTICATION, security_level)
+    pub(crate) fn authentication_key(
+        id: KeyID,
+        security_level: SecurityLevel,
+    ) -> IdentityPublicKey {
+        key(
+            id,
+            Purpose::AUTHENTICATION,
+            security_level,
+            KeyType::ECDSA_SECP256K1,
+        )
     }
 
-    fn identity(keys: Vec<IdentityPublicKey>) -> Identity {
+    pub(crate) fn identity(keys: Vec<IdentityPublicKey>) -> Identity {
         IdentityV0 {
             id: Identifier::from([1; 32]),
             public_keys: keys
@@ -154,7 +165,7 @@ mod tests {
     }
 
     /// MASTER 0, CRITICAL 1, HIGH 2, MEDIUM 3: one authentication key per level.
-    fn one_key_per_level() -> Identity {
+    pub(crate) fn one_key_per_level() -> Identity {
         identity(vec![
             authentication_key(0, SecurityLevel::MASTER),
             authentication_key(1, SecurityLevel::CRITICAL),
@@ -165,7 +176,7 @@ mod tests {
 
     #[test]
     fn should_refuse_disabling_the_only_critical_key() {
-        let result = check_keys_can_be_disabled(&one_key_per_level(), &[], &[1], NOW_MS);
+        let result = check_keys_can_be_disabled(&one_key_per_level(), &[], &[1], Some(NOW_MS));
         assert_eq!(
             result,
             Err(LastAuthenticationKeyError {
@@ -177,7 +188,7 @@ mod tests {
 
     #[test]
     fn should_refuse_disabling_the_only_master_key_without_adding_one() {
-        let result = check_keys_can_be_disabled(&one_key_per_level(), &[], &[0], NOW_MS);
+        let result = check_keys_can_be_disabled(&one_key_per_level(), &[], &[0], Some(NOW_MS));
         assert_eq!(
             result,
             Err(LastAuthenticationKeyError {
@@ -191,7 +202,7 @@ mod tests {
     fn should_let_a_stronger_non_master_key_stand_in_for_a_weaker_level() {
         // CRITICAL 1 still meets HIGH and MEDIUM requirements.
         assert_eq!(
-            check_keys_can_be_disabled(&one_key_per_level(), &[], &[2, 3], NOW_MS),
+            check_keys_can_be_disabled(&one_key_per_level(), &[], &[2, 3], Some(NOW_MS)),
             Ok(())
         );
     }
@@ -203,19 +214,24 @@ mod tests {
             authentication_key(0, SecurityLevel::MASTER),
             authentication_key(1, SecurityLevel::CRITICAL),
         ]);
-        assert!(check_keys_can_be_disabled(&identity, &[], &[1], NOW_MS).is_err());
+        assert!(check_keys_can_be_disabled(&identity, &[], &[1], Some(NOW_MS)).is_err());
     }
 
     #[test]
     fn should_allow_disabling_a_key_replaced_in_the_same_update() {
         let replacement = authentication_key(4, SecurityLevel::CRITICAL);
         assert_eq!(
-            check_keys_can_be_disabled(&one_key_per_level(), &[replacement], &[1], NOW_MS),
+            check_keys_can_be_disabled(&one_key_per_level(), &[replacement], &[1], Some(NOW_MS)),
             Ok(())
         );
         let master_replacement = authentication_key(4, SecurityLevel::MASTER);
         assert_eq!(
-            check_keys_can_be_disabled(&one_key_per_level(), &[master_replacement], &[0], NOW_MS),
+            check_keys_can_be_disabled(
+                &one_key_per_level(),
+                &[master_replacement],
+                &[0],
+                Some(NOW_MS)
+            ),
             Ok(())
         );
     }
@@ -228,10 +244,10 @@ mod tests {
             authentication_key(2, SecurityLevel::CRITICAL),
         ]);
         assert_eq!(
-            check_keys_can_be_disabled(&identity, &[], &[1], NOW_MS),
+            check_keys_can_be_disabled(&identity, &[], &[1], Some(NOW_MS)),
             Ok(())
         );
-        assert!(check_keys_can_be_disabled(&identity, &[], &[1, 2], NOW_MS).is_err());
+        assert!(check_keys_can_be_disabled(&identity, &[], &[1, 2], Some(NOW_MS)).is_err());
     }
 
     #[test]
@@ -246,18 +262,45 @@ mod tests {
             disabled,
             expired,
         ]);
-        assert!(check_keys_can_be_disabled(&identity, &[], &[1], NOW_MS).is_err());
+        assert!(check_keys_can_be_disabled(&identity, &[], &[1], Some(NOW_MS)).is_err());
 
         let expired_replacement =
             authentication_key(4, SecurityLevel::CRITICAL).with_limits(None, Some(NOW_MS));
         assert!(
-            check_keys_can_be_disabled(&identity, &[expired_replacement], &[1], NOW_MS).is_err()
+            check_keys_can_be_disabled(&identity, &[expired_replacement], &[1], Some(NOW_MS))
+                .is_err()
         );
 
         let unexpired =
             authentication_key(5, SecurityLevel::CRITICAL).with_limits(None, Some(NOW_MS + 1));
         assert_eq!(
-            check_keys_can_be_disabled(&identity, &[unexpired], &[1], NOW_MS),
+            check_keys_can_be_disabled(&identity, &[unexpired], &[1], Some(NOW_MS)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn should_not_count_a_key_with_any_expiry_without_a_clock() {
+        // Without a time the rule cannot tell an expiring key from an expired one, so it counts
+        // neither: stricter than DIP-11, never looser.
+        let far_future =
+            authentication_key(4, SecurityLevel::CRITICAL).with_limits(None, Some(u64::MAX));
+        let mut identity = one_key_per_level();
+        identity.add_public_key(far_future.clone());
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[], &[1], None),
+            Err(LastAuthenticationKeyError {
+                key_id: 1,
+                security_level: SecurityLevel::CRITICAL,
+            })
+        );
+        assert!(
+            check_keys_can_be_disabled(&one_key_per_level(), &[far_future], &[1], None).is_err()
+        );
+        // A key without limits counts the same either way.
+        let replacement = authentication_key(5, SecurityLevel::CRITICAL);
+        assert_eq!(
+            check_keys_can_be_disabled(&one_key_per_level(), &[replacement], &[1], None),
             Ok(())
         );
     }
@@ -266,11 +309,21 @@ mod tests {
     fn should_not_judge_keys_of_other_purposes_or_unknown_ids() {
         let identity = identity(vec![
             authentication_key(0, SecurityLevel::MASTER),
-            key(1, Purpose::TRANSFER, SecurityLevel::CRITICAL),
-            key(2, Purpose::ENCRYPTION, SecurityLevel::MEDIUM),
+            key(
+                1,
+                Purpose::TRANSFER,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+            ),
+            key(
+                2,
+                Purpose::ENCRYPTION,
+                SecurityLevel::MEDIUM,
+                KeyType::ECDSA_SECP256K1,
+            ),
         ]);
         assert_eq!(
-            check_keys_can_be_disabled(&identity, &[], &[1, 2, 9], NOW_MS),
+            check_keys_can_be_disabled(&identity, &[], &[1, 2, 9], Some(NOW_MS)),
             Ok(())
         );
         // A non-authentication key does not keep an authentication level valid.
@@ -279,47 +332,29 @@ mod tests {
             identity.add_public_key(authentication_key(3, SecurityLevel::CRITICAL));
             identity
         };
-        assert!(check_keys_can_be_disabled(&identity_with_critical, &[], &[3], NOW_MS).is_err());
+        assert!(
+            check_keys_can_be_disabled(&identity_with_critical, &[], &[3], Some(NOW_MS)).is_err()
+        );
     }
 
     #[test]
     fn should_count_hash160_keys_as_valid() {
         // Identities created by older Dash Evo Tool versions carry ECDSA_HASH160 keys.
-        let hash160 = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 4,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::CRITICAL,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_HASH160,
-            read_only: false,
-            data: BinaryData::new(vec![7; 20]),
-            disabled_at: None,
-        });
+        let hash160 = key(
+            4,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
         let mut identity = one_key_per_level();
         identity.add_public_key(hash160.clone());
         assert_eq!(
-            check_keys_can_be_disabled(&identity, &[], &[1], NOW_MS),
+            check_keys_can_be_disabled(&identity, &[], &[1], None),
             Ok(())
         );
         assert_eq!(
-            check_keys_can_be_disabled(&one_key_per_level(), &[hash160], &[1], NOW_MS),
+            check_keys_can_be_disabled(&one_key_per_level(), &[hash160], &[1], None),
             Ok(())
         );
-    }
-
-    #[test]
-    fn should_report_the_refusal_as_a_typed_sdk_error() {
-        let result = ensure_keys_can_be_disabled(&one_key_per_level(), &[], &[1]);
-        assert!(
-            matches!(
-                result,
-                Err(Error::LastAuthenticationKey(LastAuthenticationKeyError {
-                    key_id: 1,
-                    security_level: SecurityLevel::CRITICAL,
-                }))
-            ),
-            "{result:?}"
-        );
-        assert!(ensure_keys_can_be_disabled(&one_key_per_level(), &[], &[2]).is_ok());
     }
 }

@@ -18,7 +18,6 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::update_identity::ensure_keys_can_be_disabled;
 
 use crate::error::PlatformWalletError;
 
@@ -73,8 +72,9 @@ impl IdentityWallet {
     /// MASTER specifically — HIGH/CRITICAL aren't accepted).
     ///
     /// An update that would disable the last valid authentication key of a
-    /// security level is refused before anything is built or signed, with
-    /// `PlatformWalletError::Sdk(dash_sdk::Error::LastAuthenticationKey(_))`
+    /// security level is refused by the transition builder before anything is
+    /// signed or broadcast, with
+    /// `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_)))`
     /// (DIP-11); keys added in the same update count as valid.
     ///
     /// NOTE: callers that ADD keys via `add_public_keys` are
@@ -136,9 +136,6 @@ impl IdentityWallet {
             (identity, index)
         };
 
-        // DIP-11, before the nonce is spent or anything is signed.
-        ensure_keys_can_be_disabled(&identity, &add_public_keys, &disable_public_keys)?;
-
         // Increment revision for the update transition.
         let original_revision = identity.revision();
         identity.set_revision(original_revision + 1);
@@ -187,11 +184,16 @@ impl IdentityWallet {
             None,
         )
         .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
+        .map_err(|e| match e {
+            // The builder's DIP-11 refusal stays typed, as on the
+            // caller-supplied-identity entry point.
+            refusal @ ProtocolError::LastAuthenticationKey(_) => {
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(refusal))
+            }
+            e => PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to create identity update transition: {}",
                 e
-            ))
+            )),
         })?;
 
         state_transition
@@ -293,8 +295,10 @@ impl IdentityWallet {
     /// `docs/protocol/authentication-key-limits.md`.
     ///
     /// An update that would disable the last valid authentication key of a
-    /// security level is refused before anything is built or signed, with
-    /// [`dash_sdk::Error::LastAuthenticationKey`] (DIP-11).
+    /// security level is refused by the transition builder before anything is
+    /// signed or broadcast, with
+    /// `dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_))`
+    /// (DIP-11).
     ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
@@ -311,9 +315,6 @@ impl IdentityWallet {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-
-        // DIP-11, before the nonce is spent or anything is signed.
-        ensure_keys_can_be_disabled(identity, &add_public_keys, &disable_public_keys)?;
 
         // Get identity nonce from Platform.
         let identity_nonce = self
@@ -352,8 +353,10 @@ impl IdentityWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_platform_wallet_manager;
+    use crate::test_support::{test_platform_wallet_manager_with_sdk, NoopTestPersister};
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::platform_wallet::WalletId;
+    use dash_sdk::query_types::IdentityNonceFetcher;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
@@ -421,11 +424,27 @@ mod tests {
         .into()
     }
 
-    /// The mock SDK answers no request, so a refusal that reached the network
-    /// would surface as a different error.
+    /// A wallet over a mock SDK that answers only the identity-nonce query, so
+    /// an update that got past the builder would fail its broadcast with a
+    /// different error.
+    async fn manager_answering_only_the_nonce() -> (
+        Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+        WalletId,
+    ) {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, Identifier>(
+                Identifier::from([1; 32]),
+                Some(IdentityNonceFetcher(0)),
+            )
+            .await
+            .expect("nonce expectation");
+        test_platform_wallet_manager_with_sdk(sdk).await
+    }
+
     #[tokio::test]
     async fn should_refuse_disabling_the_last_critical_key_before_sending_anything() {
-        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         {
             let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
@@ -449,18 +468,19 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(PlatformWalletError::Sdk(dash_sdk::Error::LastAuthenticationKey(ref refusal)))
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::LastAuthenticationKey(ref refusal)
+                )))
                     if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
             ),
             "{result:?}"
         );
     }
 
-    /// The caller-supplied-identity entry point refuses the same way, before
-    /// the nonce is fetched.
+    /// The caller-supplied-identity entry point refuses the same way.
     #[tokio::test]
     async fn should_refuse_disabling_the_last_critical_key_with_a_supplied_identity() {
-        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
 
         let result = wallet
@@ -470,7 +490,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(dash_sdk::Error::LastAuthenticationKey(ref refusal))
+                Err(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(ref refusal)))
                     if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
             ),
             "{result:?}"
