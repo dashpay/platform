@@ -14,6 +14,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Install](#install)
 - [Usage](#usage)
 - [Facades](#facades)
+- [Document queries that need protocol version 14](#document-queries-that-need-protocol-version-14)
 - [Ranked queries](#ranked-queries)
 - [Querying the elements of a list (`contains`, `containsAny`)](#querying-the-elements-of-a-list-contains-containsany)
 - [Document references (`refersTo`)](#document-references-refersto)
@@ -113,6 +114,21 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
+
+## Document queries that need protocol version 14
+
+Ranked and `having` queries, `contains` and `containsAny`, `timeRange` and `integerRange` selections, chained and composite queries, several `in` clauses in one documents query, and a `startAt` / `startAfter` cursor on a document type whose documents are summed are served from protocol version 14. Until a verified answer shows the network running it, the SDK refuses such a query without sending it, with a `ProtocolVersionNotActive` error naming the feature, and no node is banned:
+
+```ts
+try {
+  return await sdk.documents.ranked(query);
+} catch (e) {
+  if (e.name !== 'ProtocolVersionNotActive' || e.isRetriable) throw e;
+  // The network does not serve ranked queries yet: hide the leaderboard.
+}
+```
+
+A fresh SDK asks the network for its version once before the first such query, so it does not have to be seeded at the network's version. A query that cannot be answered as asked, for example `groupBy` on `sdk.documents.query`, which returns the documents themselves, is refused before sending with an `InvalidArgument` error. See [Protocol Versions in the SDK](../../book/src/sdk/protocol-versions.md).
 
 ## Ranked queries
 
