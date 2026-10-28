@@ -1,6 +1,7 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -86,8 +87,11 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
     },
 ];
 
-/// Drive ABCI method versions 11, introduced in protocol v15. Differs from v10 in the chain lock
-/// verification, which only works as a whole:
+/// Drive ABCI method versions 11, introduced in protocol v15. Differs from v10 in the yes/no
+/// poll kind's voting methods (`voting.tally_votes_for_yes_no_vote_poll`,
+/// `keep_record_of_finished_yes_no_vote_poll`, `clean_up_after_yes_no_vote_polls_end` and
+/// `on_yes_no_vote_poll_finished` are `Some(0)`, `None` in every earlier table) and in the chain
+/// lock verification, which only works as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -104,6 +108,13 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         verify_chain_lock_through_core: 1,
         dkg_mining_schedules: Some(DKG_MINING_SCHEDULES_V1),
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_chain_lock
+    },
+    voting: DriveAbciVotingMethodVersions {
+        tally_votes_for_yes_no_vote_poll: Some(0),
+        keep_record_of_finished_yes_no_vote_poll: Some(0),
+        clean_up_after_yes_no_vote_polls_end: Some(0),
+        on_yes_no_vote_poll_finished: Some(0),
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };

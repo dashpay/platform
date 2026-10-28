@@ -12,7 +12,7 @@ use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v
 use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
-use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
+use crate::version::dpp_versions::dpp_voting_versions::v3::VOTING_VERSION_V3;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
@@ -199,7 +199,32 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    charged, so check_tx refuses it too. Protocol v14 and earlier keep the batch
 ///    `advanced_structure` 1.
 ///
-/// 10. **A consume deletes what its lookup read**: `DRIVE_VERSION_V10` selects
+/// 10. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
+///     "should this happen?" and passes on a supermajority of yes over yes plus
+///     no with a minimum of voting power cast. A masternode vote naming a yes/no
+///     poll is active from this version (`StateTransition::active_version_range`);
+///     the polls live under the votes tree's decisions branch, which genesis
+///     (`create_initial_state_structure` 4 behind
+///     `>= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION`, 15) and
+///     `transition_to_version_15` create. Masternode vote `transform_into_action`
+///     1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
+///     `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
+///     (`Drive::open_yes_no_vote_poll`; every `yes_no` drive method is `Some(0)`) is active
+///     from this version, for an end date at most `max_yes_no_vote_poll_duration_ms`
+///     (four weeks, a `SystemLimits` field read only by the opener) after the
+///     opening block, and its end date entry goes through
+///     `add_vote_poll_end_date_query_operations` 1, which adds only the entry when
+///     the batch already queues the end date's tree with other storage flags.
+///     Every other yes/no method is active from this version too and `None`
+///     (not active) in every earlier table: the poll's id and rules (`VOTING_VERSION_V3`),
+///     the end-of-block tally, record and clean-up (`DRIVE_ABCI_METHOD_VERSIONS_V11`
+///     voting), removing finished polls from the end date index
+///     (`remove_vote_poll_end_date_query_operations`) and the proof verifiers
+///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`).
+///     Nothing calls the opener yet, so at this version every yes/no vote is
+///     refused for want of a poll.
+///
+/// 11. **A consume deletes what its lookup read**: `DRIVE_VERSION_V10` selects
 ///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, whose `delete_consumed_document_operations` 1
 ///     has a `refersTo` lookup keep the stored element's storage flags beside the document it
 ///     finds (`query_documents_with_flags`, in `fetch_document_through_lookup`), and a create
@@ -211,11 +236,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `delete_consumed_document_operations` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); delete_consumed_document_operations 1 (note 10)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); delete_consumed_document_operations 1 (note 11)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -230,7 +255,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V2,
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,
