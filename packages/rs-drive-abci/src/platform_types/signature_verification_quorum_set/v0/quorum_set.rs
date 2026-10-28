@@ -3,6 +3,7 @@ use crate::platform_types::signature_verification_quorum_set::v0::quorums::Quoru
 use crate::platform_types::signature_verification_quorum_set::VerificationQuorum;
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::json::QuorumType;
+use std::num::NonZeroU32;
 use std::vec::IntoIter;
 
 /// Offset for signature verification
@@ -148,7 +149,7 @@ pub struct QuorumConfig {
     /// Is it a DIP24 rotating quorum or classic
     pub rotation: bool,
     /// DKG interval
-    pub window: u32,
+    pub window: NonZeroU32,
 }
 
 impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV0 {
@@ -339,7 +340,7 @@ mod tests {
         ChainLockConfig {
             quorum_type: QuorumType::Llmq400_60,
             quorum_size: 400,
-            quorum_window: 288,
+            quorum_window: NonZeroU32::new(288).unwrap(),
             quorum_active_signers: 4,
             quorum_rotation: false,
         }
@@ -355,7 +356,7 @@ mod tests {
         assert_eq!(qs.config().quorum_type, QuorumType::Llmq400_60);
         assert_eq!(qs.config().active_signers, 4);
         assert!(!qs.config().rotation);
-        assert_eq!(qs.config().window, 288);
+        assert_eq!(qs.config().window.get(), 288);
         assert!(qs.current_quorums().is_empty());
         assert!(!qs.has_previous_past_quorums());
     }
@@ -365,7 +366,7 @@ mod tests {
         let config = ChainLockConfig {
             quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
-            quorum_window: 24,
+            quorum_window: NonZeroU32::new(24).unwrap(),
             quorum_active_signers: 24,
             quorum_rotation: true,
         };
@@ -374,7 +375,7 @@ mod tests {
         assert_eq!(qs.config().quorum_type, QuorumType::Llmq100_67);
         assert_eq!(qs.config().active_signers, 24);
         assert!(qs.config().rotation);
-        assert_eq!(qs.config().window, 24);
+        assert_eq!(qs.config().window.get(), 24);
     }
 
     // ---- set_current_quorums / current_quorums ----

@@ -232,6 +232,7 @@ mod tests {
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
+    use std::num::NonZeroU32;
 
     /// Helper: generate a deterministic BLS public key from a seed byte.
     fn make_public_key(seed: u8) -> ThresholdBlsPublicKey<Bls12381G2Impl> {
@@ -255,7 +256,7 @@ mod tests {
             quorum_type: QuorumType::Llmq100_67,
             active_signers: 24,
             rotation: false,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 
@@ -264,7 +265,7 @@ mod tests {
             quorum_type: QuorumType::Llmq60_75,
             active_signers,
             rotation: true,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 

@@ -66,19 +66,13 @@ where
 
         let window_width = quorum_config.window;
 
-        // A window of 0, which loading the config refuses, is an error here rather than a panic;
-        // either way the proposal gets no verdict. For every other window the result is the one
-        // release builds have always computed: their arithmetic wraps, so a window ending past
-        // the largest core height wraps too.
-        let offset_in_window = platform_state
-            .last_committed_core_height()
-            .checked_rem(window_width)
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "the chain lock quorum window is 0",
-            )))?;
-        // The last block in the window where the quorums would be the same
-        let last_block_in_window = (platform_state.last_committed_core_height() - offset_in_window)
-            .wrapping_add(window_width - 1);
+        // The last block in the window where the quorums would be the same. The window is a
+        // `NonZeroU32`, so the remainder cannot divide by zero. This is what release builds have
+        // always computed for every window: their arithmetic wraps, so a window ending past the
+        // largest core height wraps here too instead of overflowing in builds that check it.
+        let last_block_in_window = (platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width)
+            .wrapping_add(window_width.get() - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
@@ -244,8 +238,6 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::ChainLockConfig;
-    use crate::error::execution::ExecutionError;
-    use crate::error::Error;
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
     use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
     use crate::platform_types::signature_verification_quorum_set::{
@@ -259,6 +251,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock, QuorumHash, QuorumSigningRequestId};
     use dpp::dashcore_rpc::json::QuorumType;
     use dpp::version::PlatformVersion;
+    use std::num::NonZeroU32;
 
     #[test]
     fn verify_request_id() {
@@ -401,10 +394,9 @@ mod tests {
     const QUORUM_HASH: [u8; 32] = [1u8; 32];
 
     /// `platform`'s state with last committed core height `core_height`, holding one llmq_test
-    /// chain lock quorum with a `quorum_window` block DKG interval
+    /// chain lock quorum with a 24 block DKG interval
     fn state_with_one_chain_lock_quorum(
         platform: &TempPlatform<MockCoreRPCLike>,
-        quorum_window: u32,
         core_height: u32,
     ) -> PlatformState {
         let mut state = platform.platform.state.load().as_ref().clone();
@@ -418,7 +410,7 @@ mod tests {
             ChainLockConfig {
                 quorum_type: QuorumType::LlmqTest,
                 quorum_size: 3,
-                quorum_window,
+                quorum_window: NonZeroU32::new(24).unwrap(),
                 quorum_active_signers: 2,
                 quorum_rotation: false,
             }
@@ -479,39 +471,13 @@ mod tests {
     }
 
     #[test]
-    fn should_return_error_instead_of_panicking_when_chain_lock_quorum_window_is_zero() {
-        // A chain lock quorum window of 0 can still reach the platform state, which keeps the
-        // window it was created with. Validating a proposal must then fail with an error
-        // instead of dividing by zero and taking the node down.
-        let platform = chain_lock_test_platform();
-        let state = state_with_one_chain_lock_quorum(&platform, 0, 1106);
-
-        let result = platform.platform.verify_chain_lock_locally_v0(
-            0,
-            &state,
-            &sign_chain_lock(1110),
-            PlatformVersion::latest(),
-        );
-
-        assert!(
-            matches!(
-                result,
-                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "the chain lock quorum window is 0"
-                )))
-            ),
-            "a zero quorum window must be refused, got {result:?}"
-        );
-    }
-
-    #[test]
     fn should_leave_chain_lock_to_core_without_overflowing_when_quorum_window_ends_past_largest_core_height(
     ) {
         let platform = chain_lock_test_platform();
         let platform_version = PlatformVersion::latest();
 
         // The quorum verifies its chain locks locally while its window ends below u32::MAX
-        let state = state_with_one_chain_lock_quorum(&platform, 24, 1106);
+        let state = state_with_one_chain_lock_quorum(&platform, 1106);
         assert_eq!(
             platform
                 .platform
@@ -525,7 +491,7 @@ mod tests {
         // the core height, so the chain lock is left to Core; that must stay so, and must not
         // overflow in builds that check arithmetic.
         let core_height = u32::MAX - 5;
-        let state = state_with_one_chain_lock_quorum(&platform, 24, core_height);
+        let state = state_with_one_chain_lock_quorum(&platform, core_height);
         assert_eq!(
             platform
                 .platform

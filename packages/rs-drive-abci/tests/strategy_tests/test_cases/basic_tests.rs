@@ -8,6 +8,7 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dashcore_rpc::json::QuorumType;
     use std::collections::BTreeMap;
+    use std::num::NonZeroU32;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     use drive_abci::config::{
@@ -462,14 +463,14 @@ mod tests {
             chain_lock: ChainLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
-                quorum_window: 24,
+                quorum_window: NonZeroU32::new(24).unwrap(),
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
-                quorum_window: 24,
+                quorum_window: NonZeroU32::new(24).unwrap(),
                 quorum_active_signers: 24,
                 quorum_rotation: false,
             },
