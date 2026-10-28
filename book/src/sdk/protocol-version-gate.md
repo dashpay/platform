@@ -49,7 +49,10 @@ How each request declares what it needs:
 
 Another node cannot help, so the SDK never retries the request elsewhere and bans no node for
 it. An app that offers a protocol 14 feature can catch the error and hide the feature until the
-network activates protocol 14; the same call succeeds once it has. When asking for the
+network activates protocol 14; the same call succeeds once it has. A refusal of an SDK pinned
+below 14 (`pinned`; the message says the SDK is pinned to an earlier protocol version) does not
+lift when the network activates it: the app has to raise the pin, or let the SDK follow the
+network. When asking for the
 network's version failed for a reason that can pass (nodes or a quorum source not answering),
 the network may serve the request already: JS reports the error as retriable (`isRetriable`),
 and FFI as a network error, so the app can try again later instead of hiding the feature. A

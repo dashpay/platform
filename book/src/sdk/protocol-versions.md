@@ -12,7 +12,7 @@ describes how it keeps track of versions and what it does with them.
 | Version | What it is | Where it comes from |
 |---|---|---|
 | Stored | The version whose rules the SDK builds requests and transitions with (`Sdk::version`) | Seeded, initial or pinned at build time; raised by verified answers |
-| Verified | The newest version a verified answer was signed at (`ProtocolVersionInfo::verified_version`) | Verified answers only; 0 before the first |
+| Verified | The newest version a verified answer was signed at (`ProtocolVersionInfo::verified_version`) | Verified answers only; none before the first (`None`, and 0 in the network basis) |
 | Network basis | The version the SDK may rely on both the network and itself serving (`QuerySettings::network_protocol_basis`) | The lower of the two above |
 
 The stored version starts at one of three values:

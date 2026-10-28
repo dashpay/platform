@@ -128,7 +128,7 @@ try {
 }
 ```
 
-A fresh SDK asks the network for its version once before the first such query, so it does not have to be seeded at the network's version. A query that cannot be answered as asked, for example `groupBy` on `sdk.documents.query`, which returns the documents themselves, is refused before sending with an `InvalidArgument` error. See [Protocol Versions in the SDK](../../book/src/sdk/protocol-versions.md).
+A fresh SDK asks the network for its version once before the first such query, so it does not have to be seeded at the network's version. An SDK pinned below 14 keeps refusing these queries after the network activates 14 (the message says it is pinned): raise the pin. A query that cannot be answered as asked, for example `groupBy` on `sdk.documents.query`, which returns the documents themselves, is refused before sending with an `InvalidArgument` error. See [Protocol Versions in the SDK](../../book/src/sdk/protocol-versions.md).
 
 ## Ranked queries
 
