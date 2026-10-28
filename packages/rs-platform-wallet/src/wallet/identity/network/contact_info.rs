@@ -18,7 +18,7 @@
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -603,7 +603,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             dashpay_contract.id(),
             "contactInfo",
             &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-            &super::WALLET_SIGNING_KEY_TYPES,
+            &[KeyType::ECDSA_SECP256K1],
         )?
         .cloned()
         .ok_or_else(|| {
