@@ -1,10 +1,4 @@
-#[cfg(all(
-    feature = "bls-signatures",
-    any(
-        feature = "message-signing",
-        feature = "message-signature-verification"
-    )
-))]
+#[cfg(all(feature = "bls-signatures", feature = "message-signature-verification"))]
 use crate::bls::{self, Signature};
 #[cfg(any(
     feature = "message-signing",
@@ -174,23 +168,25 @@ impl PlatformMessageSignable for &[u8] {
 /// rust-dashcore `aca02026` it held only because the curve backend refused high-S inside
 /// `verify_data_signature`; from rust-dashcore#1214 on, that function normalizes S before
 /// verifying, as Dash Core's `CPubKey::Verify` does. The rule is Platform's, not the
-/// library's, so it is stated here, ahead of the library call. Signing never produces a
-/// high-S signature, so no honest signer is affected.
+/// library's, so it is stated here. Signing never produces a high-S signature, so no honest
+/// signer is affected.
 ///
-/// Errors are the ones `dashcore::signer::verify_data_signature` would return for the same
-/// input: a malformed signature fails to parse, a high-S one fails with
-/// [`EcdsaError::VerifyFailed`], exactly as it did when the backend refused it.
+/// The library verifies first, so a malformed signature or public key fails exactly as it
+/// did before, with the library's own error. Only a signature the library accepts is then
+/// held to the low-S rule; a high-S one fails with [`EcdsaError::VerifyFailed`], the error
+/// the backend returned for it when it still refused high-S itself.
 pub fn verify_low_s_data_signature(
     data: &[u8],
     signature: &[u8],
     public_key: &[u8],
 ) -> Result<(), anyhow::Error> {
+    signer::verify_data_signature(data, signature, public_key)?;
     let recoverable = sign_message::from_slice(signature)?;
     ensure!(
         is_low_s(&recoverable.signature()?),
         EcdsaError::VerifyFailed
     );
-    signer::verify_data_signature(data, signature, public_key)
+    Ok(())
 }
 
 /// Whether S is in the lower half of the curve order.
