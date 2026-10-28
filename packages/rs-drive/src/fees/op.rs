@@ -9,6 +9,7 @@ use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::GroveOp;
 use grovedb::batch::KeyInfoPath;
+use grovedb::batch::SubelementsDeletionBehavior;
 use grovedb::element::reference_path::ReferencePathType;
 use grovedb::element::IndexAxis;
 use grovedb::element::MaxReferenceHop;
@@ -708,6 +709,26 @@ impl LowLevelDriveOperation {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Sets `GroveOperation` for dropping the tree at the given path and key with everything in
+    /// it, without reading or deleting its elements one by one: GroveDB's flat drop
+    /// (`SubelementsDeletionBehavior::DropFlat`), which a batch accepts from `GROVE_V4`. Only for a
+    /// tree of `tree_type` that holds no subtree and whose elements no reference points at.
+    pub fn for_known_path_key_drop_flat_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+    ) -> Self {
+        GroveOperation(
+            QualifiedGroveDbOp::delete_tree_op(
+                path,
+                key,
+                tree_type,
+                SubelementsDeletionBehavior::DropFlat,
+            )
+            .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key

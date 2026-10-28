@@ -36,6 +36,8 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     /// read only the contract each action carries, so they run here, where check_tx runs them
     /// too, rather than in the state validation check_tx skips:
     ///
+    /// - a `TokenConfigUpdate`, performed or a group member's vote, needs a contract that is not
+    ///   read-only (`DataContractIsReadonlyError`, 40001);
     /// - a `TokenConfigUpdate` that makes a token tradeable needs a transferable token
     ///   (`NonTransferableTokenTradeableError`, 10281);
     /// - a performed `TokenConfigUpdate` must leave its contract within the compiled size cap
