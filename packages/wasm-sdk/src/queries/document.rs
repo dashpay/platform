@@ -2,6 +2,7 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
+use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v1::Result as HistoryResponseResult;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
@@ -1037,6 +1038,25 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
     }
 }
 
+fn document_history_proof_response(
+    result: DocumentHistoryProofInfo,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+    let Some(HistoryResponseResult::Proof(proof)) = result.response.result else {
+        return Err(WasmSdkError::generic(
+            "verified document history response carries no proof",
+        ));
+    };
+    Ok(ProofMetadataResponseWasm::from_sdk_parts(
+        DocumentHistoryResultWasm::from_history(result.history, contract_id, document_type_name)?,
+        result.response.metadata.ok_or_else(|| {
+            WasmSdkError::generic("verified document history response carries no metadata")
+        })?,
+        proof,
+    ))
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocumentHistory")]
@@ -1079,21 +1099,7 @@ impl WasmSdk {
         let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v1::Result as ResponseResult;
-        let Some(ResponseResult::Proof(proof)) = result.response.result else {
-            return Err(WasmSdkError::generic(
-                "verified document history response carries no proof",
-            ));
-        };
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            DocumentHistoryResultWasm::from_history(
-                result.history,
-                contract_id,
-                &document_type_name,
-            )?,
-            result.response.metadata.expect("verified metadata"),
-            proof,
-        ))
+        document_history_proof_response(result, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
@@ -1762,12 +1768,53 @@ mod tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod history_wasm_tests {
     use super::*;
+    use crate::error::WasmSdkErrorKind;
+    use dash_sdk::platform::proto::get_document_history_response::GetDocumentHistoryResponseV1;
     use drive_proof_verifier::types::{
         DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
     };
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_return_an_error_when_history_proof_metadata_is_missing() {
+        let result = DocumentHistoryProofInfo {
+            history: DocumentHistory {
+                entries: vec![],
+                lifecycle: None,
+            },
+            response: GetDocumentHistoryResponseV1 {
+                metadata: None,
+                result: Some(HistoryResponseResult::Proof(Default::default())),
+            },
+        };
+        let error = document_history_proof_response(result, [1; 32].into(), "note")
+            .expect_err("missing metadata must return an error");
+        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+        assert_eq!(
+            error.to_string(),
+            "verified document history response carries no metadata"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_return_an_error_when_history_response_has_no_proof() {
+        let result = DocumentHistoryProofInfo {
+            history: DocumentHistory {
+                entries: vec![],
+                lifecycle: None,
+            },
+            response: Default::default(),
+        };
+        let error = document_history_proof_response(result, [1; 32].into(), "note")
+            .expect_err("missing proof must return an error");
+        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+        assert_eq!(
+            error.to_string(),
+            "verified document history response carries no proof"
+        );
+    }
 
     fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
         let history = DocumentHistory {
@@ -1949,11 +1996,18 @@ mod history_wasm_tests {
                 remaining_revisions: (1u64 << 53) + 1,
             }),
         };
-        let response = ProofMetadataResponseWasm::from_sdk_parts(
-            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
-            Default::default(),
-            Default::default(),
-        );
+        let response = document_history_proof_response(
+            DocumentHistoryProofInfo {
+                history,
+                response: GetDocumentHistoryResponseV1 {
+                    metadata: Some(Default::default()),
+                    result: Some(HistoryResponseResult::Proof(Default::default())),
+                },
+            },
+            [1; 32].into(),
+            "note",
+        )
+        .unwrap();
 
         let json = response.to_json().unwrap();
         let data = Reflect::get(&json, &"data".into()).unwrap();
