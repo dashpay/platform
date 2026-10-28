@@ -3224,14 +3224,9 @@ mod tests {
             );
         }
 
-        let mut storing = PlatformVersion::latest().clone();
-        storing
-            .dpp
-            .contract_versions
-            .contract_storage_serialization_version = 2;
         let stored = DataContractInSerializationFormat::try_from_data_contract_for_storage(
             &sample_data_contract(),
-            &storing,
+            PlatformVersion::latest(),
         )
         .expect("expected the contract to compile");
         assert!(matches!(stored, DataContractInSerializationFormat::V2(_)));
