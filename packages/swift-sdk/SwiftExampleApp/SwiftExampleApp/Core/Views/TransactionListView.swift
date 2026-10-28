@@ -221,9 +221,8 @@ struct TransactionListView: View {
 struct TransactionRowView: View {
     let transaction: PersistentTransaction
     var walletId: Data? = nil
-    /// `nil` while this wallet's amount is unresolved — the same state the
-    /// amount label shows as "Amount unavailable", so fee and amount agree.
-    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    /// This wallet's Rust-emitted amount (see `PersistentTransaction.netAmount(for:)`).
+    private var netAmount: Int64 { transaction.displayNetAmount(for: walletId) }
     private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
     /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
@@ -389,7 +388,7 @@ struct TransactionRowView: View {
                             .font(.headline)
                             .foregroundColor(typeColor)
 
-                        if let fee = transaction.fee, let amount = netAmount, amount < 0 {
+                        if let fee = transaction.displayFee(for: walletId), netAmount < 0 {
                             Text("Fee: \(formatFee(fee))")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)

@@ -24,12 +24,13 @@ schema. The former live V2 is accepted only when its complete graph matches
 frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
-V5 adds the optional `PersistentTransaction.netAmountUnavailable` marker through
-a lightweight migration. Existing rows receive `nil`, preserving their stored
-accounting. When deleting one participant of a shared transaction, the remaining
-wallet's amount and direction are saved before the ownership links disappear.
-If its amount was unresolved, the marker keeps it unavailable across restart;
-an authoritative wallet record or complete accounting reconciliation clears it.
+V5 adds the `PersistentTransactionAccounting` entity through a lightweight
+migration: one row per `(walletId, txid)` holding the net amount, direction and
+fee `rs-platform-wallet` emitted for that wallet. Migrated stores start with no
+rows; at the first load Rust reads the stored history back
+(`on_load_core_history_for_accounting_fn`), computes the accounting of every
+transaction lacking a row and hands it to `on_persist_transaction_accounting_fn`.
+Deleting a wallet deletes its rows; deleting a transaction cascades to them.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
