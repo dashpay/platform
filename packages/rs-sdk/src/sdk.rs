@@ -329,8 +329,8 @@ pub struct Sdk {
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
     /// What the last probe of the network's protocol version proved about the epoch it ran
-    /// in, so that the gate does not ask again before that epoch can end. Shared between
-    /// clones.
+    /// in, so that the gate does not ask again before that epoch can end, and the probe
+    /// running, so that calls made meanwhile wait for its answer. Shared between clones.
     probe_hold: Arc<protocol_gate::SharedProbeHold>,
 
     /// Enforce the protocol version gate on a mock SDK, as on a network one.

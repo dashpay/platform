@@ -120,18 +120,29 @@ impl ProbeHold {
     }
 }
 
-/// The [`ProbeHold`] an SDK and its clones share.
+/// The [`ProbeHold`] an SDK and its clones share, and the probe one of them is running.
 #[derive(Debug, Default)]
-pub(super) struct SharedProbeHold(Mutex<Option<ProbeHold>>);
+pub(super) struct SharedProbeHold {
+    hold: Mutex<Option<ProbeHold>>,
+    /// Locked while a probe runs, so that calls made meanwhile wait for its answer instead
+    /// of asking too.
+    probing: tokio::sync::Mutex<()>,
+}
 
 impl SharedProbeHold {
-    fn get(&self) -> Option<ProbeHold> {
-        self.0.lock().map(|hold| *hold).unwrap_or(None)
+    pub(super) fn get(&self) -> Option<ProbeHold> {
+        self.hold.lock().map(|hold| *hold).unwrap_or(None)
     }
 
-    fn set(&self, hold: ProbeHold) {
-        if let Ok(mut current) = self.0.lock() {
-            *current = Some(hold);
+    /// Keep the newer of the held and the new hold: the one of the newer version, then the
+    /// one that ends later. Probes that overlap can finish in any order.
+    pub(super) fn set(&self, hold: ProbeHold) {
+        if let Ok(mut current) = self.hold.lock() {
+            if current
+                .is_none_or(|held| (hold.network, hold.until_ms) > (held.network, held.until_ms))
+            {
+                *current = Some(hold);
+            }
         }
     }
 }
@@ -242,11 +253,7 @@ impl Sdk {
         let cause = match decide(required, &state) {
             Gate::Send => return Ok(()),
             Gate::Refuse => None,
-            Gate::Probe => self
-                .probe_network_protocol_version(required, settings)
-                .await
-                .err()
-                .map(Box::new),
+            Gate::Probe => self.probe_unless_probing(required, settings).await,
         };
         // Another call may have verified the version meanwhile, whatever this probe did.
         let network = self.query_settings().network_protocol_basis();
@@ -261,6 +268,33 @@ impl Sdk {
             pinned,
             cause,
         })
+    }
+
+    /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the
+    /// probe failed, if it did, unless another call is probing: then wait for its answer and
+    /// decide again from what it proved.
+    ///
+    /// A call waits for one probe at most, which runs under the settings of the call that
+    /// started it. When that probe proved too little to decide, for example because it
+    /// failed, the call asks under its own settings at once, without waiting for the others
+    /// that ask too.
+    async fn probe_unless_probing(
+        &self,
+        required: u32,
+        settings: Option<RequestSettings>,
+    ) -> Option<Box<Error>> {
+        let probing = self.probe_hold.probing.try_lock();
+        if probing.is_err() {
+            drop(self.probe_hold.probing.lock().await);
+            if decide(required, &self.gate_state()) != Gate::Probe {
+                return None;
+            }
+        }
+        let probed = self
+            .probe_network_protocol_version(required, settings)
+            .await;
+        drop(probing);
+        probed.err().map(Box::new)
     }
 
     /// Learn the network's protocol version from the genesis epoch, which every node serves

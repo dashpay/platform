@@ -95,6 +95,10 @@ raises the verified version like any other. An SDK that does not request proofs 
 this one, and bans no node for its answers: its context provider may not be able to give
 quorum keys, and then the probe fails on every node, which says nothing about the nodes.
 
+Calls that need a probe while one runs, from the SDK or its clones, wait for its answer and
+decide again from it, so one probe serves them all. When it proves too little to decide, for
+example because it failed, each of them asks under its own request settings at once.
+
 A refused request is not sent and bans no node. [Features from Protocol Version
 14](protocol-version-gate.md) lists the requests and features this applies to.
 
