@@ -328,7 +328,9 @@ where
                 .full_masternode_list()
                 .values()
                 .try_fold(0 as VotingPower, |total, masternode| {
-                    total.checked_add(masternode_vote_strength(&masternode.node_type).into())
+                    total.checked_add(
+                        masternode_vote_strength(&masternode.node_type, platform_version).into(),
+                    )
                 })
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "the masternode list's total voting power overflows",

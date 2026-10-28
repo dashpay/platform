@@ -621,6 +621,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_yes_no_vote_poll_minimum_voting_power: 2000,
         max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
         max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+        yes_no_vote_poll_masternode_vote_strength: 1,
+        yes_no_vote_poll_evonode_vote_strength: 4,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
         min_mainnet_contract_moderation_election_window_seconds: 86_400,

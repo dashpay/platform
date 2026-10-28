@@ -427,4 +427,16 @@ mod yes_no_vote_poll_gating_tests {
             }
         }
     }
+
+    // Protocol version 15 tallies yes/no votes and share minimums with these weights, so they
+    // cannot change in its table without changing how its blocks replay.
+    #[test]
+    fn should_weigh_yes_no_votes_one_for_a_masternode_and_four_for_an_evonode_at_protocol_version_15(
+    ) {
+        let limits = &PlatformVersion::get(15)
+            .expect("expected protocol version 15")
+            .system_limits;
+        assert_eq!(limits.yes_no_vote_poll_masternode_vote_strength, 1);
+        assert_eq!(limits.yes_no_vote_poll_evonode_vote_strength, 4);
+    }
 }

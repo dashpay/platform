@@ -547,7 +547,12 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         platform_state
             .full_masternode_list()
             .values()
-            .map(|masternode| u32::from(masternode_vote_strength(&masternode.node_type)))
+            .map(|masternode| {
+                u32::from(masternode_vote_strength(
+                    &masternode.node_type,
+                    platform_version,
+                ))
+            })
             .sum()
     };
     assert_eq!(

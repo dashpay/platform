@@ -260,6 +260,14 @@ pub struct SystemLimits {
     /// its end date: four weeks, the longest election window a contract may declare. Read by
     /// `Drive::open_yes_no_vote_poll` (protocol version 15).
     pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
+    /// masternode list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_masternode_vote_strength: u8,
+    /// The voting power an evonode's yes/no vote carries, and what it adds to the masternode
+    /// list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_evonode_vote_strength: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never

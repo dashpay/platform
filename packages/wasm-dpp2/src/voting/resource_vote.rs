@@ -93,13 +93,11 @@ impl ResourceVoteWasm {
     }
 
     #[wasm_bindgen(setter = choice)]
-    pub fn set_choice(&mut self, choice: &ResourceVoteChoiceWasm) {
+    pub fn set_choice(&mut self, choice: &ResourceVoteChoiceWasm) -> WasmDppResult<()> {
         let ResourceVote::V0(ResourceVoteV0 { vote_poll, .. }) = self.0.clone();
 
-        self.0 = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll,
-            resource_vote_choice: choice.clone().into(),
-        });
+        self.0 = ResourceVote::V0(ResourceVoteV0::try_new(vote_poll, choice.clone().into())?);
+        Ok(())
     }
 }
 

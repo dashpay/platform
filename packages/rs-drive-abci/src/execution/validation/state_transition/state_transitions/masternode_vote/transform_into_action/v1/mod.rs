@@ -110,7 +110,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
             pro_tx_hash: self.pro_tx_hash(),
             voter_identity_id: self.voter_identity_id(),
             voting_address: masternode.state.voting_address,
-            vote_strength: masternode_vote_strength(&masternode.node_type),
+            vote_strength: masternode_vote_strength(&masternode.node_type, platform_version),
             vote: ResolvedVote::YesNoVote(resolved_vote),
             previous_resource_vote_choice_to_remove: None,
             nonce: self.nonce(),
