@@ -535,8 +535,13 @@ impl TxoReconciler {
     /// SPV not running counts as not steady, which arms the next rising
     /// edge. Call on every progress poll, running or not.
     pub async fn due_wallets(&self) -> Vec<WalletId> {
-        let session = self.spv.run_session();
         let steady = self.scan_progress().await.is_some_and(|p| p.is_steady());
+        // Read after the steady-state read, never before: a restart between
+        // the two then pairs the new session with the steady read and costs
+        // at most one extra (idempotent) run, where the other order would
+        // pair the old session with the new client's steady state and miss
+        // its rising edge until the cadence came round.
+        let session = self.spv.run_session();
         let wallets: Vec<WalletId> = self.wallets.load().keys().copied().collect();
         lock_schedule(&self.schedule).due_wallets(steady, session, wallets, Instant::now())
     }
