@@ -17,9 +17,9 @@ use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::update_identity::UpdateIdentity;
 use dash_sdk::platform::transition::update_identity_key_limits::{
     raised_key_limits, UpdateIdentityKeyLimits,
 };
@@ -585,7 +585,8 @@ impl WasmSdk {
     ///
     /// This method handles the complete update flow:
     /// 1. Validates the master key for signing
-    /// 2. Validates keys to add/disable
+    /// 2. Refuses to disable the last valid authentication key of a security level
+    ///    (DIP-11); keys added in the same update count
     /// 3. Builds and signs the identity update transition
     /// 4. Broadcasts and waits for confirmation
     ///
@@ -597,7 +598,7 @@ impl WasmSdk {
         options: IdentityUpdateOptionsJs,
     ) -> Result<(), WasmSdkError> {
         // Extract complex types first (borrows &options)
-        let mut identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) =
             try_from_options_optional_with(&options, "addPublicKeys", |v| {
@@ -635,12 +636,6 @@ impl WasmSdk {
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_identity_update_options(options.into())?;
 
-        // Increment the identity revision for the update transition
-        // The platform expects the new revision (current + 1) in the state transition
-        use dash_sdk::dpp::identity::accessors::IdentitySettersV0;
-        let original_revision = identity.revision();
-        identity.set_revision(original_revision + 1);
-
         // Find all valid master keys (AUTHENTICATION + MASTER + supported key type)
         let master_keys: Vec<_> = identity
             .public_keys()
@@ -674,38 +669,20 @@ impl WasmSdk {
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
 
-        // Get identity nonce
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_nonce(identity.id(), true, settings)
+        // The SDK claims the next revision and refuses, before signing, an
+        // update that disables the last valid authentication key of a
+        // security level (DIP-11).
+        identity
+            .update_identity_keys(
+                self.inner_sdk(),
+                master_key_id,
+                keys_to_add,
+                keys_to_disable,
+                &signer,
+                settings,
+            )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to get identity nonce: {}", e)))?;
-
-        // Create the identity update transition
-        use crate::settings::get_user_fee_increase;
-        use dash_sdk::dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
-        use dash_sdk::dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-
-        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-            &identity,
-            &master_key_id,
-            keys_to_add,
-            keys_to_disable,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None,
-        )
-        .await
-        .map_err(|e| WasmSdkError::with_context("Failed to create update transition", e))?;
-
-        // Broadcast the transition
-        use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await
-            .map_err(|e| WasmSdkError::with_context("Failed to broadcast update", e))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to update identity", e))?;
 
         Ok(())
     }

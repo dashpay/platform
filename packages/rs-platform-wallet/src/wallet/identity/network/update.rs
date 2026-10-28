@@ -18,6 +18,8 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::platform::transition::update_identity::UpdateIdentity;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 
 use crate::error::PlatformWalletError;
 
@@ -71,6 +73,11 @@ impl IdentityWallet {
     /// identity-update state transition requires (DPP gates this on
     /// MASTER specifically — HIGH/CRITICAL aren't accepted).
     ///
+    /// An update that would disable the last valid authentication key of a
+    /// security level is refused before signing with
+    /// `PlatformWalletError::Sdk(dash_sdk::Error::LastAuthenticationKey(_))`
+    /// (DIP-11); keys added in the same update count as valid.
+    ///
     /// NOTE: callers that ADD keys via `add_public_keys` are
     /// responsible for pre-persisting the new keys' private material
     /// to whatever store the supplied signer reads from (iOS Keychain
@@ -98,16 +105,11 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-        use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
-        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-        use dpp::state_transition::proof_result::StateTransitionProofResult;
-
         // Snapshot the local identity + its `identity_index` (needed
         // for the derivation breadcrumb on the post-broadcast apply
         // pass below). Read lock only — the broadcast itself doesn't
         // touch local state.
-        let (mut identity, identity_index) = {
+        let (identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -130,10 +132,6 @@ impl IdentityWallet {
             (identity, index)
         };
 
-        // Increment revision for the update transition.
-        let original_revision = identity.revision();
-        identity.set_revision(original_revision + 1);
-
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
         let master_key_id = identity
@@ -151,49 +149,27 @@ impl IdentityWallet {
                 )
             })?;
 
-        let identity_nonce = self
-            .sdk
-            .get_identity_nonce(identity.id(), true, settings)
-            .await?;
-
-        let user_fee_increase = settings
-            .and_then(|s| s.user_fee_increase)
-            .unwrap_or_default();
-
-        // `try_from_identity_with_signer` consumes the keys vec, so
-        // clone before handing it off — we need the originals to
-        // apply locally after the broadcast succeeds.
+        // The update consumes the keys vecs, so clone before handing
+        // them off — we need the originals to apply locally after the
+        // broadcast succeeds.
         let added_keys_for_local_apply = add_public_keys.clone();
         let disabled_ids_for_local_apply = disable_public_keys.clone();
 
-        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-            &identity,
-            &master_key_id,
-            add_public_keys,
-            disable_public_keys,
-            identity_nonce,
-            user_fee_increase,
-            &SignerRef(signer),
-            self.sdk.version(),
-            None,
-        )
-        .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to create identity update transition: {}",
-                e
-            ))
-        })?;
-
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to broadcast identity update: {}",
-                    e
-                ))
-            })?;
+        // The SDK claims the next revision and refuses, before signing,
+        // an update that disables the last valid authentication key of
+        // a security level (DIP-11). Its errors stay typed as
+        // `PlatformWalletError::Sdk`, so the FFI keeps the consensus code
+        // and the signer-unavailable classification.
+        identity
+            .update_identity_keys(
+                &self.sdk,
+                master_key_id,
+                add_public_keys,
+                disable_public_keys,
+                &SignerRef(signer),
+                settings,
+            )
+            .await?;
 
         // Post-broadcast local apply.
         //
@@ -283,6 +259,11 @@ impl IdentityWallet {
     /// caller receives the chain's error. See
     /// `docs/protocol/authentication-key-limits.md`.
     ///
+    /// `identity` is the identity as Platform holds it: the update claims
+    /// the next revision. An update that would disable the last valid
+    /// authentication key of a security level is refused before signing
+    /// with [`dash_sdk::Error::LastAuthenticationKey`] (DIP-11).
+    ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
     pub async fn update_identity_with_signer<S: Signer<IdentityPublicKey>>(
@@ -293,42 +274,123 @@ impl IdentityWallet {
         disable_public_keys: Vec<u32>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
-    {
-        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-        use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
-        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    ) -> Result<StateTransitionProofResult, dash_sdk::Error> {
+        identity
+            .update_identity_keys(
+                &self.sdk,
+                *master_key_id,
+                add_public_keys,
+                disable_public_keys,
+                signer,
+                settings,
+            )
+            .await
+    }
+}
 
-        // Get identity nonce from Platform.
-        let identity_nonce = self
-            .sdk
-            .get_identity_nonce(identity.id(), true, settings)
-            .await?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use std::collections::BTreeMap;
 
-        let user_fee_increase = settings
-            .and_then(|s| s.user_fee_increase)
-            .unwrap_or_default();
+    /// Signs nothing; holds every key so the MASTER key is selectable.
+    #[derive(Debug)]
+    struct HoldsEveryKey;
 
-        // Build the update transition.
-        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-            identity,
-            master_key_id,
-            add_public_keys,
-            disable_public_keys,
-            identity_nonce,
-            user_fee_increase,
-            signer,
-            self.sdk.version(),
-            None,
-        )
-        .await
-        .map_err(dash_sdk::Error::Protocol)?;
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for HoldsEveryKey {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
 
-        // Broadcast and wait for confirmation.
-        let result = state_transition
-            .broadcast_and_wait(&self.sdk, settings)
-            .await?;
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
 
-        Ok(result)
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// MASTER 0, CRITICAL 1, HIGH 2: one authentication key per level.
+    fn identity() -> Identity {
+        let keys = [
+            (0, SecurityLevel::MASTER),
+            (1, SecurityLevel::CRITICAL),
+            (2, SecurityLevel::HIGH),
+        ]
+        .map(|(id, security_level)| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8 + 2; 33]),
+                disabled_at: None,
+            })
+        });
+        IdentityV0 {
+            id: Identifier::from([1; 32]),
+            public_keys: keys
+                .into_iter()
+                .map(|key| (key.id(), key))
+                .collect::<BTreeMap<_, _>>(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    /// The mock SDK answers no request, so a refusal that reached the network
+    /// would surface as a different error.
+    #[tokio::test]
+    async fn should_refuse_disabling_the_last_critical_key_before_sending_anything() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let persister =
+                WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity(), 0, wallet_id, &persister)
+                .expect("add identity");
+        }
+
+        let result = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &Identifier::from([1; 32]),
+                vec![],
+                vec![1],
+                &HoldsEveryKey,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::LastAuthenticationKey(ref refusal)))
+                    if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
+            ),
+            "{result:?}"
+        );
     }
 }

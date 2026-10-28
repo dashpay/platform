@@ -1,5 +1,6 @@
 //! Definitions of errors
 use crate::platform::encrypted_for::EncryptedForError;
+use crate::platform::transition::update_identity::LastAuthenticationKeyError;
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
@@ -136,6 +137,11 @@ pub enum Error {
     /// A property declared `encryptedFor` could not be encrypted or decrypted
     #[error(transparent)]
     EncryptedFor(#[from] EncryptedForError),
+
+    /// An identity update would disable the last valid authentication key of a security
+    /// level, which DIP-11 forbids. Refused before anything was signed.
+    #[error(transparent)]
+    LastAuthenticationKey(#[from] LastAuthenticationKeyError),
 
     /// The request uses a feature that not every node of the network serves yet, so the
     /// SDK refused it without sending it: nodes of an older release would answer

@@ -284,6 +284,13 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             EncryptedFor(e) => e.into(),
+            // A caller's request DIP-11 forbids: retrying cannot change it.
+            LastAuthenticationKey(e) => Self::new(
+                WasmSdkErrorKind::InvalidArgument,
+                e.to_string(),
+                None,
+                false,
+            ),
             error @ ProtocolVersionNotActive { .. } => {
                 // The SDK's message names what is missing; a failed query for the network's
                 // version is its source, and JS sees only the message. The refusal holds
