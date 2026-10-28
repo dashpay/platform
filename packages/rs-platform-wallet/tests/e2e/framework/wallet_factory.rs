@@ -249,9 +249,8 @@ impl TestWallet {
 
     /// Like [`Self::transfer`] but with `[DeductFromInput(0)]` — the fee is
     /// drawn from the fee target's *remaining* input balance, so the recipient
-    /// receives the exact output amount. This is the fee strategy whose
-    /// input-headroom reservation the #3040 safety multiplier widens; PA-3040
-    /// drives it to prove the workaround clears Drive's chain-time fee.
+    /// receives the exact output amount. PA-3040 drives it to prove the
+    /// harness-funded remainder clears Drive's chain-time fee (#3040).
     pub async fn transfer_deduct_from_input(
         &self,
         outputs: BTreeMap<PlatformAddress, Credits>,
