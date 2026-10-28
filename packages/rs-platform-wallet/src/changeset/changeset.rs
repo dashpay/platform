@@ -378,6 +378,8 @@ pub struct ChainTruncation {
     /// InstantSend-locked transactions recorded in blocks above `height`.
     /// The network mines them again, so they are kept as unconfirmed: the
     /// coins they spent stay spent and their outputs stay InstantSend-locked.
+    /// Their records read `Mempool`; see
+    /// [`CoreChangeSet::is_unconfirmed_instant_send_locked`].
     pub unconfirmed_txids: Vec<Txid>,
     /// Coins the removed transactions spent, unspent again.
     pub restored_outpoints: Vec<OutPoint>,
@@ -742,9 +744,35 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 }
 
 impl CoreChangeSet {
+    /// Whether `record`, one of this changeset's records, is unconfirmed
+    /// and InstantSend-locked in the wallet this changeset describes.
+    ///
+    /// A record's own `InstantSend` context says so. So does a `Mempool`
+    /// record that a truncation in this changeset kept: a truncation keeps
+    /// only InstantSend-locked transactions, and the wallet holds the lock
+    /// of a transaction it has seen mined only as a txid, with no lock to
+    /// put back into the record's context (see [`Self::rewind_to`]). A
+    /// projection that writes the lock state of a record and its outputs
+    /// reads it here, not from the context alone.
+    pub fn is_unconfirmed_instant_send_locked(&self, record: &TransactionRecord) -> bool {
+        match record.context {
+            TransactionContext::InstantSend(_) => true,
+            TransactionContext::Mempool => self
+                .truncations
+                .iter()
+                .any(|truncation| truncation.unconfirmed_txids.contains(&record.txid)),
+            TransactionContext::InBlock(_) | TransactionContext::InChainLockedBlock(_) => false,
+        }
+    }
+
     /// Rewrite this changeset as `truncation` left the wallet, so that what
     /// it holds can be applied after that truncation instead of before it —
     /// see [`Self::truncations`].
+    ///
+    /// A kept record is demoted to `Mempool`, as the wallet demotes its
+    /// own: its lock payload is not held anywhere, and a made-up one would
+    /// be stored and later read back as a real lock. Its lock state is read
+    /// through [`Self::is_unconfirmed_instant_send_locked`].
     fn rewind_to(&mut self, truncation: &ChainTruncation) {
         let removed: HashSet<&Txid> = truncation.txids.iter().collect();
         let demoted: HashSet<&Txid> = truncation.unconfirmed_txids.iter().collect();
@@ -4282,5 +4310,44 @@ mod chain_truncation_merge_tests {
         assert_eq!(spent(&cs), [outpoint(9)]);
         assert_eq!(cs.instant_locks_for_non_final_records.len(), 1);
         assert_eq!(cs.synced_height, Some(FORK));
+    }
+
+    #[test]
+    fn should_read_a_transaction_a_merged_truncation_keeps_as_instant_send_locked() {
+        let mut cs = block_with(2, FORK + 1, 9);
+        cs.records.push(record(4, TransactionContext::Mempool));
+        cs.merge(truncation(FORK, &[], &[2], &[]));
+
+        let kept = cs.records.iter().find(|r| r.txid == txid(2)).unwrap();
+        assert!(
+            cs.is_unconfirmed_instant_send_locked(kept),
+            "a truncation keeps only InstantSend-locked transactions"
+        );
+        let unrelated = cs.records.iter().find(|r| r.txid == txid(4)).unwrap();
+        assert!(
+            !cs.is_unconfirmed_instant_send_locked(unrelated),
+            "a mempool record no truncation names is not locked"
+        );
+    }
+
+    #[test]
+    fn should_read_an_instant_send_context_as_locked_and_a_block_as_not() {
+        let cs = CoreChangeSet::default();
+
+        assert!(cs.is_unconfirmed_instant_send_locked(&record(
+            1,
+            TransactionContext::InstantSend(InstantLock::default())
+        )));
+        assert!(!cs.is_unconfirmed_instant_send_locked(&record(1, in_block(FORK))));
+        assert!(!cs.is_unconfirmed_instant_send_locked(&record(1, TransactionContext::Mempool)));
+    }
+
+    #[test]
+    fn should_not_read_a_kept_transaction_mined_again_as_unconfirmed() {
+        let mut cs = block_with(2, FORK + 1, 9);
+        cs.merge(truncation(FORK, &[], &[2], &[]));
+        cs.merge(block_with(2, FORK + 1, 9));
+
+        assert!(!cs.is_unconfirmed_instant_send_locked(&cs.records[0]));
     }
 }

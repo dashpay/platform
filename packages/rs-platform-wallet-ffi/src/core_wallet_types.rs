@@ -1,8 +1,6 @@
 //! C-compatible types for core wallet changeset FFI.
 
-use dashcore::Txid;
 use platform_wallet::masternode::{provider_payload_fields, MasternodeRecord};
-use std::collections::BTreeSet;
 use std::os::raw::c_char;
 
 // ---------------------------------------------------------------------------
@@ -680,19 +678,6 @@ impl WalletChangeSetFFI {
             }
         }
 
-        // A truncation keeps only InstantSend-locked transactions, and
-        // merging one into this round left the records it keeps in the
-        // plain mempool context: the lock is not theirs to carry. The host
-        // has stored them as locked by the time these rows arrive — the
-        // truncation callback runs first — so they are projected the same
-        // way. A record a later block mined again is in that block's
-        // context and is not touched.
-        let kept_by_truncation: BTreeSet<Txid> = cs
-            .truncations
-            .iter()
-            .flat_map(|truncation| truncation.unconfirmed_txids.iter().copied())
-            .collect();
-
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
         for (account_type, tx_rows, utxo_slices) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
@@ -706,7 +691,12 @@ impl WalletChangeSetFFI {
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
             for rec in &utxo_slices {
-                utxos_added.extend(record_new_utxos_ffi(rec, &kept_by_truncation));
+                // The lock state is the changeset's to say: a record's
+                // context alone does not carry it.
+                utxos_added.extend(record_new_utxos_ffi(
+                    rec,
+                    cs.is_unconfirmed_instant_send_locked(rec),
+                ));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
 
@@ -714,7 +704,7 @@ impl WalletChangeSetFFI {
             // folded — see the bucketing comment above).
             let transactions: Vec<TransactionRecordFFI> = tx_rows
                 .into_iter()
-                .map(|rec| tx_record_to_ffi(rec, &kept_by_truncation))
+                .map(|rec| tx_record_to_ffi(rec, cs.is_unconfirmed_instant_send_locked(rec)))
                 .collect();
 
             let utxos_added_count = utxos_added.len();
@@ -1290,9 +1280,11 @@ pub fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountCha
 /// entries. Mirrors `derive_new_utxos` in
 /// `platform_wallet::changeset::core_bridge` but stops one layer
 /// further down the stack so the FFI conversion stays self-contained.
+/// `is_instant` is the record's lock state as the changeset reports it
+/// (`CoreChangeSet::is_unconfirmed_instant_send_locked`).
 fn record_new_utxos_ffi(
     rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
-    kept_by_truncation: &BTreeSet<Txid>,
+    is_instant: bool,
 ) -> Vec<UtxoEntryFFI> {
     use key_wallet::managed_account::transaction_record::OutputRole;
     use key_wallet::transaction_checking::TransactionContext;
@@ -1303,7 +1295,6 @@ fn record_new_utxos_ffi(
         rec.context,
         TransactionContext::InBlock(_) | TransactionContext::InChainLockedBlock(_)
     );
-    let is_instant = is_instant_send_locked(rec, kept_by_truncation);
     let is_coinbase = rec.transaction.is_coin_base();
 
     rec.output_details
@@ -1654,24 +1645,9 @@ pub(crate) fn masternode_entry_v2_ffi(
     }
 }
 
-/// Whether `rec` is unconfirmed and InstantSend-locked: it says so itself,
-/// or it is a mempool record a truncation of the same round kept, which a
-/// truncation does for locked transactions only.
-fn is_instant_send_locked(
-    rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
-    kept_by_truncation: &BTreeSet<Txid>,
-) -> bool {
-    use key_wallet::transaction_checking::TransactionContext;
-    match rec.context {
-        TransactionContext::InstantSend(_) => true,
-        TransactionContext::Mempool => kept_by_truncation.contains(&rec.txid),
-        TransactionContext::InBlock(_) | TransactionContext::InChainLockedBlock(_) => false,
-    }
-}
-
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
-    kept_by_truncation: &BTreeSet<Txid>,
+    is_instant: bool,
 ) -> TransactionRecordFFI {
     use key_wallet::transaction_checking::TransactionContext;
     use std::ffi::CString;
@@ -1685,12 +1661,11 @@ fn tx_record_to_ffi(
 
     let (ctx_val, blk_height, blk_hash, blk_ts, blk_position, has_blk_position) = match &tr.context
     {
-        TransactionContext::Mempool if !is_instant_send_locked(tr, kept_by_truncation) => {
-            (0u32, 0u32, [0u8; 32], 0u32, 0u32, false)
-        }
+        // Unconfirmed: whether it is locked is the caller's, read from the
+        // changeset (`CoreChangeSet::is_unconfirmed_instant_send_locked`).
         TransactionContext::Mempool | TransactionContext::InstantSend(_) => {
-            // InstantSend has no block info — treat as mempool-level with flag
-            (1u32, 0u32, [0u8; 32], 0u32, 0u32, false)
+            // InstantSend has no block info — mempool-level with the flag.
+            (u32::from(is_instant), 0u32, [0u8; 32], 0u32, 0u32, false)
         }
         TransactionContext::InBlock(bi) => {
             let mut h = [0u8; 32];
