@@ -27,9 +27,9 @@ use dpp::ProtocolError;
 //     Scope, SpendAuthorizingKey, SpendingKey,
 // };
 
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::{DataContract, DataContractFactory};
-use dpp::secp256k1::SecretKey;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
@@ -2196,9 +2196,9 @@ impl NetworkStrategy {
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
         let sk: [u8; 32] = pk.try_into().unwrap();
-        let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+        let secret_key = SecretKey::from_bytes(&sk).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+            PrivateKey::from_byte_array(&secret_key.to_bytes(), Network::Mainnet)
                 .expect("valid test secret key"),
             amount_range,
             rng,
@@ -2241,7 +2241,7 @@ impl NetworkStrategy {
         IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
-            secret_key.as_secret_bytes(),
+            secret_key.to_bytes().as_ref(),
             0,
             platform_version,
             None,
@@ -2261,9 +2261,9 @@ impl NetworkStrategy {
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
         let sk_bytes: [u8; 32] = pk.try_into().unwrap();
-        let secret_key = SecretKey::from_str(hex::encode(sk_bytes).as_str()).unwrap();
+        let secret_key = SecretKey::from_bytes(&sk_bytes).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+            PrivateKey::from_byte_array(&secret_key.to_bytes(), Network::Mainnet)
                 .expect("valid test secret key"),
             amount_range,
             rng,
@@ -2316,7 +2316,7 @@ impl NetworkStrategy {
 
         (
             asset_lock_proof,
-            secret_key.to_secret_bytes().to_vec(),
+            secret_key.to_bytes().to_vec(),
             funded_amount,
         )
     }
@@ -3170,10 +3170,9 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
                 .unwrap();
 
             let pk_fixed: [u8; 32] = pk.try_into().unwrap();
-            let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
-            let private_key =
-                PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
-                    .expect("valid test secret key");
+            let secret_key = SecretKey::from_bytes(&pk_fixed).unwrap();
+            let private_key = PrivateKey::from_byte_array(&secret_key.to_bytes(), Network::Mainnet)
+                .expect("valid test secret key");
 
             let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
                 private_key,

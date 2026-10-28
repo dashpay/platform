@@ -13,6 +13,8 @@ use crate::platform::transition::waitable::wait_for_document_and_owner_balance_w
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
@@ -22,8 +24,6 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::StateTransition;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use std::collections::{BTreeMap, BTreeSet};

@@ -9,6 +9,8 @@ use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
 use bincode::{Decode, DecodeUntrusted, Encode};
+#[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaRecSignature};
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -2225,15 +2227,10 @@ impl StateTransition {
         path: &::key_wallet::bip32::DerivationPath,
         signer: &S,
     ) -> Result<(), ProtocolError> {
-        use dashcore::crypto::ecdsa::EcdsaRecSignature;
-        use dashcore::signer::double_sha;
-        use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-        use secp256k1::Message;
-
         let data = self.signable_bytes()?;
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
         // of the signable bytes is the actual ECDSA message digest.
-        let data_hash = double_sha(&data);
+        let data_hash = signer::double_sha(&data);
         let digest: [u8; 32] = data_hash.as_slice().try_into().map_err(|_| {
             ProtocolError::Generic("double_sha did not return 32 bytes".to_string())
         })?;
@@ -2243,32 +2240,16 @@ impl StateTransition {
             .await
             .map_err(|e| ProtocolError::ExternalSignerError(format!("signer failed: {}", e)))?;
 
-        // The signer returns a non-recoverable signature. The legacy path
-        // stores a 65-byte recoverable compact signature, so we brute-force
-        // the recovery id (0..3) by reconstructing a `RecoverableSignature`
-        // and comparing the recovered public key with the one the signer
-        // returned. Byte parity with `dashcore::signer::sign` requires the
-        // same deterministic nonce without low-R grinding, as well as low-S
-        // normalization. Core `sign_recoverable` meets that contract; `sign`
-        // performs low-R grinding and may produce different bytes.
-        let compact_64 = signature.to_bytes();
-        let msg = Message::from_digest(digest);
-
-        let mut found: Option<RecoverableSignature> = None;
-        for id in 0..4i32 {
-            let recid = match RecoveryId::try_from(id) {
-                Ok(r) => r,
+        // Recover the metadata without changing the signer's compact signature bytes.
+        let mut found = None;
+        for id in 0..4 {
+            let candidate = match EcdsaRecSignature::from_parts(signature, id, true) {
+                Ok(candidate) => candidate,
                 Err(_) => continue,
             };
-            let candidate = match RecoverableSignature::from_compact(&compact_64, recid) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            if let Ok(recovered) = candidate.recover_ecdsa(msg) {
-                if recovered == public_key.into() {
-                    found = Some(candidate);
-                    break;
-                }
+            if EcdsaPublicKey::recover(&digest, &candidate).is_ok_and(|key| key == public_key) {
+                found = Some(candidate);
+                break;
             }
         }
         let recoverable = found.ok_or_else(|| {
@@ -2282,18 +2263,7 @@ impl StateTransition {
             )
         })?;
 
-        // Compressed-pubkey convention matches `dashcore::signer::sign`, which
-        // always passes `true` regardless of the underlying key encoding. The
-        // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
-        // so this is consistent.
-        let (recovery_id, _) = recoverable.serialize_compact();
-        let compact_65 = EcdsaRecSignature::from_parts(
-            recoverable.to_standard().into(),
-            recovery_id.to_u8(),
-            true,
-        )
-        .map_err(|e| ProtocolError::ExternalSignerError(e.to_string()))?
-        .to_bytes();
+        let compact_65 = recoverable.to_bytes();
 
         if !self.set_signature(compact_65.to_vec().into()) {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {

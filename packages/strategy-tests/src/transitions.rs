@@ -32,6 +32,7 @@
 //! each action.
 
 use dpp::address_funds::PlatformAddress;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
 use dpp::dashcore::{
     bls_sig_utils::BLSSignature, hash_types::CycleHash, InstantLock, OutPoint, ScriptBuf,
     Transaction, TxIn, TxOut, Txid,
@@ -49,7 +50,6 @@ use dpp::identity::Purpose::{AUTHENTICATION, TRANSFER};
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::AssetLockProof;
-use dpp::secp256k1::SecretKey;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
@@ -1212,9 +1212,9 @@ where
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
-        let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
+        let secret_key = SecretKey::from_bytes(&pk).unwrap();
         let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+            PrivateKey::from_byte_array(&secret_key.to_bytes(), Network::Mainnet)
                 .expect("valid test secret key"),
             amount_range,
             rng,

@@ -4,6 +4,8 @@ version.workspace = true
 edition = "2021"
 
 [dependencies]
+# platform-encryption exposes raw ECDH keys; Core has no typed ECDH API yet.
+secp256k1 = { workspace = true }
 
 arc-swap = { version = "1.7.1" }
 chrono = { version = "0.4.38" }

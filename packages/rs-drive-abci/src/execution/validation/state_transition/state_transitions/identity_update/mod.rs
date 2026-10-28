@@ -129,6 +129,7 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::validation::state_transition::test_helpers::random_ecdsa_secret_key;
     use crate::execution::validation::state_transition::tests::{
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
@@ -140,6 +141,9 @@ mod tests {
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
+    use dpp::dashcore::key::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::key::rand::SeedableRng as _;
     use dpp::dashcore::signer;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
@@ -149,9 +153,6 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
-    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
-    use dpp::secp256k1::rand::SeedableRng as _;
-    use dpp::secp256k1::Keypair;
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -262,7 +263,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(292);
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -270,7 +271,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -293,9 +294,9 @@ mod tests {
             .signable_bytes()
             .expect("expected signable bytes");
 
-        let secret = new_key_pair.secret_key();
+        let secret = &new_key_pair;
         let signature =
-            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, secret.to_bytes().as_ref()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -542,14 +543,14 @@ mod tests {
         };
         let platform_state = platform.state.load();
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: Some(bounds.clone()),
         };
@@ -567,13 +568,10 @@ mod tests {
             .into()
         };
         let signable_bytes = build(new_key.clone()).signable_bytes().unwrap();
-        new_key.signature = signer::sign(
-            &signable_bytes,
-            &new_key_pair.secret_key().to_secret_bytes(),
-        )
-        .unwrap()
-        .to_vec()
-        .into();
+        new_key.signature = signer::sign(&signable_bytes, new_key_pair.to_bytes().as_ref())
+            .unwrap()
+            .to_vec()
+            .into();
         let mut update_transition = build(new_key);
         update_transition
             .set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
@@ -752,7 +750,7 @@ mod tests {
         };
         let platform_state = platform.state.load();
         let mut rng = SecpStdRng::seed_from_u64(293);
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
         let build =
             |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
                 StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
@@ -777,20 +775,17 @@ mod tests {
                 security_level: SecurityLevel::HIGH,
                 key_type: ECDSA_SECP256K1,
                 read_only: false,
-                data: new_key_pair.public_key().serialize().to_vec().into(),
+                data: new_key_pair.public_key().to_compressed().to_vec().into(),
                 signature: Default::default(),
                 contract_bounds: Some(bounds.clone()),
             };
             let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
                 .signable_bytes()
                 .unwrap();
-            new_key.signature = signer::sign(
-                &signable_bytes,
-                &new_key_pair.secret_key().to_secret_bytes(),
-            )
-            .unwrap()
-            .to_vec()
-            .into();
+            new_key.signature = signer::sign(&signable_bytes, new_key_pair.to_bytes().as_ref())
+                .unwrap()
+                .to_vec()
+                .into();
             let mut update = build(revision, nonce, vec![new_key], vec![]);
             update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
             signed_updates.push(update);
@@ -1111,9 +1106,9 @@ mod tests {
             .unwrap();
         let bounds = ContractBounds::SingleContract { id: dashpay.id() };
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
+        let pairs: BTreeMap<u32, EcdsaSecretKey> = [2u32, 3, 4]
             .into_iter()
-            .map(|id| (id, Keypair::new(&mut rng)))
+            .map(|id| (id, random_ecdsa_secret_key(&mut rng)))
             .collect();
         let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
             id,
@@ -1121,7 +1116,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: pairs[&id].public_key().serialize().to_vec().into(),
+            data: pairs[&id].public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: Some(bounds.clone()),
         };
@@ -1228,7 +1223,7 @@ mod tests {
         let mut adds = vec![bound_key(3), bound_key(2)];
         let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
+            key.signature = signer::sign(&signable, pairs[&key.id].to_bytes().as_ref())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1243,7 +1238,7 @@ mod tests {
         let mut adds = vec![bound_key(4)];
         let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
+            key.signature = signer::sign(&signable, pairs[&key.id].to_bytes().as_ref())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1677,7 +1672,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1685,7 +1680,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -1864,7 +1859,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1872,7 +1867,7 @@ mod tests {
             security_level: SecurityLevel::MEDIUM,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: Some(ContractBounds::SingleContract {
                 id: data_contract.id(),
@@ -1898,9 +1893,9 @@ mod tests {
             .expect("expected signable bytes");
 
         // Sign the new key with its own private key
-        let secret = new_key_pair.secret_key();
+        let secret = &new_key_pair;
         let signature =
-            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, secret.to_bytes().as_ref()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -2148,10 +2143,10 @@ mod tests {
         let mut rng = SecpStdRng::seed_from_u64(1292);
         // Two encryption keys, the newer one listed first: both write the encryption
         // current-key alias, and the one naming the highest key id must win.
-        let pairs: Vec<(u32, Purpose, Keypair)> = vec![
-            (4, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
-            (2, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
-            (3, Purpose::DECRYPTION, Keypair::new(&mut rng)),
+        let pairs: Vec<(u32, Purpose, EcdsaSecretKey)> = vec![
+            (4, Purpose::ENCRYPTION, random_ecdsa_secret_key(&mut rng)),
+            (2, Purpose::ENCRYPTION, random_ecdsa_secret_key(&mut rng)),
+            (3, Purpose::DECRYPTION, random_ecdsa_secret_key(&mut rng)),
         ];
         let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
             .iter()
@@ -2161,7 +2156,7 @@ mod tests {
                 security_level: SecurityLevel::MEDIUM,
                 key_type: ECDSA_SECP256K1,
                 read_only: false,
-                data: pair.public_key().serialize().to_vec().into(),
+                data: pair.public_key().to_compressed().to_vec().into(),
                 signature: Default::default(),
                 contract_bounds: Some(bounds.clone()),
             })
@@ -2267,7 +2262,7 @@ mod tests {
             .signable_bytes()
             .expect("expected signable bytes");
         for (key, (_, _, pair)) in adds.iter_mut().zip(&pairs) {
-            key.signature = signer::sign(&signable, &pair.secret_key().to_secret_bytes())
+            key.signature = signer::sign(&signable, pair.to_bytes().as_ref())
                 .expect("expected to sign")
                 .to_vec()
                 .into();
@@ -2636,7 +2631,7 @@ mod tests {
 
         let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -2644,7 +2639,7 @@ mod tests {
             security_level: SecurityLevel::MEDIUM,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: Some(ContractBounds::SingleContractDocumentType {
                 id: data_contract.id(),
@@ -2671,9 +2666,9 @@ mod tests {
             .expect("expected signable bytes");
 
         // Sign the new key with its own private key
-        let secret = new_key_pair.secret_key();
+        let secret = &new_key_pair;
         let signature =
-            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, secret.to_bytes().as_ref()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -3007,7 +3002,7 @@ mod tests {
         let platform_state = platform.state.load();
 
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         // Add a key with id 2 and also disable key id 2 in the same transition
         let new_key = IdentityPublicKeyInCreationV0 {
@@ -3016,7 +3011,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -3236,7 +3231,7 @@ mod tests {
         let platform_state = platform.state.load();
 
         let mut rng = SecpStdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
@@ -3249,7 +3244,7 @@ mod tests {
                     security_level: SecurityLevel::HIGH,
                     key_type: ECDSA_SECP256K1,
                     read_only: false,
-                    data: new_key_pair.public_key().serialize().to_vec().into(),
+                    data: new_key_pair.public_key().to_compressed().to_vec().into(),
                     signature: Default::default(),
                     contract_bounds: None,
                 },
@@ -3267,9 +3262,9 @@ mod tests {
             .expect("expected signable bytes");
 
         // Sign the new key
-        let secret = new_key_pair.secret_key();
+        let secret = &new_key_pair;
         let key_sig =
-            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, secret.to_bytes().as_ref()).expect("expected to sign");
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 1, // existing key ID
@@ -3277,7 +3272,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -3371,14 +3366,14 @@ mod tests {
             let platform_state = platform.state.load();
 
             let mut rng = SecpStdRng::seed_from_u64(292);
-            let new_key_pair = Keypair::new(&mut rng);
+            let new_key_pair = random_ecdsa_secret_key(&mut rng);
             let mut new_key = IdentityPublicKeyInCreationV1 {
                 id: NEW_KEY_ID,
                 purpose: added_key.purpose,
                 security_level: added_key.security_level,
                 key_type: ECDSA_SECP256K1,
                 read_only: false,
-                data: new_key_pair.public_key().serialize().to_vec().into(),
+                data: new_key_pair.public_key().to_compressed().to_vec().into(),
                 contract_bounds: None,
                 total_budget: added_key.total_budget,
                 expires_at: added_key.expires_at,
@@ -3405,13 +3400,10 @@ mod tests {
             let signable_bytes = transition_adding(new_key.clone())
                 .signable_bytes()
                 .expect("expected signable bytes");
-            new_key.signature = signer::sign(
-                &signable_bytes,
-                &new_key_pair.secret_key().to_secret_bytes(),
-            )
-            .expect("expected to sign")
-            .to_vec()
-            .into();
+            new_key.signature = signer::sign(&signable_bytes, new_key_pair.to_bytes().as_ref())
+                .expect("expected to sign")
+                .to_vec()
+                .into();
 
             let mut update_transition = transition_adding(new_key);
             update_transition.set_signature(
@@ -3930,7 +3922,7 @@ mod tests {
             nonce: IdentityNonce,
         ) -> StateTransition {
             let mut rng = SecpStdRng::seed_from_u64(292);
-            let authentication_key_pair = Keypair::new(&mut rng);
+            let authentication_key_pair = random_ecdsa_secret_key(&mut rng);
             let (authentication_key_type, authentication_key_data) = match fault {
                 Some(Fault::UndecodableBlsKeyData) => (KeyType::BLS12_381, vec![0xff; 48]),
                 Some(Fault::ShortBlsKeyData) => (KeyType::BLS12_381, vec![0xa0; 47]),
@@ -3941,7 +3933,10 @@ mod tests {
                 }
                 _ => (
                     ECDSA_SECP256K1,
-                    authentication_key_pair.public_key().serialize().to_vec(),
+                    authentication_key_pair
+                        .public_key()
+                        .to_compressed()
+                        .to_vec(),
                 ),
             };
             let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
@@ -3988,11 +3983,9 @@ mod tests {
             else {
                 panic!("expected an identity update v0 transition");
             };
-            let proof_of_possession = signer::sign(
-                &signable_bytes,
-                &authentication_key_pair.secret_key().to_secret_bytes(),
-            )
-            .expect("expected to sign");
+            let proof_of_possession =
+                signer::sign(&signable_bytes, authentication_key_pair.to_bytes().as_ref())
+                    .expect("expected to sign");
             update_v0.add_public_keys[0].set_signature(proof_of_possession.to_vec().into());
             match fault {
                 None => {}
@@ -4103,7 +4096,9 @@ mod tests {
         /// keys, each with its proof of possession, signed by the owner's master key.
         async fn update_adding_ecdsa_keys(owner: &Owner, key_count: usize) -> StateTransition {
             let mut rng = SecpStdRng::seed_from_u64(517);
-            let key_pairs: Vec<Keypair> = (0..key_count).map(|_| Keypair::new(&mut rng)).collect();
+            let key_pairs: Vec<EcdsaSecretKey> = (0..key_count)
+                .map(|_| random_ecdsa_secret_key(&mut rng))
+                .collect();
             let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
                 identity_id: owner.identity.id(),
                 revision: 1,
@@ -4118,7 +4113,7 @@ mod tests {
                             security_level: SecurityLevel::HIGH,
                             key_type: ECDSA_SECP256K1,
                             read_only: false,
-                            data: key_pair.public_key().serialize().to_vec().into(),
+                            data: key_pair.public_key().to_compressed().to_vec().into(),
                             signature: Default::default(),
                             contract_bounds: None,
                         }
@@ -4143,7 +4138,7 @@ mod tests {
             };
             for (key, key_pair) in update_v0.add_public_keys.iter_mut().zip(&key_pairs) {
                 let proof_of_possession =
-                    signer::sign(&signable_bytes, &key_pair.secret_key().to_secret_bytes())
+                    signer::sign(&signable_bytes, key_pair.to_bytes().as_ref())
                         .expect("expected to sign");
                 key.set_signature(proof_of_possession.to_vec().into());
             }

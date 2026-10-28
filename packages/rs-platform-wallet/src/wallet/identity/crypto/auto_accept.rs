@@ -24,9 +24,11 @@
 //!
 //! `m/9'/coin'/16'/timestamp'` (all segments hardened)
 
+use dashcore::crypto::ecdsa::{
+    EcdsaError, EcdsaPublicKey, EcdsaSecretKey as SecretKey, EcdsaSignature,
+};
 use dashcore::hashes::{sha256, Hash, HashEngine};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::{ecdsa::Signature, Message, SecretKey};
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::dip9::{
     DASH_COIN_TYPE, DASH_TESTNET_COIN_TYPE, FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT,
@@ -117,7 +119,7 @@ pub fn derive_auto_accept_private_key(
 
     let secret_bytes = ext_priv.private_key.to_bytes();
 
-    SecretKey::from_secret_bytes(*secret_bytes).map_err(|e| {
+    SecretKey::from_bytes(&secret_bytes).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Invalid derived auto-accept private key: {}",
             e
@@ -148,16 +150,17 @@ pub fn sign_auto_accept_proof(
     timestamp: u32,
 ) -> Vec<u8> {
     let msg_hash = build_message_hash(sender_id, recipient_id, account_reference);
-    let message = Message::from_digest(msg_hash);
 
-    let signature = secret_key.sign_ecdsa(message);
-    let sig_bytes = signature.serialize_compact();
+    // Recoverable signing preserves RFC 6979 bytes without low-R grinding.
+    let signature = secret_key.sign_recoverable(&msg_hash);
+    let compact = signature.to_bytes();
+    let sig_bytes = &compact[1..];
 
     let mut proof = Vec::with_capacity(1 + 4 + 1 + 64);
     proof.push(KEY_TYPE_ECDSA);
     proof.extend_from_slice(&timestamp.to_be_bytes()); // 4 bytes BE
     proof.push(ECDSA_SIG_SIZE);
-    proof.extend_from_slice(&sig_bytes); // 64 bytes compact ECDSA
+    proof.extend_from_slice(sig_bytes); // 64 bytes compact ECDSA
     proof
 }
 
@@ -219,7 +222,7 @@ pub fn auto_accept_proof_expiry(proof_bytes: &[u8]) -> Option<u32> {
 /// check clock-free makes it deterministically testable; the acceptance path
 /// pairs the two.)
 pub fn verify_auto_accept_proof_with_pubkey(
-    pubkey: &dpp::secp256k1::PublicKey,
+    pubkey: &EcdsaPublicKey,
     proof_bytes: &[u8],
     sender_id: &Identifier,
     recipient_id: &Identifier,
@@ -232,17 +235,18 @@ pub fn verify_auto_accept_proof_with_pubkey(
     if sig_len != 64 || proof_bytes.len() < 6 + sig_len {
         return false;
     }
-    let signature_bytes = &proof_bytes[6..6 + sig_len];
+    let Ok(signature_bytes) = <&[u8; 64]>::try_from(&proof_bytes[6..6 + sig_len]) else {
+        return false;
+    };
 
     let msg_hash = build_message_hash(sender_id, recipient_id, account_reference);
-    let message = Message::from_digest(msg_hash);
 
-    let signature = match Signature::from_compact(signature_bytes) {
+    let signature = match EcdsaSignature::from_bytes(signature_bytes) {
         Ok(s) => s,
         Err(_) => return false,
     };
 
-    signature.verify(message, pubkey).is_ok()
+    pubkey.verify(&msg_hash, signature).is_ok()
 }
 
 /// Verify an auto-accept proof by re-deriving the expected key from `wallet`.
@@ -265,7 +269,7 @@ pub fn verify_auto_accept_proof(
         return Ok(false);
     };
     let secret_key = derive_auto_accept_private_key(wallet, network, timestamp)?;
-    let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&secret_key);
+    let pubkey = secret_key.public_key();
     Ok(verify_auto_accept_proof_with_pubkey(
         &pubkey,
         proof_bytes,
@@ -294,7 +298,7 @@ pub fn encode_auto_accept_key_blob(secret_key: &SecretKey, expiry: u32) -> Vec<u
     blob.push(KEY_TYPE_ECDSA);
     blob.extend_from_slice(&expiry.to_be_bytes());
     blob.push(ECDSA_KEY_SIZE);
-    blob.extend_from_slice(&secret_key.to_secret_bytes());
+    blob.extend_from_slice(secret_key.to_bytes().as_ref());
     blob
 }
 
@@ -318,8 +322,8 @@ pub fn decode_auto_accept_key_blob(blob: &[u8]) -> Result<(SecretKey, u32), Plat
         return Err(invalid("auto-accept key size must be 32"));
     }
     let secret_key = <[u8; 32]>::try_from(&blob[6..KEY_BLOB_LEN])
-        .map_err(|_| dpp::secp256k1::Error::InvalidSecretKey)
-        .and_then(SecretKey::from_secret_bytes)
+        .map_err(|_| EcdsaError::InvalidSecretKey)
+        .and_then(|bytes| SecretKey::from_bytes(&bytes))
         .map_err(|e| invalid(format!("invalid auto-accept private key: {e}")))?;
     Ok((secret_key, expiry))
 }
@@ -402,6 +406,29 @@ mod tests {
             Identifier::from([0x11u8; 32]),
             Identifier::from([0x22u8; 32]),
         )
+    }
+
+    #[test]
+    fn should_preserve_historical_auto_accept_signature_bytes() {
+        let (sender, recipient) = test_ids();
+        for scalar in 1..=64u8 {
+            let bytes = [scalar; 32];
+            let key = SecretKey::from_bytes(&bytes).unwrap();
+            let legacy = secp256k1::SecretKey::from_secret_bytes(bytes).unwrap();
+            let hash = build_message_hash(&sender, &recipient, 42);
+            let expected = legacy
+                .sign_ecdsa(secp256k1::Message::from_digest(hash))
+                .serialize_compact();
+            let proof = sign_auto_accept_proof(&key, &sender, &recipient, 42, 100);
+            assert_eq!(&proof[6..], &expected);
+            assert!(verify_auto_accept_proof_with_pubkey(
+                &key.public_key(),
+                &proof,
+                &sender,
+                &recipient,
+                42
+            ));
+        }
     }
 
     #[test]
@@ -573,7 +600,7 @@ mod tests {
         assert_eq!(proof.len(), 70);
         assert_eq!(auto_accept_proof_expiry(&proof), Some(expiry));
 
-        let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&owner_key);
+        let pubkey = owner_key.public_key();
         assert!(
             verify_auto_accept_proof_with_pubkey(&pubkey, &proof, &scanner, &owner, account_ref),
             "owner verifies the scanner's proof against its own re-derived pubkey"
@@ -595,14 +622,14 @@ mod tests {
 
     #[test]
     fn key_blob_round_trip_and_rejects_malformed() {
-        let key = SecretKey::from_secret_bytes([0x07u8; 32]).unwrap();
+        let key = SecretKey::from_bytes(&[0x07u8; 32]).unwrap();
         let blob = encode_auto_accept_key_blob(&key, 12345);
         assert_eq!(blob.len(), 38);
         assert_eq!(blob[0], 0x00); // key type
         assert_eq!(blob[5], 0x20); // key size
 
         let (k2, e2) = decode_auto_accept_key_blob(&blob).expect("decode");
-        assert_eq!(k2.to_secret_bytes(), key.to_secret_bytes());
+        assert_eq!(k2.to_bytes(), key.to_bytes());
         assert_eq!(e2, 12345);
 
         assert!(decode_auto_accept_key_blob(&blob[..37]).is_err(), "short");
@@ -616,7 +643,7 @@ mod tests {
 
     #[test]
     fn uri_round_trip_and_rejects_malformed() {
-        let key = SecretKey::from_secret_bytes([0x09u8; 32]).unwrap();
+        let key = SecretKey::from_bytes(&[0x09u8; 32]).unwrap();
         let blob = encode_auto_accept_key_blob(&key, 999);
         let uri = encode_dashpay_contact_uri("bobspizza", &blob);
         assert!(uri.starts_with("dash:?du=bobspizza&dapk="));
@@ -664,7 +691,7 @@ mod tests {
         );
 
         // The cap must not reject a normal-length (valid) dapk.
-        let key = SecretKey::from_secret_bytes([0x09u8; 32]).unwrap();
+        let key = SecretKey::from_bytes(&[0x09u8; 32]).unwrap();
         let blob = encode_auto_accept_key_blob(&key, 1);
         let uri = encode_dashpay_contact_uri("alice", &blob);
         assert!(
@@ -675,8 +702,8 @@ mod tests {
 
     #[test]
     fn verify_with_pubkey_rejects_truncated_and_no_expiry() {
-        let key = SecretKey::from_secret_bytes([0x05u8; 32]).unwrap();
-        let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&key);
+        let key = SecretKey::from_bytes(&[0x05u8; 32]).unwrap();
+        let pubkey = key.public_key();
         let (s, r) = test_ids();
         assert!(!verify_auto_accept_proof_with_pubkey(
             &pubkey, &[0u8; 3], &s, &r, 0

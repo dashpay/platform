@@ -744,7 +744,7 @@ mod tests {
     /// the returned scalar.
     #[test]
     fn connect_keypairs_match_the_pinned_vectors() {
-        use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+        use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
 
         for (network, key, expected) in [
             (
@@ -764,11 +764,8 @@ mod tests {
             assert_eq!(derived.derivation_path, key.derivation_path(network));
 
             let secret: [u8; 32] = *derived.private_key;
-            let sk = SecretKey::from_secret_bytes(secret).expect("valid scalar");
-            assert_eq!(
-                SecpPublicKey::from_secret_key(&sk).serialize(),
-                derived.public_key
-            );
+            let sk = SecretKey::from_bytes(&secret).expect("valid scalar");
+            assert_eq!(sk.public_key().to_compressed(), derived.public_key);
         }
     }
 

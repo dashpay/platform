@@ -295,9 +295,9 @@ mod tests {
     use dpp::validation::ValidationResult;
     use simple_signer::signer::SimpleSigner;
 
+    use crate::execution::validation::state_transition::test_helpers::random_ecdsa_secret_key;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::{signer, Network, PrivateKey};
-    use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -339,6 +339,8 @@ mod tests {
     use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::key::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::key::rand::SeedableRng as _;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -356,8 +358,6 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
-    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
-    use dpp::secp256k1::rand::SeedableRng as _;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
@@ -3931,7 +3931,7 @@ mod tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3939,7 +3939,7 @@ mod tests {
             security_level: SecurityLevel::HIGH,
             key_type: ECDSA_SECP256K1,
             read_only: false,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: None,
         };
@@ -3947,9 +3947,9 @@ mod tests {
         let signable_bytes = new_key
             .signable_bytes()
             .expect("expected to get signable bytes");
-        let secret = new_key_pair.secret_key();
+        let secret = &new_key_pair;
         let signature =
-            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, secret.to_bytes().as_ref()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -4031,7 +4031,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&mut rng);
+        let new_key_pair = random_ecdsa_secret_key(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -4039,7 +4039,7 @@ mod tests {
             security_level: SecurityLevel::MEDIUM,
             key_type: ECDSA_SECP256K1,
             read_only: true,
-            data: new_key_pair.public_key().serialize().to_vec().into(),
+            data: new_key_pair.public_key().to_compressed().to_vec().into(),
             signature: Default::default(),
             contract_bounds: Some(SingleContractDocumentType {
                 id: Dashpay.id(),
@@ -4066,8 +4066,8 @@ mod tests {
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
-        let secret = new_key_pair.secret_key();
-        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+        let secret = &new_key_pair;
+        new_key.signature = signer::sign(&data, secret.to_bytes().as_ref())
             .expect("expected to sign")
             .to_vec()
             .into();

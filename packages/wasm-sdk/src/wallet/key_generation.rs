@@ -7,7 +7,6 @@ use crate::impl_wasm_serde_conversions;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
-use dash_sdk::dpp::secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
@@ -93,10 +92,6 @@ impl WasmSdk {
         // Create private key
         let private_key = PrivateKey::from_byte_array(&key_bytes, net)
             .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
-
-        // Ensure secret key is valid before building info
-        SecretKey::from_secret_bytes(key_bytes)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
 
         let key_pair = Self::build_key_pair(&private_key, net, network_wasm.as_str())?;
         Ok(KeyPairWasm::from(key_pair))
@@ -219,14 +214,14 @@ impl WasmSdk {
         let message_bytes = message.as_bytes();
         let hash = sha256::Hash::hash(message_bytes);
 
-        // Sign the hash
-        let secret_key = SecretKey::from_secret_bytes(*private_key.inner.to_bytes())
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
+        // Preserve deterministic, non-grinding compact signature bytes.
+        let signature = private_key
+            .inner
+            .sign_recoverable(&hash.to_byte_array())
+            .signature()
+            .map_err(|e| WasmSdkError::generic(format!("Failed to encode signature: {}", e)))?;
 
-        let message_hash = dash_sdk::dpp::secp256k1::Message::from_digest(hash.to_byte_array());
-        let signature = secret_key.sign_ecdsa(message_hash);
-
-        Ok(hex::encode(signature.serialize_compact()))
+        Ok(hex::encode(signature.to_bytes()))
     }
 
     /// Generate deterministic test identity keys for SDK functional tests.
@@ -292,5 +287,33 @@ impl WasmSdk {
             .collect();
 
         Ok(to_object(&result)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1::{Message, SecretKey};
+
+    #[test]
+    fn should_preserve_message_signature_bytes_for_both_wif_encodings() {
+        let scalar = [1; 32];
+        let raw = SecretKey::from_secret_bytes(scalar).expect("valid scalar");
+        let mut private_key =
+            PrivateKey::from_byte_array(&scalar, Network::Testnet).expect("valid scalar");
+        for compressed in [true, false] {
+            private_key.compressed = compressed;
+            for i in 0..32 {
+                let message = format!("message {i}");
+                let digest = sha256::Hash::hash(message.as_bytes()).to_byte_array();
+                let expected = raw
+                    .sign_ecdsa(Message::from_digest(digest))
+                    .serialize_compact();
+                assert_eq!(
+                    WasmSdk::sign_message(&message, &private_key.to_wif()).expect("signature"),
+                    hex::encode(expected)
+                );
+            }
+        }
     }
 }

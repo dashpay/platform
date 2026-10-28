@@ -2011,6 +2011,7 @@ mod tests {
     //! 3. Reconcile must be idempotent and never clobber an existing
     //!    entry for the same txid.
 
+    use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
@@ -2511,11 +2512,11 @@ mod tests {
     ) -> Identity {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityPublicKey, SecurityLevel};
-        let data = dpp::secp256k1::PublicKey::from_secret_key(
-            &dpp::secp256k1::SecretKey::from_secret_bytes([0x37u8; 32]).expect("secret"),
-        )
-        .serialize()
-        .to_vec();
+        let data = EcdsaSecretKey::from_bytes(&[0x37u8; 32])
+            .expect("secret")
+            .public_key()
+            .to_compressed()
+            .to_vec();
         Identity::V0(IdentityV0 {
             id: Identifier::from(id_bytes),
             public_keys: [(
@@ -11138,12 +11139,12 @@ mod tests {
             contract_bounds: None,
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
-            data: dpp::secp256k1::PublicKey::from_secret_key(
-                &dpp::secp256k1::SecretKey::from_secret_bytes([0x24u8; 32]).expect("secret"),
-            )
-            .serialize()
-            .to_vec()
-            .into(),
+            data: EcdsaSecretKey::from_bytes(&[0x24u8; 32])
+                .expect("secret")
+                .public_key()
+                .to_compressed()
+                .to_vec()
+                .into(),
             disabled_at: None,
         });
         let our_identity = Identity::V0(IdentityV0 {
@@ -11406,9 +11407,9 @@ mod tests {
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
 
         // The contact's encryption keypair (the "sender" of the request).
-        let contact_secret = dpp::secp256k1::SecretKey::from_secret_bytes([0x42u8; 32])
-            .expect("valid contact secret");
-        let contact_public = dpp::secp256k1::PublicKey::from_secret_key(&contact_secret);
+        let contact_secret =
+            secp256k1::SecretKey::from_secret_bytes([0x42u8; 32]).expect("valid contact secret");
+        let contact_public = secp256k1::PublicKey::from_secret_key(&contact_secret);
 
         // Our side, through the production provider.
         let ours = provider
@@ -11500,12 +11501,12 @@ mod tests {
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: dpp::secp256k1::PublicKey::from_secret_key(
-                    &dpp::secp256k1::SecretKey::from_secret_bytes([byte; 32]).expect("secret"),
-                )
-                .serialize()
-                .to_vec()
-                .into(),
+                data: EcdsaSecretKey::from_bytes(&[byte; 32])
+                    .expect("secret")
+                    .public_key()
+                    .to_compressed()
+                    .to_vec()
+                    .into(),
                 disabled_at: None,
             })
         };
@@ -11677,7 +11678,7 @@ mod tests {
             async fn ecdh_shared_secret(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-                _peer: &dpp::secp256k1::PublicKey,
+                _peer: &secp256k1::PublicKey,
             ) -> Result<zeroize::Zeroizing<[u8; 32]>, crate::error::PlatformWalletError>
             {
                 Ok(zeroize::Zeroizing::new([0u8; 32]))
@@ -11685,13 +11686,13 @@ mod tests {
             async fn export_auto_accept_private_key(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<dpp::secp256k1::SecretKey, crate::error::PlatformWalletError> {
+            ) -> Result<EcdsaSecretKey, crate::error::PlatformWalletError> {
                 unimplemented!("auto-accept QR is a send-path method, not exercised by the drain")
             }
             async fn export_invitation_private_key(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<dpp::secp256k1::SecretKey, crate::error::PlatformWalletError> {
+            ) -> Result<EcdsaSecretKey, crate::error::PlatformWalletError> {
                 unimplemented!(
                     "invitation create is a send-path method, not exercised by the drain"
                 )

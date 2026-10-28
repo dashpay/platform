@@ -364,7 +364,7 @@ pub(crate) fn validate_recipient_key(
 /// drift from the discovery-time ownership decision.
 ///
 /// `derived_pubkey` is the 33-byte compressed pubkey re-derived at a
-/// breadcrumb path (`ExtendedPubKey::from_priv(..).public_key.serialize()`).
+/// breadcrumb path (`ExtendedPubKey::from_priv(..).public_key.to_compressed()`).
 /// `expected_key_data` is the on-chain key's `data`, discriminated by length:
 ///
 /// - **33 bytes** → the on-chain key is an `ECDSA_SECP256K1` key whose `data`
@@ -851,11 +851,11 @@ mod tests {
     /// Derive the compressed secp256k1 pubkey (`[u8; 33]`) for a fixed
     /// in-range scalar — the shape a breadcrumb re-derivation produces.
     fn fixed_scalar_and_compressed_pubkey() -> ([u8; 32], [u8; 33]) {
-        use dpp::secp256k1::{PublicKey, SecretKey};
+        use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
         let mut scalar = [0u8; 32];
         scalar[31] = 7;
-        let sk = SecretKey::from_secret_bytes(scalar).expect("in-range scalar");
-        let pubkey = PublicKey::from_secret_key(&sk).serialize();
+        let sk = SecretKey::from_bytes(&scalar).expect("in-range scalar");
+        let pubkey = sk.public_key().to_compressed();
         (scalar, pubkey)
     }
 

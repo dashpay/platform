@@ -32,6 +32,7 @@
 //!   established contact via their `DashpayExternalAccount`. Runs
 //!   the Core transaction path internally.
 
+use dashcore::ecdsa::EcdsaSecretKey;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -821,7 +822,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dpp::secp256k1::PublicKey,
+        peer: &secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, platform_wallet::PlatformWalletError> {
         self.signer
             .ecdh_shared_secret(path, peer)
@@ -831,28 +832,28 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, platform_wallet::PlatformWalletError> {
         let scalar = self
             .signer
             .export_auto_accept_private_key(path)
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dpp::secp256k1::SecretKey::from_secret_bytes(*scalar)
+        EcdsaSecretKey::from_bytes(&scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
     async fn export_invitation_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, platform_wallet::PlatformWalletError> {
         let scalar = self
             .signer
             .export_invitation_private_key(path)
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dpp::secp256k1::SecretKey::from_secret_bytes(*scalar)
+        EcdsaSecretKey::from_bytes(&scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 

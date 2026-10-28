@@ -514,10 +514,9 @@ async fn run() -> Result<(), String> {
     } else {
         // FRESH: generate a one-time key, build + Core-sign + broadcast the
         // asset lock, capturing all recovery credentials BEFORE broadcast.
-        let mut secp_rng = dpp::secp256k1::rand::rng();
-        let one_time_secret = dpp::secp256k1::SecretKey::new(&mut secp_rng);
+        let one_time_secret = dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::generate();
         let one_time_private_key =
-            PrivateKey::from_byte_array(one_time_secret.as_secret_bytes(), network)
+            PrivateKey::from_byte_array(&one_time_secret.to_bytes(), network)
                 .map_err(|e| format!("failed to construct asset-lock private key: {e}"))?;
         let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();

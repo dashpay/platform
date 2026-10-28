@@ -1,6 +1,7 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
 use super::signing_key::AvailableSigningKey;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -53,7 +54,7 @@ pub trait ContactCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dpp::secp256k1::PublicKey,
+        peer: &secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError>;
 
     /// Export the raw **auto-accept private key** at `path` (DIP-15 QR
@@ -67,7 +68,7 @@ pub trait ContactCryptoProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError>;
+    ) -> Result<EcdsaSecretKey, PlatformWalletError>;
 
     /// Export the raw **invitation-funding private key** at `path` (DIP-13
     /// sub-feature `3'`) — the second deliberate raw-key export (alongside
@@ -88,7 +89,7 @@ pub trait ContactCryptoProvider {
     async fn export_invitation_private_key(
         &self,
         _path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, PlatformWalletError> {
         Err(PlatformWalletError::InvalidIdentityData(
             "invitation private-key export is not supported by this crypto provider".to_string(),
         ))
@@ -204,14 +205,14 @@ impl ContactCryptoProvider for SeedCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dpp::secp256k1::PublicKey,
+        peer: &secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test ecdh derive: {e}"))
         })?;
         Ok(zeroize::Zeroizing::new(
             platform_encryption::derive_shared_key_ecdh(
-                &dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+                &secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
                     .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?,
                 peer,
             ),
@@ -221,22 +222,22 @@ impl ContactCryptoProvider for SeedCryptoProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
         })?;
-        dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+        EcdsaSecretKey::from_bytes(&xprv.private_key.to_bytes())
             .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))
     }
 
     async fn export_invitation_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dpp::secp256k1::SecretKey, PlatformWalletError> {
+    ) -> Result<EcdsaSecretKey, PlatformWalletError> {
         let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test export invitation: {e}"))
         })?;
-        dpp::secp256k1::SecretKey::from_secret_bytes(*xprv.private_key.to_bytes())
+        EcdsaSecretKey::from_bytes(&xprv.private_key.to_bytes())
             .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))
     }
 
@@ -372,7 +373,7 @@ pub enum AutoAcceptProofSource {
     /// QR (`dapk`), binding it to the accountReference this send computes.
     SignWithKey {
         /// The auto-accept private key handed out in the QR.
-        secret_key: dpp::secp256k1::SecretKey,
+        secret_key: EcdsaSecretKey,
         /// The proof's expiry (the key blob's timestamp / derivation index).
         expiry: u32,
     },
@@ -653,7 +654,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Recipient identity has no key at index {recipient_key_index}"
                     ))
                 })?;
-            dpp::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+            secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Recipient encryption public key is invalid: {e}"
                 ))
@@ -2529,25 +2530,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         .public_keys()
                         .get(contact_encryption_key_index)
                     {
-                        Some(k) => {
-                            match dpp::secp256k1::PublicKey::from_slice(k.data().as_slice()) {
-                                Ok(pk) => pk,
-                                Err(e) => {
-                                    tracing::warn!(
-                                        owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                                        error = %e,
-                                        "drain: contact encryption key invalid; marking channel broken"
-                                    );
-                                    self.mark_contact_channel_broken(
-                                        &entry.owner_identity_id,
-                                        &entry.contact_id,
-                                    )
-                                    .await;
-                                    cleared.push(entry.key());
-                                    continue;
-                                }
+                        Some(k) => match secp256k1::PublicKey::from_slice(k.data().as_slice()) {
+                            Ok(pk) => pk,
+                            Err(e) => {
+                                tracing::warn!(
+                                    owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                    error = %e,
+                                    "drain: contact encryption key invalid; marking channel broken"
+                                );
+                                self.mark_contact_channel_broken(
+                                    &entry.owner_identity_id,
+                                    &entry.contact_id,
+                                )
+                                .await;
+                                cleared.push(entry.key());
+                                continue;
                             }
-                        }
+                        },
                         None => {
                             // Left queued, not broken: the contact's identity
                             // can gain this key later, exactly as ours can, and
@@ -3075,7 +3074,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             };
             let valid = verify_auto_accept_proof_with_pubkey(
-                &pubkey.into(),
+                &pubkey,
                 proof,
                 &request.sender_id,
                 &owner,
@@ -3748,7 +3747,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Contact identity has no key at index {contact_encryption_key_index}"
                     ))
                 })?;
-            dpp::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+            secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Contact encryption public key is invalid: {e}"
                 ))
@@ -5898,7 +5897,7 @@ mod contact_info_provider_tests {
     /// the resident `derive_shared_key_ecdh` at the same path.
     #[tokio::test]
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
-        use dpp::secp256k1::{PublicKey, SecretKey};
+        use secp256k1::{PublicKey, SecretKey};
 
         let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
