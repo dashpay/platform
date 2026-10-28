@@ -1,7 +1,7 @@
 //! Shared lookups for token state-transition methods on
 //! [`IdentityWallet`]. All token actions need to (a) fetch the data
 //! contract by id and (b) resolve the canonical AUTHENTICATION /
-//! CRITICAL / ECDSA_SECP256K1 signing key on the actor identity,
+//! CRITICAL / ECDSA signing key on the actor identity,
 //! so those steps live here rather than being copy-pasted across each
 //! action file.
 //!
@@ -93,7 +93,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `ECDSA_SECP256K1`,
+    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
     /// bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen

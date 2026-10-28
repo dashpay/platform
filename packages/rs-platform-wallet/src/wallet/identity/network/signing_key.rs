@@ -726,7 +726,7 @@ pub(super) mod tests {
                     ..
                 } if *identity_id == identity
                     && security_levels == &[level]
-                    && key_types == &[KeyType::ECDSA_SECP256K1]
+                    && key_types == &WALLET_SIGNING_KEY_TYPES
             ),
             "{error:?}"
         );

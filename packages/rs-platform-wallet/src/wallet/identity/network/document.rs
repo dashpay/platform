@@ -104,7 +104,8 @@ where
 }
 
 /// The key that signs a document batch in `scope` whose document type requires
-/// `requirement`: an AUTHENTICATION, ECDSA_SECP256K1 key at a level consensus accepts.
+/// `requirement`: an AUTHENTICATION key of one of [`WALLET_SIGNING_KEY_TYPES`] at a level
+/// consensus accepts, in [`usable_signing_key`]'s order of preference.
 pub(super) fn document_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -172,8 +173,8 @@ impl IdentityWallet {
     ///      `(contract, owner, type, entropy)` there — the placeholder
     ///      id this build step assigns is overwritten.
     ///   3. Selects the signing `IdentityPublicKey` from the in-memory
-    ///      wallet manager: an AUTHENTICATION-purpose, ECDSA_SECP256K1
-    ///      key whose security level satisfies the document type's
+    ///      wallet manager: an AUTHENTICATION-purpose ECDSA key
+    ///      (`ECDSA_SECP256K1` preferred, `ECDSA_HASH160` accepted) whose security level satisfies the document type's
     ///      `security_level_requirement()` and whose bounds cover the
     ///      document type (see [`document_signing_key`]). Returns a clear error
     ///      if the owner identity isn't loaded or carries no qualifying
@@ -436,7 +437,7 @@ impl IdentityWallet {
     /// the user keeps control of which key signs. We still enforce the
     /// document state-transition signing rules here: the key must exist
     /// and pass [`check_document_signing_key`] — AUTHENTICATION-purpose,
-    /// ECDSA_SECP256K1, at an accepted level, enabled, unexpired and inside
+    /// a key type Platform verifies, at an accepted level, enabled, unexpired and inside
     /// its contract bounds — the same rules `create` uses (see
     /// `project_document_signing_key_purpose_bug`: signing with a
     /// non-AUTHENTICATION key, e.g. a TRANSFER/CRITICAL key, is rejected
@@ -1255,6 +1256,95 @@ mod tests {
         document_signing_key(identity, &KeyFilter(|_| true), requirement, scope())
             .unwrap()
             .map(|key| key.id())
+    }
+
+    #[tokio::test]
+    async fn should_sign_a_document_write_for_an_identity_holding_only_hash160_keys() {
+        use dpp::bls::native_bls::NativeBlsModule;
+        use dpp::data_contracts::SystemDataContract;
+        use dpp::document::DocumentV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::system_data_contracts::load_system_data_contract;
+        use dpp::util::hash::ripemd160_sha256;
+        use dpp::version::PlatformVersion;
+        use simple_signer::signer::SimpleSigner;
+
+        // The default key layout of identities older Dash Evo Tool versions created: every
+        // key a HASH160 of its public key
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+        let keys: Vec<IdentityPublicKey> = [
+            (0, SecurityLevel::MASTER),
+            (1, SecurityLevel::CRITICAL),
+            (2, SecurityLevel::HIGH),
+        ]
+        .into_iter()
+        .map(|(id, security_level)| {
+            let private_key = [id as u8 + 1; 32];
+            let secret = dpp::secp256k1::SecretKey::from_secret_bytes(private_key)
+                .expect("a valid secret key");
+            let public_key = secret.public_key().serialize();
+            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_HASH160,
+                read_only: false,
+                data: BinaryData::new(ripemd160_sha256(&public_key).to_vec()),
+                disabled_at: None,
+            });
+            signer.add_identity_public_key(key.clone(), private_key);
+            key
+        })
+        .collect();
+        let identity = identity(keys);
+
+        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+            .expect("the DashPay contract loads");
+        let profile = dashpay
+            .document_type_for_name("profile")
+            .expect("the profile type");
+        let key = document_signing_key(
+            &identity,
+            &signer,
+            profile.security_level_requirement(),
+            SigningScope::DocumentCreate {
+                document_type: profile,
+            },
+        )
+        .expect("the signer reaches the keys")
+        .expect("a HASH160 key signs a document write");
+        assert_eq!(key.id(), 2, "the HIGH key, as the profile type requires");
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([7; 32]),
+            owner_id: identity.id(),
+            properties: BTreeMap::from([(
+                "displayName".to_string(),
+                Value::Text("Alice".to_string()),
+            )]),
+            ..Default::default()
+        });
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            profile,
+            [9; 32],
+            key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("the HASH160 key signs the batch");
+        transition
+            .verify_identity_signed_signature(key, &NativeBlsModule, platform_version)
+            .expect("Platform verifies the signature by the HASH160 key");
     }
 
     fn bound_elsewhere(id: u32, level: SecurityLevel) -> IdentityPublicKey {

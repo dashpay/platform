@@ -29,9 +29,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// The key types Platform verifies an identity signature by (Drive's
 /// `validate_state_transition_identity_signed`). Pass these as `key_types` to
 /// [`check_signing_key`] for a key the caller chose, so it is refused exactly where Platform
-/// refuses it. The wallet's own choice of a credit transfer or withdrawal key uses them too,
-/// so an `ECDSA_HASH160` TRANSFER key stays usable. Other automatic selection uses the
-/// narrower [`WALLET_SIGNING_KEY_TYPES`].
+/// refuses it. The wallet's own choice of a credit transfer or withdrawal key uses them too.
+/// Other automatic selection uses the narrower [`WALLET_SIGNING_KEY_TYPES`].
 pub const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
     KeyType::ECDSA_SECP256K1,
     KeyType::BLS12_381,
@@ -42,7 +41,13 @@ pub const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
 /// withdrawal key, which may be any of [`PLATFORM_SIGNING_KEY_TYPES`]. Pass these as
 /// `key_types` to [`usable_signing_key`] to choose the key the wallet itself would; a key the
 /// caller chose is checked against [`PLATFORM_SIGNING_KEY_TYPES`] instead.
-pub const WALLET_SIGNING_KEY_TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+///
+/// `ECDSA_HASH160` is here so identities whose keys hold only the hash of the public key, the
+/// default layout older Dash Evo Tool versions created, keep signing wherever Platform
+/// accepts the key; [`usable_signing_key`] still prefers an `ECDSA_SECP256K1` key, the type
+/// DIP-11 defines.
+pub const WALLET_SIGNING_KEY_TYPES: [KeyType; 2] =
+    [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160];
 
 /// What a signature authorizes, as far as a key's contract bounds go.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,10 +139,11 @@ impl SigningScope<'_> {
 /// contract group: membership is state the wallet does not hold. A key without limits is
 /// preferred over any key with limits, whatever their security levels: a key with a budget or
 /// an expiry is an application key, taken only when no unlimited key qualifies. Within each
-/// group the weakest qualifying security level goes first, then the lowest key id: DIP-11 has
-/// clients ask for stronger authentication the stronger the key, so a HIGH write signs with a
-/// HIGH key rather than a CRITICAL one, and a stronger key signs only when the signer cannot
-/// reach a weaker one. A disabled key is skipped, and so is a key whose expiry has
+/// group a key of a type DIP-11 defines goes before an `ECDSA_HASH160` one, which holds only
+/// the hash of its public key; then the weakest qualifying security level, then the lowest key
+/// id: DIP-11 has clients ask for stronger authentication the stronger the key, so a HIGH
+/// write signs with a HIGH key rather than a CRITICAL one, and a stronger key signs only when
+/// the signer cannot reach a weaker one. A disabled key is skipped, and so is a key whose expiry has
 /// passed the wall clock (the block time trails it by seconds at most), or any key with an
 /// expiry when the system clock reads before the Unix epoch. What is left of a
 /// budget is not known offline; a spent key is refused by Platform.
@@ -187,11 +193,13 @@ fn usable_signing_key_at<'a>(
         .values()
         .filter(|key| qualifies(key))
         .collect();
-    // Unlimited keys first, then within each group the weakest level (the highest
-    // `SecurityLevel` discriminant: MASTER is 0, MEDIUM 3), then the lowest key id.
+    // Unlimited keys first, then within each group a DIP-11 key type before HASH160, then the
+    // weakest level (the highest `SecurityLevel` discriminant: MASTER is 0, MEDIUM 3), then the
+    // lowest key id.
     candidates.sort_by_key(|key| {
         (
             key.has_limits(),
+            key.key_type() == KeyType::ECDSA_HASH160,
             Reverse(key.security_level() as u8),
             key.id(),
         )
@@ -419,7 +427,14 @@ pub(super) mod tests {
     }
 
     const LEVELS: [SecurityLevel; 2] = [SecurityLevel::HIGH, SecurityLevel::CRITICAL];
-    const TYPES: [KeyType; 1] = [KeyType::ECDSA_SECP256K1];
+    /// The key types the wallet's own choice reads, as production passes them.
+    const TYPES: [KeyType; 2] = WALLET_SIGNING_KEY_TYPES;
+
+    fn hash160(mut key: IdentityPublicKey) -> IdentityPublicKey {
+        key.set_key_type(KeyType::ECDSA_HASH160);
+        key.set_data(BinaryData::new(vec![key.id() as u8; 20]));
+        key
+    }
 
     #[test]
     fn prefers_a_key_without_limits_over_an_earlier_limited_one() {
@@ -643,6 +658,40 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn should_prefer_a_raw_public_key_over_a_hash160_key_of_a_weaker_level() {
+        // DIP-11 keys hold the public key itself; older Dash Evo Tool identities hold HASH160
+        let identity = identity(vec![
+            key(1, SecurityLevel::CRITICAL),
+            hash160(key(2, SecurityLevel::HIGH)),
+        ]);
+        assert_eq!(pick(&identity).map(|key| key.id()), Some(1));
+    }
+
+    #[test]
+    fn should_sign_with_a_hash160_key_when_the_identity_holds_no_other() {
+        // The default key layout of identities older Dash Evo Tool versions created
+        let identity = identity(vec![
+            hash160(key(0, SecurityLevel::MASTER)),
+            hash160(key(1, SecurityLevel::CRITICAL)),
+            hash160(key(2, SecurityLevel::HIGH)),
+        ]);
+        assert_eq!(
+            pick(&identity).map(|key| key.id()),
+            Some(2),
+            "the weakest level the requirement accepts, among HASH160 keys too"
+        );
+    }
+
+    #[test]
+    fn should_rank_an_unlimited_hash160_key_before_a_limited_raw_one() {
+        let identity = identity(vec![
+            key(1, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+            hash160(key(2, SecurityLevel::HIGH)),
+        ]);
+        assert_eq!(pick(&identity).map(|key| key.id()), Some(2));
+    }
+
+    #[test]
     fn should_take_the_lowest_key_id_among_keys_of_the_weakest_level() {
         let identity = identity(vec![
             key(1, SecurityLevel::CRITICAL),
@@ -839,10 +888,10 @@ pub(super) mod tests {
                 _
             ))
         ));
-        let mut hash160 = key(1, SecurityLevel::HIGH);
-        hash160.set_key_type(KeyType::ECDSA_HASH160);
+        let mut eddsa = key(1, SecurityLevel::HIGH);
+        eddsa.set_key_type(KeyType::EDDSA_25519_HASH160);
         assert!(matches!(
-            check(&hash160, document_scope())
+            check(&eddsa, document_scope())
                 .as_ref()
                 .err()
                 .and_then(signature_refusal_of),
@@ -1064,7 +1113,7 @@ pub(super) mod tests {
     fn should_report_a_wrong_key_type_before_a_wrong_purpose_as_drive_does() {
         let mut both_wrong = key(1, SecurityLevel::HIGH);
         both_wrong.set_purpose(Purpose::TRANSFER);
-        both_wrong.set_key_type(KeyType::ECDSA_HASH160);
+        both_wrong.set_key_type(KeyType::EDDSA_25519_HASH160);
         let refusal = check(&both_wrong, document_scope());
         assert!(
             matches!(

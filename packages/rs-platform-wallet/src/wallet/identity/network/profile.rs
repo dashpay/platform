@@ -9,7 +9,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 #[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
-use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
@@ -41,7 +40,7 @@ fn profile_signing_key<'a>(
         dashpay_contract_id,
         "profile",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+        &super::WALLET_SIGNING_KEY_TYPES,
     )
 }
 
@@ -585,6 +584,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::KeyType;
     use dpp::version::PlatformVersion;
 
     fn profile_key(key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKeyV0 {
