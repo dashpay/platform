@@ -163,7 +163,7 @@ async fn prepare_purchase_state_transition<S: Signer<IdentityPublicKey>>(
     Ok(transition)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mocks"))]
 mod submission_tests {
     use super::*;
     use crate::sdk::put_test_support::PutFixture;

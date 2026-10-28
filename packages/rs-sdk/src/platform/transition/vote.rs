@@ -173,7 +173,7 @@ fn get_voting_identity_id(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mocks"))]
 mod submission_tests {
     use super::*;
     use crate::platform::transition::masternode_vote_keys::voter_identity_voting_key;
