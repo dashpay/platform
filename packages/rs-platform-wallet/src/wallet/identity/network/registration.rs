@@ -67,6 +67,7 @@ use crate::wallet::asset_lock::orchestration::{
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
 
+use super::creation_keys::enforce_identity_create_floor;
 use super::*;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,11 @@ impl IdentityWallet {
     ///    pre-DIP-11 check (key id 0 is AUTHENTICATION/MASTER, since it
     ///    signs the IdentityCreate transition). Build `keys` from
     ///    [`IdentityCreationKeyLayout`] unless the caller owns its layout.
+    ///    A lock this call builds must pay for `keys`
+    ///    ([`Self::identity_creation_min_funding_duffs`]): a
+    ///    `FromWalletBalance` amount below that is refused with
+    ///    [`PlatformWalletError::AssetLockInsufficientFunds`] before
+    ///    anything is built, and a drain floor is raised to it.
     /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof +
     ///    derivation path.
     /// 3. Submit via
@@ -135,6 +141,10 @@ impl IdentityWallet {
         // pre-DIP-11 keys unless this is the exempt resume (a tracked
         // registration lock that cannot fund the DIP-11 key set).
         self.ensure_creation_keys_permitted(&keys, &funding).await?;
+        // A lock this call builds must pay for `keys`, checked before it is
+        // built or broadcast: an underfunded one would be rejected by
+        // Platform and could later resume as a pre-DIP-11 registration.
+        let funding = enforce_identity_create_floor(funding, &keys, self.sdk.version())?;
 
         // Step 2: resolve funding to a proof + derivation path. The
         // resolver catches IS-lock timeouts and surfaces them as a

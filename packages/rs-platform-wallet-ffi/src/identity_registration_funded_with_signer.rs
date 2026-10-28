@@ -16,6 +16,7 @@
 //!   [`rs_sdk_ffi::MnemonicResolverCoreSigner`].
 
 use dashcore::hashes::Hash;
+use dashcore::{OutPoint, Txid};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use platform_wallet::AssetLockFunding;
@@ -33,7 +34,7 @@ use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 fn existing_asset_lock_funding(
-    out_point: dashcore::OutPoint,
+    out_point: OutPoint,
     consume_invitation_voucher: bool,
 ) -> AssetLockFunding {
     AssetLockFunding::FromExistingAssetLock {
@@ -110,6 +111,11 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         // two disagreed.
         let network = wallet.sdk().network;
         block_on_worker(async move {
+            // Rust picks and runs the creation check before either signer
+            // is touched.
+            let keys = identity_wallet
+                .creation_keys_for_funding(keys_map, &funding)
+                .await?;
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
@@ -120,9 +126,6 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
                     network,
                 )
             };
-            let keys = identity_wallet
-                .creation_keys_for_funding(keys_map, &funding)
-                .await?;
             identity_wallet
                 .register_identity_with_funding(
                     funding,
@@ -215,8 +218,8 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     // convention already used across `rs-drive-abci` /
     // `rs-platform-wallet-ffi/src/persistence.rs`.
     let out_point_ffi = *out_point;
-    let resume_outpoint = dashcore::OutPoint {
-        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+    let resume_outpoint = OutPoint {
+        txid: Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
 
@@ -236,6 +239,11 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         let wallet_id = wallet.wallet_id();
         let network = wallet.sdk().network;
         block_on_worker(async move {
+            // Rust picks and runs the creation check before either signer
+            // is touched.
+            let keys = identity_wallet
+                .creation_keys_for_funding(keys_map, &funding)
+                .await?;
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
@@ -246,9 +254,6 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
                     network,
                 )
             };
-            let keys = identity_wallet
-                .creation_keys_for_funding(keys_map, &funding)
-                .await?;
             identity_wallet
                 .register_identity_with_funding(
                     funding,
@@ -292,8 +297,8 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_key_layout(
     check_ptr!(out_point);
     check_ptr!(out_layout);
     let out_point_ffi = *out_point;
-    let resume_outpoint = dashcore::OutPoint {
-        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+    let resume_outpoint = OutPoint {
+        txid: Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -355,8 +360,8 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     *out_new_balance = 0;
 
     let out_point_ffi = *out_point;
-    let reclaim_outpoint = dashcore::OutPoint {
-        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+    let reclaim_outpoint = OutPoint {
+        txid: Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
     let identity_id = Identifier::from(*identity_id);
@@ -409,33 +414,6 @@ mod topup_existing_lock_guard_tests {
             txid: [0u8; 32],
             vout: 0,
         }
-    }
-
-    #[test]
-    fn should_refuse_null_pointers_when_querying_the_resume_key_layout() {
-        let out_point = OutPointFFI {
-            txid: [0u8; 32],
-            vout: 0,
-        };
-        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
-        let res =
-            unsafe { platform_wallet_resume_identity_key_layout(0, std::ptr::null(), &mut layout) };
-        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-        let res = unsafe {
-            platform_wallet_resume_identity_key_layout(0, &out_point, std::ptr::null_mut())
-        };
-        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-    }
-
-    #[test]
-    fn should_report_an_unknown_wallet_when_querying_the_resume_key_layout() {
-        let out_point = OutPointFFI {
-            txid: [0u8; 32],
-            vout: 0,
-        };
-        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
-        let res = unsafe { platform_wallet_resume_identity_key_layout(0, &out_point, &mut layout) };
-        assert_ne!(res.code, PlatformWalletFFIResultCode::Success);
     }
 
     #[test]
@@ -509,7 +487,7 @@ mod topup_existing_lock_guard_tests {
 
     #[test]
     fn topup_reclaim_forwards_explicit_invitation_authority() {
-        let out_point = dashcore::OutPoint::null();
+        let out_point = OutPoint::null();
         assert!(matches!(
             existing_asset_lock_funding(out_point, true),
             AssetLockFunding::FromExistingAssetLock {
@@ -517,5 +495,215 @@ mod topup_existing_lock_guard_tests {
                 consume_invitation_voucher: true,
             } if actual == out_point
         ));
+    }
+}
+
+#[cfg(test)]
+mod creation_keys_wiring_tests {
+    use super::*;
+    use std::ffi::CStr;
+    use std::ptr::{self, NonNull};
+    use std::sync::Arc;
+
+    use platform_wallet::test_support::{
+        test_platform_wallet_manager, track_registration_asset_lock, NoopTestPersister,
+    };
+    use platform_wallet::{IdentityCreationKeyLayout, PlatformWalletManager};
+
+    use crate::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
+    use crate::runtime::runtime;
+
+    const TRACKED_TXID: [u8; 32] = [7; 32];
+    const PUBKEY: [u8; 33] = [0x02; 33];
+
+    /// A wallet handle over a real wallet, optionally tracking a
+    /// registration lock of `amount_duffs` at [`TRACKED_TXID`]:0. The
+    /// returned manager owns the wallet and must outlive the calls.
+    fn live_wallet(
+        tracked_amount_duffs: Option<u64>,
+    ) -> (Arc<PlatformWalletManager<NoopTestPersister>>, Handle) {
+        runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+            if let Some(amount) = tracked_amount_duffs {
+                let out_point = OutPoint {
+                    txid: Txid::from_byte_array(TRACKED_TXID),
+                    vout: 0,
+                };
+                track_registration_asset_lock(&wallet, out_point, amount).await;
+            }
+            (manager, PLATFORM_WALLET_STORAGE.insert(wallet))
+        })
+    }
+
+    fn tracked_out_point() -> OutPointFFI {
+        OutPointFFI {
+            txid: TRACKED_TXID,
+            vout: 0,
+        }
+    }
+
+    /// One FFI row per slot of `layout` (no contract bounds: only the
+    /// non-DashPay layouts are used here).
+    fn rows(layout: IdentityCreationKeyLayout) -> Vec<IdentityPubkeyFFI> {
+        layout
+            .slots()
+            .iter()
+            .map(|slot| IdentityPubkeyFFI {
+                key_id: slot.key_id,
+                key_type: slot.key_type as u8,
+                purpose: slot.purpose as u8,
+                security_level: slot.security_level as u8,
+                pubkey_bytes: PUBKEY.as_ptr(),
+                pubkey_len: PUBKEY.len(),
+                read_only: false,
+                contract_bounds_kind: 0,
+                contract_bounds_id: ptr::null(),
+                contract_bounds_document_type: ptr::null(),
+                has_total_budget: false,
+                total_budget: 0,
+                has_expires_at: false,
+                expires_at: 0,
+            })
+            .collect()
+    }
+
+    /// Non-null signer handles that are never dereferenced: the creation
+    /// check fails before either signer is touched.
+    fn dangling_signers() -> (*mut SignerHandle, *mut MnemonicResolverHandle) {
+        (
+            NonNull::<SignerHandle>::dangling().as_ptr(),
+            NonNull::<MnemonicResolverHandle>::dangling().as_ptr(),
+        )
+    }
+
+    /// The result's code and message, freeing the result.
+    fn take(mut result: PlatformWalletFFIResult) -> (PlatformWalletFFIResultCode, String) {
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        let code = result.code;
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    fn resume_layout(
+        handle: Handle,
+        out_point: &OutPointFFI,
+    ) -> (PlatformWalletFFIResultCode, IdentityCreationKeyLayoutFFI) {
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let result =
+            unsafe { platform_wallet_resume_identity_key_layout(handle, out_point, &mut layout) };
+        (take(result).0, layout)
+    }
+
+    fn resume(
+        handle: Handle,
+        layout: IdentityCreationKeyLayout,
+    ) -> (PlatformWalletFFIResultCode, String) {
+        let rows = rows(layout);
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        take(unsafe {
+            platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                handle,
+                &tracked_out_point(),
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                false,
+                &mut out_id,
+                &mut out_handle,
+            )
+        })
+    }
+
+    #[test]
+    fn should_refuse_a_wallet_funded_registration_without_a_medium_key_before_signing() {
+        let (_manager, handle) = live_wallet(None);
+        let rows = rows(IdentityCreationKeyLayout::AssetLockResume);
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        let (code, message) = take(unsafe {
+            platform_wallet_register_identity_with_funding_signer(
+                handle,
+                10_000_000,
+                0,
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("MEDIUM"), "unexpected message: {message}");
+        PLATFORM_WALLET_STORAGE.remove(handle);
+    }
+
+    #[test]
+    fn should_resume_an_underfunded_lock_only_with_the_four_legacy_keys() {
+        let (_manager, handle) = live_wallet(Some(1));
+        let (code, layout) = resume_layout(handle, &tracked_out_point());
+        assert_eq!(code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(layout, IdentityCreationKeyLayoutFFI::AssetLockResume);
+
+        let (code, message) = resume(handle, IdentityCreationKeyLayout::NewIdentity);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(
+            message.contains("exactly the four pre-DIP-11 keys"),
+            "unexpected message: {message}"
+        );
+        PLATFORM_WALLET_STORAGE.remove(handle);
+    }
+
+    #[test]
+    fn should_require_the_medium_key_to_resume_an_amply_funded_lock() {
+        let (_manager, handle) = live_wallet(Some(10_000_000));
+        let (code, layout) = resume_layout(handle, &tracked_out_point());
+        assert_eq!(code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(layout, IdentityCreationKeyLayoutFFI::NewIdentity);
+
+        let (code, message) = resume(handle, IdentityCreationKeyLayout::AssetLockResume);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("MEDIUM"), "unexpected message: {message}");
+        PLATFORM_WALLET_STORAGE.remove(handle);
+    }
+
+    #[test]
+    fn should_report_an_untracked_outpoint_or_unknown_wallet_when_querying_the_resume_layout() {
+        let (_manager, handle) = live_wallet(None);
+        assert_eq!(
+            resume_layout(handle, &tracked_out_point()).0,
+            PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
+        );
+        PLATFORM_WALLET_STORAGE.remove(handle);
+        assert_eq!(
+            resume_layout(handle, &tracked_out_point()).0,
+            PlatformWalletFFIResultCode::NotFound
+        );
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_when_querying_the_resume_key_layout() {
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let (code, _) = take(unsafe {
+            platform_wallet_resume_identity_key_layout(0, ptr::null(), &mut layout)
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        let (code, _) = take(unsafe {
+            platform_wallet_resume_identity_key_layout(0, &tracked_out_point(), ptr::null_mut())
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

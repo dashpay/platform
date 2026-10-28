@@ -14,6 +14,8 @@ use platform_wallet::{IdentityCreationKeyLayout, IdentityCreationKeySlot};
 
 use crate::check_ptr;
 use crate::error::*;
+use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Which key layout an identity-creation flow registers. Mirrors
 /// [`IdentityCreationKeyLayout`].
@@ -194,12 +196,109 @@ pub unsafe extern "C" fn platform_wallet_identity_creation_key_layout_free(
     slots.count = 0;
 }
 
+/// Write the minimum asset-lock value (duffs) that registers `layout` at
+/// the wallet's platform version to `out_duffs`, from the versioned fee
+/// schedule (`IdentityWallet::identity_creation_min_funding_duffs`). Hosts
+/// show and enforce it; Rust refuses a wallet-funded registration below it.
+///
+/// # Safety
+/// `out_duffs` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_creation_min_funding_duffs(
+    wallet_handle: Handle,
+    layout: IdentityCreationKeyLayoutFFI,
+    out_duffs: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_duffs);
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet
+            .identity()
+            .identity_creation_min_funding_duffs(layout.into())
+    });
+    let result = unwrap_option_or_return!(option);
+    *out_duffs = unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Minimum fees (credits) of an address-funded identity create, one per
+/// input count: `items[n - 1]` is the fee with `n` inputs, and `count` is
+/// the protocol's maximum input count. Release with
+/// [`platform_wallet_identity_creation_from_addresses_min_fees_free`].
+#[repr(C)]
+pub struct IdentityCreationFeesFFI {
+    pub items: *mut u64,
+    pub count: usize,
+}
+
+/// Write the minimum fees of an address-funded identity create of `layout`
+/// (no refund output) at the wallet's platform version to `out_fees`, from
+/// the versioned fee schedule
+/// (`IdentityWallet::identity_creation_from_addresses_min_fees`).
+///
+/// On error `*out_fees` is left empty.
+///
+/// # Safety
+/// `out_fees` must be a valid, writable pointer. Release a populated result
+/// with [`platform_wallet_identity_creation_from_addresses_min_fees_free`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_creation_from_addresses_min_fees(
+    wallet_handle: Handle,
+    layout: IdentityCreationKeyLayoutFFI,
+    out_fees: *mut IdentityCreationFeesFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_fees);
+    *out_fees = IdentityCreationFeesFFI {
+        items: ptr::null_mut(),
+        count: 0,
+    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet
+            .identity()
+            .identity_creation_from_addresses_min_fees(layout.into())
+    });
+    let result = unwrap_option_or_return!(option);
+    let fees = unwrap_result_or_return!(result);
+    let mut boxed = fees.into_boxed_slice();
+    *out_fees = IdentityCreationFeesFFI {
+        items: boxed.as_mut_ptr(),
+        count: boxed.len(),
+    };
+    std::mem::forget(boxed);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Release fees written by
+/// [`platform_wallet_identity_creation_from_addresses_min_fees`] and reset
+/// the struct to empty. Safe on an empty or null struct.
+///
+/// # Safety
+/// `fees` must be null or point at a struct populated by
+/// [`platform_wallet_identity_creation_from_addresses_min_fees`] that was
+/// not freed yet.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_creation_from_addresses_min_fees_free(
+    fees: *mut IdentityCreationFeesFFI,
+) {
+    if fees.is_null() {
+        return;
+    }
+    let fees = &mut *fees;
+    if !fees.items.is_null() {
+        drop(Vec::from_raw_parts(fees.items, fees.count, fees.count));
+    }
+    fees.items = ptr::null_mut();
+    fees.count = 0;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_wallet::test_support::test_platform_wallet_manager;
     use std::ffi::CStr;
+
+    use crate::runtime::runtime;
 
     fn read_layout(layout: IdentityCreationKeyLayoutFFI) -> Vec<(u32, u32, u8, u8, u8, u8)> {
         let mut out = IdentityCreationKeySlotsFFI {
@@ -316,5 +415,84 @@ mod tests {
             count: 0,
         };
         unsafe { platform_wallet_identity_creation_key_layout_free(&mut empty) };
+    }
+
+    #[test]
+    fn should_marshal_the_rust_creation_minimums_for_each_layout() {
+        let (manager, wallet) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+            (manager, wallet)
+        });
+        let handle = PLATFORM_WALLET_STORAGE.insert(wallet.clone());
+        for (ffi, layout) in [
+            (
+                IdentityCreationKeyLayoutFFI::NewIdentity,
+                IdentityCreationKeyLayout::NewIdentity,
+            ),
+            (
+                IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys,
+                IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
+            ),
+            (
+                IdentityCreationKeyLayoutFFI::AssetLockResume,
+                IdentityCreationKeyLayout::AssetLockResume,
+            ),
+        ] {
+            let mut duffs = 0u64;
+            let result = unsafe {
+                platform_wallet_identity_creation_min_funding_duffs(handle, ffi, &mut duffs)
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_eq!(
+                duffs,
+                wallet
+                    .identity()
+                    .identity_creation_min_funding_duffs(layout)
+                    .expect("fee")
+            );
+
+            let mut fees = IdentityCreationFeesFFI {
+                items: ptr::null_mut(),
+                count: 0,
+            };
+            let result = unsafe {
+                platform_wallet_identity_creation_from_addresses_min_fees(handle, ffi, &mut fees)
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert_eq!(
+                unsafe { std::slice::from_raw_parts(fees.items, fees.count) },
+                wallet
+                    .identity()
+                    .identity_creation_from_addresses_min_fees(layout)
+                    .expect("fees")
+                    .as_slice()
+            );
+            unsafe { platform_wallet_identity_creation_from_addresses_min_fees_free(&mut fees) };
+            assert!(fees.items.is_null());
+            assert_eq!(fees.count, 0);
+        }
+
+        PLATFORM_WALLET_STORAGE.remove(handle);
+        let mut duffs = 0u64;
+        let result = unsafe {
+            platform_wallet_identity_creation_min_funding_duffs(
+                handle,
+                IdentityCreationKeyLayoutFFI::NewIdentity,
+                &mut duffs,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        drop(manager);
+    }
+
+    #[test]
+    fn should_tolerate_freeing_null_or_empty_fees() {
+        unsafe { platform_wallet_identity_creation_from_addresses_min_fees_free(ptr::null_mut()) };
+        let mut empty = IdentityCreationFeesFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        unsafe { platform_wallet_identity_creation_from_addresses_min_fees_free(&mut empty) };
     }
 }

@@ -34,14 +34,15 @@
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jlongArray, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
 use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_creation_key_layout::{
-    IdentityCreationKeyLayoutFFI, IdentityCreationKeySlotFFI, IdentityCreationKeySlotsFFI,
+    IdentityCreationFeesFFI, IdentityCreationKeyLayoutFFI, IdentityCreationKeySlotFFI,
+    IdentityCreationKeySlotsFFI,
 };
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
@@ -698,6 +699,118 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 }
 
 // ── Registration (wallet-balance funded) ──────────────────────────────
+
+/// The minimum asset-lock value (duffs) that registers the layout with
+/// ordinal `layout` at the wallet's platform version, from
+/// `platform_wallet_identity_creation_min_funding_duffs`. Kotlin shows and
+/// enforces it instead of keeping a copy of the fee schedule. Returns `-1`
+/// with a pending `DashSDKException` on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identityCreationMinFundingDuffs(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    layout: jint,
+) -> jlong {
+    guard(&mut env, -1, |env| {
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return -1;
+        };
+        let mut duffs = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_min_funding_duffs(
+                wallet_handle as Handle,
+                layout,
+                &mut duffs,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        match jlong::try_from(duffs) {
+            Ok(duffs) => duffs,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "identity creation minimum exceeds a Java long");
+                -1
+            }
+        }
+    })
+}
+
+/// The minimum fees (credits) of an address-funded identity create of the
+/// layout with ordinal `layout`, without a refund output, at the wallet's
+/// platform version: element `n - 1` is the fee with `n` inputs, and the
+/// length is the protocol's maximum input count. Thin marshal of
+/// `platform_wallet_identity_creation_from_addresses_min_fees`. Returns
+/// `null` with a pending `DashSDKException` on error.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identityCreationFromAddressesMinFees(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    layout: jint,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(layout) = layout_from_ord(layout) else {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("unknown identity creation key layout {layout}"),
+            );
+            return ptr::null_mut();
+        };
+        let mut fees = IdentityCreationFeesFFI {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_from_addresses_min_fees(
+                wallet_handle as Handle,
+                layout,
+                &mut fees,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let values: Option<Vec<jlong>> = if fees.items.is_null() {
+            Some(Vec::new())
+        } else {
+            unsafe { std::slice::from_raw_parts(fees.items, fees.count) }
+                .iter()
+                .map(|fee| jlong::try_from(*fee).ok())
+                .collect()
+        };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_identity_creation_from_addresses_min_fees_free(
+                &mut fees,
+            )
+        };
+        let Some(values) = values else {
+            throw_sdk_exception(env, 1, "identity creation fee exceeds a Java long");
+            return ptr::null_mut();
+        };
+        let Ok(len) = jint::try_from(values.len()) else {
+            throw_sdk_exception(env, 1, "too many identity creation fees");
+            return ptr::null_mut();
+        };
+        match env.new_long_array(len) {
+            Ok(arr) => {
+                if env.set_long_array_region(&arr, 0, &values).is_err() {
+                    ptr::null_mut()
+                } else {
+                    arr.into_raw()
+                }
+            }
+            Err(_) => ptr::null_mut(),
+        }
+    })
+}
 
 /// The creation key layout ordinal (see [`layout_from_ord`]) Rust decides
 /// for resuming the tracked registration lock at the outpoint, from
