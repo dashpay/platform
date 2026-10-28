@@ -49,6 +49,8 @@ use ciborium::value::Value;
 
 #[cfg(test)]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+#[cfg(all(test, feature = "server"))]
+use crate::drive::votes::resolved::votes::resolved_yes_no_vote::ResolvedYesNoVote;
 #[cfg(test)]
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 #[cfg(test)]
@@ -65,10 +67,16 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::document::DocumentV0Setters;
 #[cfg(test)]
 use dpp::platform_value;
+#[cfg(all(test, feature = "server"))]
+use dpp::platform_value::BinaryData;
 #[cfg(test)]
 use dpp::platform_value::Bytes32;
+#[cfg(all(test, feature = "server"))]
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 #[cfg(test)]
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+#[cfg(all(test, feature = "server"))]
+use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
 #[cfg(test)]
 use rand::rngs::StdRng;
 #[cfg(test)]
@@ -240,6 +248,54 @@ pub(crate) fn add_dpns_name_contenders(
             .expect("expected to add the contender");
     }
     vote_poll
+}
+
+#[cfg(all(test, feature = "server"))]
+/// The yes/no poll rs-drive's tests open: it passes on more than two thirds of yes over yes plus
+/// no, with at least 400 voting power cast.
+pub(crate) fn test_yes_no_vote_poll() -> YesNoVotePoll {
+    YesNoVotePoll {
+        resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        supermajority_numerator: 2,
+        supermajority_denominator: 3,
+        minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+/// Opens `vote_poll` to end at 1_000, written straight to Drive at the default block with no
+/// validation, and registers each `(voter, strength, choice)` vote on it as a first vote.
+pub(crate) fn open_yes_no_vote_poll_with_votes(
+    drive: &Drive,
+    vote_poll: &YesNoVotePoll,
+    votes: &[([u8; 32], u8, YesNoAbstainVoteChoice)],
+    platform_version: &PlatformVersion,
+) {
+    drive
+        .open_yes_no_vote_poll(
+            vote_poll,
+            1_000,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+        )
+        .expect("expected to open the yes/no vote poll");
+    for (voter, strength, vote_choice) in votes {
+        drive
+            .register_yes_no_identity_vote(
+                *voter,
+                *strength,
+                ResolvedYesNoVote {
+                    vote_poll: vote_poll.clone(),
+                    vote_choice: *vote_choice,
+                    previous_vote_choice_to_remove: None,
+                },
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to register the vote");
+    }
 }
 
 #[cfg(test)]
