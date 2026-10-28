@@ -21,6 +21,7 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::keys::OrchardKeySet;
 use crate::wallet::shielded::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator};
@@ -274,6 +275,32 @@ async fn should_preserve_tree_height_across_reopen_and_ignore_one_block_behind_s
     assert_eq!(store.last_synced_note_index(id).unwrap(), 2);
     store.reset_commitment_tree().unwrap();
     assert_eq!(store.tree_sync_height().unwrap(), None);
+}
+
+#[test]
+fn should_reset_scan_metadata_when_rewinding_for_rebuild() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store =
+        FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100).unwrap();
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let with_notes = SubwalletId::new([42; 32], 0);
+    let empty = SubwalletId::new([42; 32], 1);
+    let (note, _) = owned_note(&keys, 0);
+    store.save_note(with_notes, &note).unwrap();
+    store.set_last_synced_note_index(with_notes, 2).unwrap();
+    store.set_last_synced_note_index(empty, 2).unwrap();
+
+    store.rewind_scan_watermarks();
+
+    // The emptied tree no longer backs the old scan coverage; only the
+    // retained note ledger remains as evidence.
+    let balance = store.local_account_balance(with_notes).unwrap();
+    assert_eq!(balance.last_scanned_index, None);
+    assert_eq!(balance.source, ShieldedBalanceSource::Restored);
+    assert_eq!(balance.spendable_credits, 100);
+    let balance = store.local_account_balance(empty).unwrap();
+    assert_eq!(balance.last_scanned_index, None);
+    assert_eq!(balance.source, ShieldedBalanceSource::NoHistory);
 }
 
 #[test]

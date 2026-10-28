@@ -149,9 +149,16 @@ impl FileBackedShieldedStore {
     }
 
     /// Rewind all scan cursors without discarding receipts or spend guards.
+    /// Scan coverage is dropped with the tree; retained notes count as restored.
     pub(super) fn rewind_scan_watermarks(&mut self) {
         for state in self.subwallets.values_mut() {
             state.last_synced_index = 0;
+            state.last_scanned_index = None;
+            state.balance_source = if state.notes.is_empty() {
+                ShieldedBalanceSource::NoHistory
+            } else {
+                ShieldedBalanceSource::Restored
+            };
         }
     }
 
