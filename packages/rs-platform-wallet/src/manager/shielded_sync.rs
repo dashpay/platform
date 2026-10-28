@@ -36,6 +36,7 @@ use tokio::sync::RwLock;
 
 use dash_async::ThreadRegistry;
 
+use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
@@ -65,6 +66,16 @@ pub enum WalletShieldedOutcome {
     Skipped,
     /// Error message from a failed sync.
     Err(String),
+    /// The pass found the local commitment tree inconsistent with the chain
+    /// (see [`PlatformWalletError::ShieldedTreeInconsistent`]). Resyncing
+    /// cannot repair it; call
+    /// [`PlatformWalletManager::rebuild_shielded_tree`](crate::PlatformWalletManager::rebuild_shielded_tree).
+    TreeInconsistent {
+        /// Number of leaves in the local tree after consuming the stream.
+        local_leaf_count: u64,
+        /// Largest commitment count reported by the stream's proofs.
+        chain_leaf_count: u64,
+    },
 }
 
 impl WalletShieldedOutcome {
@@ -506,8 +517,18 @@ impl ShieldedSyncManager {
             Some((_, WalletShieldedOutcome::Ok(summary))) => Ok(Some(summary)),
             Some((_, WalletShieldedOutcome::Skipped)) => Ok(None),
             Some((_, WalletShieldedOutcome::Err(e))) => {
-                Err(crate::error::PlatformWalletError::ShieldedSyncFailed(e))
+                Err(PlatformWalletError::ShieldedSyncFailed(e))
             }
+            Some((
+                _,
+                WalletShieldedOutcome::TreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                },
+            )) => Err(PlatformWalletError::ShieldedTreeInconsistent {
+                local_leaf_count,
+                chain_leaf_count,
+            }),
             None => Ok(None),
         }
     }

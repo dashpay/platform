@@ -1565,9 +1565,9 @@ impl NetworkShieldedCoordinator {
     }
 
     /// Build a `ShieldedSyncPassSummary` where every registered
-    /// wallet's outcome is the supplied error string. Used when
-    /// the network-wide SDK note scan (sync_notes_across) errors
-    /// before any per-wallet result can be produced.
+    /// wallet's outcome is the supplied error: typed for an
+    /// inconsistent tree, its message otherwise. Used when the
+    /// network-wide pass errors before any per-wallet result exists.
     fn fail_all_wallets(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
@@ -1583,9 +1583,17 @@ impl NetworkShieldedCoordinator {
                 error = %e,
                 "Network-wide shielded sync failed"
             );
-            summary
-                .wallet_results
-                .insert(wallet_id, WalletShieldedOutcome::Err(e.to_string()));
+            let outcome = match *e {
+                PlatformWalletError::ShieldedTreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                } => WalletShieldedOutcome::TreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                },
+                _ => WalletShieldedOutcome::Err(e.to_string()),
+            };
+            summary.wallet_results.insert(wallet_id, outcome);
         }
         summary.sync_unix_seconds = Self::now_unix();
         summary

@@ -157,19 +157,22 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
             chain_leaf_count: 2,
         })
     ));
-    // The background pass reports the same verdict per wallet, not a success.
+    // The background pass reports the same verdict per wallet as a typed
+    // outcome, so hosts need not parse the error text to offer a rebuild.
     let summary = coordinator.sync(false).await;
     assert_eq!(summary.error_count(), 1);
     assert_eq!(summary.success_count(), 0);
-    let expected = PlatformWalletError::ShieldedTreeInconsistent {
-        local_leaf_count: 3,
-        chain_leaf_count: 2,
-    }
-    .to_string();
-    assert!(matches!(
-        summary.wallet_results.get(&id.wallet_id),
-        Some(WalletShieldedOutcome::Err(message)) if *message == expected
-    ));
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "background sync must report a typed inconsistency, got {:?}",
+        summary.wallet_results.get(&id.wallet_id)
+    );
     coordinator.rebuild_shielded_tree().await.unwrap();
     {
         let store = coordinator.store().read().await;

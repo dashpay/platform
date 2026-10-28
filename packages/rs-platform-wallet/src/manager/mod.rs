@@ -1032,10 +1032,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Preserves notes, nullifiers, spent status, and wallet registrations while
     /// clearing the tree and rewinding scan cursors. The full rescan from zero
     /// costs bandwidth and trial decryption proportional to the entire pool.
-    /// Stops background shielded sync like [`Self::clear_shielded`]; restart it
-    /// or request a sync after this explicit repair. Never invoked automatically.
+    /// Background shielded sync is paused for the reset and, if it was
+    /// running, restarted afterwards on every outcome; its first pass begins
+    /// the rescan at once. The restart may block the calling thread briefly
+    /// (see [`ShieldedSyncManager::start`]). Never invoked automatically.
     #[cfg(feature = "shielded")]
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        let was_running = self.shielded_sync_manager.is_running();
+        let result = self.rebuild_shielded_tree_quiesced().await;
+        // The clearing latch and quiesce guard dropped with the call above;
+        // while either is held, `start` is a no-op.
+        if was_running {
+            Arc::clone(&self.shielded_sync_manager).start();
+        }
+        result
+    }
+
+    /// Reset half of [`Self::rebuild_shielded_tree`], with background sync
+    /// held stopped and admission closed for its whole duration.
+    #[cfg(feature = "shielded")]
+    async fn rebuild_shielded_tree_quiesced(&self) -> Result<(), PlatformWalletError> {
         let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
         let Some(_quiesced) = self.shielded_sync_manager.quiesce_held().await else {
             return Err(PlatformWalletError::ShutdownIncomplete(
@@ -1853,5 +1869,65 @@ mod tests {
             .await
             .expect("the parked adapter task never resumed after the manager was dropped")
             .expect("the adapter task was aborted on drop: it never finished");
+    }
+
+    /// The rebuild quiesces background shielded sync, but the host must not
+    /// have to restart it: a loop that was running before keeps running after.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_restart_background_shielded_sync_after_rebuild_when_it_was_running() {
+        let mgr = make_manager();
+        let dir = tempfile::tempdir().expect("temp dir");
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configure shielded");
+        Arc::clone(&mgr.shielded_sync_manager).start();
+        assert!(mgr.shielded_sync_manager.is_running());
+
+        mgr.rebuild_shielded_tree().await.expect("rebuild");
+
+        assert!(
+            mgr.shielded_sync_manager.is_running(),
+            "rebuild must restart the background loop it stopped"
+        );
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// A host that drives shielded sync manually keeps doing so: the rebuild
+    /// does not start a background loop that was not running.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_leave_background_shielded_sync_stopped_after_rebuild_when_it_was_not_running() {
+        let mgr = make_manager();
+        let dir = tempfile::tempdir().expect("temp dir");
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configure shielded");
+
+        mgr.rebuild_shielded_tree().await.expect("rebuild");
+
+        assert!(!mgr.shielded_sync_manager.is_running());
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// A failed rebuild restores the loop too, so a retrying host still finds
+    /// background sync in the state it left it.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_restart_background_shielded_sync_when_rebuild_fails() {
+        let mgr = make_manager();
+        Arc::clone(&mgr.shielded_sync_manager).start();
+
+        let result = mgr.rebuild_shielded_tree().await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
+            "no coordinator is configured: {result:?}"
+        );
+        assert!(
+            mgr.shielded_sync_manager.is_running(),
+            "a failed rebuild must not leave background sync stopped"
+        );
+        assert!(mgr.shutdown().await.all_clean());
     }
 }
