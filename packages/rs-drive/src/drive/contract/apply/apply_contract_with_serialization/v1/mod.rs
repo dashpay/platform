@@ -28,15 +28,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Applies a contract and returns the fee for applying: generation 0's, with the operations
-    /// of generation 1 ([`Self::apply_contract_with_serialization_operations_v1`]), and one
-    /// change in when it commits: when the caller supplies no transaction and the operations
-    /// are applied, the write and its pricing share one owned transaction that is committed
-    /// only after `Drive::calculate_fee` succeeded. Generation 0 applied the batch (committing
-    /// it on its own without a caller transaction) and priced it afterwards, so from protocol
-    /// version 15, where pricing an owner-attributed storage removal without the fee history is
-    /// an error, a call passing no history would have persisted the write and then failed. It
-    /// now fails before anything is written. With a caller transaction nothing is committed by
-    /// Drive in either generation.
+    /// of generation 1 ([`Self::apply_contract_with_serialization_operations_v1`]).
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_contract_with_serialization_v1(
@@ -49,9 +41,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let owned_transaction =
-            (apply && transaction.is_none()).then(|| self.grove.start_transaction());
-        let transaction = owned_transaction.as_ref().or(transaction);
         let mut cost_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -77,7 +66,6 @@ impl Drive {
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
 
-        // A pricing error drops the owned transaction with everything it wrote.
         let fees = Drive::calculate_fee(
             None,
             Some(cost_operations),
@@ -86,10 +74,6 @@ impl Drive {
             platform_version,
             None,
         )?;
-        if let Some(owned_transaction) = owned_transaction {
-            self.commit_transaction(owned_transaction, &platform_version.drive)?;
-        }
-
         Ok(fees)
     }
 

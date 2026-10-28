@@ -13,8 +13,8 @@ use crate::version::drive_versions::{
 /// Drive version 10, introduced in protocol v15. Differs from v9 in:
 ///
 /// * **Contracts stored compiled**: `DRIVE_CONTRACT_METHOD_VERSIONS_V5` selects
-///   `apply_contract_with_serialization` 1, which writes nothing when a contract's format
-///   version 1 bytes match the stored contract's, whatever format the stored one is in,
+///   `apply_contract_with_serialization` 2, whose operations (generation 1's) write nothing
+///   when a contract's format version 1 bytes match the stored contract's, whatever format the stored one is in,
 ///   as contracts are stored compiled from this version
 ///   (`contract_storage_serialization_version` 2).
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
@@ -46,7 +46,8 @@ use crate::version::drive_versions::{
 /// * **Price before commit** — `batch_operations.apply_drive_operations`
 ///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
 ///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
-///   `apply_contract_with_serialization` 0 -> 1, the five moderation
+///   `apply_contract_with_serialization` 0 -> 2 over generation 1's
+///   operations, the five moderation
 ///   writers that can free flagged bytes 0 -> 1) and
 ///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (the ten fee-returning document
 ///   wrappers 0 -> 1). Every fee-returning entry point that owns its
@@ -59,7 +60,7 @@ use crate::version::drive_versions::{
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: the ten fee-returning document wrappers price before committing an owned transaction
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled; update_contract v3, apply_contract_with_serialization v1 and the moderation writers price before committing an owned transaction
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 2 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled, and prices before committing an owned transaction; update_contract v3 and the moderation writers price before committing too
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers

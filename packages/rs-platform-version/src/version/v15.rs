@@ -303,7 +303,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// 16. **Pricing before commit**: the Drive entry points that own their
 ///     transaction when a caller passes none (`apply_drive_operations` v2,
 ///     the ten document wrappers v1, `update_contract` v3,
-///     `apply_contract_with_serialization` v1, `add_group_action` v1, the
+///     `apply_contract_with_serialization` v2, `add_group_action` v1, the
 ///     moderation writers v1) price the batch before committing it, so the
 ///     error in item 14 never leaves a write persisted without its fee
 ///     result.
@@ -311,7 +311,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// Everything else matches v14.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); calculate_fee v1 (fee history required for refunds) + identity table v3 (credit_storage_refunds_to_owners); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 2 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8) and prices before it commits; calculate_fee v1 (fee history required for refunds) + identity table v3 (credit_storage_refunds_to_owners); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock

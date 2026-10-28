@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 mod v0;
 mod v1;
+mod v2;
 
 /// Drive contract application methods.
 impl Drive {
@@ -88,9 +89,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            2 => self.apply_contract_with_serialization_v2(
+                contract,
+                contract_serialization,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -155,7 +165,9 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            1 => self.apply_contract_with_serialization_operations_v1(
+            // Generation 2 changes only when its wrapper commits, so it builds the
+            // operations as generation 1 does.
+            1 | 2 => self.apply_contract_with_serialization_operations_v1(
                 contract,
                 contract_serialization,
                 block_info,
@@ -166,7 +178,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
