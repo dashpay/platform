@@ -32,6 +32,21 @@ internal object IdentityNative {
     ): Int
 
     /**
+     * The minimum asset-lock value (duffs) registering the layout with
+     * `IdentityCreationKeyLayout.nativeCode` [layout] needs at the wallet's
+     * platform version (thin marshal of
+     * `platform_wallet_identity_creation_min_funding_duffs`).
+     */
+    external fun identityCreationMinFundingDuffs(walletHandle: Long, layout: Int): Long
+
+    /**
+     * The minimum fees (credits) of an address-funded identity create of
+     * [layout], one per input count from 1 to the protocol maximum (thin
+     * marshal of `platform_wallet_identity_creation_from_addresses_min_fees`).
+     */
+    external fun identityCreationFromAddressesMinFees(walletHandle: Long, layout: Int): LongArray
+
+    /**
      * The `IdentityCreationKeyLayout.nativeCode` Rust decides for resuming
      * the tracked registration lock at the outpoint (thin marshal of
      * `platform_wallet_resume_identity_key_layout`): the four pre-DIP-11
