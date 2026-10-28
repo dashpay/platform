@@ -4440,12 +4440,12 @@ mod tests {
                 assert_matches!(
                     errors.as_slice(),
                     [error] if fault.is_reported_by(error),
-                    "at protocol version {protocol_version}: {errors:?}"
+                    "at protocol version {protocol_version} with {fault:?}: {errors:?}"
                 );
                 assert_eq!(
                     check_tx(&platform, &update(&owner, None, 1, 1).await),
                     vec![],
-                    "at protocol version {protocol_version}"
+                    "at protocol version {protocol_version} with {fault:?}"
                 );
             }
         }
