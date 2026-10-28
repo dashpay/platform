@@ -1,4 +1,4 @@
-use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
+use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
@@ -14,18 +14,21 @@ use crate::version::drive_versions::{
     DrivePrefundedSpecializedMethodVersions, DriveVersion,
 };
 
-/// Drive version 10.
-/// Introduced in protocol v15 for the token marketplace:
+/// Drive version 10, introduced in protocol v15:
 ///
-/// * **Escrow trees** — `create_initial_state_structure` 5 adds the two escrow trees of the
+/// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
+///   nothing when its format version 1 bytes match the stored contract's, whatever format the
+///   stored one is in, as contracts are stored compiled from this version
+///   (`contract_storage_serialization_version` 2).
+/// * **Escrow trees**: `create_initial_state_structure` 5 adds the two escrow trees of the
 ///   token marketplace: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, the BigSumTree of the tokens open
 ///   listings hold, and `[PreFundedSpecializedBalances, PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`,
 ///   the SumTree of the credits open offers hold. The upgrade path
 ///   (`Platform::transition_to_version_15`) inserts them through the same helper.
-/// * **Token conservation** — `DRIVE_TOKEN_METHOD_VERSIONS_V3` bumps
+/// * **Token conservation**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` bumps
 ///   `calculate_total_tokens_balance` to 2, which counts the escrowed listings on the balance
 ///   side; its escrow methods, `None` before, are active.
-/// * **Escrow fee estimates** — the offers' escrow key sits a level below the other keys of the
+/// * **Escrow fee estimates**: the offers' escrow key sits a level below the other keys of the
 ///   prefunded specialized balances layer, so `estimated_cost_for_prefunded_specialized_balance_update`
 ///   2 and `add_estimation_costs_for_contract_fee_pot_update` 1 keep a deeper description of that
 ///   layer another write of the batch registered, rather than lowering it to their keys' level;
@@ -39,7 +42,7 @@ use crate::version::drive_versions::{
 ///   write of the batch (a document, a nonce) lowers what the escrows describe, whichever is
 ///   built first. It raises the estimate of any batch whose operations describe a shared layer
 ///   differently, an ordinary document transition included.
-/// * **Frozen listings** — `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
+/// * **Frozen listings**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
 ///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
 ///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
 ///
@@ -54,9 +57,9 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
-                ..DRIVE_CONTRACT_METHOD_VERSIONS_V4.fee_pots
+                ..DRIVE_CONTRACT_METHOD_VERSIONS_V5.fee_pots
             },
-            ..DRIVE_CONTRACT_METHOD_VERSIONS_V4
+            ..DRIVE_CONTRACT_METHOD_VERSIONS_V5 // changed in v10: apply_contract_with_serialization 1 (compiled contract storage)
         },
         identity: DriveIdentityMethodVersions {
             cost_estimation: DriveIdentityCostEstimationMethodVersions {

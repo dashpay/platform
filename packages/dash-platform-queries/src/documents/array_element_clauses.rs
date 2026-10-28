@@ -3,6 +3,7 @@
 //! the server keys them before it routes the request: `contains` as the
 //! equality and `containsAny` as the `In` an index level of the array holds.
 
+use crate::documents::document_query::DocumentQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -30,17 +31,42 @@ pub fn key_element_clauses(
     grouped_by_in: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, drive_proof_verifier::Error> {
-    let document_type = data_contract
-        .document_type_for_name(document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("document type {document_type_name} not found in contract: {e}"),
-        })?;
     key_clauses_of(
-        document_type,
+        document_type_named(data_contract, document_type_name)?,
         where_clauses,
         grouped_by_in,
         platform_version,
     )
+}
+
+/// [`aggregate_where_clauses`] of `request` before it is sent, its pending
+/// window selections left unresolved: a relative time selection resolves only
+/// against the answer's signed block time. Resolving a selection adds an
+/// equality pin alone, which can add a refusal but never lift one, so whatever
+/// this refuses the verifier refuses too.
+pub(super) fn aggregate_request_where_clauses(
+    request: &DocumentQuery,
+    folds_entries: bool,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<WhereClause>, drive_proof_verifier::Error> {
+    aggregate_where_clauses(
+        document_type_named(&request.data_contract, &request.document_type_name)?,
+        &request.group_by,
+        request.where_clauses.clone(),
+        folds_entries,
+        platform_version,
+    )
+}
+
+fn document_type_named<'a>(
+    data_contract: &'a DataContract,
+    document_type_name: &str,
+) -> Result<DocumentTypeRef<'a>, drive_proof_verifier::Error> {
+    data_contract
+        .document_type_for_name(document_type_name)
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: format!("document type {document_type_name} not found in contract: {e}"),
+        })
 }
 
 /// Whether a request grouped by `group_by` is grouped by one field that an
