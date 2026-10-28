@@ -1,3 +1,4 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -6,7 +7,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::{BackwardsReferences, Element, Transaction};
@@ -118,7 +118,7 @@ impl Drive {
 
         // A system contract, stored without storage flags
         let contract_element = Element::Item(
-            contract.serialize_to_bytes_with_platform_version(platform_version)?,
+            serialize_contract_for_storage(contract, platform_version)?,
             None,
         );
         let mut drive_operations = vec![];
