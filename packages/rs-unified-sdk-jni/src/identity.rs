@@ -486,13 +486,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 /// DashPay Connect key derivation at the DIP-13 sub-feature paths
 /// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`,
 /// dashpay/dips#191). Thin marshaler over
-/// `dash_sdk_derive_connect_key_with_resolver`: resolver-keyed and pure
+/// `dash_sdk_derive_connect_key_v2_with_resolver`: resolver-keyed and pure
 /// like its slot-derive siblings, so it is safe from persistence-callback
 /// context. Returns `[privateKey: byte[32], publicKey: byte[33]]`; the
 /// Rust-side key is zeroized before return and Kotlin owns the copy.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveConnectKeyWithResolver(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveConnectKeyV2WithResolver(
     mut env: JNIEnv,
     _class: JClass,
     network_ord: jint,
@@ -535,7 +535,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 
         let mut out = ConnectDerivedKeyFFI::empty();
         let result = unsafe {
-            platform_wallet_ffi::dash_sdk_derive_connect_key_with_resolver(
+            platform_wallet_ffi::dash_sdk_derive_connect_key_v2_with_resolver(
                 net_from_ord(network_ord),
                 wid.as_ptr(),
                 resolver_handle as *mut MnemonicResolverHandle,
@@ -557,7 +557,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 /// level. Thin marshaler over
 /// `dash_sdk_derive_legacy_app_encryption_key_with_resolver`; returns
 /// `[privateKey: byte[32], publicKey: byte[33]]` like
-/// `deriveConnectKeyWithResolver`.
+/// `deriveConnectKeyV2WithResolver`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveLegacyAppEncryptionKeyWithResolver(
     mut env: JNIEnv,

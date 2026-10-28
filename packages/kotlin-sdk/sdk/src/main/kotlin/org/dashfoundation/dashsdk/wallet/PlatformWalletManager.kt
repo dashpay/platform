@@ -687,7 +687,7 @@ class PlatformWalletManager(
         identityId: ByteArray,
         leaf: ByteArray,
     ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
-        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyWithResolver(
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
             network.ffiValue,
             walletId,
             mnemonicResolver.nativeHandle,
@@ -720,7 +720,7 @@ class PlatformWalletManager(
         purpose: ConnectKeyPurpose,
         rotation: Int,
     ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
-        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyWithResolver(
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
             network.ffiValue,
             walletId,
             mnemonicResolver.nativeHandle,

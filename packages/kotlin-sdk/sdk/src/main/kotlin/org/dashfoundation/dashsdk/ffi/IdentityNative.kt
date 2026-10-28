@@ -156,8 +156,11 @@ internal object IdentityNative {
     /**
      * DashPay Connect key derivation at the DIP-13 sub-feature paths
      * `m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`
-     * (dashpay/dips#191). Bridges `dash_sdk_derive_connect_key_with_resolver`,
-     * a pure resolver-keyed derive like the slot derives above.
+     * (dashpay/dips#191). Bridges `dash_sdk_derive_connect_key_v2_with_resolver`,
+     * a pure resolver-keyed derive like the slot derives above. Renamed from
+     * `deriveConnectKeyWithResolver` when the rotation argument was added, so a
+     * stale native library fails with `UnsatisfiedLinkError` instead of
+     * receiving mismatched arguments.
      *
      * @param subFeature 6 (session authentication; [leaf] is the request
      *   id) or 7 (app encryption; [leaf] is the bound contract's id).
@@ -171,7 +174,7 @@ internal object IdentityNative {
      *   pair). Any other combination throws.
      * @return `[privateKey(32), publicKey(33)]`.
      */
-    external fun deriveConnectKeyWithResolver(
+    external fun deriveConnectKeyV2WithResolver(
         networkOrd: Int,
         walletId: ByteArray,
         resolverHandle: Long,

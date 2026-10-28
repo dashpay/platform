@@ -98,6 +98,10 @@ impl Default for ConnectDerivedKeyFFI {
 
 /// Derive a DashPay Connect key from the mnemonic the resolver returns for
 /// `wallet_id_bytes`, at the DIP-13 application paths key-wallet builds.
+/// This is the rotation-aware entry point: the pre-rotation
+/// `dash_sdk_derive_connect_key_with_resolver` (no `rotation` argument) is
+/// gone, so a caller compiled against it fails to link rather than passing
+/// its `out_key` where `rotation` now sits.
 ///
 /// - `sub_feature` `6` with `purpose` `0` and `rotation` `0`: the session
 ///   authentication key; `leaf_bytes` is the connect request id. The path
@@ -107,9 +111,10 @@ impl Default for ConnectDerivedKeyFFI {
 ///   id and `rotation` is the trailing `rotation'` level (`0` for the first
 ///   pair, at most `2^31 - 1`).
 ///
-/// Anything else is refused with `ErrorInvalidParameter`. `network` picks
-/// the coin type (`5'` mainnet, `1'` otherwise). Keys at the pre-rotation
-/// app encryption layout come from
+/// Anything else is refused with `ErrorInvalidParameter` (platform-wallet's
+/// `ConnectKey::from_parts` decides) before the seed is resolved. `network`
+/// picks the coin type (`5'` mainnet, `1'` otherwise). Keys at the
+/// pre-rotation app encryption layout come from
 /// [`dash_sdk_derive_legacy_app_encryption_key_with_resolver`] instead.
 ///
 /// The derived key is written to `out_key`; call
@@ -123,7 +128,7 @@ impl Default for ConnectDerivedKeyFFI {
 /// - `out_key` must be a valid, writable pointer.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
+pub unsafe extern "C" fn dash_sdk_derive_connect_key_v2_with_resolver(
     network: FFINetwork,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
@@ -139,31 +144,13 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
 
     check_ptr!(leaf_bytes);
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id_bytes));
-    let leaf = read_leaf(leaf_bytes);
-    let key = match (sub_feature, purpose, rotation) {
-        (CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION, 0, 0) => {
-            ConnectKey::SessionAuthentication {
-                identity_id,
-                request_id: leaf,
-            }
-        }
-        (CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, purpose, rotation) => ConnectKey::AppEncryption {
-            identity_id,
-            contract_id: leaf,
-            purpose: unwrap_result_or_return!(app_key_purpose(purpose)),
-            rotation,
-        },
-        (sub_feature, purpose, rotation) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "sub_feature {sub_feature} with purpose {purpose} and rotation {rotation} is \
-                     not a DashPay Connect key (6 with purpose 0 and rotation 0, or 7 with \
-                     purpose 1 or 2)"
-                ),
-            );
-        }
-    };
+    let key = unwrap_result_or_return!(ConnectKey::from_parts(
+        sub_feature,
+        identity_id,
+        read_leaf(leaf_bytes),
+        purpose,
+        rotation,
+    ));
 
     derive_into(
         network,
@@ -179,12 +166,12 @@ pub unsafe extern "C" fn dash_sdk_derive_connect_key_with_resolver(
 /// `m/9'/coin'/5'/7'/0'/identityId'/contractId'/purpose'`, which has no
 /// trailing `rotation'` level. Only for recognising keys registered on
 /// testnet/devnet before DIP-13 gained that level; derive new keys with
-/// [`dash_sdk_derive_connect_key_with_resolver`].
+/// [`dash_sdk_derive_connect_key_v2_with_resolver`].
 ///
 /// `purpose` is `1` (ENCRYPTION) or `2` (DECRYPTION); anything else is
-/// refused with `ErrorInvalidParameter`. `contract_id_bytes` is the bound
-/// contract id. `network` picks the coin type (`5'` mainnet, `1'`
-/// otherwise).
+/// refused with `ErrorInvalidParameter` before the seed is resolved.
+/// `contract_id_bytes` is the bound contract id. `network` picks the coin
+/// type (`5'` mainnet, `1'` otherwise).
 ///
 /// The derived key is written to `out_key`; call
 /// [`dash_sdk_derive_connect_key_free`] when done with it.
@@ -210,11 +197,11 @@ pub unsafe extern "C" fn dash_sdk_derive_legacy_app_encryption_key_with_resolver
 
     check_ptr!(contract_id_bytes);
     let identity_id = unwrap_result_or_return!(read_identifier(identity_id_bytes));
-    let key = ConnectKey::AppEncryptionLegacy {
+    let key = unwrap_result_or_return!(ConnectKey::legacy_app_encryption_from_parts(
         identity_id,
-        contract_id: read_leaf(contract_id_bytes),
-        purpose: unwrap_result_or_return!(app_key_purpose(purpose)),
-    };
+        read_leaf(contract_id_bytes),
+        purpose,
+    ));
 
     derive_into(
         network,
@@ -225,29 +212,27 @@ pub unsafe extern "C" fn dash_sdk_derive_legacy_app_encryption_key_with_resolver
     )
 }
 
-/// Copy the 32-byte leaf (request or contract id) behind a checked pointer.
+/// Copy the 32-byte leaf (request or contract id) behind `leaf_bytes`.
+///
+/// # Safety
+/// `leaf_bytes` must be non-null (the caller `check_ptr!`s it) and point to
+/// at least 32 readable, initialised bytes.
 unsafe fn read_leaf(leaf_bytes: *const u8) -> [u8; 32] {
     std::slice::from_raw_parts(leaf_bytes, 32)
         .try_into()
         .expect("from_raw_parts(_, 32) always yields exactly 32 bytes")
 }
 
-/// The app encryption half a C `purpose` names.
-fn app_key_purpose(purpose: u32) -> Result<ApplicationKeyPurpose, PlatformWalletFFIResult> {
-    match purpose {
-        CONNECT_KEY_PURPOSE_ENCRYPTION => Ok(ApplicationKeyPurpose::Encryption),
-        CONNECT_KEY_PURPOSE_DECRYPTION => Ok(ApplicationKeyPurpose::Decryption),
-        purpose => Err(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!(
-                "purpose {purpose} is not an app encryption purpose (1 ENCRYPTION or 2 DECRYPTION)"
-            ),
-        )),
-    }
-}
-
 /// Resolve the wallet's master key, derive `key` and write it to `out_key`
 /// (already reset to empty by the caller).
+///
+/// # Safety
+/// - `wallet_id_bytes` must be null (refused here) or point to at least 32
+///   readable bytes.
+/// - `mnemonic_resolver_handle` must be null (refused here) or a live handle
+///   from `dash_sdk_mnemonic_resolver_create`.
+/// - `out_key` must be a valid, writable pointer (the caller `check_ptr!`s
+///   it).
 unsafe fn derive_into(
     network: FFINetwork,
     wallet_id_bytes: *const u8,
@@ -259,9 +244,6 @@ unsafe fn derive_into(
     check_ptr!(mnemonic_resolver_handle);
 
     let kw_network: Network = network.into();
-    // Refuse an unrepresentable key (a rotation of 2^31 or more) before
-    // the resolver is asked for the seed.
-    unwrap_result_or_return!(key.derivation_path(kw_network));
     let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
         .try_into()
         .expect("from_raw_parts(_, 32) always yields exactly 32 bytes");
@@ -283,7 +265,7 @@ unsafe fn derive_into(
     PlatformWalletFFIResult::ok()
 }
 
-/// Wipe a key populated by [`dash_sdk_derive_connect_key_with_resolver`] or
+/// Wipe a key populated by [`dash_sdk_derive_connect_key_v2_with_resolver`] or
 /// [`dash_sdk_derive_legacy_app_encryption_key_with_resolver`].
 /// The struct owns no heap memory; this zeroizes the private scalar in
 /// place (a volatile write the optimizer cannot elide) and clears the
@@ -357,7 +339,7 @@ mod tests {
         let wallet_id = [0x07u8; 32];
         let mut out = ConnectDerivedKeyFFI::empty();
         let result = unsafe {
-            dash_sdk_derive_connect_key_with_resolver(
+            dash_sdk_derive_connect_key_v2_with_resolver(
                 network,
                 wallet_id.as_ptr(),
                 resolver,
@@ -592,7 +574,7 @@ mod tests {
         let mut out = ConnectDerivedKeyFFI::empty();
         let wallet_id = [0x07u8; 32];
         let result = unsafe {
-            dash_sdk_derive_connect_key_with_resolver(
+            dash_sdk_derive_connect_key_v2_with_resolver(
                 FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 std::ptr::null_mut(),
@@ -615,7 +597,7 @@ mod tests {
         let mut out = ConnectDerivedKeyFFI::empty();
         let wallet_id = [0x07u8; 32];
         let result = unsafe {
-            dash_sdk_derive_connect_key_with_resolver(
+            dash_sdk_derive_connect_key_v2_with_resolver(
                 FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 std::ptr::dangling_mut(),
@@ -669,7 +651,7 @@ mod tests {
             let mut out = ConnectDerivedKeyFFI::empty();
             let wallet_id = [0x07u8; 32];
             let mut result = unsafe {
-                dash_sdk_derive_connect_key_with_resolver(
+                dash_sdk_derive_connect_key_v2_with_resolver(
                     FFINetwork::Testnet,
                     wallet_id.as_ptr(),
                     std::ptr::dangling_mut(),

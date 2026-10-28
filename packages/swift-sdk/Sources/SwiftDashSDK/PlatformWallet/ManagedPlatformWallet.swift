@@ -1621,7 +1621,7 @@ extension ManagedPlatformWallet {
         try deriveConnectKeyThroughFFI(
             identityId: identityId, leaf: leaf, leafName: "leaf", storage: storage
         ) { walletBytes, resolver, identityBytes, leafBytes, out in
-            dash_sdk_derive_connect_key_with_resolver(
+            dash_sdk_derive_connect_key_v2_with_resolver(
                 network.ffiValue, walletBytes, resolver, subFeature.ffiValue,
                 identityBytes, leafBytes, 0, 0, out
             )
@@ -1663,7 +1663,7 @@ extension ManagedPlatformWallet {
         try deriveConnectKeyThroughFFI(
             identityId: identityId, leaf: leaf, leafName: "leaf", storage: storage
         ) { walletBytes, resolver, identityBytes, leafBytes, out in
-            dash_sdk_derive_connect_key_with_resolver(
+            dash_sdk_derive_connect_key_v2_with_resolver(
                 network.ffiValue, walletBytes, resolver, subFeature.ffiValue,
                 identityBytes, leafBytes, purpose.ffiValue, rotation, out
             )
